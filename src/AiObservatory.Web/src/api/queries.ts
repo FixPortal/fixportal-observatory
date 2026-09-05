@@ -5,12 +5,12 @@ import {
   getAdversarialReviewRuns, getAdversarialReviewStats, getCavemanStats,
   getBudgetRules, getNotificationSettings,
   getActivityDaily, getActivityByProject,
-  getGitHubPrs, getGitHubCommitSummary, getGitHubCi,
+  getGitHubPrs, getGitHubCommitSummary, getGitHubCi, getGitHubReviews,
   getSpendCategories, getSpendVendors, getSpendEntries, getBilledReporting, getSourceStatuses,
   type DailyAggregate, type Insight, type Subscription,
   type AdversarialReviewRun, type AdversarialReviewStats, type CavemanStats,
   type BudgetRule, type DailyActivity, type ProjectActivity,
-  type GitHubPr, type GitHubCommitSummary, type GitHubCiSummary,
+  type GitHubPr, type GitHubCommitSummary, type GitHubCiSummary, type GitHubReviewerSummary,
   type SpendCategory, type SpendVendor, type SpendEntry, type BilledReporting, type SourceStatusResponse,
   type NotificationSettings,
 } from './client'
@@ -101,6 +101,15 @@ export function useGitHubCi(from?: Date, to?: Date): { ci: GitHubCiSummary[]; is
     queryFn: hasRange ? () => getGitHubCi(localDate(from!), localDate(to!)) : () => getGitHubCi(),
   })
   return { ci: data, isError, isLoading: isPending }
+}
+
+export function useGitHubReviews(from?: Date, to?: Date): { reviewers: GitHubReviewerSummary[]; isError: boolean; isLoading: boolean } {
+  const hasRange = from != null && to != null
+  const { data = [], isError, isPending } = useQuery({
+    queryKey: hasRange ? ['github-reviews', localDate(from!), localDate(to!)] : ['github-reviews'],
+    queryFn: hasRange ? () => getGitHubReviews(localDate(from!), localDate(to!)) : () => getGitHubReviews(),
+  })
+  return { reviewers: data, isError, isLoading: isPending }
 }
 
 export function useInsights(): { insights: Insight[]; isError: boolean; isLoading: boolean } {

@@ -55,6 +55,14 @@ vi.mock('../api/queries', () => ({
     isError: false,
     isLoading: state.loading,
   }),
+  useGitHubReviews: () => ({
+    reviewers: [
+      { repo: 'fix-portal/a', reviewer: 'coderabbitai[bot]', isBot: true, reviewCount: 3, pullRequestCount: 2, approvedCount: 2, changesRequestedCount: 1, avgFirstReviewHours: 0.4 },
+      { repo: 'fix-portal/b', reviewer: 'chris', isBot: false, reviewCount: 1, pullRequestCount: 1, approvedCount: 1, changesRequestedCount: 0, avgFirstReviewHours: 10 },
+    ],
+    isError: false,
+    isLoading: state.loading,
+  }),
 }))
 
 describe('GitHubPage', () => {
@@ -64,14 +72,15 @@ describe('GitHubPage', () => {
     expect(screen.getByRole('group', { name: /github filters/i })).toBeInTheDocument()
   })
 
-  it('applies the selected repo to pull requests, commits, and CI', () => {
+  it('applies the selected repo to pull requests, commits, CI, and review agents', () => {
     render(<GitHubPage />)
 
     fireEvent.change(screen.getByLabelText('Repo'), { target: { value: 'fix-portal/a' } })
 
     expect(screen.queryByText('Second PR')).not.toBeInTheDocument()
     expect(screen.queryAllByRole('cell', { name: 'fix-portal/b' })).toHaveLength(0)
-    expect(screen.getAllByRole('cell', { name: 'fix-portal/a' })).toHaveLength(3)
+    // One repo cell per panel: pull requests, review agents, commits, CI.
+    expect(screen.getAllByRole('cell', { name: 'fix-portal/a' })).toHaveLength(4)
   })
 
   it('compares aggregate GitHub evidence and honours the repo filter', () => {

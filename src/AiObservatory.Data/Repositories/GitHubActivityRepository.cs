@@ -33,6 +33,30 @@ public class GitHubActivityRepository(AiObservatoryDbContext ctx) : IGitHubActiv
             ct
         );
 
+    // State and SubmittedAt are both refreshed on conflict: a review submitted after a
+    // previous poll saw it PENDING carries a real timestamp the second time, and an approval
+    // that is later dismissed changes state without changing its id.
+    public Task UpsertPullRequestReviewAsync(
+        GitHubPullRequestReviewRecord record,
+        Instant ingestedAt,
+        CancellationToken ct = default
+    ) =>
+        ctx.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO "GitHubPullRequestReviews"
+                ("Id", "Repo", "Number", "ReviewId", "Reviewer", "IsBot", "State", "SubmittedAt", "IngestedAt")
+            VALUES
+                ({Guid.NewGuid()}, {Truncate(record.Repo, 200)}, {record.Number}, {record.ReviewId}, {Truncate(
+                record.Reviewer,
+                200
+            )}, {record.IsBot}, {Truncate(record.State, 20)}, {record.SubmittedAt}, {ingestedAt})
+            ON CONFLICT ("Repo", "ReviewId") DO UPDATE SET
+                "State" = EXCLUDED."State",
+                "SubmittedAt" = COALESCE(EXCLUDED."SubmittedAt", "GitHubPullRequestReviews"."SubmittedAt")
+            """,
+            ct
+        );
+
     public Task UpsertCommitAsync(GitHubCommitRecord record, Instant ingestedAt, CancellationToken ct = default) =>
         ctx.Database.ExecuteSqlInterpolatedAsync(
             $"""

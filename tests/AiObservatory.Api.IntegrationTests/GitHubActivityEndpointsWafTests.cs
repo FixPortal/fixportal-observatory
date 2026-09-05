@@ -163,5 +163,156 @@ public class GitHubActivityEndpointsWafTests(AiObservatoryApiFactory factory)
         summaries.Should().NotContain(s => s.Repo == "someoneelse/not-ours");
     }
 
+    /// <summary>
+    /// /github/reviews joins reviews to their pull requests and then groups in memory. The join
+    /// runs alongside the correlated EXISTS the repo allowlist compiles to — the exact
+    /// combination that made /github/commits/summary 500 at request time — so only a
+    /// real-Postgres call proves it translates.
+    /// </summary>
+    [Fact]
+    public async Task GetReviews_GroupsByReviewerAndAveragesFirstReviewPerPullRequest()
+    {
+        const string repo = "FixPortal/waf-reviews-test";
+        var openedAt = Instant.FromUtc(2019, 7, 10, 9, 0);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+            db.GitHubPullRequests.AddRange(NewPullRequest(repo, 1, openedAt), NewPullRequest(repo, 2, openedAt));
+            db.GitHubPullRequestReviews.AddRange(
+                // PR 1: the agent reviews after 1h, then again after 3h. Only the first counts
+                // toward turnaround; both count toward ReviewCount.
+                NewReview(repo, 1, 9001, "coderabbitai[bot]", true, "CHANGES_REQUESTED", openedAt.Plus(Hours(1))),
+                NewReview(repo, 1, 9002, "coderabbitai[bot]", true, "APPROVED", openedAt.Plus(Hours(3))),
+                // PR 2: the agent reviews after 3h, so its mean across two PRs is 2h.
+                NewReview(repo, 2, 9003, "coderabbitai[bot]", true, "APPROVED", openedAt.Plus(Hours(3))),
+                NewReview(repo, 1, 9004, "chris", false, "APPROVED", openedAt.Plus(Hours(10)))
+            );
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        using var client = factory.CreateAdminClient();
+        var response = await client.GetAsync(
+            "/api/github/reviews?from=2019-07-10&to=2019-07-10",
+            TestContext.Current.CancellationToken
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var rows = await response.Content.ReadFromJsonAsync<List<GitHubReviewerRow>>(
+            TestContext.Current.CancellationToken
+        );
+
+        var agent = rows.Should().ContainSingle(r => r.Repo == repo && r.Reviewer == "coderabbitai[bot]").Which;
+        agent.IsBot.Should().BeTrue();
+        agent.ReviewCount.Should().Be(3);
+        agent.PullRequestCount.Should().Be(2);
+        agent.ApprovedCount.Should().Be(2);
+        agent.ChangesRequestedCount.Should().Be(1);
+        agent.AvgFirstReviewHours.Should().Be(2.0);
+
+        var human = rows.Should().ContainSingle(r => r.Repo == repo && r.Reviewer == "chris").Which;
+        human.IsBot.Should().BeFalse();
+        human.ReviewCount.Should().Be(1);
+        human.AvgFirstReviewHours.Should().Be(10.0);
+    }
+
+    /// <summary>A review that was never submitted has no timestamp to place in any range.</summary>
+    [Fact]
+    public async Task GetReviews_ExcludesPendingReviews()
+    {
+        const string repo = "FixPortal/waf-reviews-pending-test";
+        var openedAt = Instant.FromUtc(2019, 7, 11, 9, 0);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+            db.GitHubPullRequests.Add(NewPullRequest(repo, 1, openedAt));
+            db.GitHubPullRequestReviews.Add(NewReview(repo, 1, 9101, "chris", false, "PENDING", null));
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        using var client = factory.CreateAdminClient();
+        var response = await client.GetAsync(
+            "/api/github/reviews?from=2019-07-11&to=2019-07-11",
+            TestContext.Current.CancellationToken
+        );
+
+        var rows = await response.Content.ReadFromJsonAsync<List<GitHubReviewerRow>>(
+            TestContext.Current.CancellationToken
+        );
+        rows.Should().NotContain(r => r.Repo == repo);
+    }
+
+    [Fact]
+    public async Task GetReviews_ExcludesRepositoriesOutsideTheAllowlist()
+    {
+        const string repo = "someoneelse/not-ours";
+        var openedAt = Instant.FromUtc(2019, 7, 12, 9, 0);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+            db.GitHubPullRequests.Add(NewPullRequest(repo, 1, openedAt));
+            db.GitHubPullRequestReviews.Add(
+                NewReview(repo, 1, 9201, "coderabbitai[bot]", true, "APPROVED", openedAt.Plus(Hours(1)))
+            );
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        using var client = factory.CreateAdminClient();
+        var response = await client.GetAsync(
+            "/api/github/reviews?from=2019-07-12&to=2019-07-12",
+            TestContext.Current.CancellationToken
+        );
+
+        var rows = await response.Content.ReadFromJsonAsync<List<GitHubReviewerRow>>(
+            TestContext.Current.CancellationToken
+        );
+        rows.Should().NotContain(r => r.Repo == repo);
+    }
+
+    private static Duration Hours(int hours) => Duration.FromHours(hours);
+
+    private static GitHubPullRequest NewPullRequest(string repo, int number, Instant createdAt) =>
+        new()
+        {
+            Repo = repo,
+            Number = number,
+            Title = $"waf {number}",
+            Author = "chris",
+            State = "open",
+            CreatedAt = createdAt,
+            IngestedAt = createdAt,
+        };
+
+    private static GitHubPullRequestReview NewReview(
+        string repo,
+        int number,
+        long reviewId,
+        string reviewer,
+        bool isBot,
+        string state,
+        Instant? submittedAt
+    ) =>
+        new()
+        {
+            Repo = repo,
+            Number = number,
+            ReviewId = reviewId,
+            Reviewer = reviewer,
+            IsBot = isBot,
+            State = state,
+            SubmittedAt = submittedAt,
+            IngestedAt = Instant.FromUtc(2019, 7, 10, 9, 0),
+        };
+
     private sealed record GitHubCommitSummaryRow(string Repo, int CommitCount, int Additions, int Deletions);
+
+    private sealed record GitHubReviewerRow(
+        string Repo,
+        string Reviewer,
+        bool IsBot,
+        int ReviewCount,
+        int PullRequestCount,
+        int ApprovedCount,
+        int ChangesRequestedCount,
+        double AvgFirstReviewHours
+    );
 }

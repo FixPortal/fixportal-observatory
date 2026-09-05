@@ -58,6 +58,10 @@ public class GitHubIngestionService(
                 foreach (var pr in prs)
                 {
                     await repository.UpsertPullRequestAsync(pr, now, cancellationToken);
+                    foreach (var review in pr.Reviews ?? [])
+                    {
+                        await repository.UpsertPullRequestReviewAsync(review, now, cancellationToken);
+                    }
                     latest = Latest(latest, pr.CreatedAt, pr.UpdatedAt, pr.MergedAt, pr.ClosedAt, pr.FirstReviewAt);
                 }
                 if (!status.HasPullRequests)

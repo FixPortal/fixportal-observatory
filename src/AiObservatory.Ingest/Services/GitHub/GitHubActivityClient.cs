@@ -78,7 +78,7 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
     {
         var createdAt = InstantPattern.ExtendedIso.Parse(pullRequest.CreatedAt).Value;
         var updatedAt = InstantPattern.ExtendedIso.Parse(pullRequest.UpdatedAt).Value;
-        var (reviewCount, firstReviewAt) = await GetReviewSummaryAsync(repo, pullRequest.Number, ct);
+        var (reviewCount, firstReviewAt, reviews) = await GetReviewSummaryAsync(repo, pullRequest.Number, ct);
         Instant? mergedAt = pullRequest.MergedAt is null
             ? null
             : InstantPattern.ExtendedIso.Parse(pullRequest.MergedAt).Value;
@@ -96,15 +96,16 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
             mergedAt,
             pullRequest.ClosedAt is null ? null : InstantPattern.ExtendedIso.Parse(pullRequest.ClosedAt).Value,
             firstReviewAt,
-            reviewCount
+            reviewCount,
+            reviews
         );
     }
 
-    private async Task<(int ReviewCount, Instant? FirstReviewAt)> GetReviewSummaryAsync(
-        string repo,
-        int number,
-        CancellationToken ct
-    )
+    private async Task<(
+        int ReviewCount,
+        Instant? FirstReviewAt,
+        IReadOnlyList<GitHubPullRequestReviewRecord> Reviews
+    )> GetReviewSummaryAsync(string repo, int number, CancellationToken ct)
     {
         var reviews = new List<ReviewDto>();
         var page = 1;
@@ -127,17 +128,29 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
 
         if (reviews.Count == 0)
         {
-            return (0, null);
+            return (0, null, []);
         }
+
+        var records = reviews
+            .Select(r => new GitHubPullRequestReviewRecord(
+                Truncate(repo, 200),
+                number,
+                r.Id,
+                // A ghost (deleted) account still leaves its reviews behind, so the row is kept
+                // with an explicit placeholder rather than dropped — dropping it would understate
+                // the PR's review count against the aggregate stored on the PR row itself.
+                Truncate(r.User?.Login ?? "ghost", 200),
+                string.Equals(r.User?.Type, "Bot", StringComparison.Ordinal),
+                Truncate(r.State ?? "PENDING", 20),
+                r.SubmittedAt is null ? null : InstantPattern.ExtendedIso.Parse(r.SubmittedAt).Value
+            ))
+            .ToList();
 
         // Pending reviews (not yet submitted) omit submitted_at entirely — only submitted
         // reviews count toward FirstReviewAt, but ReviewCount still reflects every review.
-        var submittedAts = reviews
-            .Where(r => r.SubmittedAt is not null)
-            .Select(r => InstantPattern.ExtendedIso.Parse(r.SubmittedAt!).Value)
-            .ToList();
+        var submittedAts = records.Where(r => r.SubmittedAt is not null).Select(r => r.SubmittedAt!.Value).ToList();
         Instant? first = submittedAts.Count > 0 ? submittedAts.Min() : null;
-        return (reviews.Count, first);
+        return (records.Count, first, records);
     }
 
     private void CheckRateLimit(HttpResponseMessage response)
@@ -282,7 +295,12 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
 
     private sealed record PullRequestUserDto(string Login);
 
-    private sealed record ReviewDto(string? SubmittedAt);
+    // User is nullable because GitHub returns null for a deleted ("ghost") account, and Type
+    // is what distinguishes a review agent from a person — GitHub sets it to "Bot" for an app.
+    // Never inferred from a "[bot]" login suffix, which any account may legally carry.
+    private sealed record ReviewDto(long Id, ReviewUserDto? User, string? State, string? SubmittedAt);
+
+    private sealed record ReviewUserDto(string Login, string? Type);
 
     private sealed record CommitListDto(string Sha, CommitInnerDto Commit);
 
