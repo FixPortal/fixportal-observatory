@@ -177,6 +177,17 @@ export interface GitHubCommitSummary {
   deletions: number
 }
 
+export interface GitHubReviewerSummary {
+  repo: string
+  reviewer: string
+  isBot: boolean
+  reviewCount: number
+  pullRequestCount: number
+  approvedCount: number
+  changesRequestedCount: number
+  avgFirstReviewHours: number
+}
+
 export interface GitHubCiSummary {
   repo: string
   workflowName: string
@@ -193,6 +204,9 @@ export const getGitHubCommitSummary = (from?: string, to?: string) =>
 
 export const getGitHubCi = (from?: string, to?: string) =>
   getJson<GitHubCiSummary[]>('/github/ci', { from, to })
+
+export const getGitHubReviews = (from?: string, to?: string) =>
+  getJson<GitHubReviewerSummary[]>('/github/reviews', { from, to })
 
 export const acknowledgeInsight = async (id: string): Promise<void> => {
   await request(`/insights/${id}/acknowledge`, { method: 'POST' })

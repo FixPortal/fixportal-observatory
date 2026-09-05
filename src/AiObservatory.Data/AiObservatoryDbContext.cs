@@ -41,6 +41,7 @@ public class AiObservatoryDbContext(DbContextOptions<AiObservatoryDbContext> opt
     public DbSet<CavemanSession> CavemanSessions => Set<CavemanSession>();
     public DbSet<ClaudeActivitySession> ClaudeActivitySessions => Set<ClaudeActivitySession>();
     public DbSet<GitHubPullRequest> GitHubPullRequests => Set<GitHubPullRequest>();
+    public DbSet<GitHubPullRequestReview> GitHubPullRequestReviews => Set<GitHubPullRequestReview>();
     public DbSet<GitHubCommit> GitHubCommits => Set<GitHubCommit>();
     public DbSet<GitHubWorkflowRun> GitHubWorkflowRuns => Set<GitHubWorkflowRun>();
     public DbSet<GitHubBackfillState> GitHubBackfillStates => Set<GitHubBackfillState>();
@@ -523,6 +524,20 @@ public class AiObservatoryDbContext(DbContextOptions<AiObservatoryDbContext> opt
             b.ToTable(t =>
                 t.HasCheckConstraint("CK_GitHubPullRequest_ReviewCount_NonNegative", "\"ReviewCount\" >= 0")
             );
+        });
+
+        modelBuilder.Entity<GitHubPullRequestReview>(b =>
+        {
+            b.Property(r => r.Repo).HasMaxLength(200).IsRequired();
+            b.Property(r => r.Reviewer).HasMaxLength(200).IsRequired();
+            b.Property(r => r.State).HasMaxLength(20).IsRequired();
+            b.HasIndex(r => new { r.Repo, r.ReviewId }).IsUnique();
+            b.HasIndex(r => r.SubmittedAt);
+            // No FK to GitHubPullRequests: that table is keyed on a surrogate Guid with only a
+            // unique index over (Repo, Number), and the PR row is upserted in the same loop
+            // iteration as its reviews. Joining on (Repo, Number) at read time keeps the two
+            // upserts independent, so a review never fails to land because its PR upsert did.
+            b.HasIndex(r => new { r.Repo, r.Number });
         });
 
         modelBuilder.Entity<GitHubCommit>(b =>

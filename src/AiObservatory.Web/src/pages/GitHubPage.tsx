@@ -2,9 +2,10 @@ import { useState } from 'react'
 import GitHubPrTable from '../components/GitHubPrTable'
 import GitHubCommitTable from '../components/GitHubCommitTable'
 import GitHubCiTable from '../components/GitHubCiTable'
+import GitHubReviewerTable from '../components/GitHubReviewerTable'
 import SpendRangeControls from '../components/SpendRangeControls'
 import { useDateRange } from '../lib/dateRange'
-import { useGitHubPrs, useGitHubCommitSummary, useGitHubCi, localDate } from '../api/queries'
+import { useGitHubPrs, useGitHubCommitSummary, useGitHubCi, useGitHubReviews, localDate } from '../api/queries'
 
 export default function GitHubPage() {
   const [repo, setRepo] = useState('')
@@ -15,23 +16,25 @@ export default function GitHubPage() {
   const { prs, isError: prsError, isLoading: prsLoading } = useGitHubPrs(from, to)
   const { summary, isError: summaryError, isLoading: summaryLoading } = useGitHubCommitSummary(from, to)
   const { ci, isError: ciError, isLoading: ciLoading } = useGitHubCi(from, to)
+  const { reviewers, isError: reviewersError, isLoading: reviewersLoading } = useGitHubReviews(from, to)
   const previousPrs = useGitHubPrs(comparisonFrom, comparisonTo)
   const previousSummary = useGitHubCommitSummary(comparisonFrom, comparisonTo)
   const previousCi = useGitHubCi(comparisonFrom, comparisonTo)
   const rangeLabel = `${localDate(from)} to ${localDate(to)}`
   const comparisonLabel = comparisonMode === 'previous' ? 'Previous period' : 'Comparison period'
-  const isError = [prsError, summaryError, ciError, previousPrs.isError, previousSummary.isError, previousCi.isError].some(Boolean)
+  const isError = [prsError, summaryError, ciError, reviewersError, previousPrs.isError, previousSummary.isError, previousCi.isError].some(Boolean)
   // The summary asserts deltas against the comparison period, so it must wait for ALL
   // six queries — otherwise it prints zeros with fabricated deltas while they load.
   const comparisonLoading = [prsLoading, summaryLoading, ciLoading,
     previousPrs.isLoading, previousSummary.isLoading, previousCi.isLoading].some(Boolean)
   const repos = [...new Set([
-    ...prs, ...summary, ...ci, ...previousPrs.prs, ...previousSummary.summary, ...previousCi.ci,
+    ...prs, ...summary, ...ci, ...reviewers, ...previousPrs.prs, ...previousSummary.summary, ...previousCi.ci,
   ].map(item => item.repo))].sort()
   const activeRepo = repos.includes(repo) ? repo : ''
   const visiblePrs = activeRepo ? prs.filter(item => item.repo === activeRepo) : prs
   const visibleSummary = activeRepo ? summary.filter(item => item.repo === activeRepo) : summary
   const visibleCi = activeRepo ? ci.filter(item => item.repo === activeRepo) : ci
+  const visibleReviewers = activeRepo ? reviewers.filter(item => item.repo === activeRepo) : reviewers
   const comparisonPrs = activeRepo ? previousPrs.prs.filter(item => item.repo === activeRepo) : previousPrs.prs
   const comparisonSummary = activeRepo ? previousSummary.summary.filter(item => item.repo === activeRepo) : previousSummary.summary
   const comparisonCi = activeRepo ? previousCi.ci.filter(item => item.repo === activeRepo) : previousCi.ci
@@ -82,6 +85,10 @@ export default function GitHubPage() {
       <div className="panel">
         <div className="panel-title">Pull requests</div>
         <GitHubPrTable prs={visiblePrs} isError={prsError} isLoading={prsLoading} />
+      </div>
+      <div className="panel">
+        <div className="panel-title">Review agents</div>
+        <GitHubReviewerTable reviewers={visibleReviewers} isError={reviewersError} isLoading={reviewersLoading} />
       </div>
       <div className="main-grid github-summary-grid">
         <div className="panel">

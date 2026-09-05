@@ -112,6 +112,92 @@ public static class GitHubActivityEndpoints
             .AddEndpointFilter<AdminOnlyApiKeyEndpointFilter>();
 
         app.MapGet(
+                "/github/reviews",
+                async (AiObservatoryDbContext db, IClock clock, string? from, string? to, CancellationToken ct) =>
+                {
+                    var today = clock.GetCurrentInstant().InUtc().Date;
+                    if (
+                        !ActivityEndpoints.TryParseDateRange(from, to, today, out var start, out var end, out var error)
+                    )
+                    {
+                        return error!;
+                    }
+                    var startInstant = start.AtStartOfDayInZone(DateTimeZone.Utc).ToInstant();
+                    var endInstant = end.PlusDays(1).AtStartOfDayInZone(DateTimeZone.Utc).ToInstant();
+
+                    // Flat rows out of SQL, aggregated in memory. Two reasons, both specific to
+                    // this shape: the per-reviewer turnaround needs the FIRST review per PR before
+                    // it can be averaged, which is a nested grouping SQL would need a window
+                    // function for; and this file has already been bitten twice by EF Core
+                    // failing to translate multiple aggregates alongside the correlated EXISTS
+                    // that IsAllowedRepo compiles to (see /github/commits/summary above). The row
+                    // count is one per submitted review in the range — tens to low hundreds.
+                    //
+                    // The join is inner: a review whose PR row is absent is excluded. That pairing
+                    // is written by GitHubIngestionService in the same loop iteration, so a
+                    // reviewed PR always has its row.
+                    var rows = await db
+                        .GitHubPullRequestReviews.AsNoTracking()
+                        .Where(IsAllowedRepo<GitHubPullRequestReview>(r => r.Repo))
+                        .Where(r =>
+                            r.SubmittedAt != null && r.SubmittedAt >= startInstant && r.SubmittedAt < endInstant
+                        )
+                        .Join(
+                            db.GitHubPullRequests.AsNoTracking(),
+                            r => new { r.Repo, r.Number },
+                            p => new { p.Repo, p.Number },
+                            (r, p) =>
+                                new
+                                {
+                                    r.Reviewer,
+                                    r.IsBot,
+                                    r.Repo,
+                                    r.Number,
+                                    r.State,
+                                    r.SubmittedAt,
+                                    PullRequestCreatedAt = p.CreatedAt,
+                                }
+                        )
+                        .ToListAsync(ct);
+
+                    // Grouped per repo, not estate-wide, so this panel answers the same repo
+                    // filter the PR/commit/CI panels on the same page do. An estate-wide row
+                    // would silently ignore that filter.
+                    var byReviewer = rows.GroupBy(r => new
+                        {
+                            r.Repo,
+                            r.Reviewer,
+                            r.IsBot,
+                        })
+                        .Select(g =>
+                        {
+                            var turnarounds = g.GroupBy(r => r.Number)
+                                .Select(pr =>
+                                    (pr.Min(r => r.SubmittedAt!.Value) - pr.First().PullRequestCreatedAt).TotalHours
+                                )
+                                .ToList();
+                            return new GitHubReviewerResponse(
+                                g.Key.Repo,
+                                g.Key.Reviewer,
+                                g.Key.IsBot,
+                                g.Count(),
+                                turnarounds.Count,
+                                g.Count(r => r.State == "APPROVED"),
+                                g.Count(r => r.State == "CHANGES_REQUESTED"),
+                                Math.Round(turnarounds.Average(), 1)
+                            );
+                        })
+                        .OrderByDescending(r => r.ReviewCount)
+                        .ThenBy(r => r.Repo, StringComparer.Ordinal)
+                        .ThenBy(r => r.Reviewer, StringComparer.Ordinal)
+                        .ToList();
+
+                    return Results.Ok(byReviewer);
+                }
+            )
+            .AddEndpointFilter<AdminOnlyApiKeyEndpointFilter>();
+
+        app.MapGet(
                 "/github/commits/summary",
                 async (AiObservatoryDbContext db, IClock clock, string? from, string? to, CancellationToken ct) =>
                 {
@@ -231,6 +317,22 @@ public sealed record GitHubPrResponse(
     Instant? MergedAt,
     int ReviewCount,
     double? TurnaroundHours
+);
+
+/// <param name="PullRequestCount">Distinct PRs this reviewer submitted at least one review on.</param>
+/// <param name="AvgFirstReviewHours">
+/// Mean hours from PR open to this reviewer's FIRST review on it — a re-review on the same PR
+/// does not drag the figure. Never null: a reviewer only appears here having submitted a review.
+/// </param>
+public sealed record GitHubReviewerResponse(
+    string Repo,
+    string Reviewer,
+    bool IsBot,
+    int ReviewCount,
+    int PullRequestCount,
+    int ApprovedCount,
+    int ChangesRequestedCount,
+    double AvgFirstReviewHours
 );
 
 public sealed record GitHubCommitSummaryResponse(string Repo, int CommitCount, int Additions, int Deletions);

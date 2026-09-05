@@ -165,6 +165,104 @@ public sealed class GitHubActivityClientTests : IDisposable
     }
 
     [Fact]
+    public async Task GetPullRequestsAsync_CapturesReviewerIdentityStateAndBotFlag()
+    {
+        var handler = new StubHandler(req =>
+        {
+            if (req.RequestUri!.ToString().Contains("/reviews"))
+            {
+                return JsonResponse(
+                    """
+                    [{"id":1001,"user":{"login":"coderabbitai[bot]","type":"Bot"},"state":"CHANGES_REQUESTED","submitted_at":"2026-07-01T09:05:00Z"},
+                     {"id":1002,"user":{"login":"chris","type":"User"},"state":"APPROVED","submitted_at":"2026-07-01T15:00:00Z"}]
+                    """
+                );
+            }
+            return JsonResponse(
+                """
+                [{"number":42,"title":"Add feature","user":{"login":"chris"},"state":"open",
+                  "created_at":"2026-07-01T09:00:00Z","updated_at":"2026-07-01T16:00:00Z","merged_at":null,"closed_at":null}]
+                """
+            );
+        });
+        var sut = CreateSut(handler);
+
+        var result = await sut.GetPullRequestsAsync(
+            "fix-portal/example",
+            new LocalDate(2026, 7, 1),
+            TestContext.Current.CancellationToken
+        );
+
+        var reviews = result.Single().Reviews.Should().NotBeNull().And.HaveCount(2).And.Subject.ToList();
+        var agent = reviews[0];
+        agent.ReviewId.Should().Be(1001);
+        agent.Repo.Should().Be("fix-portal/example");
+        agent.Number.Should().Be(42);
+        agent.Reviewer.Should().Be("coderabbitai[bot]");
+        agent.IsBot.Should().BeTrue();
+        agent.State.Should().Be("CHANGES_REQUESTED");
+        agent.SubmittedAt.Should().Be(Instant.FromUtc(2026, 7, 1, 9, 5));
+        reviews[1].Reviewer.Should().Be("chris");
+        reviews[1].IsBot.Should().BeFalse();
+    }
+
+    // "[bot]" is a display convention, not an identity: only GitHub's own user.type says an
+    // account is an app. A human whose login ends in "[bot]" must not be counted as an agent.
+    [Fact]
+    public async Task GetPullRequestsAsync_WhenLoginLooksLikeABotButTypeIsUser_IsNotFlaggedAsBot()
+    {
+        var handler = new StubHandler(req =>
+            req.RequestUri!.ToString().Contains("/reviews")
+                ? JsonResponse(
+                    """[{"id":5,"user":{"login":"not-a-bot[bot]","type":"User"},"state":"COMMENTED","submitted_at":"2026-07-01T10:00:00Z"}]"""
+                )
+                : JsonResponse(
+                    """
+                    [{"number":7,"title":"t","user":{"login":"chris"},"state":"open",
+                      "created_at":"2026-07-01T09:00:00Z","updated_at":"2026-07-01T10:00:00Z","merged_at":null,"closed_at":null}]
+                    """
+                )
+        );
+        var sut = CreateSut(handler);
+
+        var result = await sut.GetPullRequestsAsync(
+            "fix-portal/example",
+            new LocalDate(2026, 7, 1),
+            TestContext.Current.CancellationToken
+        );
+
+        result.Single().Reviews!.Single().IsBot.Should().BeFalse();
+    }
+
+    // A deleted account leaves its reviews behind with a null user. Dropping the row would
+    // make Reviews.Count disagree with the ReviewCount stored on the PR itself.
+    [Fact]
+    public async Task GetPullRequestsAsync_WhenReviewerAccountIsDeleted_KeepsReviewAsGhost()
+    {
+        var handler = new StubHandler(req =>
+            req.RequestUri!.ToString().Contains("/reviews")
+                ? JsonResponse("""[{"id":9,"user":null,"state":"COMMENTED","submitted_at":"2026-07-01T10:00:00Z"}]""")
+                : JsonResponse(
+                    """
+                    [{"number":8,"title":"t","user":{"login":"chris"},"state":"open",
+                      "created_at":"2026-07-01T09:00:00Z","updated_at":"2026-07-01T10:00:00Z","merged_at":null,"closed_at":null}]
+                    """
+                )
+        );
+        var sut = CreateSut(handler);
+
+        var result = await sut.GetPullRequestsAsync(
+            "fix-portal/example",
+            new LocalDate(2026, 7, 1),
+            TestContext.Current.CancellationToken
+        );
+
+        var pr = result.Single();
+        pr.ReviewCount.Should().Be(1);
+        pr.Reviews!.Single().Reviewer.Should().Be("ghost");
+    }
+
+    [Fact]
     public async Task GetPullRequestsAsync_PaginatesUntilShortPage()
     {
         var handler = new StubHandler(req =>

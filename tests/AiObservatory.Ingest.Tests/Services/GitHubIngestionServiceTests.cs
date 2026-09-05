@@ -22,6 +22,115 @@ public class GitHubIngestionServiceTests
     private static readonly GitHubBackfillStatus FullyBackfilled = new(true, true, true);
 
     [Fact]
+    public async Task IngestAsync_UpsertsEveryReviewCarriedByAPullRequest()
+    {
+        var client = Substitute.For<IGitHubActivityClient>();
+        var repo = Substitute.For<IGitHubActivityRepository>();
+        repo.GetBackfillStatusAsync("fix-portal/example", Arg.Any<CancellationToken>()).Returns(FullyBackfilled);
+        var agentReview = new GitHubPullRequestReviewRecord(
+            "fix-portal/example",
+            1,
+            1001,
+            "coderabbitai[bot]",
+            true,
+            "CHANGES_REQUESTED",
+            FixedNow
+        );
+        var humanReview = new GitHubPullRequestReviewRecord(
+            "fix-portal/example",
+            1,
+            1002,
+            "chris",
+            false,
+            "APPROVED",
+            FixedNow
+        );
+        var pr = new GitHubPullRequestRecord(
+            "fix-portal/example",
+            1,
+            "t",
+            "chris",
+            "open",
+            FixedNow,
+            FixedNow,
+            null,
+            null,
+            FixedNow,
+            2,
+            [agentReview, humanReview]
+        );
+        client
+            .GetPullRequestsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns([pr]);
+        client.GetCommitsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>()).Returns([]);
+        client
+            .GetWorkflowRunsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns(new GitHubWorkflowRunResult([], false));
+
+        var sut = new GitHubIngestionService(
+            client,
+            repo,
+            Options("fix-portal/example"),
+            NullLogger<GitHubIngestionService>.Instance,
+            Clock
+        );
+
+        var pollDate = new LocalDate(2026, 7, 1);
+        await sut.IngestAsync(pollDate, pollDate, TestContext.Current.CancellationToken);
+
+        await repo.Received(1).UpsertPullRequestReviewAsync(agentReview, FixedNow, Arg.Any<CancellationToken>());
+        await repo.Received(1).UpsertPullRequestReviewAsync(humanReview, FixedNow, Arg.Any<CancellationToken>());
+    }
+
+    // Reviews defaults to null on the record, and the loop must treat that as "none" rather
+    // than throwing — every existing producer path that predates reviews leaves it unset.
+    [Fact]
+    public async Task IngestAsync_WhenPullRequestCarriesNoReviews_UpsertsNone()
+    {
+        var client = Substitute.For<IGitHubActivityClient>();
+        var repo = Substitute.For<IGitHubActivityRepository>();
+        repo.GetBackfillStatusAsync("fix-portal/example", Arg.Any<CancellationToken>()).Returns(FullyBackfilled);
+        var pr = new GitHubPullRequestRecord(
+            "fix-portal/example",
+            1,
+            "t",
+            "chris",
+            "open",
+            FixedNow,
+            FixedNow,
+            null,
+            null,
+            null,
+            0
+        );
+        client
+            .GetPullRequestsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns([pr]);
+        client.GetCommitsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>()).Returns([]);
+        client
+            .GetWorkflowRunsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns(new GitHubWorkflowRunResult([], false));
+
+        var sut = new GitHubIngestionService(
+            client,
+            repo,
+            Options("fix-portal/example"),
+            NullLogger<GitHubIngestionService>.Instance,
+            Clock
+        );
+
+        var pollDate = new LocalDate(2026, 7, 1);
+        await sut.IngestAsync(pollDate, pollDate, TestContext.Current.CancellationToken);
+
+        await repo.DidNotReceive()
+            .UpsertPullRequestReviewAsync(
+                Arg.Any<GitHubPullRequestReviewRecord>(),
+                Arg.Any<Instant>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task IngestAsync_WhenRepoHasNoPriorData_UsesThirtyDayBackfillWindow()
     {
         var client = Substitute.For<IGitHubActivityClient>();
