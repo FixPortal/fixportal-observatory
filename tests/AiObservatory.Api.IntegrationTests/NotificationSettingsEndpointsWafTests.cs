@@ -166,12 +166,9 @@ public class NotificationSettingsEndpointsWafTests(AiObservatoryApiFactory facto
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = factory.CreateAdminClient();
+        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-        var response = await client.PutAsync(
-            "/api/notification-settings",
-            new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
-            ct
-        );
+        var response = await client.PutAsync("/api/notification-settings", content, ct);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }

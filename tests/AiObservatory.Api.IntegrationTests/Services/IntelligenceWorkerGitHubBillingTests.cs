@@ -26,10 +26,15 @@ namespace AiObservatory.Api.IntegrationTests.Services;
 /// state itself is what is asserted, not a mocked call.
 /// </summary>
 [Trait("Category", "Integration")]
-public class IntelligenceWorkerGitHubBillingTests(AiObservatoryApiFactory factory)
-    : IClassFixture<AiObservatoryApiFactory>
+public class IntelligenceWorkerGitHubBillingTests : IAsyncLifetime
 {
+    // Each scenario starts without the other scenario's success/failure state.
+    private readonly AiObservatoryApiFactory _factory = new();
     private static readonly Instant Now = Instant.FromUtc(2026, 7, 30, 9, 0);
+
+    public ValueTask InitializeAsync() => _factory.InitializeAsync();
+
+    public ValueTask DisposeAsync() => _factory.DisposeAsync();
 
     private async Task<ServiceProvider> BuildWorkerHostAsync(GitHubBillingClient client)
     {
@@ -75,7 +80,7 @@ public class IntelligenceWorkerGitHubBillingTests(AiObservatoryApiFactory factor
 
     private async Task<string> ConnectionStringAsync()
     {
-        await using var scope = factory.Services.CreateAsyncScope();
+        await using var scope = _factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
         // GetConnectionString strips the password (Persist Security Info defaults off), so
         // rebuild from the harness's own env var and swap in the factory's throwaway
@@ -102,7 +107,7 @@ public class IntelligenceWorkerGitHubBillingTests(AiObservatoryApiFactory factor
         SourceSyncState? state = null;
         while (DateTime.UtcNow < deadline)
         {
-            await using var scope = factory.Services.CreateAsyncScope();
+            await using var scope = _factory.Services.CreateAsyncScope();
             var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
             state = await db
                 .SourceSyncStates.AsNoTracking()

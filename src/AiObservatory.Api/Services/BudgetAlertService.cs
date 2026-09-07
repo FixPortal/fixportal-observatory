@@ -293,12 +293,12 @@ public class BudgetAlertService(
         }
         catch (Exception ex)
         {
-            await repository.ReleaseBudgetAlertEmailLeaseAsync(email.ClaimId, leaseId, ct);
             logger.LogError(
                 ex,
-                "Budget alert email for rule {RuleId} failed; its lease was released for retry with the same Message-Id. Delivery may be duplicated if SMTP accepted it",
+                "Budget alert email for rule {RuleId} failed; releasing its lease for retry with the same Message-Id. Delivery may be duplicated if SMTP accepted it",
                 email.RuleId
             );
+            await repository.ReleaseBudgetAlertEmailLeaseAsync(email.ClaimId, leaseId, ct);
         }
     }
 }
