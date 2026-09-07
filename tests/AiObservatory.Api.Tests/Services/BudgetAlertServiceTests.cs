@@ -2,6 +2,7 @@ using AiObservatory.Api.Services;
 using AiObservatory.Data.Entities;
 using AiObservatory.Data.Repositories;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NodaTime;
 using NodaTime.Testing;
@@ -711,6 +712,46 @@ public class BudgetAlertServiceTests
         await _repo
             .DidNotReceive()
             .ReleaseBudgetAlertEmailLeaseAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    ///     Lease cleanup must not hide the original delivery failure, including when cleanup itself fails.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CheckAndAlert_logs_delivery_failure_even_when_lease_release_fails(bool releaseFails)
+    {
+        var rule = Rule(BillingPeriod.Daily);
+        StubRules(rule);
+        StubBilledSpend(rule, 15m);
+        StubSuccessfulDelivery(rule);
+        var deliveryFailure = new InvalidOperationException("SMTP unreachable");
+        _notifier
+            .NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<AlertDeliveryResult>(deliveryFailure));
+        var cleanupFailure = new IOException("Lease release failed");
+        _repo
+            .ReleaseBudgetAlertEmailLeaseAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(releaseFails ? Task.FromException(cleanupFailure) : Task.CompletedTask);
+        var logger = Substitute.For<ILogger<BudgetAlertService>>();
+        var sut = new BudgetAlertService(_repo, _clock, _notifier, logger);
+
+        Func<Task> act = () => sut.CheckAndAlertAsync(TestContext.Current.CancellationToken);
+
+        if (releaseFails)
+        {
+            (await act.Should().ThrowAsync<IOException>()).Which.Should().BeSameAs(cleanupFailure);
+        }
+        else
+        {
+            await act.Should().NotThrowAsync();
+        }
+        logger
+            .ReceivedCalls()
+            .Select(call => call.GetArguments())
+            .Should()
+            .ContainSingle(args => (LogLevel)args[0]! == LogLevel.Error && ReferenceEquals(args[3], deliveryFailure));
     }
 
     private BudgetAlertService Sut() => new(_repo, _clock, _notifier, NullLogger<BudgetAlertService>.Instance);

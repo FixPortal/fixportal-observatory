@@ -86,7 +86,7 @@ public class SlackAlertNotifierTests
     public async Task NotifyAsync_is_noop_when_webhook_not_configured()
     {
         var handler = new CapturingHandler(HttpStatusCode.OK);
-        var http = new HttpClient(handler);
+        using var http = new HttpClient(handler);
         var repo = Substitute.For<IUsageRepository>();
         repo.GetNotificationSettingsAsync(Arg.Any<CancellationToken>()).Returns((NotificationSettings?)null);
         var clock = new FakeClock(Instant.FromUtc(2026, 8, 30, 0, 0));
@@ -102,7 +102,7 @@ public class SlackAlertNotifierTests
     public async Task NotifyAsync_posts_a_text_payload_to_the_configured_webhook()
     {
         var handler = new CapturingHandler(HttpStatusCode.OK);
-        var http = new HttpClient(handler);
+        using var http = new HttpClient(handler);
         var repo = Substitute.For<IUsageRepository>();
         repo.GetNotificationSettingsAsync(Arg.Any<CancellationToken>())
             .Returns(
@@ -131,7 +131,7 @@ public class SlackAlertNotifierTests
     public async Task NotifyAsync_does_not_throw_when_the_webhook_call_fails()
     {
         var handler = new CapturingHandler(HttpStatusCode.InternalServerError);
-        var http = new HttpClient(handler);
+        using var http = new HttpClient(handler);
         var repo = Substitute.For<IUsageRepository>();
         repo.GetNotificationSettingsAsync(Arg.Any<CancellationToken>())
             .Returns(
@@ -156,7 +156,7 @@ public class SlackAlertNotifierTests
     public async Task NotifyAsync_does_not_post_when_slack_already_sent_for_this_claim()
     {
         var handler = new CapturingHandler(HttpStatusCode.OK);
-        var http = new HttpClient(handler);
+        using var http = new HttpClient(handler);
         var repo = Substitute.For<IUsageRepository>();
         repo.GetNotificationSettingsAsync(Arg.Any<CancellationToken>())
             .Returns(
@@ -209,7 +209,7 @@ public class SlackAlertNotifierTests
     public async Task NotifyAsync_marks_slack_sent_after_a_successful_post()
     {
         var handler = new CapturingHandler(HttpStatusCode.OK);
-        var http = new HttpClient(handler);
+        using var http = new HttpClient(handler);
         var repo = Substitute.For<IUsageRepository>();
         repo.GetNotificationSettingsAsync(Arg.Any<CancellationToken>())
             .Returns(
