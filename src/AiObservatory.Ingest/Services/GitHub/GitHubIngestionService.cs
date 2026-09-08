@@ -54,14 +54,22 @@ public class GitHubIngestionService(
             {
                 var status = await repository.GetBackfillStatusAsync(repo, cancellationToken);
                 LocalDate SinceDate(bool hasBackfilled) => hasBackfilled ? date : date.PlusDays(-BackfillDays);
-                var prs = await client.GetPullRequestsAsync(repo, SinceDate(status.HasPullRequests), cancellationToken);
+                // Pull requests carry their reviews, so this window reopens when EITHER lane is
+                // unbackfilled. Reviews shipped after pull requests: a live instance already has
+                // HasPullRequests set, so gating on it alone left the reviews table filling only
+                // for pull requests whose updated_at happened to fall inside the rolling window,
+                // and the historical reviewer roster was unreachable for good.
+                var prs = await client.GetPullRequestsAsync(
+                    repo,
+                    SinceDate(status.HasPullRequests && status.HasReviews),
+                    cancellationToken
+                );
                 foreach (var pr in prs)
                 {
-                    await repository.UpsertPullRequestAsync(pr, now, cancellationToken);
-                    foreach (var review in pr.Reviews ?? [])
-                    {
-                        await repository.UpsertPullRequestReviewAsync(review, now, cancellationToken);
-                    }
+                    // One transaction per pull request: the row and its reviews land together or
+                    // not at all. A partial write here would be permanent, because the per-repo
+                    // catch below swallows the failure and the watermark still advances.
+                    await repository.UpsertPullRequestWithReviewsAsync(pr, now, cancellationToken);
                     latest = Latest(latest, pr.CreatedAt, pr.UpdatedAt, pr.MergedAt, pr.ClosedAt, pr.FirstReviewAt);
                 }
                 if (!status.HasPullRequests)
@@ -71,6 +79,10 @@ public class GitHubIngestionService(
                         GitHubActivityKind.PullRequests,
                         cancellationToken
                     );
+                }
+                if (!status.HasReviews)
+                {
+                    await repository.MarkBackfillCompletedAsync(repo, GitHubActivityKind.Reviews, cancellationToken);
                 }
 
                 var commits = await client.GetCommitsAsync(repo, SinceDate(status.HasCommits), cancellationToken);

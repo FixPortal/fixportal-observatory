@@ -57,6 +57,28 @@ public class GitHubActivityRepository(AiObservatoryDbContext ctx) : IGitHubActiv
             ct
         );
 
+    // The endpoint at /github/reviews inner-joins reviews to their pull request, so a pull request
+    // row surviving without its reviews advertises a ReviewCount the review rows cannot account
+    // for -- and the join hides the shortfall rather than surfacing it. The ingest loop swallows a
+    // per-repo failure while the watermark still advances, so that torn state would never be
+    // repaired. One transaction per pull request keeps the pair atomic: on failure, neither lands.
+    //
+    // Both calls below run on this DbContext, so they enlist in the transaction started here.
+    public async Task UpsertPullRequestWithReviewsAsync(
+        GitHubPullRequestRecord record,
+        Instant ingestedAt,
+        CancellationToken ct = default
+    )
+    {
+        await using var transaction = await ctx.Database.BeginTransactionAsync(ct);
+        await UpsertPullRequestAsync(record, ingestedAt, ct);
+        foreach (var review in record.Reviews ?? [])
+        {
+            await UpsertPullRequestReviewAsync(review, ingestedAt, ct);
+        }
+        await transaction.CommitAsync(ct);
+    }
+
     public Task UpsertCommitAsync(GitHubCommitRecord record, Instant ingestedAt, CancellationToken ct = default) =>
         ctx.Database.ExecuteSqlInterpolatedAsync(
             $"""
@@ -100,8 +122,13 @@ public class GitHubActivityRepository(AiObservatoryDbContext ctx) : IGitHubActiv
     {
         var state = await ctx.GitHubBackfillStates.AsNoTracking().SingleOrDefaultAsync(s => s.Repo == repo, ct);
         return state is null
-            ? new GitHubBackfillStatus(false, false, false)
-            : new GitHubBackfillStatus(state.HasPullRequests, state.HasCommits, state.HasWorkflowRuns);
+            ? new GitHubBackfillStatus(false, false, false, false)
+            : new GitHubBackfillStatus(
+                state.HasPullRequests,
+                state.HasCommits,
+                state.HasWorkflowRuns,
+                state.HasReviews
+            );
     }
 
     public Task MarkBackfillCompletedAsync(string repo, GitHubActivityKind kind, CancellationToken ct = default)
@@ -109,14 +136,16 @@ public class GitHubActivityRepository(AiObservatoryDbContext ctx) : IGitHubActiv
         var hasPullRequests = kind == GitHubActivityKind.PullRequests;
         var hasCommits = kind == GitHubActivityKind.Commits;
         var hasWorkflowRuns = kind == GitHubActivityKind.WorkflowRuns;
+        var hasReviews = kind == GitHubActivityKind.Reviews;
         return ctx.Database.ExecuteSqlInterpolatedAsync(
             $"""
-            INSERT INTO "GitHubBackfillStates" ("Repo", "HasPullRequests", "HasCommits", "HasWorkflowRuns")
-            VALUES ({Truncate(repo, 200)}, {hasPullRequests}, {hasCommits}, {hasWorkflowRuns})
+            INSERT INTO "GitHubBackfillStates" ("Repo", "HasPullRequests", "HasCommits", "HasWorkflowRuns", "HasReviews")
+            VALUES ({Truncate(repo, 200)}, {hasPullRequests}, {hasCommits}, {hasWorkflowRuns}, {hasReviews})
             ON CONFLICT ("Repo") DO UPDATE SET
                 "HasPullRequests" = "GitHubBackfillStates"."HasPullRequests" OR EXCLUDED."HasPullRequests",
                 "HasCommits" = "GitHubBackfillStates"."HasCommits" OR EXCLUDED."HasCommits",
-                "HasWorkflowRuns" = "GitHubBackfillStates"."HasWorkflowRuns" OR EXCLUDED."HasWorkflowRuns"
+                "HasWorkflowRuns" = "GitHubBackfillStates"."HasWorkflowRuns" OR EXCLUDED."HasWorkflowRuns",
+                "HasReviews" = "GitHubBackfillStates"."HasReviews" OR EXCLUDED."HasReviews"
             """,
             ct
         );

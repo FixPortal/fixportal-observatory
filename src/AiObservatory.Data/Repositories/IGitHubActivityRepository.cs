@@ -40,13 +40,14 @@ public record GitHubCommitRecord(
 
 public record GitHubWorkflowRunRecord(string Repo, long RunId, string WorkflowName, string Status, Instant CreatedAt);
 
-public record GitHubBackfillStatus(bool HasPullRequests, bool HasCommits, bool HasWorkflowRuns);
+public record GitHubBackfillStatus(bool HasPullRequests, bool HasCommits, bool HasWorkflowRuns, bool HasReviews);
 
 public enum GitHubActivityKind
 {
     PullRequests,
     Commits,
     WorkflowRuns,
+    Reviews,
 }
 
 public interface IGitHubActivityRepository
@@ -54,6 +55,16 @@ public interface IGitHubActivityRepository
     Task UpsertPullRequestAsync(GitHubPullRequestRecord record, Instant ingestedAt, CancellationToken ct = default);
     Task UpsertPullRequestReviewAsync(
         GitHubPullRequestReviewRecord record,
+        Instant ingestedAt,
+        CancellationToken ct = default
+    );
+
+    /// <summary>
+    /// Writes a pull request and the reviews it carries in one transaction, so the two can never
+    /// be torn apart. Prefer this over calling the two single-row upserts in a loop.
+    /// </summary>
+    Task UpsertPullRequestWithReviewsAsync(
+        GitHubPullRequestRecord record,
         Instant ingestedAt,
         CancellationToken ct = default
     );
