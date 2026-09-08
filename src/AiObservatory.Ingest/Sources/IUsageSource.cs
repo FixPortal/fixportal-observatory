@@ -9,7 +9,10 @@ public interface IUsageSource
     Task<SourceIngestionResult> IngestAsync(LocalDate from, LocalDate through, CancellationToken cancellationToken);
 }
 
-public sealed record SourceIngestionResult(Instant? LatestObservationAt);
+// FailedRepoCount: how many per-repo lanes failed on an otherwise completed cycle.
+// Zero for single-lane sources and total failures (those throw instead); the worker
+// persists any non-zero count as a degraded state rather than unconditional success.
+public sealed record SourceIngestionResult(Instant? LatestObservationAt, int FailedRepoCount = 0);
 
 public sealed record SourceDefinition(string SourceId, bool IsConfigured, Duration ExpectedRefreshInterval);
 

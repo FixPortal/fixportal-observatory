@@ -162,6 +162,53 @@ public class ProviderPollingWorkerServiceTests(ProviderPollingDatabase database)
     }
 
     [Fact]
+    public async Task RunPollAsync_WhenACycleIsPartiallyFailed_PersistsADegradedStateAndKeepsTheRecoveryWindow()
+    {
+        var source = Substitute.For<IUsageSource>();
+        source.SourceId.Returns("partial-source");
+        source
+            .IngestAsync(Arg.Any<LocalDate>(), Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromResult(new SourceIngestionResult(Instant.FromUtc(2026, 8, 23, 10, 0), FailedRepoCount: 1)),
+                Task.FromResult(new SourceIngestionResult(null))
+            );
+        await using var harness = CreateWorker(
+            current: Instant.FromUtc(2026, 8, 24, 12, 0),
+            sources: [source],
+            definitions: [Definition(source.SourceId)]
+        );
+
+        await harness.Worker.RunPollAsync(
+            new LocalDate(2026, 8, 21),
+            new LocalDate(2026, 8, 23),
+            TestContext.Current.CancellationToken
+        );
+
+        // A partial cycle reads as degraded, never as a healthy success: no success watermark,
+        // the failed lanes' window stays pending, and the failure counter advances.
+        var degraded = await harness.LoadStateAsync(source.SourceId);
+        degraded.ConsecutiveFailureCount.Should().Be(1);
+        degraded.LastError.Should().Contain("1 repo(s) failed");
+        degraded.LastSuccessAt.Should().BeNull("a partial cycle must not stamp a success watermark");
+        degraded.PendingFromDate.Should().Be(new LocalDate(2026, 8, 21));
+        source.ClearReceivedCalls();
+
+        await harness.Worker.RunPollAsync(
+            new LocalDate(2026, 8, 26),
+            new LocalDate(2026, 8, 28),
+            TestContext.Current.CancellationToken
+        );
+
+        // The next cycle still opens from the stranded window, not from the lookback edge.
+        await source
+            .Received(1)
+            .IngestAsync(new LocalDate(2026, 8, 21), new LocalDate(2026, 8, 28), Arg.Any<CancellationToken>());
+        var recovered = await harness.LoadStateAsync(source.SourceId);
+        recovered.ConsecutiveFailureCount.Should().Be(0);
+        recovered.LastSuccessAt.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task RunPollAsync_IsolatesFailuresAndPersistsOnlySanitizedErrorText()
     {
         var failed = Substitute.For<IUsageSource>();

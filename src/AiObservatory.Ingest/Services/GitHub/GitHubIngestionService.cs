@@ -30,15 +30,19 @@ public class GitHubIngestionService(
         {
             throw new SourceUnavailableException("GitHub API rate limit exhausted");
         }
-        // Only a total wipe-out rejects the cycle: a single flaky repo among several healthy ones
-        // must not trip escalation, and the healthy repos' watermark still advances on partial failure.
+        // Only a total wipe-out rejects the cycle outright: a single flaky repo among several
+        // healthy ones surfaces as a degraded result instead, so one perma-broken repo cannot
+        // starve the healthy lanes of polling — but it is still recorded as a failure, never
+        // as a healthy cycle whose advancing watermark would strand the failed lane's window.
         if (result.FailedRepoCount > 0 && result.FailedRepoCount == options.Value.GitHubRepoAllowlist.Length)
         {
             throw new InvalidOperationException(
                 $"{result.FailedRepoCount} of {options.Value.GitHubRepoAllowlist.Length} configured GitHub repos failed to ingest this cycle"
             );
         }
-        return new SourceIngestionResult(result.LatestObservationAt);
+        // A partial failure rides on the result so the worker records a degraded cycle: thrown
+        // away here, it would read as unconditional success and strand the recovery window.
+        return new SourceIngestionResult(result.LatestObservationAt, result.FailedRepoCount);
     }
 
 #pragma warning disable S3776 // One linear per-repository orchestration flow keeps failure policy visible.
