@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using AiObservatory.Data;
 using AiObservatory.Data.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using NodaTime;
 
 namespace AiObservatory.Api.Endpoints;
@@ -19,20 +20,18 @@ public static class GitHubActivityEndpoints
     // Two different domains. A Claude session's Project comes from a folder path, where
     // case is meaningful and ordinal is correct. A GitHub owner/repo is case-insensitive by
     // definition, and GitHubIngestionService deliberately normalises it with
-    // ToLowerInvariant before writing, so every stored Repo is lowercase while
-    // AllowedProjectOwners carries the display casing "FixPortal". Comparing those
+    // ToLowerInvariant before writing, so every stored Repo is lowercase while the
+    // configured owners carry the display casing "FixPortal". Comparing those
     // ordinally matched nothing: "fixportal/x".StartsWith("FixPortal/") is false.
     //
     // That filtered out EVERY ingested GitHub row. It stayed invisible because the ingest
     // worker had never once started in Azure (it failed App Service's startup probe), so
     // the read path had nothing to drop — and the only test seeded "FixPortal/..." by hand,
     // encoding the filter's assumption rather than the producer's actual output.
-    private static readonly string[] AllowedRepoOwners =
-    [
-        .. ActivityEndpoints.AllowedProjectOwners.Select(o => o.ToLowerInvariant()),
-    ];
+    private static string[] AllowedRepoOwners(IReadOnlyList<string> owners) =>
+        [.. owners.Select(o => o.ToLowerInvariant())];
 
-    // Same allowlist rule as ActivityEndpoints.IsAllowedProjectPredicate, but PRs/
+    // Same allowlist rule as ActivityEndpoints.AllowedProjectPredicate, but PRs/
     // commits/CI runs are three unrelated entity types (no shared interface) that each
     // expose a plain string Repo — so the one shared predicate body is spliced onto
     // each entity's own Repo access via IsAllowedRepo<T> rather than duplicated per query.
@@ -47,16 +46,26 @@ public static class GitHubActivityEndpoints
     //
     // ToLower appears twice rather than being hoisted into a local because an expression
     // tree cannot contain a statement body — there is nowhere to put one. EF emits
-    // LOWER("Repo") per occurrence: two per owner, over the TWO owners in
-    // AllowedRepoOwners, so four per row scanned. Not worth contorting the shape for.
-    private static readonly Expression<Func<string, bool>> RepoAllowedTemplate = repo =>
-        AllowedRepoOwners.Any(o => repo.ToLower() == o || repo.ToLower().StartsWith(o + "/"));
-
-    private static Expression<Func<T, bool>> IsAllowedRepo<T>(Expression<Func<T, string>> repoSelector)
+    // LOWER("Repo") per occurrence: two per configured owner per row scanned. Not worth
+    // contorting the shape for at this list's size.
+    //
+    // No configured owners means no filter at all — see ActivityOptions.ProjectOwners. Expressed
+    // as a constant-true template rather than an empty Any(...), which would reject every row.
+    private static Expression<Func<string, bool>> RepoAllowedTemplate(IReadOnlyList<string> owners)
     {
-        var body = new ReplaceParameterVisitor(RepoAllowedTemplate.Parameters[0], repoSelector.Body).Visit(
-            RepoAllowedTemplate.Body
-        );
+        var lowered = AllowedRepoOwners(owners);
+        return lowered.Length == 0
+            ? _ => true
+            : repo => lowered.Any(o => repo.ToLower() == o || repo.ToLower().StartsWith(o + "/"));
+    }
+
+    private static Expression<Func<T, bool>> IsAllowedRepo<T>(
+        Expression<Func<T, string>> repoSelector,
+        IReadOnlyList<string> owners
+    )
+    {
+        var template = RepoAllowedTemplate(owners);
+        var body = new ReplaceParameterVisitor(template.Parameters[0], repoSelector.Body).Visit(template.Body);
         return Expression.Lambda<Func<T, bool>>(body, repoSelector.Parameters[0]);
     }
 
@@ -69,7 +78,14 @@ public static class GitHubActivityEndpoints
     {
         app.MapGet(
                 "/github/prs",
-                async (AiObservatoryDbContext db, IClock clock, string? from, string? to, CancellationToken ct) =>
+                async (
+                    AiObservatoryDbContext db,
+                    IClock clock,
+                    IOptions<ActivityOptions> activityOptions,
+                    string? from,
+                    string? to,
+                    CancellationToken ct
+                ) =>
                 {
                     var today = clock.GetCurrentInstant().InUtc().Date;
                     if (
@@ -83,7 +99,7 @@ public static class GitHubActivityEndpoints
 
                     var prs = await db
                         .GitHubPullRequests.AsNoTracking()
-                        .Where(IsAllowedRepo<GitHubPullRequest>(p => p.Repo))
+                        .Where(IsAllowedRepo<GitHubPullRequest>(p => p.Repo, activityOptions.Value.ProjectOwners))
                         .Where(p =>
                             p.CreatedAt >= startInstant && p.CreatedAt < endInstant
                             || p.MergedAt != null && p.MergedAt >= startInstant && p.MergedAt < endInstant
@@ -113,7 +129,14 @@ public static class GitHubActivityEndpoints
 
         app.MapGet(
                 "/github/reviews",
-                async (AiObservatoryDbContext db, IClock clock, string? from, string? to, CancellationToken ct) =>
+                async (
+                    AiObservatoryDbContext db,
+                    IClock clock,
+                    IOptions<ActivityOptions> activityOptions,
+                    string? from,
+                    string? to,
+                    CancellationToken ct
+                ) =>
                 {
                     var today = clock.GetCurrentInstant().InUtc().Date;
                     if (
@@ -138,7 +161,7 @@ public static class GitHubActivityEndpoints
                     // reviewed PR always has its row.
                     var rows = await db
                         .GitHubPullRequestReviews.AsNoTracking()
-                        .Where(IsAllowedRepo<GitHubPullRequestReview>(r => r.Repo))
+                        .Where(IsAllowedRepo<GitHubPullRequestReview>(r => r.Repo, activityOptions.Value.ProjectOwners))
                         // Upper bound only, deliberately. A reviewer's FIRST review of a pull
                         // request can sit before the requested range, and turnaround is measured
                         // from that first review — the range selects which activity is REPORTED
@@ -173,7 +196,14 @@ public static class GitHubActivityEndpoints
 
         app.MapGet(
                 "/github/commits/summary",
-                async (AiObservatoryDbContext db, IClock clock, string? from, string? to, CancellationToken ct) =>
+                async (
+                    AiObservatoryDbContext db,
+                    IClock clock,
+                    IOptions<ActivityOptions> activityOptions,
+                    string? from,
+                    string? to,
+                    CancellationToken ct
+                ) =>
                 {
                     var today = clock.GetCurrentInstant().InUtc().Date;
                     if (
@@ -196,7 +226,7 @@ public static class GitHubActivityEndpoints
                     // that here.
                     var grouped = await db
                         .GitHubCommits.AsNoTracking()
-                        .Where(IsAllowedRepo<GitHubCommit>(c => c.Repo))
+                        .Where(IsAllowedRepo<GitHubCommit>(c => c.Repo, activityOptions.Value.ProjectOwners))
                         .Where(c => c.CommittedAt >= startInstant && c.CommittedAt < endInstant)
                         .GroupBy(c => c.Repo)
                         .Select(g => new
@@ -220,7 +250,14 @@ public static class GitHubActivityEndpoints
 
         app.MapGet(
                 "/github/ci",
-                async (AiObservatoryDbContext db, IClock clock, string? from, string? to, CancellationToken ct) =>
+                async (
+                    AiObservatoryDbContext db,
+                    IClock clock,
+                    IOptions<ActivityOptions> activityOptions,
+                    string? from,
+                    string? to,
+                    CancellationToken ct
+                ) =>
                 {
                     var today = clock.GetCurrentInstant().InUtc().Date;
                     if (
@@ -234,7 +271,7 @@ public static class GitHubActivityEndpoints
 
                     var grouped = await db
                         .GitHubWorkflowRuns.AsNoTracking()
-                        .Where(IsAllowedRepo<GitHubWorkflowRun>(r => r.Repo))
+                        .Where(IsAllowedRepo<GitHubWorkflowRun>(r => r.Repo, activityOptions.Value.ProjectOwners))
                         .Where(r => r.CreatedAt >= startInstant && r.CreatedAt < endInstant)
                         .GroupBy(r => new { r.Repo, r.WorkflowName })
                         .Select(g => new

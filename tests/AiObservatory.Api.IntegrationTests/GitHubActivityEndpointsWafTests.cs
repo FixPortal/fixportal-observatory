@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using AiObservatory.Data;
 using AiObservatory.Data.Entities;
 using AwesomeAssertions;
@@ -285,6 +286,35 @@ public class GitHubActivityEndpointsWafTests(AiObservatoryApiFactory factory)
         reviewer.PullRequestCount.Should().Be(1);
         // ...but turnaround still comes from the first pass at 2h, not the re-review at 28h.
         reviewer.AvgFirstReviewHours.Should().Be(2.0);
+    }
+
+    /// <summary>
+    /// The allow-everything default is what a self-hoster runs on, so it has to be proven against
+    /// a real database rather than only in memory: the empty case compiles to a different EF
+    /// predicate (a constant true) than the configured case, and a predicate that failed to
+    /// translate would return nothing — which looks exactly like "you have no data yet".
+    /// </summary>
+    [Fact]
+    public async Task GetPrs_WhenNoOwnersConfigured_ReturnsRepositoriesFromAnyOwner()
+    {
+        await using var openFactory = new AiObservatoryApiFactory { ProjectOwnersOverride = "" };
+        await openFactory.InitializeAsync();
+        var ct = TestContext.Current.CancellationToken;
+        const string repo = "someoneelse/not-ours";
+        var openedAt = Instant.FromUtc(2019, 7, 15, 9, 0);
+        using (var scope = openFactory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+            db.GitHubPullRequests.Add(NewPullRequest(repo, 1, openedAt));
+            await db.SaveChangesAsync(ct);
+        }
+
+        using var client = openFactory.CreateAdminClient();
+        var response = await client.GetAsync("/api/github/prs?from=2019-07-15&to=2019-07-15", ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var rows = await response.Content.ReadFromJsonAsync<List<JsonElement>>(ct);
+        rows.Should().Contain(r => r.GetProperty("repo").GetString() == repo);
     }
 
     [Fact]
