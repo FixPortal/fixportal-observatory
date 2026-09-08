@@ -23,7 +23,11 @@ const LOCAL_SOURCE_IDS = {
   gemini: 'gemini-review-local',
   antigravity: 'antigravity-local',
 }
-const PARSE_CACHE_VERSION = 2
+// Bump whenever a parser change invalidates cached records; the wipe re-parses
+// every file. Never bump alone: after the wipe an unreadable file has no cached
+// records, so scanRecords flags its source incomplete and main withholds that
+// source's corrections and tombstones until a complete scan succeeds.
+const PARSE_CACHE_VERSION = 3
 // Token fields compared against server inventory to skip unchanged re-posts.
 const SNAPSHOT_TOKEN_FIELDS = [
   'inputTokens', 'outputTokens', 'cacheReadTokens',
@@ -599,6 +603,7 @@ export function planSnapshotSubmissions(snapshots, inventory = []) {
 export async function updateFileCache(files, cache, parse, read = path => readFile(path, 'utf8')) {
   const next = {}
   const records = []
+  let incomplete = false
   for (const file of files) {
     const cached = cache?.[file.path]
     const unchanged = file.cacheKey === undefined
@@ -621,8 +626,11 @@ export async function updateFileCache(files, cache, parse, read = path => readFi
           next[file.path] = cached
           for (const record of cached.records) { records.push(record) }
         } else {
-          // Never parsed before: nothing was ever posted from this file, so
-          // skipping it cannot tombstone server history.
+          // Unreadable with no cached records. "Nothing was ever posted from this
+          // file" only holds within one cache generation: a version bump wipes the
+          // cache while the file's keys stay live in server inventory, so the scan
+          // is incomplete and the source's corrections and tombstones are withheld.
+          incomplete = true
           log(`Read failed for ${file.path}; no cached records yet:`, error.message)
         }
         continue
@@ -635,7 +643,7 @@ export async function updateFileCache(files, cache, parse, read = path => readFi
     }
     for (const record of next[file.path].records) { records.push(record) }
   }
-  return { cache: next, records }
+  return { cache: next, records, incomplete }
 }
 
 export function parseLocalSources(value) {
@@ -741,6 +749,7 @@ const listDatabases = dir => listMatching(dir, name => name.endsWith('.db'))
 
 export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
   const records = []
+  const incompleteSources = new Set()
   if (state.parseCacheVersion !== PARSE_CACHE_VERSION) {
     state.files = {}
     state.parseCacheVersion = PARSE_CACHE_VERSION
@@ -763,6 +772,7 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
       }]
     })
     state.files.codex = result.cache
+    if (result.incomplete) { incompleteSources.add('codex') }
     for (const record of result.records) { records.push(record) }
   }
 
@@ -783,6 +793,7 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
       }))
     })
     state.files.copilot = result.cache
+    if (result.incomplete) { incompleteSources.add('copilot') }
     for (const record of result.records) { records.push(record) }
   }
 
@@ -790,6 +801,7 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
     const files = await discover(join(cfg.claudeHome, 'projects'))
     const result = await updateFileCache(files, state.files.claude, content => parseClaude(content))
     state.files.claude = result.cache
+    if (result.incomplete) { incompleteSources.add('claude') }
     for (const record of result.records) { records.push(record) }
   }
 
@@ -798,6 +810,7 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
       .filter(file => basename(file.path) === 'wire.jsonl')
     const result = await updateFileCache(files, state.files.kimi, content => parseKimi(content))
     state.files.kimi = result.cache
+    if (result.incomplete) { incompleteSources.add('kimi') }
     for (const record of result.records) { records.push(record) }
   }
 
@@ -806,6 +819,7 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
       .filter(file => /[\\/]gem-review-[^\\/]+[\\/]chats[\\/]session-[^\\/]+\.jsonl$/i.test(file.path))
     const result = await updateFileCache(files, state.files.gemini, content => parseGeminiReview(content))
     state.files.gemini = result.cache
+    if (result.incomplete) { incompleteSources.add('gemini') }
     for (const record of result.records) { records.push(record) }
   }
 
@@ -829,10 +843,11 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
       path => path,
     )
     state.files.antigravity = result.cache
+    if (result.incomplete) { incompleteSources.add('antigravity') }
     for (const record of result.records) { records.push(record) }
   }
 
-  return records
+  return { records, incompleteSources }
 }
 
 export async function main({ discover = listJsonl, now = () => new Date() } = {}) {
@@ -858,9 +873,17 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   const { inventory, failedSources } = DRY_RUN
     ? { inventory: [], failedSources: new Set() }
     : await fetchSnapshotInventory(url, apiKey, enabled, machine)
-  const snapshots = buildDailySnapshots(await scanRecords(cfg, state, enabled, discover), machine)
+  const { records, incompleteSources } = await scanRecords(cfg, state, enabled, discover)
+  const snapshots = buildDailySnapshots(records, machine)
   const submissions = planSnapshotSubmissions(snapshots, inventory)
   await saveState(statePath, state)
+  // A source with any unreadable-and-uncached file this run scanned incompletely:
+  // its aggregates can only shrink real totals and its vanished keys may merely be
+  // missing from the scan, so both its corrections and its tombstones are withheld
+  // until a complete scan succeeds.
+  const incompleteSourceIds = new Set(
+    [...incompleteSources].map(tool => localSourceId(tool, machine)),
+  )
 
   // Unchanged snapshots need no re-post: inventory already carries the server's
   // token counts for every enabled source, so diffing against it keeps a steady
@@ -878,7 +901,15 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
 
   let posted = 0
   const activeSucceeded = new Map()
+  const incompleteNoted = new Set()
   for (const submission of submissions.filter(item => item.active)) {
+    if (incompleteSourceIds.has(submission.snapshot.sourceId)) {
+      if (!incompleteNoted.has(submission.snapshot.sourceId)) {
+        console.error(`Scan incomplete for ${submission.snapshot.sourceId}; its corrections and tombstones are withheld this run.`)
+        incompleteNoted.add(submission.snapshot.sourceId)
+      }
+      continue
+    }
     if (unchanged(submission.snapshot)) {
       activeSucceeded.set(
         submission.snapshot.sourceId,
@@ -903,6 +934,9 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     // A source whose inventory could not be read this run must not be
     // tombstoned: its empty inventory is a fetch failure, not server truth.
     if (failedSources.has(submission.snapshot.sourceId)) { continue }
+    // An incompletely scanned source must not be tombstoned either: the key may
+    // only have vanished from the scan, not from disk.
+    if (incompleteSourceIds.has(submission.snapshot.sourceId)) { continue }
     // Tombstones post only for a source whose active submissions all succeeded
     // this run. `undefined` (source not in the enabled subset, or no active
     // snapshots at all) and `false` (a replacement exhausted retries) both
