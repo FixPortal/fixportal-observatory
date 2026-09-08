@@ -18,16 +18,51 @@ public class BudgetAlertService(
     // back to a neutral literal when no sender is configured, rather than to a maintainer domain
     // that a self-hoster would otherwise stamp on their own outgoing mail — this used to be a
     // hardcoded "observatory.fixportal.com", which was not even a domain this project serves.
-    private string MessageIdDomain()
+    // Resolved once per service instance, not per delivery attempt, so every retry a given
+    // process makes for a claim carries an identical Message-Id even if the underlying
+    // configuration source is reloadable. Across a RESTART that also changes the sender or the
+    // explicit domain, a still-undelivered claim would get a new Message-Id and the receiving
+    // server could show the alert twice. That residual is accepted rather than closed by
+    // persisting the domain on the claim: the delivery path already states it cannot be
+    // exactly-once (see DeliverEmailAsync), the cost is one duplicate alert email in a window
+    // that opens only when an operator changes mail configuration mid-flight, and the
+    // alternative is a schema column and migration to defend it.
+    private string? _messageIdDomain;
+
+    private string MessageIdDomain() => _messageIdDomain ??= ResolveMessageIdDomain();
+
+    private string ResolveMessageIdDomain()
     {
         var configured = config["BUDGET_ALERT_MESSAGE_ID_DOMAIN"];
         if (!string.IsNullOrWhiteSpace(configured))
         {
             return configured.Trim();
         }
-        var sender = config["BUDGET_ALERT_EMAIL_FROM"] ?? config["BUDGET_ALERT_SMTP_USER"];
-        var at = sender?.LastIndexOf('@') ?? -1;
-        return at >= 0 && at < sender!.Length - 1 ? sender[(at + 1)..].Trim() : "observatory.local";
+        const string fallback = "observatory.local";
+        // Blank-but-set falls through to the next source: `??` only sees null, so an empty
+        // BUDGET_ALERT_EMAIL_FROM would otherwise shadow a perfectly good SMTP user.
+        var sender = config["BUDGET_ALERT_EMAIL_FROM"];
+        if (string.IsNullOrWhiteSpace(sender))
+        {
+            sender = config["BUDGET_ALERT_SMTP_USER"];
+        }
+        if (string.IsNullOrWhiteSpace(sender))
+        {
+            return fallback;
+        }
+
+        // Last '@', because the local part of an address may legally quote one.
+        var at = sender.LastIndexOf('@');
+        if (at < 0)
+        {
+            return fallback;
+        }
+
+        // Trim BEFORE testing for empty. "alerts@ " has a character after the '@', so a
+        // length check alone passes it, and the trimmed domain is then empty — which would
+        // emit "budget-alert-{id}@", not a valid Message-Id.
+        var domain = sender[(at + 1)..].Trim();
+        return domain.Length == 0 ? fallback : domain;
     }
 
     // virtual to match the other de-interfaced services (FxRateProvider, AnthropicIntelligenceClient):
@@ -279,9 +314,12 @@ public class BudgetAlertService(
 
         try
         {
-            // At-least-once attempt semantics: retries reuse a stable Message-Id derived
-            // from the durable claim. SMTP success followed by a lost acknowledgement can
-            // still duplicate delivery; the protocol cannot make that outcome exactly once.
+            // At-least-once attempt semantics: retries reuse a stable Message-Id whose
+            // identifying half — the ClaimId — comes from the durable claim. Its domain half is
+            // configuration resolved once per process, so it is stable for every retry this
+            // process makes but not across a restart that also changes mail configuration.
+            // SMTP success followed by a lost acknowledgement can duplicate delivery anyway;
+            // the protocol cannot make that outcome exactly once.
             var result = await notifier.NotifyAsync(payload, ct);
             if (result == AlertDeliveryResult.Sent)
             {
