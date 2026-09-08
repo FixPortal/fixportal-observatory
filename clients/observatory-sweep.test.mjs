@@ -359,7 +359,7 @@ test('scanRecords discovers retained Gemini reviews and Antigravity conversation
   }
 
   try {
-    const records = await scanRecords(cfg, {}, new Set(['gemini', 'antigravity']))
+    const { records } = await scanRecords(cfg, {}, new Set(['gemini', 'antigravity']))
     assert.deepEqual(records.map(record => record.tool).sort(), ['antigravity', 'gemini-review'])
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -518,10 +518,10 @@ test('scanRecords rebuilds an unversioned matching-mtime cache instead of reusin
   }
 
   try {
-    const records = await scanRecords(cfg, state, new Set(['codex']))
+    const { records } = await scanRecords(cfg, state, new Set(['codex']))
 
     assert.deepEqual(records, [])
-    assert.equal(state.parseCacheVersion, 2)
+    assert.equal(state.parseCacheVersion, 3)
     assert.deepEqual(state.files.codex[path].records, [])
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -582,7 +582,7 @@ test('scanRecords handles transcript histories larger than the engine argument l
   }
   const files = Array.from({ length: 200 }, (_, index) => ({ path: `claude-${index}.jsonl`, mtimeMs: 1 }))
   const state = {
-    parseCacheVersion: 2,
+    parseCacheVersion: 3,
     files: {
       claude: Object.fromEntries(files.map(file => [file.path, {
         mtimeMs: file.mtimeMs,
@@ -591,7 +591,7 @@ test('scanRecords handles transcript histories larger than the engine argument l
     },
   }
 
-  const records = await scanRecords(
+  const { records } = await scanRecords(
     { claudeHome: 'claude-home' },
     state,
     new Set(['claude']),
@@ -649,11 +649,11 @@ test('touching and restoring a transcript cannot move usage to another day', asy
   const state = {}
 
   try {
-    const before = await scanRecords(cfg, state, new Set(['codex']))
+    const { records: before } = await scanRecords(cfg, state, new Set(['codex']))
     await utimes(path, new Date('2030-01-01T00:00:00Z'), new Date('2030-01-01T00:00:00Z'))
-    const touched = await scanRecords(cfg, state, new Set(['codex']))
+    const { records: touched } = await scanRecords(cfg, state, new Set(['codex']))
     await utimes(path, new Date('2020-01-01T00:00:00Z'), new Date('2020-01-01T00:00:00Z'))
-    const restored = await scanRecords(cfg, state, new Set(['codex']))
+    const { records: restored } = await scanRecords(cfg, state, new Set(['codex']))
 
     assert.deepEqual([before[0].date, touched[0].date, restored[0].date], [
       '2026-08-24', '2026-08-24', '2026-08-24',
@@ -827,6 +827,67 @@ test('updateFileCache reuses cached records when a read fails mid-scan', async (
 
   assert.deepEqual(result.records, [{ id: 'cached' }])
   assert.deepEqual(result.cache.flaky.records, [{ id: 'cached' }])
+})
+
+test('updateFileCache flags only an unreadable-and-uncached file as an incomplete scan', async () => {
+  const uncached = await updateFileCache(
+    [{ path: 'locked', mtimeMs: 1 }],
+    {},
+    content => [{ id: content }],
+    async () => { throw new Error('locked') },
+  )
+
+  assert.equal(uncached.incomplete, true)
+  assert.deepEqual(uncached.records, [])
+
+  const cached = await updateFileCache(
+    [{ path: 'flaky', mtimeMs: 2 }],
+    { flaky: { mtimeMs: 1, records: [{ id: 'cached' }] } },
+    content => [{ id: content }],
+    async () => { throw new Error('rotated away') },
+  )
+
+  assert.equal(cached.incomplete, false)
+})
+
+test('scanRecords reparses a version-2 cache instead of reusing its stale records', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-v2-'))
+  const sessions = join(root, 'codex', 'sessions')
+  await mkdir(sessions, { recursive: true })
+  const path = join(sessions, 'rollout.jsonl')
+  await writeFile(path, JSON.stringify({
+    type: 'event_msg',
+    payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 10, output_tokens: 5 } } },
+  }))
+  const [file] = await listJsonl(sessions)
+  const stale = {
+    tool: 'codex',
+    date: '2030-01-01',
+    model: 'gpt-5',
+    occurredAtUtc: '2030-01-01T00:00:00.000Z',
+    cum: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 },
+  }
+  const state = {
+    parseCacheVersion: 2,
+    files: { codex: { [path]: { mtimeMs: file.mtimeMs, records: [stale] } } },
+  }
+  const cfg = {
+    codexHome: join(root, 'codex'),
+    copilotHome: join(root, 'copilot'),
+    claudeHome: join(root, 'claude'),
+    kimiHome: join(root, 'kimi'),
+  }
+
+  try {
+    const { records, incompleteSources } = await scanRecords(cfg, state, new Set(['codex']))
+
+    assert.deepEqual(records, [])
+    assert.deepEqual([...incompleteSources], [])
+    assert.equal(state.parseCacheVersion, 3)
+    assert.deepEqual(state.files.codex[path].records, [])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })
 
 test('machineLabel slugifies host names for source-id namespacing', () => {
@@ -1155,6 +1216,102 @@ test('main aborts nested discovery failures without replacing cache or posting p
     }
 
     assert.deepEqual(posts, [])
+  } finally {
+    for (const key of envKeys) {
+      if (priorEnv[key] === undefined) { delete process.env[key] } else { process.env[key] = priorEnv[key] }
+    }
+    await new Promise(resolve => server.close(resolve))
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('main withholds corrections and tombstones for an incompletely scanned source after a cache wipe', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-incomplete-'))
+  const codexSessions = join(root, 'codex', 'sessions')
+  const kimiSessions = join(root, 'kimi', 'sessions')
+  const statePath = join(root, 'state', 'sweep.json')
+  await mkdir(codexSessions, { recursive: true })
+  await mkdir(kimiSessions, { recursive: true })
+  await writeFile(join(codexSessions, 'rollout.jsonl'), [
+    JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }),
+    JSON.stringify({ timestamp: '2026-08-24T12:00:00Z', type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5 } } } }),
+  ].join('\n'))
+  await writeFile(join(kimiSessions, 'wire.jsonl'), JSON.stringify({
+    type: 'usage.record', time: 1787572800000, model: 'kimi-code/kimi-for-coding',
+    usage: { inputOther: 10, output: 2, inputCacheRead: 20, inputCacheCreation: 3 },
+  }))
+  // Inventory left by the previous cache generation: the wipe drops all cached
+  // records, so an unreadable file's keys are still live on the server.
+  const oldCodex = {
+    provider: 'openai', occurredAtUtc: '2026-08-20T12:00:00Z', model: 'gpt-5.5',
+    costUsd: null, runtime: 'codex', sourceId: 'codex-local@test-machine', sourceKind: 'localTelemetry',
+    usageScope: 'subscription', costBasis: 'notional', eventKey: 'codex:2026-08-20:gpt-5.5',
+  }
+  const oldKimi = {
+    provider: 'moonshot', occurredAtUtc: '2026-08-23T12:00:00Z', model: 'kimi-code/kimi-for-coding',
+    costUsd: null, runtime: 'kimi', sourceId: 'kimi-local@test-machine', sourceKind: 'localTelemetry',
+    usageScope: 'subscription', costBasis: 'notional', eventKey: 'kimi:2026-08-23:kimi-code/kimi-for-coding',
+  }
+  const currentKimiKey = 'kimi:2026-08-24:kimi-code/kimi-for-coding'
+  const posts = []
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://127.0.0.1')
+    if (request.method === 'GET' && url.pathname === '/api/events/local-snapshots') {
+      const sourceId = url.searchParams.get('sourceId')
+      const body = sourceId === 'codex-local@test-machine' ? [oldCodex]
+        : sourceId === 'kimi-local@test-machine' ? [oldKimi]
+          : []
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(body))
+      return
+    }
+    if (request.method === 'POST' && url.pathname === '/api/events') {
+      let body = ''
+      for await (const chunk of request) { body += chunk }
+      posts.push(JSON.parse(body))
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end('{}')
+      return
+    }
+    response.writeHead(404).end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  const codexHome = join(root, 'codex')
+  const envKeys = [
+    'OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES',
+    'OBSERVATORY_MACHINE', 'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME',
+  ]
+  const priorEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]]))
+  Object.assign(process.env, {
+    OBSERVATORY_URL: `http://127.0.0.1:${address.port}`,
+    OBSERVATORY_API_KEY: 'test-key',
+    OBSERVATORY_STATE: statePath,
+    OBSERVATORY_LOCAL_SOURCES: 'codex,kimi',
+    OBSERVATORY_MACHINE: 'test-machine',
+    CODEX_HOME: codexHome,
+    COPILOT_HOME: join(root, 'copilot'),
+    CLAUDE_HOME: join(root, 'claude'),
+    KIMI_HOME: join(root, 'kimi'),
+  })
+
+  try {
+    const { main } = await import('./observatory-sweep.mjs')
+    // A file that vanished between discovery and read (TOCTOU ENOENT) hits the
+    // no-cache branch once the version bump has wiped every cached record.
+    const discover = async dir => {
+      const files = await listJsonl(dir)
+      if (dir === join(codexHome, 'sessions')) {
+        files.push({ path: join(dir, 'vanished.jsonl'), mtimeMs: 1 })
+      }
+      return files
+    }
+
+    await main({ discover })
+
+    // Codex scanned incompletely: neither the readable sibling's reduced
+    // correction nor the previous generation's tombstone may post.
+    assert.equal(posts.some(body => body.sourceId === 'codex-local@test-machine'), false)
+    // Kimi scanned completely and is unaffected.
+    assert.deepEqual(posts.map(body => body.eventKey), [currentKimiKey, oldKimi.eventKey])
   } finally {
     for (const key of envKeys) {
       if (priorEnv[key] === undefined) { delete process.env[key] } else { process.env[key] = priorEnv[key] }
