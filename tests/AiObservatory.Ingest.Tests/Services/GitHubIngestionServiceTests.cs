@@ -499,9 +499,11 @@ public class GitHubIngestionServiceTests
         var pollDate = new LocalDate(2026, 7, 1);
         var result = await sut.IngestAsync(pollDate, pollDate, TestContext.Current.CancellationToken);
 
-        // A single flaky repo must not reject the cycle: the healthy repo still ingests
-        // and its observation watermark is returned so LastSuccessAt keeps advancing.
+        // A single flaky repo must not reject the cycle: the healthy repo still ingests and its
+        // observation watermark is returned — but the failure rides on the result so the worker
+        // records a degraded cycle rather than an unconditional success.
         result.LatestObservationAt.Should().Be(Instant.FromUtc(2026, 7, 1, 10, 0));
+        result.FailedRepoCount.Should().Be(1);
         await client
             .Received(1)
             .GetPullRequestsAsync("fix-portal/ok", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>());
@@ -536,6 +538,7 @@ public class GitHubIngestionServiceTests
         var result = await sut.IngestAsync(pollDate, pollDate, TestContext.Current.CancellationToken);
 
         result.LatestObservationAt.Should().BeNull();
+        result.FailedRepoCount.Should().Be(1);
         await client
             .Received(1)
             .GetPullRequestsAsync("fix-portal/ok", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>());

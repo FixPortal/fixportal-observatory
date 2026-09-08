@@ -140,6 +140,25 @@ public class ProviderPollingWorkerService(
                 sourceFrom
             );
             var result = await source.IngestAsync(sourceFrom, through, cancellationToken);
+            if (result.FailedRepoCount > 0)
+            {
+                // A partially failed cycle is not a success: MarkSuccessAsync would stamp
+                // LastSuccessAt, clear PendingFromDate and report the source healthy, so the
+                // failed lanes' window between the old watermark and the lookback edge could
+                // never be re-fetched. Persist a degraded state instead, which keeps the
+                // recovery state and escalates through the usual failure counter.
+                await PersistFailureAsync(
+                    source.SourceId,
+                    definition,
+                    stateStore,
+                    current,
+                    $"{result.FailedRepoCount} repo(s) failed to ingest this cycle",
+                    isUnavailable: false,
+                    cancellationToken
+                );
+                return;
+            }
+
             await stateStore.MarkSuccessAsync(
                 source.SourceId,
                 definition.ExpectedRefreshInterval,
