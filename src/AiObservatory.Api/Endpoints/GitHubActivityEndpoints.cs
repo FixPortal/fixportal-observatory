@@ -139,58 +139,32 @@ public static class GitHubActivityEndpoints
                     var rows = await db
                         .GitHubPullRequestReviews.AsNoTracking()
                         .Where(IsAllowedRepo<GitHubPullRequestReview>(r => r.Repo))
-                        .Where(r =>
-                            r.SubmittedAt != null && r.SubmittedAt >= startInstant && r.SubmittedAt < endInstant
-                        )
+                        // Upper bound only, deliberately. A reviewer's FIRST review of a pull
+                        // request can sit before the requested range, and turnaround is measured
+                        // from that first review — the range selects which activity is REPORTED
+                        // (applied in memory below), never which review counts as first.
+                        // ponytail: this widens the scan to all history up to `to`. Fine at this
+                        // product's scale; if it stops being fine, bound it by the oldest
+                        // PullRequests.CreatedAt still in range rather than by SubmittedAt.
+                        .Where(r => r.SubmittedAt != null && r.SubmittedAt < endInstant)
                         .Join(
                             db.GitHubPullRequests.AsNoTracking(),
                             r => new { r.Repo, r.Number },
                             p => new { p.Repo, p.Number },
                             (r, p) =>
-                                new
-                                {
+                                new ReviewerRow(
+                                    r.Repo,
                                     r.Reviewer,
                                     r.IsBot,
-                                    r.Repo,
                                     r.Number,
                                     r.State,
                                     r.SubmittedAt,
-                                    PullRequestCreatedAt = p.CreatedAt,
-                                }
+                                    p.CreatedAt
+                                )
                         )
                         .ToListAsync(ct);
 
-                    // Grouped per repo, not estate-wide, so this panel answers the same repo
-                    // filter the PR/commit/CI panels on the same page do. An estate-wide row
-                    // would silently ignore that filter.
-                    var byReviewer = rows.GroupBy(r => new
-                        {
-                            r.Repo,
-                            r.Reviewer,
-                            r.IsBot,
-                        })
-                        .Select(g =>
-                        {
-                            var turnarounds = g.GroupBy(r => r.Number)
-                                .Select(pr =>
-                                    (pr.Min(r => r.SubmittedAt!.Value) - pr.First().PullRequestCreatedAt).TotalHours
-                                )
-                                .ToList();
-                            return new GitHubReviewerResponse(
-                                g.Key.Repo,
-                                g.Key.Reviewer,
-                                g.Key.IsBot,
-                                g.Count(),
-                                turnarounds.Count,
-                                g.Count(r => r.State == "APPROVED"),
-                                g.Count(r => r.State == "CHANGES_REQUESTED"),
-                                Math.Round(turnarounds.Average(), 1)
-                            );
-                        })
-                        .OrderByDescending(r => r.ReviewCount)
-                        .ThenBy(r => r.Repo, StringComparer.Ordinal)
-                        .ThenBy(r => r.Reviewer, StringComparer.Ordinal)
-                        .ToList();
+                    var byReviewer = SummariseReviewers(rows, startInstant);
 
                     return Results.Ok(byReviewer);
                 }
@@ -289,6 +263,68 @@ public static class GitHubActivityEndpoints
             )
             .AddEndpointFilter<AdminOnlyApiKeyEndpointFilter>();
     }
+
+    // The flat row /github/reviews projects into. Named rather than anonymous so the aggregation
+    // below can be its own method: inlined, it counted against MapGitHubActivityEndpoints' own
+    // cognitive complexity, which S3776 caps.
+    private sealed record ReviewerRow(
+        string Repo,
+        string Reviewer,
+        bool IsBot,
+        int Number,
+        string State,
+        Instant? SubmittedAt,
+        Instant PullRequestCreatedAt
+    );
+
+    /// <summary>
+    /// Groups per repo, not estate-wide, so this panel answers the same repo filter the PR/commit/CI
+    /// panels on the same page do. <paramref name="rows"/> carries every review up to the end of the
+    /// range, including ones before <paramref name="startInstant"/>: counts describe the requested
+    /// range, but turnaround is measured from the reviewer's first review of each pull request
+    /// wherever it falls. A reviewer with no in-range review is not on the panel.
+    /// </summary>
+    private static List<GitHubReviewerResponse> SummariseReviewers(List<ReviewerRow> rows, Instant startInstant) =>
+        rows.GroupBy(r => new
+            {
+                r.Repo,
+                r.Reviewer,
+                r.IsBot,
+            })
+            .Select(g =>
+            {
+                var inRange = g.Where(r => r.SubmittedAt >= startInstant).ToList();
+                if (inRange.Count == 0)
+                {
+                    return null;
+                }
+                var turnarounds = inRange
+                    .Select(r => r.Number)
+                    .Distinct()
+                    .Select(number =>
+                    {
+                        var allForPullRequest = g.Where(r => r.Number == number).ToList();
+                        return (
+                            allForPullRequest.Min(r => r.SubmittedAt!.Value) - allForPullRequest[0].PullRequestCreatedAt
+                        ).TotalHours;
+                    })
+                    .ToList();
+                return new GitHubReviewerResponse(
+                    g.Key.Repo,
+                    g.Key.Reviewer,
+                    g.Key.IsBot,
+                    inRange.Count,
+                    turnarounds.Count,
+                    inRange.Count(r => r.State == "APPROVED"),
+                    inRange.Count(r => r.State == "CHANGES_REQUESTED"),
+                    Math.Round(turnarounds.Average(), 1)
+                );
+            })
+            .OfType<GitHubReviewerResponse>()
+            .OrderByDescending(r => r.ReviewCount)
+            .ThenBy(r => r.Repo, StringComparer.Ordinal)
+            .ThenBy(r => r.Reviewer, StringComparer.Ordinal)
+            .ToList();
 
     public static double? ComputeTurnaroundHours(Instant createdAt, Instant? firstReviewAt)
     {

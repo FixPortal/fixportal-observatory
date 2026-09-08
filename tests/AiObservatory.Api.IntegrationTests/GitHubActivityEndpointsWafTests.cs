@@ -241,6 +241,52 @@ public class GitHubActivityEndpointsWafTests(AiObservatoryApiFactory factory)
         rows.Should().NotContain(r => r.Repo == repo);
     }
 
+    /// <summary>
+    /// The selected range decides which review activity is REPORTED. It must not decide which
+    /// review counts as the reviewer's first, because turnaround is a property of the pull
+    /// request, not of the window someone happens to be looking through. Filtering the rows
+    /// before taking the minimum measured this reviewer at 28h — the re-review — against a
+    /// true first pass at 2h.
+    /// </summary>
+    [Fact]
+    public async Task GetReviews_MeasuresTurnaroundFromTheFirstReviewEvenWhenItPrecedesTheRange()
+    {
+        const string repo = "FixPortal/waf-reviews-boundary-test";
+        var openedAt = Instant.FromUtc(2019, 7, 13, 9, 0);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+            db.GitHubPullRequests.Add(NewPullRequest(repo, 1, openedAt));
+            db.GitHubPullRequestReviews.AddRange(
+                // First pass: 2h after opening, the day BEFORE the requested range.
+                NewReview(repo, 1, 9301, "chris", false, "CHANGES_REQUESTED", openedAt.Plus(Hours(2))),
+                // Re-review: 28h after opening, INSIDE the requested range.
+                NewReview(repo, 1, 9302, "chris", false, "APPROVED", openedAt.Plus(Hours(28)))
+            );
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        using var client = factory.CreateAdminClient();
+        var response = await client.GetAsync(
+            "/api/github/reviews?from=2019-07-14&to=2019-07-14",
+            TestContext.Current.CancellationToken
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var rows = await response.Content.ReadFromJsonAsync<List<GitHubReviewerRow>>(
+            TestContext.Current.CancellationToken
+        );
+
+        var reviewer = rows.Should().ContainSingle(r => r.Repo == repo && r.Reviewer == "chris").Which;
+        // Only the re-review falls in the range, so only it is reported...
+        reviewer.ReviewCount.Should().Be(1);
+        reviewer.ApprovedCount.Should().Be(1);
+        reviewer.ChangesRequestedCount.Should().Be(0);
+        reviewer.PullRequestCount.Should().Be(1);
+        // ...but turnaround still comes from the first pass at 2h, not the re-review at 28h.
+        reviewer.AvgFirstReviewHours.Should().Be(2.0);
+    }
+
     [Fact]
     public async Task GetReviews_ExcludesRepositoriesOutsideTheAllowlist()
     {

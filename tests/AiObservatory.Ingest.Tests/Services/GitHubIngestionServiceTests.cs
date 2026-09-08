@@ -18,8 +18,8 @@ public class GitHubIngestionServiceTests
     private static IOptions<IngestOptions> Options(params string[] repos) =>
         Microsoft.Extensions.Options.Options.Create(new IngestOptions { GitHubRepoAllowlist = repos });
 
-    private static readonly GitHubBackfillStatus NoPriorData = new(false, false, false);
-    private static readonly GitHubBackfillStatus FullyBackfilled = new(true, true, true);
+    private static readonly GitHubBackfillStatus NoPriorData = new(false, false, false, false);
+    private static readonly GitHubBackfillStatus FullyBackfilled = new(true, true, true, true);
 
     [Fact]
     public async Task IngestAsync_UpsertsEveryReviewCarriedByAPullRequest()
@@ -78,8 +78,16 @@ public class GitHubIngestionServiceTests
         var pollDate = new LocalDate(2026, 7, 1);
         await sut.IngestAsync(pollDate, pollDate, TestContext.Current.CancellationToken);
 
-        await repo.Received(1).UpsertPullRequestReviewAsync(agentReview, FixedNow, Arg.Any<CancellationToken>());
-        await repo.Received(1).UpsertPullRequestReviewAsync(humanReview, FixedNow, Arg.Any<CancellationToken>());
+        // The pull request and its reviews go down one transactional call, so the evidence is
+        // that the record handed to it carried both reviews.
+        await repo.Received(1)
+            .UpsertPullRequestWithReviewsAsync(
+                Arg.Is<GitHubPullRequestRecord>(r =>
+                    r.Reviews != null && r.Reviews.Contains(agentReview) && r.Reviews.Contains(humanReview)
+                ),
+                FixedNow,
+                Arg.Any<CancellationToken>()
+            );
     }
 
     // Reviews defaults to null on the record, and the loop must treat that as "none" rather
@@ -122,10 +130,10 @@ public class GitHubIngestionServiceTests
         var pollDate = new LocalDate(2026, 7, 1);
         await sut.IngestAsync(pollDate, pollDate, TestContext.Current.CancellationToken);
 
-        await repo.DidNotReceive()
-            .UpsertPullRequestReviewAsync(
-                Arg.Any<GitHubPullRequestReviewRecord>(),
-                Arg.Any<Instant>(),
+        await repo.Received(1)
+            .UpsertPullRequestWithReviewsAsync(
+                Arg.Is<GitHubPullRequestRecord>(r => r.Reviews == null || r.Reviews.Count == 0),
+                FixedNow,
                 Arg.Any<CancellationToken>()
             );
     }
@@ -258,7 +266,14 @@ public class GitHubIngestionServiceTests
         var client = Substitute.For<IGitHubActivityClient>();
         var repo = Substitute.For<IGitHubActivityRepository>();
         repo.GetBackfillStatusAsync("fix-portal/example", Arg.Any<CancellationToken>())
-            .Returns(new GitHubBackfillStatus(HasPullRequests: true, HasCommits: false, HasWorkflowRuns: false));
+            .Returns(
+                new GitHubBackfillStatus(
+                    HasPullRequests: true,
+                    HasCommits: false,
+                    HasWorkflowRuns: false,
+                    HasReviews: true
+                )
+            );
         client
             .GetPullRequestsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
             .Returns([]);
@@ -285,6 +300,55 @@ public class GitHubIngestionServiceTests
         await client
             .Received(1)
             .GetWorkflowRunsAsync("fix-portal/example", pollDate.PlusDays(-30), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// Reviews arrived after the pull-request backfill had already completed on a live
+    /// deployment, so reviews need their own flag. Gating the window on HasPullRequests alone
+    /// meant an existing instance never re-fetched: the reviews table was created empty and
+    /// only ever filled for pull requests whose updated_at happened to land inside the rolling
+    /// window, leaving the historical reviewer roster permanently unreachable while the PR
+    /// panel beside it kept showing a full ReviewCount.
+    /// </summary>
+    [Fact]
+    public async Task IngestAsync_WhenPullRequestsBackfilledButReviewsAreNot_RefetchesTheBackfillWindow()
+    {
+        var client = Substitute.For<IGitHubActivityClient>();
+        var repo = Substitute.For<IGitHubActivityRepository>();
+        repo.GetBackfillStatusAsync("fix-portal/example", Arg.Any<CancellationToken>())
+            .Returns(
+                new GitHubBackfillStatus(
+                    HasPullRequests: true,
+                    HasCommits: true,
+                    HasWorkflowRuns: true,
+                    HasReviews: false
+                )
+            );
+        client
+            .GetPullRequestsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+        client.GetCommitsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>()).Returns([]);
+        client
+            .GetWorkflowRunsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns(new GitHubWorkflowRunResult([], false));
+
+        var sut = new GitHubIngestionService(
+            client,
+            repo,
+            Options("fix-portal/example"),
+            NullLogger<GitHubIngestionService>.Instance,
+            Clock
+        );
+
+        var pollDate = new LocalDate(2026, 7, 1);
+        await sut.IngestAsync(pollDate, pollDate, TestContext.Current.CancellationToken);
+
+        // Pull requests carry the reviews, so an unbackfilled reviews lane reopens their window.
+        await client
+            .Received(1)
+            .GetPullRequestsAsync("fix-portal/example", pollDate.PlusDays(-30), Arg.Any<CancellationToken>());
+        await repo.Received(1)
+            .MarkBackfillCompletedAsync("fix-portal/example", GitHubActivityKind.Reviews, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -325,7 +389,7 @@ public class GitHubIngestionServiceTests
         client
             .GetPullRequestsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
             .Returns(prs);
-        repo.UpsertPullRequestAsync(prs[1], FixedNow, Arg.Any<CancellationToken>())
+        repo.UpsertPullRequestWithReviewsAsync(prs[1], FixedNow, Arg.Any<CancellationToken>())
             .Returns(Task.FromException(new InvalidOperationException("database unavailable")));
 
         var sut = new GitHubIngestionService(
@@ -392,7 +456,7 @@ public class GitHubIngestionServiceTests
             TestContext.Current.CancellationToken
         );
 
-        await repo.Received(1).UpsertPullRequestAsync(pr, FixedNow, Arg.Any<CancellationToken>());
+        await repo.Received(1).UpsertPullRequestWithReviewsAsync(pr, FixedNow, Arg.Any<CancellationToken>());
         result.LatestObservationAt.Should().Be(Instant.FromUtc(2026, 7, 1, 10, 0));
     }
 

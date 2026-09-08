@@ -142,6 +142,65 @@ public class GitHubActivityRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task UpsertPullRequestWithReviewsAsync_WritesThePullRequestAndEveryReview()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var at = Instant.FromUtc(2026, 7, 1, 10, 0);
+
+        await _repo.UpsertPullRequestWithReviewsAsync(
+            Pr(reviewCount: 2) with
+            {
+                Reviews =
+                [
+                    Review(9001, "coderabbitai[bot]", isBot: true, "CHANGES_REQUESTED"),
+                    Review(9002, "chris", isBot: false, "APPROVED"),
+                ],
+            },
+            at,
+            ct
+        );
+
+        (await _ctx.GitHubPullRequests.CountAsync(ct)).Should().Be(1);
+        var reviewers = await _ctx.GitHubPullRequestReviews.Select(r => r.Reviewer).ToListAsync(ct);
+        reviewers.Should().BeEquivalentTo("coderabbitai[bot]", "chris");
+    }
+
+    /// <summary>
+    /// The pair is the contract: /github/reviews inner-joins reviews to their pull request, so a
+    /// pull request row that survives without its reviews advertises a ReviewCount the review rows
+    /// cannot account for, and the join hides the shortfall instead of surfacing it. Because the
+    /// ingest loop swallows a per-repo failure and the watermark still advances, that torn state
+    /// would be permanent — so a failed review write must take the pull request row down with it.
+    /// </summary>
+    [Fact]
+    public async Task UpsertPullRequestWithReviewsAsync_WhenAReviewFails_WritesNeitherHalf()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var at = Instant.FromUtc(2026, 7, 1, 10, 0);
+
+        // A NUL character is rejected by PostgreSQL itself, so the failure lands server-side
+        // between the two writes rather than in C# before the first one.
+        var poisoned = Review(9002, "ch\0ris", isBot: false, "APPROVED");
+        var act = async () =>
+            await _repo.UpsertPullRequestWithReviewsAsync(
+                Pr(reviewCount: 2) with
+                {
+                    Reviews = [Review(9001, "coderabbitai[bot]", isBot: true, "APPROVED"), poisoned],
+                },
+                at,
+                ct
+            );
+
+        await act.Should().ThrowAsync<Exception>();
+
+        (await _ctx.GitHubPullRequests.CountAsync(ct)).Should().Be(0);
+        (await _ctx.GitHubPullRequestReviews.CountAsync(ct)).Should().Be(0);
+    }
+
+    private static GitHubPullRequestReviewRecord Review(long reviewId, string reviewer, bool isBot, string state) =>
+        new("fix-portal/example", 42, reviewId, reviewer, isBot, state, Instant.FromUtc(2026, 7, 1, 10, 0));
+
+    [Fact]
     public async Task UpsertCommitAsync_WhenRepolled_IsNoOpNotDuplicate()
     {
         var ct = TestContext.Current.CancellationToken;
