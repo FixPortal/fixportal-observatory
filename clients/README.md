@@ -43,7 +43,7 @@ Each posted snapshot carries explicit provenance so the API preserves its subscr
 Stable source-scoped keys make resubmission safe. Source ids carry a per-machine suffix (`codex-local@<host>`, from `OBSERVATORY_MACHINE` or the OS hostname) so sweeps on different machines never share a namespace and can never tombstone each other's history. Before posting, the sweeper reads server inventory for the enabled sources only, and emits zero corrections for removed snapshots of a source only when that source's own current snapshots all posted successfully — a subset run (`OBSERVATORY_LOCAL_SOURCES=codex`) or a failed replacement leaves every other key untouched. Its state file is only a parse cache; losing it causes a safe full rescan, not a loss of server truth.
 
 > [!NOTE]
-> Snapshots posted before the per-machine suffix was introduced sit under the un-suffixed ids (`codex-local` etc.). The sweeper no longer reads or corrects those rows: they remain as frozen history while each machine starts a fresh cumulative series under its own id. Zero or delete the legacy rows manually if the duplicated pre-upgrade history distorts the dashboards.
+> Snapshots posted before the per-machine suffix was introduced sit under the un-suffixed ids (`codex-local` etc.). On its first run under a suffixed id, the sweeper fetches each enabled tool's legacy namespace and tombstones every key in it, recording completion in the state file so it happens once; a failed fetch or post leaves the marker unset and the migration retries on the next run.
 
 > [!WARNING]
 > Set `OBSERVATORY_LOCAL_SOURCES` without `claude` when `claude-code-usage-api` covers the same account/activity. The two lanes do not cross-deduplicate.
