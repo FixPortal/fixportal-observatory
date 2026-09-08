@@ -251,15 +251,27 @@ public class BudgetAlertServiceTests
     /// an explicit setting overrides it.
     /// </summary>
     [Theory]
-    // Explicit setting wins.
-    [InlineData("mail.example.test", "alerts@sender.example", "mail.example.test")]
-    // No explicit setting: derived from the configured sender.
-    [InlineData(null, "alerts@sender.example", "sender.example")]
-    // Neither configured: a neutral literal, never a domain belonging to this project.
-    [InlineData(null, null, "observatory.local")]
+    // Explicit setting wins over both sender sources.
+    [InlineData("mail.example.test", "alerts@sender.example", "smtp@user.example", "mail.example.test")]
+    // No explicit setting: derived from the configured FROM address.
+    [InlineData(null, "alerts@sender.example", null, "sender.example")]
+    // Nothing configured at all: a neutral literal, never a domain belonging to this project.
+    [InlineData(null, null, null, "observatory.local")]
+    // FROM absent falls through to the SMTP user, which is the address mail is sent from.
+    [InlineData(null, null, "smtp@user.example", "user.example")]
+    // FROM present but blank falls through too: `??` sees only null, so a blank value would
+    // otherwise shadow a perfectly usable SMTP user.
+    [InlineData(null, "   ", "smtp@user.example", "user.example")]
+    // A sender whose domain is only whitespace has no domain. Length alone passes this —
+    // there IS a character after the '@' — so the emptiness must be tested after trimming,
+    // or the header becomes "budget-alert-{id}@", which is not a valid Message-Id.
+    [InlineData(null, "alerts@ ", null, "observatory.local")]
+    // No '@' at all is not an address, so there is nothing to derive.
+    [InlineData(null, "not-an-address", null, "observatory.local")]
     public async Task CheckAndAlert_DerivesTheMessageIdDomainFromConfiguration(
         string? explicitDomain,
         string? sender,
+        string? smtpUser,
         string expectedDomain
     )
     {
@@ -297,6 +309,10 @@ public class BudgetAlertServiceTests
         if (sender is not null)
         {
             settings["BUDGET_ALERT_EMAIL_FROM"] = sender;
+        }
+        if (smtpUser is not null)
+        {
+            settings["BUDGET_ALERT_SMTP_USER"] = smtpUser;
         }
         var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var sut = new BudgetAlertService(_repo, _clock, _notifier, NullLogger<BudgetAlertService>.Instance, config);
