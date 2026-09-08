@@ -60,6 +60,10 @@ public class UsageRepository(
         CancellationToken ct
     )
     {
+        // Capture cost provenance before beforeWrite resolves server-side pricing: the
+        // correction-preservation guard must know whether the *source* supplied a cost,
+        // which the post-resolution evt.CostUsd can no longer tell.
+        var sourceSuppliedCost = evt.CostUsd is not null;
         // Every path through the body returns or throws, so there is no exit condition or
         // trailing throw: the filtered catch only retries attempt 0 (falling through to the
         // increment), and a repeat unique violation rethrows from the generic catch.
@@ -76,7 +80,7 @@ public class UsageRepository(
                 var existing = evt.EventKey is null
                     ? null
                     : await FindEventForUpdateAsync(evt.SourceId, evt.EventKey, ct);
-                var result = await ApplyLockedSnapshotAsync(existing, evt, ct);
+                var result = await ApplyLockedSnapshotAsync(existing, evt, sourceSuppliedCost, ct);
                 if (result.Disposition != RecordEventDisposition.Unchanged || result.WatermarkAdvanced)
                 {
                     await ctx.SaveChangesAsync(ct);
@@ -227,6 +231,7 @@ public class UsageRepository(
     private async Task<RecordEventResult> ApplyLockedSnapshotAsync(
         UsageEvent? existing,
         UsageEvent evt,
+        bool sourceSuppliedCost,
         CancellationToken ct
     )
     {
@@ -257,13 +262,15 @@ public class UsageRepository(
             return new RecordEventResult(existing.Id, RecordEventDisposition.Unchanged);
         }
 
-        // A manual cost correction (the CorrectedAt marker) outranks a replay that carries no
-        // cost of its own: the local sweepers re-post every snapshot with costUsd null on every
-        // run, always with a fresh ObservedAt, so the ordering guard above cannot defend the
-        // corrected figure. Preserve it (and the basis that keeps the row out of the repricing
-        // scan); a post carrying an explicit cost re-asserts source authority and clears the
-        // marker instead.
-        var preserveCorrectedCost = existing.CorrectedAt is not null && evt.CostUsd is null;
+        // A manual cost correction (the CorrectedAt marker) outranks a replay whose source
+        // carried no cost of its own: the local sweepers re-post every snapshot with costUsd
+        // null on every run, always with a fresh ObservedAt, so the ordering guard above
+        // cannot defend the corrected figure. Preserve it (and the basis that keeps the row
+        // out of the repricing scan); a post whose source supplied an explicit cost
+        // re-asserts source authority and clears the marker instead. Provenance is captured
+        // before server-side pricing assigns a figure, so an estimated replay resolved by
+        // the resolver never masquerades as a source-supplied cost.
+        var preserveCorrectedCost = existing.CorrectedAt is not null && !sourceSuppliedCost;
         var correctedCostUsd = existing.CostUsd;
         var correctedCacheSavingsUsd = existing.CacheSavingsUsd;
         var correctedCostBasis = existing.CostBasis;
@@ -892,7 +899,7 @@ public class UsageRepository(
 
             var oldCostUsd = existing.CostUsd;
             var replacement = CopyWithCost(existing, newCostUsd);
-            await ApplyLockedSnapshotAsync(existing, replacement, ct);
+            await ApplyLockedSnapshotAsync(existing, replacement, sourceSuppliedCost: true, ct);
 
             // The marker is set on the tracked row directly: CopyCanonicalValues never copies
             // CorrectedAt from a replay, so the stamp survives until a source post carrying an
