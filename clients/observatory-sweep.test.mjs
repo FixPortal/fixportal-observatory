@@ -968,7 +968,8 @@ test('main fetches inventory only for enabled per-machine sources and never tomb
 
     // Only this run's enabled source is inventoried, under this machine's
     // namespace -- the other five sources and other machines are never read.
-    assert.deepEqual(gets.map(request => request.sourceId), ['codex-local@test-machine'])
+    // The one-shot legacy migration reads the un-suffixed id for the same tool.
+    assert.deepEqual(gets.map(request => request.sourceId), ['codex-local@test-machine', 'codex-local'])
     assert.equal(gets.every(request => request.apiKey === 'test-key'), true)
     // Codex posted no active snapshot, so its stale server key is left alone
     // rather than zeroed by a scan that observed nothing.
@@ -1047,8 +1048,10 @@ test('main retries a failed server-inventory tombstone from persisted state and 
     await run(process.execPath, [fileURLToPath(new URL('./observatory-sweep.mjs', import.meta.url))], { env })
 
     assert.equal(Object.keys(persistedAfterFailure.files.codex).length, 1)
+    // Run 1 also fetches the un-suffixed legacy namespace once for the one-shot migration;
+    // the recorded marker keeps run 2 from re-fetching it.
     assert.deepEqual(gets.map(request => request.sourceId), [
-      'codex-local@test-machine', 'codex-local@test-machine',
+      'codex-local@test-machine', 'codex-local', 'codex-local@test-machine',
     ])
     assert.equal(gets.every(request => request.apiKey === 'test-key'), true)
     // Run 1: the active snapshot posts, then the tombstone exhausts its three
@@ -1312,6 +1315,241 @@ test('main withholds corrections and tombstones for an incompletely scanned sour
     assert.equal(posts.some(body => body.sourceId === 'codex-local@test-machine'), false)
     // Kimi scanned completely and is unaffected.
     assert.deepEqual(posts.map(body => body.eventKey), [currentKimiKey, oldKimi.eventKey])
+  } finally {
+    for (const key of envKeys) {
+      if (priorEnv[key] === undefined) { delete process.env[key] } else { process.env[key] = priorEnv[key] }
+    }
+    await new Promise(resolve => server.close(resolve))
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('main tombstones the legacy un-suffixed namespace once and records the migration in state', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-legacy-'))
+  const sessions = join(root, 'codex', 'sessions')
+  const statePath = join(root, 'state', 'sweep.json')
+  await mkdir(sessions, { recursive: true })
+  await writeFile(join(sessions, 'rollout.jsonl'), [
+    JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }),
+    JSON.stringify({ timestamp: '2026-08-24T12:00:00Z', type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5 } } } }),
+  ].join('\n'))
+  const legacyRecord = eventKey => ({
+    provider: 'openai', occurredAtUtc: '2026-08-10T12:00:00Z', model: 'gpt-5.5',
+    inputTokens: 40, outputTokens: 9, costUsd: null, runtime: 'codex',
+    sourceId: 'codex-local', sourceKind: 'localTelemetry',
+    usageScope: 'subscription', costBasis: 'notional', eventKey,
+  })
+  const posts = []
+  let legacyGets = 0
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://127.0.0.1')
+    if (request.method === 'GET' && url.pathname === '/api/events/local-snapshots') {
+      const sourceId = url.searchParams.get('sourceId')
+      if (sourceId === 'codex-local') { legacyGets++ }
+      const body = sourceId === 'codex-local'
+        ? [legacyRecord('codex:2026-08-10:gpt-5.5'), legacyRecord('codex:2026-08-11:gpt-5.5')]
+        : []
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(body))
+      return
+    }
+    if (request.method === 'POST' && url.pathname === '/api/events') {
+      let body = ''
+      for await (const chunk of request) { body += chunk }
+      posts.push(JSON.parse(body))
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end('{}')
+      return
+    }
+    response.writeHead(404).end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  const envKeys = [
+    'OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES',
+    'OBSERVATORY_MACHINE', 'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME',
+  ]
+  const priorEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]]))
+  Object.assign(process.env, {
+    OBSERVATORY_URL: `http://127.0.0.1:${address.port}`,
+    OBSERVATORY_API_KEY: 'test-key',
+    OBSERVATORY_STATE: statePath,
+    OBSERVATORY_LOCAL_SOURCES: 'codex',
+    OBSERVATORY_MACHINE: 'test-machine',
+    CODEX_HOME: join(root, 'codex'),
+    COPILOT_HOME: join(root, 'copilot'),
+    CLAUDE_HOME: join(root, 'claude'),
+    KIMI_HOME: join(root, 'kimi'),
+  })
+
+  try {
+    const { main } = await import('./observatory-sweep.mjs')
+    await main()
+
+    const tombstones = posts.filter(body => body.sourceId === 'codex-local')
+    assert.deepEqual(tombstones.map(body => [body.eventKey, body.inputTokens, body.outputTokens]), [
+      ['codex:2026-08-10:gpt-5.5', 0, 0],
+      ['codex:2026-08-11:gpt-5.5', 0, 0],
+    ])
+    assert.equal(posts.some(body => body.sourceId === 'codex-local@test-machine'), true)
+    const state = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(typeof state.legacySourceMigration.codex, 'string')
+
+    posts.length = 0
+    await main()
+
+    assert.equal(legacyGets, 1, 'a recorded migration never re-fetches the legacy namespace')
+    assert.equal(posts.some(body => body.sourceId === 'codex-local'), false)
+  } finally {
+    for (const key of envKeys) {
+      if (priorEnv[key] === undefined) { delete process.env[key] } else { process.env[key] = priorEnv[key] }
+    }
+    await new Promise(resolve => server.close(resolve))
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('main retries the legacy migration when the legacy inventory fetch fails', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-legacy-fail-'))
+  const sessions = join(root, 'codex', 'sessions')
+  const statePath = join(root, 'state', 'sweep.json')
+  await mkdir(sessions, { recursive: true })
+  await writeFile(join(sessions, 'rollout.jsonl'), [
+    JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }),
+    JSON.stringify({ timestamp: '2026-08-24T12:00:00Z', type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5 } } } }),
+  ].join('\n'))
+  const posts = []
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://127.0.0.1')
+    if (request.method === 'GET' && url.pathname === '/api/events/local-snapshots') {
+      if (url.searchParams.get('sourceId') === 'codex-local') {
+        response.writeHead(500).end('{}')
+        return
+      }
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end('[]')
+      return
+    }
+    if (request.method === 'POST' && url.pathname === '/api/events') {
+      let body = ''
+      for await (const chunk of request) { body += chunk }
+      posts.push(JSON.parse(body))
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end('{}')
+      return
+    }
+    response.writeHead(404).end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  const envKeys = [
+    'OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES',
+    'OBSERVATORY_MACHINE', 'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME',
+  ]
+  const priorEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]]))
+  Object.assign(process.env, {
+    OBSERVATORY_URL: `http://127.0.0.1:${address.port}`,
+    OBSERVATORY_API_KEY: 'test-key',
+    OBSERVATORY_STATE: statePath,
+    OBSERVATORY_LOCAL_SOURCES: 'codex',
+    OBSERVATORY_MACHINE: 'test-machine',
+    CODEX_HOME: join(root, 'codex'),
+    COPILOT_HOME: join(root, 'copilot'),
+    CLAUDE_HOME: join(root, 'claude'),
+    KIMI_HOME: join(root, 'kimi'),
+  })
+
+  try {
+    const { main } = await import('./observatory-sweep.mjs')
+    await main()
+
+    assert.equal(posts.some(body => body.sourceId === 'codex-local'), false)
+    assert.equal(posts.some(body => body.sourceId === 'codex-local@test-machine'), true)
+    const state = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(state.legacySourceMigration?.codex, undefined)
+  } finally {
+    for (const key of envKeys) {
+      if (priorEnv[key] === undefined) { delete process.env[key] } else { process.env[key] = priorEnv[key] }
+    }
+    await new Promise(resolve => server.close(resolve))
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('main retries the legacy migration when a legacy tombstone post fails', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-legacy-retry-'))
+  const sessions = join(root, 'codex', 'sessions')
+  const statePath = join(root, 'state', 'sweep.json')
+  await mkdir(sessions, { recursive: true })
+  await writeFile(join(sessions, 'rollout.jsonl'), [
+    JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }),
+    JSON.stringify({ timestamp: '2026-08-24T12:00:00Z', type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5 } } } }),
+  ].join('\n'))
+  const legacyRecord = eventKey => ({
+    provider: 'openai', occurredAtUtc: '2026-08-10T12:00:00Z', model: 'gpt-5.5',
+    inputTokens: 40, outputTokens: 9, costUsd: null, runtime: 'codex',
+    sourceId: 'codex-local', sourceKind: 'localTelemetry',
+    usageScope: 'subscription', costBasis: 'notional', eventKey,
+  })
+  const posts = []
+  let legacyGets = 0
+  let failLegacyPosts = true
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://127.0.0.1')
+    if (request.method === 'GET' && url.pathname === '/api/events/local-snapshots') {
+      const sourceId = url.searchParams.get('sourceId')
+      if (sourceId === 'codex-local') { legacyGets++ }
+      const body = sourceId === 'codex-local' ? [legacyRecord('codex:2026-08-10:gpt-5.5')] : []
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(body))
+      return
+    }
+    if (request.method === 'POST' && url.pathname === '/api/events') {
+      let body = ''
+      for await (const chunk of request) { body += chunk }
+      const parsed = JSON.parse(body)
+      posts.push(parsed)
+      if (parsed.sourceId === 'codex-local') {
+        response.writeHead(failLegacyPosts ? 500 : 200, { 'Content-Type': 'application/json' }).end('{}')
+        return
+      }
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end('{}')
+      return
+    }
+    response.writeHead(404).end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  const envKeys = [
+    'OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES',
+    'OBSERVATORY_MACHINE', 'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME',
+  ]
+  const priorEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]]))
+  Object.assign(process.env, {
+    OBSERVATORY_URL: `http://127.0.0.1:${address.port}`,
+    OBSERVATORY_API_KEY: 'test-key',
+    OBSERVATORY_STATE: statePath,
+    OBSERVATORY_LOCAL_SOURCES: 'codex',
+    OBSERVATORY_MACHINE: 'test-machine',
+    CODEX_HOME: join(root, 'codex'),
+    COPILOT_HOME: join(root, 'copilot'),
+    CLAUDE_HOME: join(root, 'claude'),
+    KIMI_HOME: join(root, 'kimi'),
+  })
+
+  try {
+    const { main } = await import('./observatory-sweep.mjs')
+    await main()
+
+    let state = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(state.legacySourceMigration?.codex, undefined, 'a failed tombstone leaves the migration pending')
+
+    failLegacyPosts = false
+    await main()
+
+    assert.equal(legacyGets, 2, 'a pending migration re-fetches and retries next run')
+    state = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(typeof state.legacySourceMigration.codex, 'string')
+    assert.equal(
+      posts.filter(body => body.sourceId === 'codex-local' && body.eventKey === 'codex:2026-08-10:gpt-5.5').length >= 2,
+      true,
+      'the retried tombstone is idempotent',
+    )
   } finally {
     for (const key of envKeys) {
       if (priorEnv[key] === undefined) { delete process.env[key] } else { process.env[key] = priorEnv[key] }

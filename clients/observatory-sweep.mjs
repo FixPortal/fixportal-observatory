@@ -724,6 +724,51 @@ async function fetchSnapshotInventory(url, apiKey, enabled, machine) {
   return { inventory, failedSources }
 }
 
+// One-shot migration for the per-machine namespace: snapshots posted before source ids
+// carried the @<machine> suffix still sit under the bare ids (codex-local etc.), so the
+// first post-upgrade run would otherwise double all pre-upgrade history beside the new
+// series. Tombstone every legacy key once and record completion in the state file; a
+// failed fetch or post leaves the marker unset so the next run retries.
+async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc) {
+  state.legacySourceMigration ??= {}
+  for (const tool of enabled) {
+    if (state.legacySourceMigration[tool]) { continue }
+    const legacyId = LOCAL_SOURCE_IDS[tool]
+    let legacyInventory
+    try {
+      const response = await observatoryFetch(
+        `${url}/api/events/local-snapshots?sourceId=${encodeURIComponent(legacyId)}`,
+        apiKey,
+      )
+      if (!response.ok) { throw new Error(`Inventory GET ${response.status} for ${legacyId}`) }
+      legacyInventory = await response.json()
+      if (!Array.isArray(legacyInventory)
+        || legacyInventory.some(snapshot => !snapshot || typeof snapshot !== 'object'
+          || snapshot.sourceId !== legacyId || typeof snapshot.eventKey !== 'string')) {
+        throw new Error(`Invalid inventory response for ${legacyId}`)
+      }
+    } catch (error) {
+      console.error(`Legacy inventory unavailable for ${legacyId} (${error.message}); the migration is retried next run.`)
+      continue
+    }
+    let completed = true
+    for (const snapshot of legacyInventory) {
+      if (!await postEvent(url, apiKey, { ...zeroSnapshot(snapshot), observedAtUtc })) {
+        completed = false
+        break
+      }
+    }
+    if (!completed) {
+      console.error(`Legacy migration for ${legacyId} did not finish; it is retried next run.`)
+      continue
+    }
+    state.legacySourceMigration[tool] = observedAtUtc
+    if (legacyInventory.length > 0) {
+      console.error(`Tombstoned ${legacyInventory.length} legacy ${legacyId} key(s) superseded by the per-machine namespace.`)
+    }
+  }
+}
+
 async function listMatching(dir, matches, out = [], io = { readdir, stat }, topLevel = true) {
   let entries
   try { entries = await io.readdir(dir, { withFileTypes: true }) }
@@ -873,6 +918,9 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   const { inventory, failedSources } = DRY_RUN
     ? { inventory: [], failedSources: new Set() }
     : await fetchSnapshotInventory(url, apiKey, enabled, machine)
+  if (!DRY_RUN) {
+    await migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc)
+  }
   const { records, incompleteSources } = await scanRecords(cfg, state, enabled, discover)
   const snapshots = buildDailySnapshots(records, machine)
   const submissions = planSnapshotSubmissions(snapshots, inventory)
