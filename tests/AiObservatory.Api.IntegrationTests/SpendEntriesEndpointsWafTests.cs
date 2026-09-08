@@ -176,6 +176,63 @@ public class SpendEntriesEndpointsWafTests(AiObservatoryApiFactory factory) : IC
         entry.GetProperty("observedAt").GetString().Should().Be(entry.GetProperty("recordedAt").GetString());
     }
 
+    /// <summary>
+    /// RawPayload is the provider billing API response stored verbatim and unredacted, and
+    /// <see cref="SpendEntry"/>'s own doc comment says not to surface it without review. The
+    /// route used to return the EF entity directly, so it went out on the wire to anyone the
+    /// route admitted. It is not in the client's declared contract and nothing renders it.
+    /// </summary>
+    [Fact]
+    public async Task GetEntries_DoesNotPutTheVerbatimProviderPayloadOnTheWire()
+    {
+        using var client = factory.CreateAdminClient();
+        var ct = TestContext.Current.CancellationToken;
+        var (categoryId, vendorId) = await SeedCatalogAsync(client);
+        await client.PostAsJsonAsync(
+            "/api/spend/entries",
+            new[] { Entry(categoryId, vendorId, $"k-{Guid.NewGuid():N}", source: "Manual") },
+            ct
+        );
+
+        var rows = await client.GetFromJsonAsync<JsonElement>($"/api/spend/entries?vendorId={vendorId}", ct);
+
+        var entry = rows.EnumerateArray().Single();
+        entry.TryGetProperty("rawPayload", out _).Should().BeFalse();
+        // The provenance columns the ledger's consumers do read must survive the projection.
+        entry.GetProperty("sourceId").GetString().Should().Be(UsageSourceIds.ManualLedger);
+        entry.GetProperty("amountGbp").GetDecimal().Should().NotBe(0);
+    }
+
+    /// <summary>
+    /// The Spend tab is readonlyHidden in the dashboard, so a share-link viewer is not meant to
+    /// reach the row-level ledger at all. Only the group filter guarded this route, and that
+    /// admits the readonly key on any GET — so the product intent was enforced in the client
+    /// and nowhere else. /spend/reporting is deliberately NOT gated: the Reporting tab is
+    /// visible to readonly viewers and returns aggregates only.
+    /// </summary>
+    [Fact]
+    public async Task GetEntries_RejectsTheReadOnlyViewerKey()
+    {
+        using var client = factory.CreateReadOnlyClient();
+
+        var response = await client.GetAsync("/api/spend/entries", TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task GetReporting_StillAllowsTheReadOnlyViewerKey()
+    {
+        using var client = factory.CreateReadOnlyClient();
+
+        var response = await client.GetAsync(
+            "/api/spend/reporting?from=2019-07-01&to=2019-07-31",
+            TestContext.Current.CancellationToken
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     [Fact]
     public async Task MixedBatch_ReturnsPerRowVerdictsAndLandsOnlyTheGoodRow()
     {

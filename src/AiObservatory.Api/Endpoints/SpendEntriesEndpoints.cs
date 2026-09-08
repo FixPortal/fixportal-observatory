@@ -21,7 +21,11 @@ public static class SpendEntriesEndpoints
     // ReSharper disable once UnusedMethodReturnValue.Global
     public static IEndpointRouteBuilder MapSpendEntriesEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/spend/entries", GetEntriesAsync);
+        // Admin-only, matching the dashboard's own intent: the Spend tab is readonlyHidden, so a
+        // share-link viewer is not meant to reach the row-level ledger. /spend/reporting below is
+        // deliberately NOT gated — the Reporting tab IS visible to readonly viewers, and it
+        // returns aggregates rather than ledger rows.
+        app.MapGet("/spend/entries", GetEntriesAsync).AddEndpointFilter<AdminOnlyApiKeyEndpointFilter>();
         app.MapGet("/spend/reporting", GetReportingAsync);
         app.MapPost("/spend/entries", RecordEntriesAsync);
         app.MapPatch("/spend/entries/{id:guid}", PatchEntryAsync);
@@ -317,9 +321,32 @@ public static class SpendEntriesEndpoints
         // Hard ceiling so an unbounded range cannot OOM the response; callers page by date.
         var capped = Math.Clamp(limit, 1, 5000);
 
+        // Projected, never the entity. SpendEntry.RawPayload holds the provider billing response
+        // verbatim and unredacted, and its own doc comment says not to surface it without review;
+        // returning the entity put it on the wire for every caller this route admits, and nothing
+        // in the client contract declares or renders it. Every other column is retained.
         var rows = await q.OrderByDescending(e => e.OccurredOn)
             .ThenByDescending(e => e.RecordedAt)
             .Take(capped)
+            .Select(e => new SpendEntryResponse(
+                e.Id,
+                e.OccurredOn,
+                e.VendorId,
+                e.CategoryId,
+                e.Amount,
+                e.Currency,
+                e.AmountGbp,
+                e.FxRate,
+                e.Description,
+                e.Source,
+                e.EntryKey,
+                e.RecordedAt,
+                e.SourceId,
+                e.SourceKind,
+                e.UsageScope,
+                e.CostBasis,
+                e.ObservedAt
+            ))
             .ToListAsync(ct);
 
         return Results.Ok(rows);
@@ -662,6 +689,32 @@ public sealed record SpendEntryPatchRequest(
 // Serialized as the per-row API response; reflection-based JSON use is invisible to InspectCode.
 // ReSharper disable NotAccessedPositionalProperty.Global
 public sealed record SpendEntryResult(Guid? Id, string Status, string? Reason);
+
+/// <summary>
+/// The wire shape of a ledger row. Deliberately NOT the <see cref="SpendEntry"/> entity: that
+/// carries <c>RawPayload</c>, the provider billing response stored verbatim and unredacted, which
+/// its own doc comment says must not be surfaced without review. Every other column is carried
+/// through, so this is the entity minus that one field.
+/// </summary>
+public sealed record SpendEntryResponse(
+    Guid Id,
+    LocalDate OccurredOn,
+    Guid VendorId,
+    Guid CategoryId,
+    decimal Amount,
+    string Currency,
+    decimal AmountGbp,
+    decimal FxRate,
+    string? Description,
+    SpendSource Source,
+    string? EntryKey,
+    Instant RecordedAt,
+    string SourceId,
+    SourceKind SourceKind,
+    UsageScope UsageScope,
+    CostBasis CostBasis,
+    Instant ObservedAt
+);
 
 public sealed record BilledReportingResponse(
     int EntryCount,
