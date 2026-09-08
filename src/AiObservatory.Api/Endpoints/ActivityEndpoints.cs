@@ -3,6 +3,7 @@ using System.Linq.Expressions;
 using AiObservatory.Data;
 using AiObservatory.Data.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using NodaTime;
 using NodaTime.Text;
 using Npgsql;
@@ -22,7 +23,14 @@ public static class ActivityEndpoints
 
         app.MapGet(
                 "/activity/daily",
-                async (AiObservatoryDbContext db, IClock clock, string? from, string? to, CancellationToken ct) =>
+                async (
+                    AiObservatoryDbContext db,
+                    IClock clock,
+                    IOptions<ActivityOptions> activityOptions,
+                    string? from,
+                    string? to,
+                    CancellationToken ct
+                ) =>
                 {
                     var today = clock.GetCurrentInstant().InUtc().Date;
                     if (!TryParseDateRange(from, to, today, out var start, out var end, out var error))
@@ -36,11 +44,11 @@ public static class ActivityEndpoints
                     var sessions = await db
                         .ClaudeActivitySessions.AsNoTracking()
                         .Where(s => s.LastSeenAt > startInstant && s.StartedAt < endInstant)
-                        .Where(IsAllowedProjectPredicate)
+                        .Where(AllowedProjectPredicate(activityOptions.Value.ProjectOwners))
                         .Select(s => new ActivitySessionSlice(s.Project, s.StartedAt, s.LastSeenAt, s.ActiveSeconds))
                         .ToListAsync(ct);
 
-                    var byDate = BuildDailyActivityResponses(sessions, start, end);
+                    var byDate = BuildDailyActivityResponses(sessions, start, end, activityOptions.Value.ProjectOwners);
 
                     return Results.Ok(byDate);
                 }
@@ -49,7 +57,14 @@ public static class ActivityEndpoints
 
         app.MapGet(
                 "/activity/by-project",
-                async (AiObservatoryDbContext db, IClock clock, string? from, string? to, CancellationToken ct) =>
+                async (
+                    AiObservatoryDbContext db,
+                    IClock clock,
+                    IOptions<ActivityOptions> activityOptions,
+                    string? from,
+                    string? to,
+                    CancellationToken ct
+                ) =>
                 {
                     var today = clock.GetCurrentInstant().InUtc().Date;
                     if (!TryParseDateRange(from, to, today, out var start, out var end, out var error))
@@ -63,7 +78,7 @@ public static class ActivityEndpoints
                     var sessions = await db
                         .ClaudeActivitySessions.AsNoTracking()
                         .Where(s => s.StartedAt >= startInstant && s.StartedAt < endInstant)
-                        .Where(IsAllowedProjectPredicate)
+                        .Where(AllowedProjectPredicate(activityOptions.Value.ProjectOwners))
                         .Select(s => new
                         {
                             s.SessionId,
@@ -95,9 +110,13 @@ public static class ActivityEndpoints
         // Admin-key gated, mirrors the /aggregates provider-scoped reset.
         app.MapDelete(
                 "/activity/sessions/disallowed-projects",
-                async (AiObservatoryDbContext db, CancellationToken ct) =>
+                async (AiObservatoryDbContext db, IOptions<ActivityOptions> activityOptions, CancellationToken ct) =>
                 {
-                    var deleted = await DeleteDisallowedProjectSessionsAsync(db, ct);
+                    var deleted = await DeleteDisallowedProjectSessionsAsync(
+                        db,
+                        activityOptions.Value.ProjectOwners,
+                        ct
+                    );
 
                     return Results.Ok(new { deletedSessions = deleted });
                 }
@@ -275,16 +294,9 @@ public static class ActivityEndpoints
         return updated > 0;
     }
 
-    // Only these GitHub accounts are "real" projects for the dashboard — everything
-    // else (scratch folders, other orgs, non-git dirs falling back to a leaf folder name)
-    // is ingestion noise and stays out of the Project breakdown/treemap.
-    //
-    // `FixPortal` is the live org every repo's origin actually resolves to, so it MUST be
-    // present and MUST keep this exact casing — the comparison below is ordinal, and a
-    // lowercase entry would silently drop every real session. `fix-portal` is retained
-    // only so historical rows stay visible. This list must remain a subset of the
-    // producer-side allowlist in the out-of-repo observe-sweep.ps1 hook.
-    public static readonly string[] AllowedProjectOwners = ["FixPortal", "fix-portal"];
+    // The owner allowlist is configuration, not code — see ActivityOptions.ProjectOwners for
+    // what it means and why empty allows everything. It used to be a hardcoded
+    // ["FixPortal", "fix-portal"], which left every other deployment with two blank tabs.
 
     public sealed record ActivitySessionSlice(
         string Project,
@@ -293,44 +305,62 @@ public static class ActivityEndpoints
         long ActiveSeconds
     );
 
-    // Single source for the SQL-translatable allowlist rule, reused by every EF query
-    // below instead of each carrying its own copy of the Any(...)/StartsWith(...) text.
-    // IsAllowedProject (below) intentionally stays a separate, ordinal-comparison
-    // implementation for the in-memory path — see its own comment.
-    public static readonly Expression<Func<ClaudeActivitySession, bool>> IsAllowedProjectPredicate = s =>
-        AllowedProjectOwners.Any(o => s.Project == o || s.Project.StartsWith(o + "/"));
+    // Single source for the SQL-translatable allowlist rule, reused by every EF query below
+    // instead of each carrying its own copy of the Any(...)/StartsWith(...) text. Built per call
+    // from the configured owners rather than held as a static, so nothing has to mutate shared
+    // state to change the policy. IsAllowedProject (below) intentionally stays a separate,
+    // ordinal-comparison implementation for the in-memory path — see its own comment.
+    public static Expression<Func<ClaudeActivitySession, bool>> AllowedProjectPredicate(IReadOnlyList<string> owners)
+    {
+        ArgumentNullException.ThrowIfNull(owners);
+        // No allowlist configured means no filter at all — see ActivityOptions.ProjectOwners.
+        // Expressed as a constant-true predicate rather than an empty Any(...), which would
+        // reject everything.
+        return owners.Count == 0 ? _ => true : s => owners.Any(o => s.Project == o || s.Project.StartsWith(o + "/"));
+    }
 
-    // Negation of IsAllowedProjectPredicate, built once from the same expression body so
-    // the "disallowed" side of the rule can never drift from the "allowed" side.
-    private static readonly Expression<Func<ClaudeActivitySession, bool>> IsDisallowedProjectPredicate =
-        Expression.Lambda<Func<ClaudeActivitySession, bool>>(
-            Expression.Not(IsAllowedProjectPredicate.Body),
-            IsAllowedProjectPredicate.Parameters[0]
+    // Negation of AllowedProjectPredicate, built from the same expression body so the
+    // "disallowed" side of the rule can never drift from the "allowed" side.
+    private static Expression<Func<ClaudeActivitySession, bool>> DisallowedProjectPredicate(
+        IReadOnlyList<string> owners
+    )
+    {
+        var allowed = AllowedProjectPredicate(owners);
+        return Expression.Lambda<Func<ClaudeActivitySession, bool>>(
+            Expression.Not(allowed.Body),
+            allowed.Parameters[0]
         );
+    }
 
-    // In-memory counterpart of IsAllowedProjectPredicate. Kept as its own implementation
-    // (not derived from the expression above) because it deliberately uses an ordinal
-    // StartsWith — culture-sensitive comparison would be wrong here — whereas SQL
-    // translation via Npgsql is byte/ordinal-equivalent regardless.
-    public static bool IsAllowedProject(string project) =>
-        AllowedProjectOwners.Any(o => project == o || project.StartsWith(o + "/", StringComparison.Ordinal));
+    // In-memory counterpart of AllowedProjectPredicate. Kept as its own implementation (not
+    // derived from the expression above) because it deliberately uses an ordinal StartsWith —
+    // culture-sensitive comparison would be wrong here — whereas SQL translation via Npgsql is
+    // byte/ordinal-equivalent regardless.
+    public static bool IsAllowedProject(string project, IReadOnlyList<string> owners)
+    {
+        ArgumentNullException.ThrowIfNull(owners);
+        return owners.Count == 0
+            || owners.Any(o => project == o || project.StartsWith(o + "/", StringComparison.Ordinal));
+    }
 
     public static Task<int> DeleteDisallowedProjectSessionsAsync(
         AiObservatoryDbContext db,
+        IReadOnlyList<string> owners,
         CancellationToken ct = default
-    ) => db.ClaudeActivitySessions.Where(IsDisallowedProjectPredicate).ExecuteDeleteAsync(ct);
+    ) => db.ClaudeActivitySessions.Where(DisallowedProjectPredicate(owners)).ExecuteDeleteAsync(ct);
 
     public static List<DailyActivityResponse> BuildDailyActivityResponses(
         IEnumerable<ActivitySessionSlice> sessions,
         LocalDate start,
-        LocalDate end
+        LocalDate end,
+        IReadOnlyList<string> owners
     )
     {
         var startInstant = start.AtStartOfDayInZone(DateTimeZone.Utc).ToInstant();
         var endInstant = end.PlusDays(1).AtStartOfDayInZone(DateTimeZone.Utc).ToInstant();
         var slices = new List<(LocalDate Date, Instant Start, Instant End, long ActiveSeconds)>();
 
-        foreach (var session in sessions.Where(s => IsAllowedProject(s.Project) && s.LastSeenAt > s.StartedAt))
+        foreach (var session in sessions.Where(s => IsAllowedProject(s.Project, owners) && s.LastSeenAt > s.StartedAt))
         {
             var clippedStart = Max(session.StartedAt, startInstant);
             var clippedEnd = Min(session.LastSeenAt, endInstant);

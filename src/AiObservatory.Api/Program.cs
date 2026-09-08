@@ -40,6 +40,13 @@ builder.Services.AddDataLayer(dbConnection);
 
 Program.ValidateApiKeys(builder);
 builder.Services.AddSingleton<IClock>(SystemClock.Instance);
+
+// Owner allowlist for the Activity and GitHub tabs. Resolved once here, so every consumer sees
+// the same value, and bound from either the array or the delimited-scalar shape. Absent means
+// absent: an unset allowlist filters nothing, rather than emptying both tabs.
+builder.Services.Configure<ActivityOptions>(builder.Configuration.GetSection(ActivityOptions.SectionName));
+var projectOwners = ActivityOptions.ResolveProjectOwners(builder.Configuration);
+builder.Services.PostConfigure<ActivityOptions>(o => o.ProjectOwners = projectOwners);
 builder.Services.AddSingleton(
     RoutingCatalogService.Load(Path.Combine(AppContext.BaseDirectory, "Routing", "routing-catalog.json"))
 );

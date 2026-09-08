@@ -33,6 +33,14 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
     public string Environment { get; set; } = Environments.Development;
     public string? ApiKeyOverride { get; set; } = AdminKey;
 
+    /// <summary>
+    /// Owner allowlist for the Activity and GitHub tabs, as the delimited scalar the deployed
+    /// app receives. Defaults to the FixPortal deployment's value so the suites asserting that a
+    /// non-allowlisted owner is EXCLUDED have a list to exclude against; set it to an empty
+    /// string to exercise the allow-everything default a self-hoster gets.
+    /// </summary>
+    public string ProjectOwnersOverride { get; set; } = "FixPortal,fix-portal";
+
     // Mutable test-fixture seam used by consumers even though the in-repo tests keep the default.
     // ReSharper disable once AutoPropertyCanBeMadeGetOnly.Global
     public string? ReadOnlyKeyOverride { get; set; } = ReadOnlyKey;
@@ -94,6 +102,11 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
         System.Environment.SetEnvironmentVariable("OBSERVATORY_READONLY_API_KEY", ReadOnlyKeyOverride);
         System.Environment.SetEnvironmentVariable("OBSERVATORY_IDE_API_KEY", IdeKeyOverride);
         System.Environment.SetEnvironmentVariable("SWA_ORIGIN", "https://example.test");
+        // The owner allowlist is configuration now, and empty means allow everything. The
+        // Activity and GitHub suites assert that a NON-allowlisted owner is excluded, so they
+        // need a non-empty list or they would pass vacuously against an allow-all default.
+        // This is the value the FixPortal deployment configures.
+        System.Environment.SetEnvironmentVariable("Activity__ProjectOwners", ProjectOwnersOverride);
         return base.CreateHost(builder);
     }
 

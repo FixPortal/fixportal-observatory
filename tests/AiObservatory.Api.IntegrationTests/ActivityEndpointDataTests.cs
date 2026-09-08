@@ -58,7 +58,11 @@ public class ActivityEndpointDataTests : IAsyncLifetime
         );
         await _ctx.SaveChangesAsync(ct);
 
-        var deleted = await ActivityEndpoints.DeleteDisallowedProjectSessionsAsync(_ctx, ct);
+        var deleted = await ActivityEndpoints.DeleteDisallowedProjectSessionsAsync(
+            _ctx,
+            ["FixPortal", "fix-portal"],
+            ct
+        );
 
         deleted.Should().Be(3);
         var remaining = await _ctx

@@ -70,6 +70,8 @@ public class ActivityEndpointsTests
         ActivityEndpoints.MergeIntervalSeconds([valid, zeroLength, inverted]).Should().Be(3600);
     }
 
+    private static readonly string[] FixPortalOwners = ["FixPortal", "fix-portal"];
+
     [Theory]
     [InlineData("FixPortal")]
     [InlineData("FixPortal/fixportal-ai-observatory")]
@@ -77,7 +79,7 @@ public class ActivityEndpointsTests
     [InlineData("fix-portal/fixportal-ai-observatory")]
     public void IsAllowedProject_WhenProjectMatchesAllowedOwner_ReturnsTrue(string project)
     {
-        ActivityEndpoints.IsAllowedProject(project).Should().BeTrue();
+        ActivityEndpoints.IsAllowedProject(project, FixPortalOwners).Should().BeTrue();
     }
 
     [Theory]
@@ -88,7 +90,21 @@ public class ActivityEndpointsTests
     [InlineData("fixportal/example")]
     public void IsAllowedProject_WhenProjectDoesNotMatchAllowedOwner_ReturnsFalse(string project)
     {
-        ActivityEndpoints.IsAllowedProject(project).Should().BeFalse();
+        ActivityEndpoints.IsAllowedProject(project, FixPortalOwners).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Empty means allow everything, and empty is the default. A self-hoster who never sets an
+    /// owner allowlist must not find their Activity and GitHub tabs silently blank — which is
+    /// exactly what a hardcoded "FixPortal" list did to everyone who was not FixPortal.
+    /// </summary>
+    [Theory]
+    [InlineData("someone-else/their-repo")]
+    [InlineData("acme")]
+    [InlineData("chris-fixportal/tooling")]
+    public void IsAllowedProject_WhenNoOwnersConfigured_AllowsEveryProject(string project)
+    {
+        ActivityEndpoints.IsAllowedProject(project, []).Should().BeTrue();
     }
 
     [Fact]
@@ -107,7 +123,8 @@ public class ActivityEndpointsTests
         var result = ActivityEndpoints.BuildDailyActivityResponses(
             sessions,
             new LocalDate(2026, 7, 1),
-            new LocalDate(2026, 7, 2)
+            new LocalDate(2026, 7, 2),
+            FixPortalOwners
         );
 
         result.Should().HaveCount(2);
@@ -141,7 +158,8 @@ public class ActivityEndpointsTests
         var result = ActivityEndpoints.BuildDailyActivityResponses(
             sessions,
             new LocalDate(2026, 7, 1),
-            new LocalDate(2026, 7, 1)
+            new LocalDate(2026, 7, 1),
+            FixPortalOwners
         );
 
         result.Single().ActiveSeconds.Should().Be(3_600);
