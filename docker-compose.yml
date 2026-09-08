@@ -27,6 +27,10 @@ services:
       # Billing needs Plan read on a fine-grained PAT or admin:org on a classic PAT.
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_BILLING_ORG: ${GITHUB_BILLING_ORG:-}
+      # Comma-separated GitHub account names whose projects and repositories appear in the
+      # Activity and GitHub tabs. Leave unset to show everything, which is the default —
+      # set it only if you want those tabs narrowed to specific owners.
+      Activity__ProjectOwners: ${OBSERVATORY_PROJECT_OWNERS:-}
       # ANTHROPIC_API_KEY: sk-ant-...   # optional — leave unset to skip AI insights
     depends_on:
       db:

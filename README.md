@@ -75,6 +75,14 @@ $env:DB_CONNECTION = 'Host=localhost;Port=5433;Database=aiobservatory;Username=a
 dotnet run --project src/AiObservatory.Ingest
 ```
 
+### Optional settings
+
+| Setting | Effect when unset |
+| --- | --- |
+| `Activity__ProjectOwners` | The Activity and GitHub tabs show every project and repository that was ingested. Set it to a comma-separated list of GitHub account names to narrow them to those owners. |
+| `VITE_ATTRIBUTION_NAME`, `VITE_ATTRIBUTION_URL` | The footer shows only a link to this project. Set both to credit whoever runs your instance. |
+| `BUDGET_ALERT_MESSAGE_ID_DOMAIN` | Budget alert `Message-Id` headers use the domain of your configured sender address, or `observatory.local` if no sender is configured. |
+
 Use neutral placeholders such as `<observatory-api-key>` outside your secret store. See [Provider setup](docs/provider-setup.md) for acquisition settings; public pricing catalogs require no credentials. Google Cloud SKU pricing remains unavailable until verified mappings exist, independently of the bundled Gemini Developer API rates.
 
 ## Dashboard truth
