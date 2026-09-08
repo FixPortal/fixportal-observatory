@@ -2,6 +2,7 @@ using AiObservatory.Api.Services;
 using AiObservatory.Data.Entities;
 using AiObservatory.Data.Repositories;
 using AwesomeAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NodaTime;
@@ -228,7 +229,7 @@ public class BudgetAlertServiceTests
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
-        var expectedMessageId = $"budget-alert-{claimId:N}@observatory.fixportal.com";
+        var expectedMessageId = $"budget-alert-{claimId:N}@{MessageIdDomain}";
         await _notifier
             .Received(2)
             .NotifyAsync(
@@ -241,6 +242,75 @@ public class BudgetAlertServiceTests
         await _repo
             .Received(1)
             .MarkBudgetAlertEmailSentAsync(claimId, Arg.Any<Guid>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// The Message-Id domain is configuration. It used to be a hardcoded maintainer domain, which
+    /// every self-hoster would have stamped on their own outgoing alert mail. The sender's own
+    /// domain is the right default because that is the address the mail is actually sent from;
+    /// an explicit setting overrides it.
+    /// </summary>
+    [Theory]
+    // Explicit setting wins.
+    [InlineData("mail.example.test", "alerts@sender.example", "mail.example.test")]
+    // No explicit setting: derived from the configured sender.
+    [InlineData(null, "alerts@sender.example", "sender.example")]
+    // Neither configured: a neutral literal, never a domain belonging to this project.
+    [InlineData(null, null, "observatory.local")]
+    public async Task CheckAndAlert_DerivesTheMessageIdDomainFromConfiguration(
+        string? explicitDomain,
+        string? sender,
+        string expectedDomain
+    )
+    {
+        var claimId = Guid.Parse("10000000-0000-0000-0000-0000000000aa");
+        var email = new BudgetAlertEmail(
+            claimId,
+            Guid.Parse("20000000-0000-0000-0000-0000000000aa"),
+            Provider.Anthropic,
+            BillingPeriod.Daily,
+            new LocalDate(2026, 6, 1),
+            new LocalDate(2026, 6, 1),
+            10m,
+            15m,
+            Instant.FromUtc(2026, 6, 2, 0, 1)
+        );
+        _repo.GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<CancellationToken>()).Returns([email]);
+        _repo
+            .TryAcquireBudgetAlertEmailLeaseAsync(
+                claimId,
+                Arg.Any<Guid>(),
+                Arg.Any<Instant>(),
+                Arg.Any<Instant>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(true);
+        _notifier
+            .NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>())
+            .Returns(AlertDeliveryResult.Sent);
+
+        var settings = new Dictionary<string, string?>();
+        if (explicitDomain is not null)
+        {
+            settings["BUDGET_ALERT_MESSAGE_ID_DOMAIN"] = explicitDomain;
+        }
+        if (sender is not null)
+        {
+            settings["BUDGET_ALERT_EMAIL_FROM"] = sender;
+        }
+        var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+        var sut = new BudgetAlertService(_repo, _clock, _notifier, NullLogger<BudgetAlertService>.Instance, config);
+
+        await sut.CheckAndAlertAsync(TestContext.Current.CancellationToken);
+
+        await _notifier
+            .Received(1)
+            .NotifyAsync(
+                Arg.Is<BudgetAlertPayload>(payload =>
+                    payload.MessageId == $"budget-alert-{claimId:N}@{expectedDomain}"
+                ),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -456,7 +526,7 @@ public class BudgetAlertServiceTests
             .Returns(call =>
             {
                 var messageId = call.ArgAt<BudgetAlertPayload>(0).MessageId;
-                var encodedClaimId = messageId["budget-alert-".Length..^"@observatory.fixportal.com".Length];
+                var encodedClaimId = messageId["budget-alert-".Length..^$"@{MessageIdDomain}".Length];
                 attempts.Add(Guid.ParseExact(encodedClaimId, "N"));
                 return Task.FromResult(AlertDeliveryResult.Sent);
             });
@@ -735,7 +805,7 @@ public class BudgetAlertServiceTests
             .ReleaseBudgetAlertEmailLeaseAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(releaseFails ? Task.FromException(cleanupFailure) : Task.CompletedTask);
         var logger = Substitute.For<ILogger<BudgetAlertService>>();
-        var sut = new BudgetAlertService(_repo, _clock, _notifier, logger);
+        var sut = new BudgetAlertService(_repo, _clock, _notifier, logger, EmptyConfig);
 
         Func<Task> act = () => sut.CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
@@ -754,7 +824,12 @@ public class BudgetAlertServiceTests
             .ContainSingle(args => (LogLevel)args[0]! == LogLevel.Error && ReferenceEquals(args[3], deliveryFailure));
     }
 
-    private BudgetAlertService Sut() => new(_repo, _clock, _notifier, NullLogger<BudgetAlertService>.Instance);
+    // No alert sender configured, so the Message-Id domain falls back to its neutral literal.
+    private const string MessageIdDomain = "observatory.local";
+    private static readonly IConfiguration EmptyConfig = new ConfigurationBuilder().Build();
+
+    private BudgetAlertService Sut() =>
+        new(_repo, _clock, _notifier, NullLogger<BudgetAlertService>.Instance, EmptyConfig);
 
     private static BudgetRule Rule(
         BillingPeriod period,

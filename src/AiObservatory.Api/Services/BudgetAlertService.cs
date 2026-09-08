@@ -9,9 +9,27 @@ public class BudgetAlertService(
     IUsageRepository repository,
     IClock clock,
     IAlertNotifier notifier,
-    ILogger<BudgetAlertService> logger
+    ILogger<BudgetAlertService> logger,
+    IConfiguration config
 )
 {
+    // Message-Id domain. Defaults to the domain of the configured sender, which is the address
+    // these alerts are actually sent from and therefore the right authority for the id. Falls
+    // back to a neutral literal when no sender is configured, rather than to a maintainer domain
+    // that a self-hoster would otherwise stamp on their own outgoing mail — this used to be a
+    // hardcoded "observatory.fixportal.com", which was not even a domain this project serves.
+    private string MessageIdDomain()
+    {
+        var configured = config["BUDGET_ALERT_MESSAGE_ID_DOMAIN"];
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured.Trim();
+        }
+        var sender = config["BUDGET_ALERT_EMAIL_FROM"] ?? config["BUDGET_ALERT_SMTP_USER"];
+        var at = sender?.LastIndexOf('@') ?? -1;
+        return at >= 0 && at < sender!.Length - 1 ? sender[(at + 1)..].Trim() : "observatory.local";
+    }
+
     // virtual to match the other de-interfaced services (FxRateProvider, AnthropicIntelligenceClient):
     // overridable for subclass-mocking now that IBudgetAlertService is gone.
     public virtual async Task CheckAndAlertAsync(CancellationToken ct = default)
@@ -255,7 +273,7 @@ public class BudgetAlertService(
             email.ThresholdGbp,
             email.ActualSpendGbp,
             email.CreatedAt.ToDateTimeOffset(),
-            $"budget-alert-{email.ClaimId:N}@observatory.fixportal.com",
+            $"budget-alert-{email.ClaimId:N}@{MessageIdDomain()}",
             email.ClaimId
         );
 

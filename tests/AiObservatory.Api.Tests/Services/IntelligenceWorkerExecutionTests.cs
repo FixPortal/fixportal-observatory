@@ -2,6 +2,7 @@ using AiObservatory.Api.Services;
 using AiObservatory.Api.Services.Intelligence;
 using AiObservatory.Data.Repositories;
 using AwesomeAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -157,7 +158,8 @@ public class IntelligenceWorkerExecutionTests
             repository,
             clock,
             Substitute.For<IAlertNotifier>(),
-            NullLogger<BudgetAlertService>.Instance
+            NullLogger<BudgetAlertService>.Instance,
+            new ConfigurationBuilder().Build()
         );
         budget
             .CheckAndAlertAsync(Arg.Any<CancellationToken>())
