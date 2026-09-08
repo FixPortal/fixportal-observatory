@@ -411,6 +411,37 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
         }
     }
 
+    [Fact]
+    public async Task CostlessEstimatedReplayPreservesAnOperatorCorrection()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _store.ActivateAsync(Candidate("catalog", 2m), ct);
+        var pricingRepository = new UsageRepository(_db, _store, Resolver(_store));
+
+        // O3: the endpoint nulls the cost for estimated bases and routes here, so the replay's
+        // provenance is "the source supplied no cost" even though the resolver then prices it.
+        var original = Event("corrected-replay", CostBasis.ListPriceEstimate, null, null);
+        (await pricingRepository.RecordEstimatedEventAsync(original, ct))
+            .Disposition.Should()
+            .Be(RecordEventDisposition.Created);
+        (await _db.UsageEvents.AsNoTracking().SingleAsync(ct)).CostUsd.Should().Be(2m);
+
+        await _repository.PatchEventCostAsync(Provider.OpenAI, "repricing-test", "corrected-replay", 3m, ct);
+
+        var replay = Event("corrected-replay", CostBasis.ListPriceEstimate, null, null);
+        replay.ObservedAt = Instant.FromUtc(2026, 8, 25, 2, 0);
+        (await pricingRepository.RecordEstimatedEventAsync(replay, ct))
+            .Disposition.Should()
+            .Be(RecordEventDisposition.Corrected);
+
+        var saved = await _db.UsageEvents.AsNoTracking().SingleAsync(ct);
+        saved
+            .CostUsd.Should()
+            .Be(3m, "a cost-less estimated replay must not overwrite the operator's figure with the fresh quote");
+        saved.CostBasis.Should().Be(CostBasis.ProviderEstimated);
+        saved.CorrectedAt.Should().NotBeNull();
+    }
+
     private static PricingSnapshotCandidate Candidate(
         string evidence,
         decimal input,
