@@ -149,9 +149,15 @@ public class GitHubBillingSyncService(
     private static string ObservationKeyFor(BillingLine line)
     {
         var month = line.Month.ToString("yyyy-MM", CultureInfo.InvariantCulture);
-        // Length-prefix both segments: a bare ':' delimiter lets product="a:b"/sku="c" and
-        // product="a"/sku="b:c" collide on the same key, overwriting each other's spend.
-        var material = $"{Part(line.Product)}{Part(line.Sku)}";
+        // Keep the plain product:sku form byte-identical to the format every stored row was
+        // written under: ApplyObservationAsync and FindSpendAsync match on the key verbatim,
+        // so an unconditional format change orphans the whole ledger and double-counts every
+        // historical month on the first sync after deploy. Length-prefix only when a segment
+        // carries the ':' delimiter, which the plain form cannot disambiguate
+        // (product="a:b"/sku="c" against product="a"/sku="b:c").
+        var material = line.Product.Contains(':') || line.Sku.Contains(':')
+            ? $"{Part(line.Product)}{Part(line.Sku)}"
+            : $"{line.Product}:{line.Sku}";
         var readable = $"github:{month}:{material}";
         if (readable.Length <= 200)
         {

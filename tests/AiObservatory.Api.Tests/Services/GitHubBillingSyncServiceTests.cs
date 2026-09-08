@@ -235,10 +235,24 @@ public sealed class GitHubBillingSyncServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task PlainSegmentsKeepTheLegacyObservationKeyFormByteIdentical()
+    {
+        // O2: every stored row carries github:{month}:{product}:{sku} and the writer matches on
+        // the key verbatim, so length-prefixing unconditionally orphaned the whole ledger and
+        // inserted a second observation and spend row per month on the first sync after deploy.
+        var writes = new List<CapturedWrite>();
+        var sut = Create(ClientReturning(Item("actions", "linux", 10m)), Writer(writes));
+
+        await sut.SyncAsync(TestContext.Current.CancellationToken);
+
+        writes.Select(write => write.Observation.ObservationKey).Should().Equal("github:2026-07:actions:linux");
+    }
+
+    [Fact]
     public async Task ColonBearingSegmentsCannotCollideObservationKeys()
     {
         // A9: a bare ':' delimiter let product="a:b"/sku="c" and product="a"/sku="b:c" share
-        // one key and overwrite each other. The segments are length-prefixed instead.
+        // one key and overwrite each other. Only colon-bearing segments are length-prefixed.
         var writes = new List<CapturedWrite>();
         var sut = Create(ClientReturning(Item("a:b", "c", 10m), Item("a", "b:c", 20m)), Writer(writes));
 
