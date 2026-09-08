@@ -48,7 +48,9 @@ public sealed class GoogleBillingExportClientTests
         query.Sql.Should().Contain("export_time > @changes_since");
         // Partition pruning: the source scan needs its own date predicate — neither the
         // IS NOT DISTINCT FROM join nor the OR'd export_time filter lets BigQuery prune.
-        query.Sql.Should().Contain("WHERE source.usage_start_time >= @changes_since - INTERVAL 31 DAY");
+        query
+            .Sql.Should()
+            .Contain("WHERE DATE(source.usage_start_time) >= DATE_SUB(DATE(@changes_since), INTERVAL 31 DAY)");
         query.Sql.Should().Contain("FROM `project.dataset.table` AS source");
         query.Sql.Should().Contain("UNNEST(source.credits)");
         query.Sql.Should().Contain("CAST(source.cost * 1000000 AS INT64)");
@@ -69,6 +71,39 @@ public sealed class GoogleBillingExportClientTests
             .Parameters.Select(parameter => parameter.Name)
             .Should()
             .BeEquivalentTo("from", "through_exclusive", "changes_since");
+    }
+
+    [Fact]
+    public void BuildQuery_places_the_line_items_predicate_after_the_join()
+    {
+        var query = GoogleBillingExportClient.BuildQuery("project.dataset.table");
+
+        var fromSource = query.Sql.IndexOf("FROM `project.dataset.table` AS source", StringComparison.Ordinal);
+        var join = query.Sql.IndexOf("INNER JOIN affected_keys", StringComparison.Ordinal);
+        var where = query.Sql.IndexOf("WHERE DATE(source.usage_start_time)", StringComparison.Ordinal);
+        fromSource.Should().BeGreaterThanOrEqualTo(0);
+        join.Should().BeGreaterThan(fromSource);
+        where
+            .Should()
+            .BeGreaterThan(
+                join,
+                "GoogleSQL parses the join as part of the from-clause, so a WHERE before INNER JOIN rejects the whole query"
+            );
+    }
+
+    [Fact]
+    public void BuildQuery_filters_the_source_scan_at_day_granularity_so_a_mid_day_changes_since_keeps_the_whole_boundary_day()
+    {
+        var query = GoogleBillingExportClient.BuildQuery("project.dataset.table");
+
+        // affected_keys is keyed on DATE(usage_start_time), so the coarse scan predicate must admit
+        // whole days. A raw-timestamp bound (usage_start_time >= @changes_since - INTERVAL 31 DAY)
+        // splits the day exactly 31 days before a mid-day changes_since at that time-of-day, and the
+        // partial re-aggregation overwrites the stored total wholesale as a correction.
+        query
+            .Sql.Should()
+            .Contain("WHERE DATE(source.usage_start_time) >= DATE_SUB(DATE(@changes_since), INTERVAL 31 DAY)");
+        query.Sql.Should().NotContain("source.usage_start_time >= @changes_since - INTERVAL 31 DAY");
     }
 
     [Fact]
