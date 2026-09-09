@@ -364,4 +364,37 @@ public class GitHubActivityRepositoryTests : IAsyncLifetime
         result.HasCommits.Should().BeTrue();
         result.HasWorkflowRuns.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task WorkflowRunsCursor_RoundTripsOverwritesAndClearsOnlyOnRunCompletion()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var first = Instant.FromUtc(2026, 6, 20, 9, 0);
+        var second = Instant.FromUtc(2026, 6, 10, 9, 0);
+
+        // Nothing mid-walk yet: the cursor reads back null alongside the flags.
+        (await _repo.GetBackfillStatusAsync("fix-portal/example", ct))
+            .WorkflowRunsCursor.Should()
+            .BeNull();
+
+        // A truncated listing persists how far the walk got; the flags stay untouched.
+        await _repo.SaveWorkflowRunsCursorAsync("fix-portal/example", first, ct);
+        var resumed = await _repo.GetBackfillStatusAsync("fix-portal/example", ct);
+        resumed.WorkflowRunsCursor.Should().Be(first);
+        resumed.HasWorkflowRuns.Should().BeFalse();
+
+        // The next truncated cycle OVERWRITES the cursor — never OR-merges like the flags.
+        await _repo.SaveWorkflowRunsCursorAsync("fix-portal/example", second, ct);
+        (await _repo.GetBackfillStatusAsync("fix-portal/example", ct)).WorkflowRunsCursor.Should().Be(second);
+
+        // Completing an unrelated lane leaves the mid-flight cursor alone...
+        await _repo.MarkBackfillCompletedAsync("fix-portal/example", GitHubActivityKind.Commits, ct);
+        (await _repo.GetBackfillStatusAsync("fix-portal/example", ct)).WorkflowRunsCursor.Should().Be(second);
+
+        // ...but completing the workflow-run backfill clears it in the same upsert.
+        await _repo.MarkBackfillCompletedAsync("fix-portal/example", GitHubActivityKind.WorkflowRuns, ct);
+        var completed = await _repo.GetBackfillStatusAsync("fix-portal/example", ct);
+        completed.HasWorkflowRuns.Should().BeTrue();
+        completed.WorkflowRunsCursor.Should().BeNull();
+    }
 }

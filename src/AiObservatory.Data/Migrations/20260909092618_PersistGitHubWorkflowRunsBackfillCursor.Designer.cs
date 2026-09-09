@@ -3,6 +3,7 @@ using System;
 using AiObservatory.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NodaTime;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AiObservatory.Data.Migrations
 {
     [DbContext(typeof(AiObservatoryDbContext))]
-    partial class AiObservatoryDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260909092618_PersistGitHubWorkflowRunsBackfillCursor")]
+    partial class PersistGitHubWorkflowRunsBackfillCursor
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

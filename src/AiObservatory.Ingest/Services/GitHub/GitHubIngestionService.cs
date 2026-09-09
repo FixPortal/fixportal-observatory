@@ -105,6 +105,7 @@ public class GitHubIngestionService(
                 var runs = await client.GetWorkflowRunsAsync(
                     repo,
                     SinceDate(status.HasWorkflowRuns),
+                    status.WorkflowRunsCursor,
                     cancellationToken
                 );
                 foreach (var run in runs.Runs)
@@ -113,14 +114,28 @@ public class GitHubIngestionService(
                     latest = Latest(latest, run.CreatedAt);
                 }
                 // A capped listing is incomplete by definition — marking it complete would
-                // permanently skip the runs beyond the cap, so leave the backfill open.
-                if (!status.HasWorkflowRuns && !runs.Truncated)
+                // permanently skip the runs beyond the cap, so leave the backfill open. But do
+                // persist how far the backwards window walk got: the next cycle resumes from
+                // the cursor instead of re-fetching (and re-burning rate limit on) the same
+                // capped windows, so a deep backfill makes progress across cycles. A completed
+                // pass clears the cursor inside MarkBackfillCompletedAsync.
+                if (!status.HasWorkflowRuns)
                 {
-                    await repository.MarkBackfillCompletedAsync(
-                        repo,
-                        GitHubActivityKind.WorkflowRuns,
-                        cancellationToken
-                    );
+                    if (runs.Truncated)
+                    {
+                        if (runs.ResumeCursor is { } resumeCursor)
+                        {
+                            await repository.SaveWorkflowRunsCursorAsync(repo, resumeCursor, cancellationToken);
+                        }
+                    }
+                    else
+                    {
+                        await repository.MarkBackfillCompletedAsync(
+                            repo,
+                            GitHubActivityKind.WorkflowRuns,
+                            cancellationToken
+                        );
+                    }
                 }
 
                 logger.LogInformation(

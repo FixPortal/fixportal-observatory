@@ -40,7 +40,19 @@ public record GitHubCommitRecord(
 
 public record GitHubWorkflowRunRecord(string Repo, long RunId, string WorkflowName, string Status, Instant CreatedAt);
 
-public record GitHubBackfillStatus(bool HasPullRequests, bool HasCommits, bool HasWorkflowRuns, bool HasReviews);
+/// <param name="WorkflowRunsCursor">
+/// Resume position of a mid-flight workflow-run backfill walk (null when none): the oldest run
+/// the last truncated listing reached, so the next cycle continues the walk instead of
+/// restarting the same capped windows. Defaults to null so call sites that only model the
+/// completion flags need not say so.
+/// </param>
+public record GitHubBackfillStatus(
+    bool HasPullRequests,
+    bool HasCommits,
+    bool HasWorkflowRuns,
+    bool HasReviews,
+    Instant? WorkflowRunsCursor = null
+);
 
 public enum GitHubActivityKind
 {
@@ -72,4 +84,12 @@ public interface IGitHubActivityRepository
     Task UpsertWorkflowRunAsync(GitHubWorkflowRunRecord record, Instant ingestedAt, CancellationToken ct = default);
     Task<GitHubBackfillStatus> GetBackfillStatusAsync(string repo, CancellationToken ct = default);
     Task MarkBackfillCompletedAsync(string repo, GitHubActivityKind kind, CancellationToken ct = default);
+
+    /// <summary>
+    /// Persists how far a truncated workflow-run backfill walked (overwrite, never merge), so
+    /// the next poll cycle resumes the backwards window walk from this cursor instead of
+    /// restarting — and re-burning the rate limit on — the same capped windows. Clearing the
+    /// cursor on a completed pass is folded into <see cref="MarkBackfillCompletedAsync"/>.
+    /// </summary>
+    Task SaveWorkflowRunsCursorAsync(string repo, Instant cursor, CancellationToken ct = default);
 }
