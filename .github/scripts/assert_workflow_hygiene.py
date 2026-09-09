@@ -315,6 +315,23 @@ def composite_step_refs(document):
     return refs
 
 
+def is_local_docker_build(image):
+    """True when a docker action's `runs.image` builds from the action's own
+    directory rather than pulling a registry image.
+
+    GitHub's metadata syntax accepts exactly one filename for that local build --
+    `Dockerfile` -- so only a final path component of that name (compared
+    case-insensitively) exempts the image from the pin check: `Dockerfile`,
+    `./docker/Dockerfile`. A suffix match is not the same rule: `build.dockerfile`
+    and `mydockerfile` are not valid local build files, and an image carrying a
+    URI scheme (`docker://untrusted/dockerfile`) is a registry pull whatever its
+    basename, so all of those stay refs to be pin-checked.
+    """
+    if "://" in image:
+        return False
+    return image.rsplit("/", 1)[-1].lower() == "dockerfile"
+
+
 def local_action_refs(document):
     """Every ref a local action manifest causes to run: composite `uses:` steps,
     plus the registry image of a DOCKER action.
@@ -327,15 +344,18 @@ def local_action_refs(document):
     why `action_refs` pin-checks those, and it is checked here through the same
     check_ref.
 
-    `Dockerfile` (or a path ending in one) builds from the action's own directory --
-    this repository's own reviewed code, like a composite's steps -- and has no
-    revision to pin, so it is not a ref.
+    A `Dockerfile` build -- the final path component named exactly that, the one
+    filename GitHub's metadata syntax accepts, so `build.dockerfile` does not
+    qualify -- builds from the action's own directory: this repository's own
+    reviewed code, like a composite's steps, with no revision to pin, so it is not
+    a ref. An image with a URI scheme is a registry pull whatever its basename, so
+    `docker://untrusted/dockerfile` is checked like any other image.
     """
     refs = composite_step_refs(document)
     runs = document.get("runs")
     if isinstance(runs, dict) and runs.get("using") == "docker":
         image = runs.get("image")
-        if isinstance(image, str) and not image.lower().endswith("dockerfile"):
+        if isinstance(image, str) and not is_local_docker_build(image):
             refs.append(image)
     return refs
 
