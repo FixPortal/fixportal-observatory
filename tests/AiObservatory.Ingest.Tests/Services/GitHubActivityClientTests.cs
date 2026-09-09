@@ -589,6 +589,7 @@ public sealed class GitHubActivityClientTests : IDisposable
         var result = await sut.GetWorkflowRunsAsync(
             "fix-portal/example",
             new LocalDate(2026, 7, 1),
+            resumeCursor: null,
             TestContext.Current.CancellationToken
         );
 
@@ -614,6 +615,7 @@ public sealed class GitHubActivityClientTests : IDisposable
         var result = await sut.GetWorkflowRunsAsync(
             "fix-portal/example",
             new LocalDate(2026, 7, 1),
+            resumeCursor: null,
             TestContext.Current.CancellationToken
         );
 
@@ -635,6 +637,7 @@ public sealed class GitHubActivityClientTests : IDisposable
         var result = await sut.GetWorkflowRunsAsync(
             "fix-portal/example",
             new LocalDate(2026, 7, 1),
+            resumeCursor: null,
             TestContext.Current.CancellationToken
         );
 
@@ -657,6 +660,7 @@ public sealed class GitHubActivityClientTests : IDisposable
         var result = await sut.GetWorkflowRunsAsync(
             "fix-portal/example",
             new LocalDate(2026, 7, 1),
+            resumeCursor: null,
             TestContext.Current.CancellationToken
         );
 
@@ -682,6 +686,7 @@ public sealed class GitHubActivityClientTests : IDisposable
         var result = await sut.GetWorkflowRunsAsync(
             "fix-portal/example",
             new LocalDate(2026, 7, 1),
+            resumeCursor: null,
             TestContext.Current.CancellationToken
         );
 
@@ -743,6 +748,7 @@ public sealed class GitHubActivityClientTests : IDisposable
         var result = await sut.GetWorkflowRunsAsync(
             "fix-portal/example",
             new LocalDate(2026, 6, 1),
+            resumeCursor: null,
             TestContext.Current.CancellationToken
         );
 
@@ -753,6 +759,60 @@ public sealed class GitHubActivityClientTests : IDisposable
         handler
             .RequestedUrls.Should()
             .Contain(u => u.Contains("created=2026-06-01..2026-07-01T09:00:00Z", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task GetWorkflowRunsAsync_WithAResumeCursor_StartsTheWalkAtTheCursor()
+    {
+        // A persisted cursor from an earlier truncated cycle is the first window's inclusive
+        // range end — the walk continues there instead of restarting at an unbounded listing.
+        var handler = new StubHandler(_ =>
+            JsonResponse(
+                """
+                {"workflow_runs":[{"id":123,"name":"CI","status":"completed","conclusion":"success","created_at":"2026-06-20T09:00:00Z"}]}
+                """
+            )
+        );
+        var sut = CreateSut(handler);
+
+        var result = await sut.GetWorkflowRunsAsync(
+            "fix-portal/example",
+            new LocalDate(2026, 6, 1),
+            Instant.FromUtc(2026, 6, 25, 9, 0),
+            TestContext.Current.CancellationToken
+        );
+
+        result.Truncated.Should().BeFalse();
+        result.ResumeCursor.Should().BeNull("a completed listing has nothing left to resume");
+        handler
+            .RequestedUrls.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("created=2026-06-01..2026-06-25T09:00:00Z");
+    }
+
+    [Fact]
+    public async Task GetWorkflowRunsAsync_WhenTruncated_ReturnsTheWalkCursorForPersistence()
+    {
+        // Same one-second cap stub as the cannot-move test: the walk advances once (to the
+        // oldest run of the first window) and then stalls, so the truncated result carries
+        // that position for the caller to persist as next cycle's resume cursor.
+        var handler = new StubHandler(req =>
+        {
+            var page = FullPage(PageOffset(req.RequestUri!.ToString()), "2026-07-01T09:00:00Z");
+            return JsonResponse($$"""{"workflow_runs":[{{page}}]}""");
+        });
+        var sut = CreateSut(handler);
+
+        var result = await sut.GetWorkflowRunsAsync(
+            "fix-portal/example",
+            new LocalDate(2026, 7, 1),
+            resumeCursor: null,
+            TestContext.Current.CancellationToken
+        );
+
+        result.Truncated.Should().BeTrue();
+        result.ResumeCursor.Should().Be(Instant.FromUtc(2026, 7, 1, 9, 0));
     }
 
     private static string FullPage(int idOffset, string createdAt) =>

@@ -127,7 +127,8 @@ public class GitHubActivityRepository(AiObservatoryDbContext ctx) : IGitHubActiv
                 state.HasPullRequests,
                 state.HasCommits,
                 state.HasWorkflowRuns,
-                state.HasReviews
+                state.HasReviews,
+                state.WorkflowRunsCursor
             );
     }
 
@@ -137,6 +138,9 @@ public class GitHubActivityRepository(AiObservatoryDbContext ctx) : IGitHubActiv
         var hasCommits = kind == GitHubActivityKind.Commits;
         var hasWorkflowRuns = kind == GitHubActivityKind.WorkflowRuns;
         var hasReviews = kind == GitHubActivityKind.Reviews;
+        // The completion flags OR-merge (once backfilled, always backfilled); the workflow-run
+        // cursor does NOT merge — a completed run backfill clears it in the same upsert, while
+        // an unrelated lane's completion leaves a mid-flight walk's cursor untouched.
         return ctx.Database.ExecuteSqlInterpolatedAsync(
             $"""
             INSERT INTO "GitHubBackfillStates" ("Repo", "HasPullRequests", "HasCommits", "HasWorkflowRuns", "HasReviews")
@@ -145,11 +149,23 @@ public class GitHubActivityRepository(AiObservatoryDbContext ctx) : IGitHubActiv
                 "HasPullRequests" = "GitHubBackfillStates"."HasPullRequests" OR EXCLUDED."HasPullRequests",
                 "HasCommits" = "GitHubBackfillStates"."HasCommits" OR EXCLUDED."HasCommits",
                 "HasWorkflowRuns" = "GitHubBackfillStates"."HasWorkflowRuns" OR EXCLUDED."HasWorkflowRuns",
-                "HasReviews" = "GitHubBackfillStates"."HasReviews" OR EXCLUDED."HasReviews"
+                "HasReviews" = "GitHubBackfillStates"."HasReviews" OR EXCLUDED."HasReviews",
+                "WorkflowRunsCursor" = CASE WHEN EXCLUDED."HasWorkflowRuns" THEN NULL ELSE "GitHubBackfillStates"."WorkflowRunsCursor" END
             """,
             ct
         );
     }
+
+    public Task SaveWorkflowRunsCursorAsync(string repo, Instant cursor, CancellationToken ct = default) =>
+        ctx.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO "GitHubBackfillStates" ("Repo", "HasPullRequests", "HasCommits", "HasWorkflowRuns", "HasReviews", "WorkflowRunsCursor")
+            VALUES ({Truncate(repo, 200)}, false, false, false, false, {cursor})
+            ON CONFLICT ("Repo") DO UPDATE SET
+                "WorkflowRunsCursor" = EXCLUDED."WorkflowRunsCursor"
+            """,
+            ct
+        );
 
     private static string Truncate(string value, int maxLength) =>
         value.Length <= maxLength ? value : value[..maxLength];

@@ -15,7 +15,12 @@ public interface IGitHubActivityClient
         LocalDate since,
         CancellationToken ct = default
     );
-    Task<GitHubWorkflowRunResult> GetWorkflowRunsAsync(string repo, LocalDate since, CancellationToken ct = default);
+    Task<GitHubWorkflowRunResult> GetWorkflowRunsAsync(
+        string repo,
+        LocalDate since,
+        Instant? resumeCursor = null,
+        CancellationToken ct = default
+    );
 }
 
 /// <param name="Truncated">
@@ -23,4 +28,13 @@ public interface IGitHubActivityClient
 /// narrow it further (a cap's worth of runs sharing one created_at second). The caller must
 /// not mark backfill complete on a truncated result — the capped runs would never be fetched.
 /// </param>
-public sealed record GitHubWorkflowRunResult(IReadOnlyList<GitHubWorkflowRunRecord> Runs, bool Truncated);
+/// <param name="ResumeCursor">
+/// When <paramref name="Truncated"/> is true, how far the backwards window walk got: the
+/// oldest run reached. Persisting it lets the next poll cycle resume the walk instead of
+/// restarting the same capped windows. Null on a completed listing (nothing left to resume).
+/// </param>
+public sealed record GitHubWorkflowRunResult(
+    IReadOnlyList<GitHubWorkflowRunRecord> Runs,
+    bool Truncated,
+    Instant? ResumeCursor = null
+);

@@ -225,6 +225,7 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
     public async Task<GitHubWorkflowRunResult> GetWorkflowRunsAsync(
         string repo,
         LocalDate since,
+        Instant? resumeCursor = null,
         CancellationToken ct = default
     )
     {
@@ -235,8 +236,10 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
         // short, the next window ends at the cursor (inclusive range end, so the boundary run
         // arrives again and is dropped by id) and successive windows walk backwards until one
         // completes under the cap — a capped listing therefore terminates the backfill instead
-        // of re-fetching the identical window on every poll cycle.
-        Instant? cursor = null;
+        // of re-fetching the identical window on every poll cycle. A persisted cursor from an
+        // earlier truncated cycle resumes the walk where it stopped; the cursor is returned
+        // with a truncated result so the caller can persist the new position.
+        Instant? cursor = resumeCursor;
         while (true)
         {
             var window = await FetchWorkflowRunWindowAsync(repo, sinceStr, cursor, results, seenRunIds, ct);
@@ -249,7 +252,7 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
             // coarsest range granularity) — report the listing truncated rather than spin.
             if (window.OldestSeen is null || cursor is { } previous && window.OldestSeen >= previous)
             {
-                return new GitHubWorkflowRunResult(results, Truncated: true);
+                return new GitHubWorkflowRunResult(results, Truncated: true, cursor);
             }
             cursor = window.OldestSeen;
         }
