@@ -150,7 +150,7 @@ test('public restore contract excludes private package plumbing and leaves live 
   }
 
   const analyzerConfig = await readFile(path.join(root, 'eng/analysis/CodeStyle.globalconfig'))
-  assert.equal(createHash('sha256').update(analyzerConfig).digest('hex').toUpperCase(), 'BEA1F1A05C4CD5DC82A3E63FB9037DA4123A672EC3268712460B2E474AEFF657')
+  assert.equal(createHash('sha256').update(analyzerConfig).digest('hex').toUpperCase(), 'BEC88C438FE90967DB45F87371C95DB741F2077B60BD2E3AB3FC04D5571D8134')
 
   const attributes = spawnSync('git', ['check-attr', 'eol', '--', 'eng/analysis/CodeStyle.globalconfig'], { cwd: root, encoding: 'utf8' })
   assert.equal(attributes.status, 0, attributes.stderr)

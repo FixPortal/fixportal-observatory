@@ -47,9 +47,6 @@ generated_code = true
 [src/AiObservatory.Ingest/Program.cs]
 dotnet_diagnostic.S1075.severity = none
 
-[src/AiObservatory.Api/Services/Fx/FxRateProvider.cs]
-dotnet_diagnostic.S1075.severity = none
-
 # RFC 1918 networks are the explicit trust boundary for forwarded headers.
 [src/AiObservatory.Api/Program.cs]
 dotnet_diagnostic.S1313.severity = none

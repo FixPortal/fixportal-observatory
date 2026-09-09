@@ -1,7 +1,7 @@
 # FixPortal shared C# code-style rules.
-# Distributed via the FixPortal.CodeStyle NuGet package as a global AnalyzerConfig.
-# Generated from the master .editorconfig — edit the master and regenerate.
-# Formatter-only keys live in the consumer-side .editorconfig stub.
+# Checked in directly: Directory.Build.props imports this file via
+# GlobalAnalyzerConfigFiles, so edit it here — it is not packaged or generated.
+# Formatter-only keys live in the root .editorconfig.
 
 is_global = true
 global_level = 100
@@ -316,10 +316,10 @@ dotnet_diagnostic.IDE0270.severity = none
 dotnet_diagnostic.IDE0290.severity = none
 
 # --- SonarAnalyzer (cognitive-complexity gate) ---
-# SonarAnalyzer.CSharp is bundled by the FixPortal.CodeStyle package itself, so it
-# applies to every consumer automatically. S3776 is the complexity gate: prefer
-# cognitive complexity over cyclomatic, which over-counts flat switch/ternary dispatch.
-# Default threshold 15. Advisory only — warning, never build-breaking.
+# SonarAnalyzer.CSharp is a direct PackageReference in Directory.Build.props. S3776
+# is the complexity gate: prefer cognitive complexity over cyclomatic, which
+# over-counts flat switch/ternary dispatch. Default threshold 15. Warning severity
+# here — but this repo treats warnings as errors, so it is build-breaking in practice.
 dotnet_diagnostic.S3776.severity = warning
 
 # --- SonarAnalyzer (LINQ / loop style) ---
