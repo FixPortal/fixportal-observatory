@@ -580,7 +580,7 @@ public class UsageRepositoryTests : IAsyncLifetime
             UsageSourceIds.LegacyApi,
             "gemini:sess-abc:gemini-3.5-flash",
             newCost,
-            ct
+            ct: ct
         );
 
         result.Should().NotBeNull();
@@ -605,7 +605,7 @@ public class UsageRepositoryTests : IAsyncLifetime
             UsageSourceIds.LegacyApi,
             "gemini:nonexistent:model",
             0.01m,
-            TestContext.Current.CancellationToken
+            ct: TestContext.Current.CancellationToken
         );
 
         result.Should().BeNull();
@@ -634,7 +634,7 @@ public class UsageRepositoryTests : IAsyncLifetime
             UsageSourceIds.LegacyApi,
             "gemini:sess-xyz:gemini-2.5-pro",
             0.0083m,
-            ct
+            ct: ct
         );
 
         result.Should().NotBeNull();
@@ -653,7 +653,13 @@ public class UsageRepositoryTests : IAsyncLifetime
         const string eventKey = "unpriced-cost-key";
         await _repo.RecordEventAsync(NewEvent(cost: null, eventKey: eventKey), ct);
 
-        var result = await _repo.PatchEventCostAsync(Provider.OpenAI, UsageSourceIds.OpenAiUsageApi, eventKey, 2m, ct);
+        var result = await _repo.PatchEventCostAsync(
+            Provider.OpenAI,
+            UsageSourceIds.OpenAiUsageApi,
+            eventKey,
+            2m,
+            ct: ct
+        );
 
         // "Was unknown" must not collapse into "was zero": the aggregate side of the same
         // operation distinguishes them (UnknownCostCount decrements), so the result does too.
@@ -670,7 +676,7 @@ public class UsageRepositoryTests : IAsyncLifetime
         await _repo.RecordEventAsync(NewEvent(sourceId: UsageSourceIds.OpenAiUsageApi, eventKey: eventKey), ct);
         await _repo.RecordEventAsync(NewEvent(sourceId: UsageSourceIds.CodexLocal, eventKey: eventKey), ct);
 
-        var result = await _repo.PatchEventCostAsync(Provider.OpenAI, UsageSourceIds.CodexLocal, eventKey, 3m, ct);
+        var result = await _repo.PatchEventCostAsync(Provider.OpenAI, UsageSourceIds.CodexLocal, eventKey, 3m, ct: ct);
 
         result.Should().NotBeNull();
         var events = await _ctx.UsageEvents.AsNoTracking().OrderBy(x => x.SourceId).ToListAsync(ct);
@@ -733,13 +739,13 @@ public class UsageRepositoryTests : IAsyncLifetime
                 UsageSourceIds.OpenAiUsageApi,
                 eventKey,
                 2m,
-                ct
+                ct: ct
             );
             otherResult.Should().NotBeNull();
             (await otherContext.DailyAggregates.AsNoTracking().SingleAsync(ct)).CostUsd.Should().Be(2m);
         }
 
-        await _repo.PatchEventCostAsync(Provider.OpenAI, UsageSourceIds.OpenAiUsageApi, eventKey, 3m, ct);
+        await _repo.PatchEventCostAsync(Provider.OpenAI, UsageSourceIds.OpenAiUsageApi, eventKey, 3m, ct: ct);
 
         _ctx.ChangeTracker.Clear();
         (await _ctx.UsageEvents.AsNoTracking().SingleAsync(ct)).CostUsd.Should().Be(3m);
@@ -763,7 +769,7 @@ public class UsageRepositoryTests : IAsyncLifetime
         events.Should().HaveCount(2);
         foreach (var record in events)
         {
-            var patch = await _repo.PatchEventCostAsync(Provider.OpenAI, record.SourceId, record.EventKey!, 5m, ct);
+            var patch = await _repo.PatchEventCostAsync(Provider.OpenAI, record.SourceId, record.EventKey!, 5m, ct: ct);
             patch.Should().NotBeNull($"the projected identity of {record.SourceId}/{record.EventKey} must patch");
             patch.NewCostUsd.Should().Be(5m);
         }
@@ -783,13 +789,120 @@ public class UsageRepositoryTests : IAsyncLifetime
             UsageSourceIds.LegacyApi,
             "OpenAI:stored-form-key",
             2m,
-            ct
+            ct: ct
         );
 
         viaStoredForm.Should().NotBeNull("the stored key form must not be double-prefixed into a 404");
         (await _ctx.UsageEvents.AsNoTracking().SingleAsync(e => e.EventKey == "OpenAI:stored-form-key", ct))
             .CostUsd.Should()
             .Be(2m);
+    }
+
+    [Fact]
+    public async Task RecordEvent_a_prefixed_raw_legacy_key_is_stored_distinct_from_the_unprefixed_key()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        // A raw legacy key that happens to start with the provider name is not the stored form
+        // of "x": the shape test stored both under "OpenAI:x", merging two distinct events.
+        // Recorded in this order, the canonical (always-prefixed) form keeps them apart. (The
+        // reverse order resolves "OpenAI:x" to the existing row by lookup: an input that equals
+        // another event's stored key is irreducibly ambiguous, and the lookup never splits a
+        // row into a double-counting second one.)
+        await _repo.RecordEventAsync(
+            NewEvent(sourceId: UsageSourceIds.LegacyApi, eventKey: "OpenAI:x", input: 400),
+            ct
+        );
+        await _repo.RecordEventAsync(NewEvent(sourceId: UsageSourceIds.LegacyApi, eventKey: "x", input: 100), ct);
+
+        var saved = await _ctx.UsageEvents.AsNoTracking().ToDictionaryAsync(e => e.EventKey!, ct);
+        saved.Keys.Should().BeEquivalentTo("OpenAI:x", "OpenAI:OpenAI:x");
+        saved["OpenAI:x"].InputTokens.Should().Be(100);
+        saved["OpenAI:OpenAI:x"].InputTokens.Should().Be(400);
+
+        var aggregate = await _ctx.DailyAggregates.AsNoTracking().SingleAsync(ct);
+        aggregate.InputTokens.Should().Be(500);
+        aggregate.RequestCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task RecordEvent_a_raw_key_matching_another_providers_stored_form_stores_a_distinct_row()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _repo.RecordEventAsync(NewEvent(sourceId: UsageSourceIds.LegacyApi, eventKey: "x"), ct);
+        // "OpenAI:x" is OpenAI's stored form for raw "x", but a Google event with that raw key
+        // is its own event: the verbatim fallback is source-scoped, not provider-scoped, so
+        // without the provider check this would correct OpenAI's row with Google data.
+        var googleEvent = NewEvent(sourceId: UsageSourceIds.LegacyApi, eventKey: "OpenAI:x");
+        googleEvent.Provider = Provider.Google;
+        var result = await _repo.RecordEventAsync(googleEvent, ct);
+
+        result.Disposition.Should().Be(RecordEventDisposition.Created);
+        var saved = await _ctx.UsageEvents.AsNoTracking().ToListAsync(ct);
+        saved.Should().HaveCount(2);
+        saved.Should().ContainSingle(e => e.Provider == Provider.OpenAI && e.EventKey == "OpenAI:x");
+        saved.Should().ContainSingle(e => e.Provider == Provider.Google && e.EventKey == "Google:OpenAI:x");
+    }
+
+    [Fact]
+    public async Task RecordEvent_a_replayed_prefixed_raw_legacy_key_corrects_the_double_prefixed_row()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        // The old unconditional prefixing (and the AddObservationProvenance migration) stored a
+        // raw "OpenAI:x" key as "OpenAI:OpenAI:x". The shape test resolved a replay to "OpenAI:x"
+        // instead, missed the row and inserted a second one; the canonical form finds it.
+        await _repo.RecordEventAsync(
+            NewEvent(sourceId: UsageSourceIds.LegacyApi, eventKey: "OpenAI:x", input: 100),
+            ct
+        );
+
+        var replay = NewEvent(
+            sourceId: UsageSourceIds.LegacyApi,
+            eventKey: "OpenAI:x",
+            input: 700,
+            observedAt: Instant.FromUtc(2026, 8, 24, 12, 5)
+        );
+        var result = await _repo.RecordEventAsync(replay, ct);
+
+        result.Disposition.Should().Be(RecordEventDisposition.Corrected);
+        var rows = await _ctx.UsageEvents.AsNoTracking().ToListAsync(ct);
+        rows.Should().ContainSingle("the replay corrects the double-prefixed row, not inserts a second one");
+        rows[0].EventKey.Should().Be("OpenAI:OpenAI:x");
+        rows[0].InputTokens.Should().Be(700);
+        var aggregate = await _ctx.DailyAggregates.AsNoTracking().SingleAsync(ct);
+        aggregate.InputTokens.Should().Be(700);
+        aggregate.RequestCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task PatchEventCost_a_raw_prefixed_legacy_key_resolves_the_double_prefixed_row()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _repo.RecordEventAsync(NewEvent(sourceId: UsageSourceIds.LegacyApi, eventKey: "OpenAI:x"), ct);
+
+        // The canonical form is tried first: the raw key "OpenAI:x" belongs to the row stored
+        // as "OpenAI:OpenAI:x".
+        var patch = await _repo.PatchEventCostAsync(Provider.OpenAI, UsageSourceIds.LegacyApi, "OpenAI:x", 4m, ct: ct);
+
+        patch.Should().NotBeNull("the raw key prefixes to the double-prefixed row, not 404s");
+        (await _ctx.UsageEvents.AsNoTracking().SingleAsync(e => e.EventKey == "OpenAI:OpenAI:x", ct))
+            .CostUsd.Should()
+            .Be(4m);
+    }
+
+    [Fact]
+    public async Task PatchEventCost_the_stored_double_prefixed_key_round_trips_from_the_projection()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _repo.RecordEventAsync(NewEvent(sourceId: UsageSourceIds.LegacyApi, eventKey: "OpenAI:x"), ct);
+        var storedKey = (await _ctx.UsageEvents.AsNoTracking().SingleAsync(ct)).EventKey!;
+        storedKey.Should().Be("OpenAI:OpenAI:x");
+
+        // A caller echoing the projection holds the stored key itself; the canonical lookup
+        // misses ("OpenAI:OpenAI:OpenAI:x") and the verbatim fallback finds the row.
+        var patch = await _repo.PatchEventCostAsync(Provider.OpenAI, UsageSourceIds.LegacyApi, storedKey, 6m, ct: ct);
+
+        patch.Should().NotBeNull("the stored key form must resolve to its own row");
+        (await _ctx.UsageEvents.AsNoTracking().SingleAsync(ct)).CostUsd.Should().Be(6m);
     }
 
     [Fact]
@@ -805,7 +918,7 @@ public class UsageRepositoryTests : IAsyncLifetime
             UsageSourceIds.OpenAiUsageApi,
             "day:model",
             3m,
-            ct
+            ct: ct
         );
         patch.Should().NotBeNull();
 
@@ -857,7 +970,7 @@ public class UsageRepositoryTests : IAsyncLifetime
             UsageSourceIds.OpenAiUsageApi,
             "day:model",
             3m,
-            ct
+            ct: ct
         );
         patch.Should().NotBeNull();
         patch.OldCostUsd.Should().Be(3m);
@@ -888,7 +1001,7 @@ public class UsageRepositoryTests : IAsyncLifetime
     {
         var ct = TestContext.Current.CancellationToken;
         await _repo.RecordEventAsync(NewEvent(cost: 1m), ct);
-        await _repo.PatchEventCostAsync(Provider.OpenAI, UsageSourceIds.OpenAiUsageApi, "day:model", 3m, ct);
+        await _repo.PatchEventCostAsync(Provider.OpenAI, UsageSourceIds.OpenAiUsageApi, "day:model", 3m, ct: ct);
 
         var reasserted = NewEvent(cost: 2m, observedAt: Instant.FromUtc(2026, 8, 24, 12, 5));
         (await _repo.RecordEventAsync(reasserted, ct)).Disposition.Should().Be(RecordEventDisposition.Corrected);
@@ -897,6 +1010,149 @@ public class UsageRepositoryTests : IAsyncLifetime
         saved.CostUsd.Should().Be(2m);
         saved.CorrectedAt.Should().BeNull("a source post with its own cost supersedes the manual figure");
         (await _ctx.DailyAggregates.AsNoTracking().SingleAsync(ct)).CostUsd.Should().Be(2m);
+    }
+
+    [Fact]
+    public async Task PatchEventCost_equal_value_patch_rebases_an_estimated_event_out_of_the_repricing_scan()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        // The operator confirms the figure the estimate already carries. The cost does not
+        // change, but authority does: the row must leave the ListPriceEstimate bucket the
+        // repricer scans, or the next catalog activation silently rewrites the confirmed figure.
+        var original = NewEvent(cost: 3m);
+        original.CostBasis = CostBasis.ListPriceEstimate;
+        await _repo.RecordEventAsync(original, ct);
+
+        var patch = await _repo.PatchEventCostAsync(
+            Provider.OpenAI,
+            UsageSourceIds.OpenAiUsageApi,
+            "day:model",
+            3m,
+            ct: ct
+        );
+
+        patch.Should().NotBeNull();
+        patch.OldCostUsd.Should().Be(3m);
+        var saved = await _ctx.UsageEvents.AsNoTracking().SingleAsync(ct);
+        saved.CostUsd.Should().Be(3m);
+        saved
+            .CostBasis.Should()
+            .Be(CostBasis.ProviderEstimated, "an equal-value patch is still an operator correction");
+        saved.CorrectedAt.Should().NotBeNull();
+        saved
+            .CacheSavingsUsd.Should()
+            .Be(0.25m, "no savings override was supplied, so the stored figure carries through");
+        var row = (await _ctx.DailyAggregates.AsNoTracking().ToListAsync(ct)).Should().ContainSingle().Which;
+        row.CostBasis.Should().Be(CostBasis.ProviderEstimated);
+        row.CostUsd.Should().Be(3m);
+    }
+
+    [Fact]
+    public async Task PatchEventCost_applies_the_corrected_cache_savings_and_clears_the_unknown_count()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        // An event whose cost and cache savings are both unknown counts in
+        // UnknownCacheSavingsCount; the correction rebases it out of the repricer's scan, so the
+        // patch itself must supply the savings figure or the count could never clear.
+        var original = NewEvent(cost: null, cacheSavings: null);
+        original.CostBasis = CostBasis.ListPriceEstimate;
+        await _repo.RecordEventAsync(original, ct);
+        var before = await _ctx.DailyAggregates.AsNoTracking().SingleAsync(ct);
+        before.UnknownCostCount.Should().Be(1);
+        before.UnknownCacheSavingsCount.Should().Be(1);
+
+        await _repo.PatchEventCostAsync(Provider.OpenAI, UsageSourceIds.OpenAiUsageApi, "day:model", 2m, 0.5m, ct);
+
+        var saved = await _ctx.UsageEvents.AsNoTracking().SingleAsync(ct);
+        saved.CostUsd.Should().Be(2m);
+        saved.CacheSavingsUsd.Should().Be(0.5m);
+        saved.CostBasis.Should().Be(CostBasis.ProviderEstimated);
+        var row = await _ctx.DailyAggregates.AsNoTracking().SingleAsync(ct);
+        row.CostUsd.Should().Be(2m);
+        row.CacheSavingsUsd.Should().Be(0.5m);
+        row.UnknownCostCount.Should().Be(0);
+        row.UnknownCacheSavingsCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PatchEventCost_without_a_savings_override_keeps_the_stored_savings()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _repo.RecordEventAsync(NewEvent(cost: 1m, cacheSavings: 0.25m), ct);
+
+        await _repo.PatchEventCostAsync(Provider.OpenAI, UsageSourceIds.OpenAiUsageApi, "day:model", 3m, ct: ct);
+
+        var saved = await _ctx.UsageEvents.AsNoTracking().SingleAsync(ct);
+        saved.CostUsd.Should().Be(3m);
+        saved.CacheSavingsUsd.Should().Be(0.25m, "a null override leaves the stored savings untouched");
+        (await _ctx.DailyAggregates.AsNoTracking().SingleAsync(ct)).CacheSavingsUsd.Should().Be(0.25m);
+    }
+
+    [Fact]
+    public async Task Replay_with_the_same_explicit_cost_clears_correction_authority()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _repo.RecordEventAsync(NewEvent(cost: 1m), ct);
+        await _repo.PatchEventCostAsync(Provider.OpenAI, UsageSourceIds.OpenAiUsageApi, "day:model", 3m, ct: ct);
+        (await _ctx.UsageEvents.AsNoTracking().SingleAsync(ct)).CorrectedAt.Should().NotBeNull();
+
+        // The source re-posts the identical snapshot *with* the cost the operator set: every
+        // canonical value matches, so this takes the identical-replay path — which used to
+        // return before the correction-authority logic and leave the stale marker set.
+        var reasserted = NewEvent(cost: 3m, observedAt: Instant.FromUtc(2026, 8, 24, 12, 5));
+        (await _repo.RecordEventAsync(reasserted, ct)).Disposition.Should().Be(RecordEventDisposition.Unchanged);
+
+        var saved = await _ctx.UsageEvents.AsNoTracking().SingleAsync(ct);
+        saved.CostUsd.Should().Be(3m);
+        saved.CorrectedAt.Should().BeNull("a source post carrying the same explicit cost re-asserts source authority");
+        saved.ObservedAt.Should().Be(reasserted.ObservedAt, "the watermark still advances on an identical replay");
+    }
+
+    [Fact]
+    public async Task PurgeProvider_deletes_events_and_aggregates_for_only_that_provider()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _repo.RecordEventAsync(NewEvent(cost: 1m, eventKey: "purge-a"), ct);
+        await _repo.RecordEventAsync(NewEvent(cost: 2m, eventKey: "purge-b", model: "gpt-other"), ct);
+        var google = new UsageEvent
+        {
+            Provider = Provider.Google,
+            OccurredAt = Instant.FromUtc(2026, 6, 3, 9, 0),
+            IngestedAt = Instant.FromUtc(2026, 6, 3, 9, 0),
+            ObservedAt = Instant.FromUtc(2026, 6, 3, 9, 1),
+            Model = "gemini-3.5-flash",
+            InputTokens = 100,
+            OutputTokens = 50,
+            CostUsd = 0.01m,
+            RawPayload = "{}",
+            EventKey = "purge-google",
+        };
+        await _repo.RecordEventAsync(google, ct);
+
+        var result = await _repo.PurgeProviderAsync(Provider.OpenAI, ct);
+
+        // Two events in two distinct (date, model) buckets: both aggregate rows go with them.
+        result.DeletedEvents.Should().Be(2);
+        result.DeletedAggregates.Should().Be(2);
+        var surviving = await _ctx.UsageEvents.AsNoTracking().SingleAsync(ct);
+        surviving.Provider.Should().Be(Provider.Google);
+        var survivingAggregate = await _ctx.DailyAggregates.AsNoTracking().SingleAsync(ct);
+        survivingAggregate.Provider.Should().Be(Provider.Google);
+        survivingAggregate.CostUsd.Should().Be(0.01m);
+    }
+
+    [Fact]
+    public async Task PurgeProvider_with_nothing_to_delete_returns_zero_counts()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _repo.RecordEventAsync(NewEvent(), ct);
+
+        var result = await _repo.PurgeProviderAsync(Provider.Google, ct);
+
+        result.DeletedEvents.Should().Be(0);
+        result.DeletedAggregates.Should().Be(0);
+        (await _ctx.UsageEvents.AsNoTracking().CountAsync(ct)).Should().Be(1);
+        (await _ctx.DailyAggregates.AsNoTracking().CountAsync(ct)).Should().Be(1);
     }
 
     [Fact]
@@ -1123,7 +1379,11 @@ public class UsageRepositoryTests : IAsyncLifetime
         (await _ctx.Insights.AsNoTracking().CountAsync(ct)).Should().Be(1);
 
         var leaseDuration = Duration.FromMinutes(15);
-        var pending = await firstRepository.GetDeliverableBudgetAlertEmailsAsync(triggeredAt.Minus(leaseDuration), ct);
+        var pending = await firstRepository.GetDeliverableBudgetAlertEmailsAsync(
+            triggeredAt.Minus(leaseDuration),
+            triggeredAt.Minus(leaseDuration),
+            ct
+        );
         pending.Should().ContainSingle();
         pending[0].ClaimId.Should().Be(replay.ClaimId);
         pending[0].RuleId.Should().Be(rule.Id);
@@ -1153,12 +1413,24 @@ public class UsageRepositoryTests : IAsyncLifetime
 
         var activeLeaseId = emailClaims[0] ? firstLeaseId : secondLeaseId;
         var freshLeaseCheckAt = triggeredAt.Plus(Duration.FromMinutes(5));
-        (await firstRepository.GetDeliverableBudgetAlertEmailsAsync(freshLeaseCheckAt.Minus(leaseDuration), ct))
+        (
+            await firstRepository.GetDeliverableBudgetAlertEmailsAsync(
+                freshLeaseCheckAt.Minus(leaseDuration),
+                triggeredAt.Minus(leaseDuration),
+                ct
+            )
+        )
             .Should()
             .BeEmpty("a fresh delivery lease suppresses concurrent/restart attempts");
 
         await firstRepository.ReleaseBudgetAlertEmailLeaseAsync(replay.ClaimId, activeLeaseId, ct);
-        (await firstRepository.GetDeliverableBudgetAlertEmailsAsync(freshLeaseCheckAt.Minus(leaseDuration), ct))
+        (
+            await firstRepository.GetDeliverableBudgetAlertEmailsAsync(
+                freshLeaseCheckAt.Minus(leaseDuration),
+                triggeredAt.Minus(leaseDuration),
+                ct
+            )
+        )
             .Should()
             .ContainSingle("a definitive failure releases its lease for immediate retry");
 
@@ -1178,6 +1450,7 @@ public class UsageRepositoryTests : IAsyncLifetime
         var staleLeaseCheckAt = freshLeaseCheckAt.Plus(Duration.FromMinutes(16));
         var stalePending = await firstRepository.GetDeliverableBudgetAlertEmailsAsync(
             staleLeaseCheckAt.Minus(leaseDuration),
+            triggeredAt.Minus(leaseDuration),
             ct
         );
         stalePending.Should().ContainSingle("an abandoned delivery lease must recover");
@@ -1195,7 +1468,13 @@ public class UsageRepositoryTests : IAsyncLifetime
             .Should()
             .BeTrue();
         await firstRepository.MarkBudgetAlertEmailSentAsync(replay.ClaimId, recoveryLeaseId, staleLeaseCheckAt, ct);
-        (await firstRepository.GetDeliverableBudgetAlertEmailsAsync(staleLeaseCheckAt.Plus(Duration.FromHours(1)), ct))
+        (
+            await firstRepository.GetDeliverableBudgetAlertEmailsAsync(
+                staleLeaseCheckAt.Plus(Duration.FromHours(1)),
+                triggeredAt.Minus(leaseDuration),
+                ct
+            )
+        )
             .Should()
             .BeEmpty("EmailSentAt is terminal and reader-filtered");
     }
@@ -1316,7 +1595,11 @@ public class UsageRepositoryTests : IAsyncLifetime
         );
         await _ctx.SaveChangesAsync(ct);
 
-        var result = await _repo.GetDeliverableBudgetAlertEmailsAsync(baseTime.Plus(Duration.FromDays(1)), ct);
+        var result = await _repo.GetDeliverableBudgetAlertEmailsAsync(
+            baseTime.Plus(Duration.FromDays(1)),
+            baseTime.Minus(Duration.FromDays(3)),
+            ct
+        );
 
         result.Select(email => email.ClaimId).Should().Equal(deliverable.Take(50).Select(claim => claim.Id));
     }

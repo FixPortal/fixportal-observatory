@@ -24,13 +24,13 @@ public class UsageRepository(
 
     public async Task<RecordEventResult> RecordEventAsync(UsageEvent evt, CancellationToken ct = default)
     {
-        evt = PrepareEvent(evt);
-        return await RecordPreparedEventAsync(evt, beforeWrite: null, ct);
+        evt = PrepareEvent(evt, out var rawEventKey);
+        return await RecordPreparedEventAsync(evt, rawEventKey, beforeWrite: null, ct);
     }
 
     public async Task<RecordEventResult> RecordEstimatedEventAsync(UsageEvent evt, CancellationToken ct = default)
     {
-        evt = PrepareEvent(evt);
+        evt = PrepareEvent(evt, out var rawEventKey);
         if (evt.CostBasis is not (CostBasis.ListPriceEstimate or CostBasis.Notional))
         {
             throw new ArgumentException("Only estimated usage can use atomic price resolution.", nameof(evt));
@@ -43,6 +43,7 @@ public class UsageRepository(
 
         return await RecordPreparedEventAsync(
             evt,
+            rawEventKey,
             async (usage, cancellationToken) =>
             {
                 await pricingStore.AcquireSharedActivationLockAsync(usage, cancellationToken);
@@ -56,6 +57,7 @@ public class UsageRepository(
 
     private async Task<RecordEventResult> RecordPreparedEventAsync(
         UsageEvent evt,
+        string? rawEventKey,
         Func<UsageEvent, CancellationToken, Task>? beforeWrite,
         CancellationToken ct
     )
@@ -77,9 +79,14 @@ public class UsageRepository(
                     await beforeWrite(evt, ct);
                 }
 
-                var existing = evt.EventKey is null
-                    ? null
-                    : await FindEventForUpdateAsync(evt.SourceId, evt.EventKey, ct);
+                var existing = await FindEventForKeyLookupAsync(
+                    evt.Provider,
+                    evt.SourceId,
+                    evt.EventKey,
+                    rawEventKey,
+                    ct
+                );
+                evt = ReconcileStoredKey(evt, existing);
                 var result = await ApplyLockedSnapshotAsync(existing, evt, sourceSuppliedCost, ct);
                 if (result.Disposition != RecordEventDisposition.Unchanged || result.WatermarkAdvanced)
                 {
@@ -151,7 +158,7 @@ public class UsageRepository(
         );
     }
 
-    private static UsageEvent PrepareEvent(UsageEvent evt)
+    private static UsageEvent PrepareEvent(UsageEvent evt, out string? rawEventKey)
     {
         ArgumentNullException.ThrowIfNull(evt);
         JsonDocument.Parse(evt.RawPayload, RawPayloadJsonOptions).Dispose();
@@ -171,8 +178,12 @@ public class UsageRepository(
             );
         }
 
-        var canonicalEventKey = ToStoredEventKey(evt.Provider, evt.SourceId, evt.EventKey);
-        return canonicalEventKey == evt.EventKey ? evt : CopyWithEventKey(evt, canonicalEventKey);
+        // Canonicalise legacy keys to their provider-prefixed stored form while the raw key is
+        // still at hand: the raw key feeds the fallback lookup in RecordPreparedEventAsync,
+        // which recognises an input that already IS a stored key by lookup, not by shape.
+        rawEventKey = evt.EventKey;
+        var storedEventKey = ToStoredEventKey(evt.Provider, evt.SourceId, rawEventKey);
+        return storedEventKey == rawEventKey ? evt : CopyWithEventKey(evt, storedEventKey);
     }
 
     public async Task UpdateEventPricingAsync(UsageEvent priced, UsagePriceQuote? quote, CancellationToken ct = default)
@@ -193,6 +204,12 @@ public class UsageRepository(
                     existing is null
                     || existing.CostBasis is not (CostBasis.ListPriceEstimate or CostBasis.Notional)
                     || !PricingInputsEqual(existing, priced)
+                    // The scan read the row unlocked; if its cost moved since, another writer
+                    // (an activation's own pass committing mid-standalone-pass, or a correction)
+                    // already priced it and this quote is stale for the row. Leave it for the
+                    // next pass rather than overwrite a newer figure.
+                    || existing.CostUsd != priced.CostUsd
+                    || existing.CacheSavingsUsd != priced.CacheSavingsUsd
                     || existing.CostUsd == quote?.CostUsd && existing.CacheSavingsUsd == quote?.CacheSavingsUsd
                 )
                 {
@@ -249,6 +266,7 @@ public class UsageRepository(
 
         if (CanonicalEquals(existing, evt))
         {
+            var wrote = false;
             // CanonicalEquals excludes ObservedAt, so an identical replay would otherwise leave the
             // stored watermark behind and a delayed stale snapshot with an ObservedAt between the
             // two would then pass the ordering guard above. Advance the watermark (never backwards)
@@ -256,10 +274,23 @@ public class UsageRepository(
             if (evt.ObservedAt > existing.ObservedAt)
             {
                 existing.ObservedAt = evt.ObservedAt;
-                return new RecordEventResult(existing.Id, RecordEventDisposition.Unchanged, WatermarkAdvanced: true);
+                wrote = true;
             }
 
-            return new RecordEventResult(existing.Id, RecordEventDisposition.Unchanged);
+            // An identical replay whose source supplied a cost re-asserts source authority over a
+            // manual correction even though every canonical value matches: the source figure and
+            // the corrected figure agree, so the CorrectedAt marker is stale. Clear it exactly as
+            // the changed-values path below does, or a later cost-less replay keeps preserving a
+            // figure the operator no longer authored.
+            if (sourceSuppliedCost && existing.CorrectedAt is not null)
+            {
+                existing.CorrectedAt = null;
+                wrote = true;
+            }
+
+            // WatermarkAdvanced doubles as "Unchanged but wrote state that must persist" — it is
+            // what drives SaveChanges and the no-op rollback in the caller.
+            return new RecordEventResult(existing.Id, RecordEventDisposition.Unchanged, WatermarkAdvanced: wrote);
         }
 
         // A manual cost correction (the CorrectedAt marker) outranks a replay whose source
@@ -425,6 +456,39 @@ public class UsageRepository(
         return existing;
     }
 
+    // Resolves the stored row for a key by lookup rather than string shape: the canonical
+    // (prefixed) form first — a raw legacy key that starts with the provider name belongs to
+    // the double-prefixed row — then the input verbatim, which is the already-stored key when
+    // a replay addresses a row the shape-guard era stored as-is, or a caller echoes the
+    // GetEventsByProviderAsync projection back into PatchEventCostAsync. The verbatim form
+    // may be ANOTHER provider's stored key under the shared legacy-api source (the lookup is
+    // source-scoped, not provider-scoped), so a fallback hit only counts for the same provider.
+    private async Task<UsageEvent?> FindEventForKeyLookupAsync(
+        Provider provider,
+        string sourceId,
+        string? eventKey,
+        string? rawEventKey,
+        CancellationToken ct
+    )
+    {
+        if (eventKey is null)
+        {
+            return null;
+        }
+
+        var existing = await FindEventForUpdateAsync(sourceId, eventKey, ct);
+        if (existing is null && rawEventKey is not null && rawEventKey != eventKey)
+        {
+            existing = await FindEventForUpdateAsync(sourceId, rawEventKey, ct);
+            if (existing is not null && existing.Provider != provider)
+            {
+                existing = null;
+            }
+        }
+
+        return existing;
+    }
+
     private async Task<UsageEvent?> FindEventByIdForUpdateAsync(Guid eventId, CancellationToken ct)
     {
         var existing = await ctx
@@ -445,15 +509,22 @@ public class UsageRepository(
             return eventKey;
         }
 
-        // Idempotent: a caller that learned the stored form (e.g. from the GetEventsByProviderAsync
-        // projection feeding back into PatchEventCostAsync) must not be double-prefixed.
-        if (eventKey.StartsWith($"{provider}:", StringComparison.Ordinal))
-        {
-            return eventKey;
-        }
-
+        // Always prefix, never shape-test: "starts with the provider name" cannot distinguish an
+        // already-stored key from a raw legacy key that happens to begin with it. The shape test
+        // resolved raw keys "x" and "OpenAI:x" to the same stored "OpenAI:x" (merging two
+        // distinct events) and missed rows stored as "OpenAI:OpenAI:x" by the old unconditional
+        // prefixing (the shape the AddObservationProvenance migration writes), re-inserting them
+        // on replay. Callers holding a possibly-stored key resolve it by lookup instead — see
+        // RecordPreparedEventAsync and PatchEventCostAsync.
         return $"{provider}:{eventKey}";
     }
+
+    // A fallback lookup hit found the row under the input key verbatim, while evt carries the
+    // canonical (re-prefixed) form: reconcile evt to the row's stored key so CanonicalEquals
+    // compares equal keys. CopyCanonicalValues never copies EventKey, so the row keeps the
+    // form it was stored under.
+    private static UsageEvent ReconcileStoredKey(UsageEvent evt, UsageEvent? existing) =>
+        existing is not null && existing.EventKey != evt.EventKey ? CopyWithEventKey(evt, existing.EventKey) : evt;
 
     private static UsageEvent CopyWithEventKey(UsageEvent source, string? eventKey) =>
         new()
@@ -764,13 +835,21 @@ public class UsageRepository(
 
     public async Task<IReadOnlyList<BudgetAlertEmail>> GetDeliverableBudgetAlertEmailsAsync(
         Instant leaseExpiredBefore,
+        Instant createdOnOrAfter,
         CancellationToken ct = default
     ) =>
+        // The CreatedAt floor age-bounds the pending set: a claim that can never be delivered
+        // (nothing configured, a terminally dead channel) would otherwise be re-leased and
+        // re-warned on every pass forever, starving newer claims behind the batch-size Take and
+        // bursting every historical alert at an operator who configures a channel late. Older
+        // claims are left pending, not closed — a channel configured inside the age window
+        // still receives them.
         await (
             from claim in ctx.BudgetAlertClaims.AsNoTracking()
             join rule in ctx.BudgetRules.AsNoTracking() on claim.BudgetRuleId equals rule.Id
             where
                 claim.EmailSentAt == null
+                && claim.CreatedAt >= createdOnOrAfter
                 && (claim.EmailLeaseAcquiredAt == null || claim.EmailLeaseAcquiredAt <= leaseExpiredBefore)
             orderby claim.CreatedAt, claim.Id
             select new BudgetAlertEmail(
@@ -883,14 +962,16 @@ public class UsageRepository(
         string sourceId,
         string eventKey,
         decimal newCostUsd,
+        decimal? newCacheSavingsUsd = null,
         CancellationToken ct = default
     )
     {
-        eventKey = ToStoredEventKey(provider, sourceId, eventKey)!;
+        var rawEventKey = eventKey;
+        eventKey = ToStoredEventKey(provider, sourceId, rawEventKey)!;
         await using var tx = await ctx.Database.BeginTransactionAsync(ct);
         try
         {
-            var existing = await FindEventForUpdateAsync(sourceId, eventKey, ct);
+            var existing = await FindEventForKeyLookupAsync(provider, sourceId, eventKey, rawEventKey, ct);
             if (existing is null || existing.Provider != provider)
             {
                 await tx.RollbackAsync(ct);
@@ -898,7 +979,7 @@ public class UsageRepository(
             }
 
             var oldCostUsd = existing.CostUsd;
-            var replacement = CopyWithCost(existing, newCostUsd);
+            var replacement = CopyWithCost(existing, newCostUsd, newCacheSavingsUsd ?? existing.CacheSavingsUsd);
             await ApplyLockedSnapshotAsync(existing, replacement, sourceSuppliedCost: true, ct);
 
             // The marker is set on the tracked row directly: CopyCanonicalValues never copies
@@ -924,8 +1005,12 @@ public class UsageRepository(
     // from the provider, so it is rebased to ProviderEstimated: that removes the row from the
     // repricer's scan (which only touches ListPriceEstimate/Notional) and keeps the aggregate
     // buckets honest. None ("no price applies") is likewise rebased now that a price exists.
-    // The flip happens only when the figure actually changes, so a no-op patch stays a no-op.
-    private static UsageEvent CopyWithCost(UsageEvent source, decimal costUsd) =>
+    // The flip happens on any patch, including an equal-value one: an operator confirming the
+    // existing figure has still taken authority over it, so the row must leave the scan set or
+    // the next catalog activation silently rewrites the confirmed figure. The savings figure is
+    // applied verbatim so a correction can clear a stranded unknown-savings count on an event
+    // the rebase has just removed from the repricer's reach.
+    private static UsageEvent CopyWithCost(UsageEvent source, decimal costUsd, decimal? cacheSavingsUsd) =>
         new()
         {
             Provider = source.Provider,
@@ -939,7 +1024,7 @@ public class UsageRepository(
             CacheWrite1hTokens = source.CacheWrite1hTokens,
             ThoughtTokens = source.ThoughtTokens,
             CostUsd = costUsd,
-            CacheSavingsUsd = source.CacheSavingsUsd,
+            CacheSavingsUsd = cacheSavingsUsd,
             Runtime = source.Runtime,
             SessionId = source.SessionId,
             AgentId = source.AgentId,
@@ -947,11 +1032,9 @@ public class UsageRepository(
             SourceId = source.SourceId,
             SourceKind = source.SourceKind,
             UsageScope = source.UsageScope,
-            CostBasis =
-                costUsd != source.CostUsd
-                && source.CostBasis is CostBasis.ListPriceEstimate or CostBasis.Notional or CostBasis.None
-                    ? CostBasis.ProviderEstimated
-                    : source.CostBasis,
+            CostBasis = source.CostBasis is CostBasis.ListPriceEstimate or CostBasis.Notional or CostBasis.None
+                ? CostBasis.ProviderEstimated
+                : source.CostBasis,
             ObservedAt = source.ObservedAt,
             EventKey = source.EventKey,
         };

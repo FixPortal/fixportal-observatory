@@ -51,16 +51,10 @@ public static class EventsEndpoints
         {
             return Results.BadRequest(provenanceError);
         }
-        if (req.CostBasis is not null && costBasis == CostBasis.Billed)
+        var costBasisError = ValidateCostBasis(req, costBasis);
+        if (costBasisError is not null)
         {
-            return Results.BadRequest("Explicit Billed events must use the spend/billing path.");
-        }
-        // A None basis asserts the event carries no cost at all, so a positive CostUsd on the
-        // same write is a contradiction; storing it would price a row the producer declared
-        // cost-free.
-        if (costBasis == CostBasis.None && req.CostUsd is > 0)
-        {
-            return Results.BadRequest("CostBasis None events must not carry a positive CostUsd.");
+            return Results.BadRequest(costBasisError);
         }
 
         var requestError = ValidateUsageRequest(req, out var rawPayload, out var eventKey);
@@ -166,6 +160,11 @@ public static class EventsEndpoints
             return Results.BadRequest("CostUsd must be non-negative");
         }
 
+        if (req.CacheSavingsUsd < 0)
+        {
+            return Results.BadRequest("CacheSavingsUsd must be non-negative");
+        }
+
         // An omitted sourceId targets only legacy-sourced rows: NormalizeSourceId defaults to
         // UsageSourceIds.LegacyApi and the repository lookup is source-scoped. A cost correction
         // for a non-legacy event with a matching eventKey therefore returns 404 — it never
@@ -178,7 +177,17 @@ public static class EventsEndpoints
 
         // Trim to match the stored key: POST persists req.EventKey.Trim(), so a padded
         // route value would otherwise miss the row and drop the cost correction as a 404.
-        var result = await repo.PatchEventCostAsync(parsed, normalizedSourceId, eventKey.Trim(), req.CostUsd, ct);
+        // Savings the operator did not itemise default to a known zero: the correction rebases
+        // the row out of the repricer's scan, so an unknown (null) left behind could never be
+        // cleared and would count in UnknownCacheSavingsCount forever.
+        var result = await repo.PatchEventCostAsync(
+            parsed,
+            normalizedSourceId,
+            eventKey.Trim(),
+            req.CostUsd,
+            req.CacheSavingsUsd ?? 0m,
+            ct
+        );
 
         return result is null
             ? Results.NotFound()
@@ -278,6 +287,23 @@ public static class EventsEndpoints
             : $"Unknown cost basis: {req.CostBasis}";
     }
 
+    private static string? ValidateCostBasis(UsageEventRequest req, CostBasis costBasis)
+    {
+        if (req.CostBasis is not null && costBasis == CostBasis.Billed)
+        {
+            return "Explicit Billed events must use the spend/billing path.";
+        }
+        // A None basis asserts the event carries no cost at all, so ANY non-zero CostUsd on the
+        // same write is a contradiction; storing it would price a row the producer declared
+        // cost-free. Guarding both signs keeps the rejection message specific — a negative value
+        // would otherwise fall through to the generic token-count validation in ValidateUsageRequest.
+        if (costBasis == CostBasis.None && req.CostUsd is not null and not 0m)
+        {
+            return "CostBasis None events must not carry a non-zero CostUsd.";
+        }
+        return null;
+    }
+
     private static string? ValidateUsageRequest(UsageEventRequest req, out string rawPayload, out string? eventKey)
     {
         rawPayload = req.RawPayload ?? "{}";
@@ -356,4 +382,4 @@ public record UsageEventRequest(
     DateTimeOffset? ObservedAtUtc = null
 );
 
-public sealed record UpdateEventCostRequest(decimal CostUsd);
+public sealed record UpdateEventCostRequest(decimal CostUsd, decimal? CacheSavingsUsd);

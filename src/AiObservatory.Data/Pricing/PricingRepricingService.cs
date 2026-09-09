@@ -1,7 +1,6 @@
 using AiObservatory.Data.Entities;
 using AiObservatory.Data.Repositories;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -20,44 +19,52 @@ public sealed class PricingRepricingService(
     public async Task RepriceProviderAsync(Provider provider, CancellationToken cancellationToken = default)
     {
         // Called two ways: from a catalog activation's beforeCommit — where the activation already
-        // holds the exclusive advisory lock inside its transaction — and standalone at startup. The
-        // standalone path opens its own transaction and takes the shared activation lock, so an
-        // activation cannot commit a new catalog mid-pass and leave this pass writing prices
-        // resolved from the catalog it read before the change.
-        IDbContextTransaction? transaction = null;
-        if (db.Database.CurrentTransaction is null)
+        // holds the exclusive advisory lock inside its transaction and the pass joins it — and
+        // standalone at startup.
+        if (db.Database.CurrentTransaction is not null)
         {
-            transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-            await store.AcquireSharedActivationLocksAsync(provider, cancellationToken);
+            var activationEvents = await LoadRepricingCandidatesAsync(provider, cancellationToken);
+            await RepriceLockedAsync(activationEvents, snapshotsBySourceId: null, cancellationToken);
+            return;
         }
 
-        await using (transaction)
+        // Standalone pass. The shared activation lock is held only for a short read transaction
+        // that loads the candidate events and each source's snapshot rows, so the pass prices
+        // from one catalog generation without blocking a concurrent activation for the sweep.
+        // Each event is then repriced in its own transaction (UpdateEventPricingAsync opens one
+        // when none is current): holding every per-event FOR UPDATE and aggregate upsert until a
+        // pass-level commit deadlocked against concurrent ingest (40P01), rolled the whole
+        // provider's repricing back on a single failure, and held the activation lock for the
+        // full pass. The lock acquisition stays inside the await using so a throw there cannot
+        // leave a half-open transaction attached to the scoped context.
+        IReadOnlyList<UsageEvent> events;
+        Dictionary<string, List<PricingSnapshot>> snapshotsBySourceId;
+        await using (var transaction = await db.Database.BeginTransactionAsync(cancellationToken))
         {
             try
             {
-                await RepriceLockedAsync(provider, cancellationToken);
-                if (transaction is not null)
-                {
-                    await transaction.CommitAsync(cancellationToken);
-                }
+                await store.AcquireSharedActivationLocksAsync(provider, cancellationToken);
+                events = await LoadRepricingCandidatesAsync(provider, cancellationToken);
+                snapshotsBySourceId = await LoadSnapshotCacheAsync(events, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
             }
             catch
             {
-                if (transaction is not null)
-                {
-                    await transaction.RollbackAsync(CancellationToken.None);
-                    db.ChangeTracker.Clear();
-                }
-
+                await transaction.RollbackAsync(CancellationToken.None);
+                db.ChangeTracker.Clear();
                 throw;
             }
         }
+
+        await RepriceLockedAsync(events, snapshotsBySourceId, cancellationToken);
     }
 
-    private async Task RepriceLockedAsync(Provider provider, CancellationToken cancellationToken)
-    {
-        // ponytail: pricing changes are rare and Observatory volume is modest; target by effective date/model if this scan is measured as slow.
-        var events = await db
+    // ponytail: pricing changes are rare and Observatory volume is modest; target by effective date/model if this scan is measured as slow.
+    private async Task<List<UsageEvent>> LoadRepricingCandidatesAsync(
+        Provider provider,
+        CancellationToken cancellationToken
+    ) =>
+        await db
             .UsageEvents.AsNoTracking()
             .Where(usage =>
                 usage.Provider == provider
@@ -65,12 +72,42 @@ public sealed class PricingRepricingService(
             )
             .OrderBy(usage => usage.Id)
             .ToListAsync(cancellationToken);
-        // Within one pass the snapshot rows for a source cannot change: the pass runs inside a
-        // transaction holding the shared activation lock (or the activation's own exclusive lock),
-        // which blocks any catalog activation until the pass commits. Reading them once per source
-        // rather than once per event is the only thing this local does; it dies with the pass, so
-        // no later pass can see a stale catalog. The effective-date filter still runs per event.
+
+    // Reads each source's snapshot rows once through the pass's cache while the shared
+    // activation lock is still held, so every event in the pass prices from the same catalog
+    // generation. Notional events are skipped: their resolution reads only the active snapshot,
+    // which GetCoveringSnapshotsAsync never serves from the cache.
+    private async Task<Dictionary<string, List<PricingSnapshot>>> LoadSnapshotCacheAsync(
+        IReadOnlyList<UsageEvent> events,
+        CancellationToken cancellationToken
+    )
+    {
         var snapshotsBySourceId = new Dictionary<string, List<PricingSnapshot>>(StringComparer.Ordinal);
+        foreach (var usage in events)
+        {
+            if (usage.CostBasis != CostBasis.Notional)
+            {
+                await store.GetCoveringSnapshotsAsync(usage, snapshotsBySourceId, cancellationToken);
+            }
+        }
+
+        return snapshotsBySourceId;
+    }
+
+    private async Task RepriceLockedAsync(
+        IReadOnlyList<UsageEvent> events,
+        Dictionary<string, List<PricingSnapshot>>? snapshotsBySourceId,
+        CancellationToken cancellationToken
+    )
+    {
+        // The snapshot rows a pass prices from cannot change underneath it: on the activation
+        // path the pass runs inside the activation's transaction holding the exclusive lock, and
+        // on the standalone path the cache was populated under the shared lock above. The cache
+        // dies with the pass, so no later pass can see a stale catalog; the activation path
+        // builds its own here so snapshot rows are still read once per source, not per event.
+        // The effective-date filter still runs per event.
+        snapshotsBySourceId ??= new Dictionary<string, List<PricingSnapshot>>(StringComparer.Ordinal);
+        var skipped = new Dictionary<(Provider Provider, string Model), int>();
         foreach (var usage in events)
         {
             var quote = await resolver.ResolveAsync(usage, snapshotsBySourceId, cancellationToken);
@@ -80,14 +117,8 @@ public sealed class PricingRepricingService(
                 // An unresolvable event keeps its last known price and basis — blanking a figure
                 // we once knew converts priced history into "Not reported" on both the row and
                 // its aggregate.
-                _logger.LogWarning(
-                    "Repricing skipped for {EventId} ({Provider}/{Model}, {OccurredAt:u}): no pricing snapshot covers the event; keeping the existing cost of {CostUsd} USD.",
-                    usage.Id,
-                    usage.Provider,
-                    usage.Model,
-                    usage.OccurredAt,
-                    usage.CostUsd
-                );
+                var key = (usage.Provider, usage.Model ?? "<missing>");
+                skipped[key] = skipped.GetValueOrDefault(key) + 1;
                 continue;
             }
 
@@ -95,6 +126,19 @@ public sealed class PricingRepricingService(
             {
                 await repository.UpdateEventPricingAsync(usage, quote, cancellationToken);
             }
+        }
+
+        // One line per (provider, model) per pass, not one per event: a startup pass over many
+        // unpriceable events otherwise repeats the identical warning N times per restart and
+        // buries real signal.
+        foreach (var ((provider, model), count) in skipped)
+        {
+            _logger.LogWarning(
+                "Repricing skipped {SkippedCount} event(s) for {Provider}/{Model}: no pricing snapshot covers them; keeping the existing costs.",
+                count,
+                provider,
+                model.Replace('\r', ' ').Replace('\n', ' ')
+            );
         }
     }
 }

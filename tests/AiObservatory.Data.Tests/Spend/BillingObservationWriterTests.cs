@@ -299,15 +299,69 @@ public sealed class BillingObservationWriterTests : IAsyncLifetime
         await using var firstDb = new AiObservatoryDbContext(_options);
         await using var secondDb = new AiObservatoryDbContext(_options);
 
-        var results = await Task.WhenAll(
-            Writer(firstDb, 1m).RecordAsync(Observation(), "openai", "api-usage", ct),
-            Writer(secondDb, 1m).RecordAsync(Observation(), "openai", "api-usage", ct)
-        );
+        // Force the overlap the assertions depend on: a SHARE gate on BillingObservations lets
+        // both writers begin and pass their existence reads, then blocks whichever holds the
+        // identity advisory lock at its INSERT — so both are provably inside RecordAsync before
+        // either can finish. Bare Task.WhenAll lets one writer commit before the other starts,
+        // which passes whether or not the advisory lock serialises them.
+        await using var gate = new NpgsqlConnection(_connectionString);
+        await gate.OpenAsync(ct);
+        await using var gateTransaction = await gate.BeginTransactionAsync(ct);
+        await using (var gateCommand = gate.CreateCommand())
+        {
+            gateCommand.Transaction = gateTransaction;
+            gateCommand.CommandText = """LOCK TABLE "BillingObservations" IN SHARE MODE""";
+            await gateCommand.ExecuteNonQueryAsync(ct);
+        }
+
+        var first = Writer(firstDb, 1m).RecordAsync(Observation(), "openai", "api-usage", ct);
+        var second = Writer(secondDb, 1m).RecordAsync(Observation(), "openai", "api-usage", ct);
+        // The gate's victim is mid-INSERT; the sibling is mid-advisory-lock — both overlapped.
+        await WaitForBlockedStatementAsync("INSERT INTO \"BillingObservations\"", ct);
+        await WaitForBlockedStatementAsync("pg_advisory_xact_lock", ct);
+
+        await gateTransaction.RollbackAsync(ct);
+        var results = await Task.WhenAll(first, second);
 
         results.Should().ContainSingle(result => result == BillingWriteDisposition.Created);
         results.Should().ContainSingle(result => result == BillingWriteDisposition.Unchanged);
         (await _db.BillingObservations.AsNoTracking().CountAsync(ct)).Should().Be(1);
         (await _db.SpendEntries.AsNoTracking().CountAsync(ct)).Should().Be(1);
+    }
+
+    /// <summary>
+    /// Waits until another session is in a PostgreSQL heavyweight-lock wait while executing a
+    /// statement whose text contains <paramref name="statementFragment"/> — the deterministic
+    /// replacement for "delay N ms and assert the task had not finished". The fragment must be
+    /// a literal (no LIKE wildcards, no apostrophes).
+    /// </summary>
+    private async Task WaitForBlockedStatementAsync(string statementFragment, CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            var blocked = await _db
+                .Database.SqlQuery<bool>(
+                    $"""
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM pg_stat_activity
+                        WHERE datname = current_database()
+                            AND pid <> pg_backend_pid()
+                            AND wait_event_type = 'Lock'
+                            AND query LIKE '%' || {statementFragment} || '%'
+                    ) AS "Value"
+                    """
+                )
+                .SingleAsync(ct);
+            if (blocked)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
+        }
+
+        throw new TimeoutException($"No session reached the expected PostgreSQL lock wait for '{statementFragment}'.");
     }
 
     [Fact]
