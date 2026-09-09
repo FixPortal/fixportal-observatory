@@ -241,15 +241,20 @@ public class ProviderPollingWorkerService(
         {
             // Include the source error: persisting the failure state failing must not hide
             // the upstream cause — the compound outage is exactly when it is needed most.
-            logger.LogError(
-                ex,
-                "{SourceId} ingestion failed: {Error} — and the failure state could not be persisted: {StateError}",
-                sourceId,
-                error,
-                SanitizeError(ex.Message)
-            );
+            LogCompoundFailure(sourceId, error, ex);
         }
     }
+
+    // The exception itself is NOT passed to the log: providers render it as a full ToString()
+    // beside the sanitized field, defeating the query-string redaction (signed download URLs
+    // carry SAS tokens there). Same shape as LogStateWriteFailure.
+    private void LogCompoundFailure(string sourceId, string error, Exception exception) =>
+        logger.LogError(
+            "{SourceId} ingestion failed: {Error} — and the failure state could not be persisted: {StateError}",
+            sourceId,
+            error,
+            SanitizeError(exception.Message)
+        );
 
     private void LogStateWriteFailure(string sourceId, Exception exception) =>
         logger.LogError(

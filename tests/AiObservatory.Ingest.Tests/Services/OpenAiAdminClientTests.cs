@@ -355,6 +355,70 @@ public sealed class OpenAiAdminClientTests : IDisposable
     }
 
     [Fact]
+    public async Task GetUsageAsync_RejectsAStringTypedOptionalLaneAsInvalidDataNotInvalidOperation()
+    {
+        // JsonElement.TryGetInt64 throws InvalidOperationException for a non-number kind, so a
+        // string-typed lane must be rejected on ValueKind first to keep the documented
+        // InvalidDataException contract.
+        var start = From.AtStartOfDayInZone(DateTimeZone.Utc).ToInstant().ToUnixTimeSeconds();
+        var json = $$"""
+            {
+              "object": "page",
+              "data": [
+                {
+                  "object": "bucket",
+                  "start_time": {{start}},
+                  "end_time": {{start + 86_400}},
+                  "results": [
+                    {
+                      "object": "organization.usage.completions.result",
+                      "input_tokens": 900,
+                      "input_cached_tokens": "400",
+                      "output_tokens": 500,
+                      "num_model_requests": 5,
+                      "model": "gpt-5.4"
+                    }
+                  ]
+                }
+              ],
+              "has_more": false,
+              "next_page": null
+            }
+            """;
+        var sut = CreateSut(new QueueHandler(_ => Ok(json)));
+
+        var act = () => sut.GetUsageAsync(From, Through, TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidDataException>().WithMessage("*input_cached_tokens*");
+    }
+
+    [Fact]
+    public async Task GetUsageAsync_RejectsAStringTypedBucketTimestampAsInvalidDataNotInvalidOperation()
+    {
+        var start = From.AtStartOfDayInZone(DateTimeZone.Utc).ToInstant().ToUnixTimeSeconds();
+        var json = $$"""
+            {
+              "object": "page",
+              "data": [
+                {
+                  "object": "bucket",
+                  "start_time": "{{start}}",
+                  "end_time": {{start + 86_400}},
+                  "results": []
+                }
+              ],
+              "has_more": false,
+              "next_page": null
+            }
+            """;
+        var sut = CreateSut(new QueueHandler(_ => Ok(json)));
+
+        var act = () => sut.GetUsageAsync(From, Through, TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidDataException>().WithMessage("*start_time*");
+    }
+
+    [Fact]
     public async Task GetUsageAsync_StillRejectsAPresentLaneSplitThatDoesNotSumToTheTotal()
     {
         // All three lanes present but inconsistent with input_tokens — the invariant still bites.

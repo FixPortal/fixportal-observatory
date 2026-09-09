@@ -664,20 +664,18 @@ public sealed class GitHubActivityClientTests : IDisposable
     }
 
     [Fact]
-    public async Task GetWorkflowRunsAsync_WhenPaginationCapReached_StopsPagingAndLogsWarning()
+    public async Task GetWorkflowRunsAsync_WhenTheCursorCannotMove_StopsAndReportsTruncated()
     {
         // WorkflowRunsPaginationCap is 1000 and PerPage is 100: every page returned here is
-        // a full 100-row page, so the client never sees a short page to stop on naturally —
-        // only the `page * PerPage >= WorkflowRunsPaginationCap` check (hit at page 10) does.
-        var fullPage = string.Join(
-            ",",
-            Enumerable
-                .Range(1, 100)
-                .Select(i =>
-                    $$"""{"id":{{i}},"name":"CI","status":"completed","conclusion":"success","created_at":"2026-07-01T09:00:00Z"}"""
-                )
-        );
-        var handler = new StubHandler(_ => JsonResponse($$"""{"workflow_runs":[{{fullPage}}]}"""));
+        // a full 100-row page, so only the `page * PerPage >= WorkflowRunsPaginationCap` check
+        // (hit at page 10) stops a window. Every run shares one created_at second, so the
+        // walked-back window returns the same rows (dropped by id) and no new oldest run —
+        // the walk cannot narrow the window further and must report truncated, not spin.
+        var handler = new StubHandler(req =>
+        {
+            var page = FullPage(PageOffset(req.RequestUri!.ToString()), "2026-07-01T09:00:00Z");
+            return JsonResponse($$"""{"workflow_runs":[{{page}}]}""");
+        });
         var logger = new CapturingLogger();
         var sut = CreateSut(handler, logger);
 
@@ -687,16 +685,95 @@ public sealed class GitHubActivityClientTests : IDisposable
             TestContext.Current.CancellationToken
         );
 
-        result.Runs.Should().HaveCount(1000); // 10 pages * 100, then the cap stops it
+        result.Runs.Should().HaveCount(1000); // 10 pages * 100, then the cap stops the window
         result.Truncated.Should().BeTrue();
-        // Since every stub response is a full page, a client that refetched page 1 forever
-        // would also return 1000 rows - so pin that pagination actually advanced 1..10 and
-        // stopped at the cap rather than requesting an 11th page.
+        // Each window paginates 1..10 and stops at the cap — never an 11th page.
         foreach (var page in Enumerable.Range(1, 10))
         {
             handler.RequestedUrls.Should().Contain(u => u.Contains($"page={page}", StringComparison.Ordinal));
         }
         handler.RequestedUrls.Should().NotContain(u => u.Contains("page=11", StringComparison.Ordinal));
-        logger.Warnings.Should().ContainSingle(w => w.Contains("result cap", StringComparison.OrdinalIgnoreCase));
+        // The second window ends at the cursor: an inclusive range up to the oldest run seen.
+        handler
+            .RequestedUrls.Should()
+            .Contain(u => u.Contains("created=2026-07-01..2026-07-01T09:00:00Z", StringComparison.Ordinal));
+        logger
+            .Warnings.Should()
+            .HaveCount(2)
+            .And.OnlyContain(w => w.Contains("result cap", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task GetWorkflowRunsAsync_WhenTheCappedWindowNarrows_CompletesTheBackfill()
+    {
+        // First window: ten full pages (cap hit), all runs at one second. The walk reissues
+        // the listing as an inclusive range ending at that oldest second; already-seen runs
+        // are dropped by id, and a final short page closes the backfill — Truncated stays
+        // false, so the lane can be marked complete instead of re-fetching the same capped
+        // window on every cycle.
+        var handler = new StubHandler(req =>
+        {
+            var url = req.RequestUri!.ToString();
+            if (url.Contains("..", StringComparison.Ordinal))
+            {
+                if (url.Contains("&page=2", StringComparison.Ordinal))
+                {
+                    return JsonResponse(
+                        """{"workflow_runs":[{"id":2002,"name":"CI","status":"completed","conclusion":"success","created_at":"2026-06-15T09:00:00Z"}]}"""
+                    );
+                }
+                var mostlyDuplicates = string.Join(
+                    ",",
+                    Enumerable
+                        .Range(1, 99)
+                        .Select(i =>
+                            $$"""{"id":{{i}},"name":"CI","status":"completed","conclusion":"success","created_at":"2026-07-01T09:00:00Z"}"""
+                        )
+                        .Append(
+                            """{"id":2001,"name":"CI","status":"completed","conclusion":"success","created_at":"2026-06-20T09:00:00Z"}"""
+                        )
+                );
+                return JsonResponse($$"""{"workflow_runs":[{{mostlyDuplicates}}]}""");
+            }
+            var fullPage = FullPage(PageOffset(url), "2026-07-01T09:00:00Z");
+            return JsonResponse($$"""{"workflow_runs":[{{fullPage}}]}""");
+        });
+        var sut = CreateSut(handler);
+
+        var result = await sut.GetWorkflowRunsAsync(
+            "fix-portal/example",
+            new LocalDate(2026, 6, 1),
+            TestContext.Current.CancellationToken
+        );
+
+        result.Truncated.Should().BeFalse();
+        result.Runs.Should().HaveCount(1002); // 1000 capped + 2 recovered by the walked window
+        result.Runs.Select(run => run.RunId).Should().OnlyHaveUniqueItems();
+        result.Runs.Select(run => run.CreatedAt).Should().Contain(Instant.FromUtc(2026, 6, 15, 9, 0));
+        handler
+            .RequestedUrls.Should()
+            .Contain(u => u.Contains("created=2026-06-01..2026-07-01T09:00:00Z", StringComparison.Ordinal));
+    }
+
+    private static string FullPage(int idOffset, string createdAt) =>
+        string.Join(
+            ",",
+            Enumerable
+                .Range(1, 100)
+                .Select(i =>
+                    $$"""{"id":{{i + idOffset}},"name":"CI","status":"completed","conclusion":"success","created_at":"{{createdAt}}"}"""
+                )
+        );
+
+    private static int PageOffset(string url)
+    {
+        const string marker = "&page=";
+        var start = url.IndexOf(marker, StringComparison.Ordinal) + marker.Length;
+        var end = url.IndexOf('&', start);
+        var page = int.Parse(
+            end < 0 ? url[start..] : url[start..end],
+            System.Globalization.CultureInfo.InvariantCulture
+        );
+        return (page - 1) * 100;
     }
 }

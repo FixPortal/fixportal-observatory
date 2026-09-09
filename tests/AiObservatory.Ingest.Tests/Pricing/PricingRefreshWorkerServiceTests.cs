@@ -60,6 +60,40 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
     }
 
     [Fact]
+    public async Task ExecuteAsync_WhenTheRefreshPassThrows_LogsTheSanitizedErrorWithoutTheRawException()
+    {
+        // Attaching the exception object would let the provider render its full ToString()
+        // beside the sanitized field, defeating the query-string redaction the log exists for.
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var refreshPassEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        scopeFactory
+            .CreateScope()
+            .Returns(_ =>
+            {
+                refreshPassEntered.TrySetResult();
+                throw new InvalidOperationException("refresh failed for https://example.test/export?signature=secret");
+            });
+        var logger = new CapturingLogger<PricingRefreshWorkerService>();
+        var worker = new PricingRefreshWorkerService(scopeFactory, new FakeClock(Now), logger);
+
+        await worker.StartAsync(TestContext.Current.CancellationToken);
+        await refreshPassEntered.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        // StopAsync awaits the terminal state of ExecuteTask, so the catch block has logged
+        // by the time it returns — no sleep needed to observe the entry.
+        await worker.StopAsync(CancellationToken.None);
+
+        var messages = logger.Messages;
+        var exceptions = logger.Exceptions;
+        var failed = messages
+            .Select((message, index) => (message, exception: exceptions[index]))
+            .Where(entry => entry.message.Contains("pricing refresh pass failed", StringComparison.Ordinal))
+            .ToList();
+        failed.Should().ContainSingle();
+        failed[0].exception.Should().BeNull();
+        failed[0].message.Should().NotContain("?signature=").And.NotContain("secret");
+    }
+
+    [Fact]
     public async Task LoadsBundlesBeforeFetchingRemoteSources()
     {
         IPricingSource? source = null;
@@ -442,6 +476,7 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
     {
         private readonly Lock _gate = new();
         private readonly List<string> _messages = [];
+        private readonly List<Exception?> _exceptions = [];
         private readonly NullScope _nullScope = new();
 
         public IReadOnlyList<string> Messages
@@ -451,6 +486,17 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
                 lock (_gate)
                 {
                     return [.. _messages];
+                }
+            }
+        }
+
+        public IReadOnlyList<Exception?> Exceptions
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _exceptions];
                 }
             }
         }
@@ -471,6 +517,7 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
             lock (_gate)
             {
                 _messages.Add(formatter(state, exception));
+                _exceptions.Add(exception);
             }
         }
 

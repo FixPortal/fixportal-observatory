@@ -19,7 +19,8 @@ public interface IGitHubActivityClient
 }
 
 /// <param name="Truncated">
-/// True when the pagination cap stopped the listing before its final page. The caller must
+/// True when the pagination cap stopped the listing and the backwards window walk could not
+/// narrow it further (a cap's worth of runs sharing one created_at second). The caller must
 /// not mark backfill complete on a truncated result — the capped runs would never be fetched.
 /// </param>
 public sealed record GitHubWorkflowRunResult(IReadOnlyList<GitHubWorkflowRunRecord> Runs, bool Truncated);

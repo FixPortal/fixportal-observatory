@@ -466,7 +466,9 @@ public sealed class OpenAiAdminClient(HttpClient http) : IOpenAiAdminClient
         {
             return null;
         }
-        if (!value.TryGetInt64(out var parsed) || parsed < 0)
+        // TryGetInt64 throws InvalidOperationException (not the documented InvalidDataException)
+        // for a non-number kind, so a string like "400" must be rejected on ValueKind first.
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt64(out var parsed) || parsed < 0)
         {
             throw new InvalidDataException($"OpenAI {propertyName} must be a non-negative integer or null.");
         }
@@ -485,7 +487,13 @@ public sealed class OpenAiAdminClient(HttpClient http) : IOpenAiAdminClient
 
     private static long RequireInt64(JsonElement element, string propertyName)
     {
-        if (!element.TryGetProperty(propertyName, out var value) || !value.TryGetInt64(out var parsed))
+        // The ValueKind guard comes first: TryGetInt64 throws InvalidOperationException for a
+        // non-number kind, bypassing the documented InvalidDataException contract.
+        if (
+            !element.TryGetProperty(propertyName, out var value)
+            || value.ValueKind != JsonValueKind.Number
+            || !value.TryGetInt64(out var parsed)
+        )
         {
             throw new InvalidDataException($"OpenAI response is missing {propertyName}.");
         }

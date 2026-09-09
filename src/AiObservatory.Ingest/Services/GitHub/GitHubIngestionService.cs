@@ -34,6 +34,8 @@ public class GitHubIngestionService(
         // healthy ones surfaces as a degraded result instead, so one perma-broken repo cannot
         // starve the healthy lanes of polling — but it is still recorded as a failure, never
         // as a healthy cycle whose advancing watermark would strand the failed lane's window.
+        // For a one-repo allowlist the gate is intentionally a no-op: partial vs total failure
+        // is the same thing there, so behaviour diverges by fleet size by design.
         if (result.FailedRepoCount > 0 && result.FailedRepoCount == options.Value.GitHubRepoAllowlist.Length)
         {
             throw new InvalidOperationException(

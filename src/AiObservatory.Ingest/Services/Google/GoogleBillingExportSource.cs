@@ -27,12 +27,25 @@ public sealed class GoogleBillingExportSource(
         var fromInstant = from.AtStartOfDayInZone(DateTimeZone.Utc).ToInstant();
         var throughExclusive = through.PlusDays(1).AtStartOfDayInZone(DateTimeZone.Utc).ToInstant();
         var previous = await states.GetAsync(SourceId, cancellationToken);
-        var records = await client.GetBillingRecordsAsync(
+        var changesSince = previous?.LatestObservationAt ?? fromInstant;
+        var result = await client.GetBillingRecordsAsync(
             fromInstant,
             throughExclusive,
-            previous?.LatestObservationAt ?? fromInstant,
+            changesSince,
             cancellationToken
         );
+        if (result.OutOfRangeAffectedKeyCount > 0)
+        {
+            // A correction exported today for usage older than the 31-day scan floor is an
+            // affected key the line_items query can never satisfy: no rows, empty aggregate,
+            // and the stored observation for that key silently stays stale. Surface it.
+            logger.LogWarning(
+                "Google: {Count} billing correction key(s) exported after {ChangesSince} affect usage older than the 31-day scan floor; their stored observations cannot be refreshed and will stay stale",
+                result.OutOfRangeAffectedKeyCount,
+                changesSince
+            );
+        }
+        var records = result.Records;
         foreach (var record in records)
         {
             await writer.RecordAsync(

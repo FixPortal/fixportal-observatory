@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Net;
 using System.Text;
 using AiObservatory.Ingest.Services.Google;
@@ -131,7 +132,7 @@ public sealed class GoogleBillingExportClientTests
                 cancellation.Token
             );
 
-        records.Should().BeEmpty();
+        records.Records.Should().BeEmpty();
         sql.Should().Contain("@from").And.Contain("@through_exclusive").And.Contain("@changes_since");
         parameters.Should().NotBeNull();
         parameters.Select(parameter => parameter.Name).Should().Equal("from", "through_exclusive", "changes_since");
@@ -180,7 +181,7 @@ public sealed class GoogleBillingExportClientTests
 
         var records = await FetchAsync(Client(querySdk), TestContext.Current.CancellationToken);
 
-        records.Select(record => record.SkuId).Should().Equal("sku-1", "sku-2");
+        records.Records.Select(record => record.SkuId).Should().Equal("sku-1", "sku-2");
         handler.CallCount.Should().Be(1);
     }
 
@@ -253,7 +254,37 @@ public sealed class GoogleBillingExportClientTests
 
         var records = await FetchAsync(Client(sdk), TestContext.Current.CancellationToken);
 
-        records.Should().BeAssignableTo<IImmutableList<GoogleBillingRecord>>();
+        records.Records.Should().BeAssignableTo<IImmutableList<GoogleBillingRecord>>();
+    }
+
+    [Fact]
+    public void BuildOutOfRangeKeysQuery_counts_affected_keys_below_the_scan_floor()
+    {
+        var query = GoogleBillingExportClient.BuildOutOfRangeKeysQuery("project.dataset.table");
+
+        // Same unbounded export_time arm as the main query's affected_keys: that arm is what
+        // admits corrections for usage older than the line_items scan floor.
+        query.Sql.Should().Contain("export_time > @changes_since");
+        query.Sql.Should().Contain("SELECT COUNT(*) AS out_of_range_keys");
+        query.Sql.Should().Contain("WHERE usage_date < DATE_SUB(DATE(@changes_since), INTERVAL 31 DAY)");
+        query.Sql.Should().Contain("FROM `project.dataset.table`");
+        query.Sql.Should().NotContain("line_items");
+        query
+            .Parameters.Select(parameter => parameter.Name)
+            .Should()
+            .BeEquivalentTo("from", "through_exclusive", "changes_since");
+    }
+
+    [Fact]
+    public async Task GetBillingRecordsAsync_surfaces_the_out_of_range_affected_key_count()
+    {
+        var sdk = Substitute.For<BigQueryClient>();
+        StubQuery(sdk, Results(sdk, null, RestRow("sku-1")), outOfRangeKeys: 3);
+
+        var result = await FetchAsync(Client(sdk), TestContext.Current.CancellationToken);
+
+        result.Records.Select(record => record.SkuId).Should().Equal("sku-1");
+        result.OutOfRangeAffectedKeyCount.Should().Be(3);
     }
 
     [Theory]
@@ -394,7 +425,7 @@ public sealed class GoogleBillingExportClientTests
     private static GoogleBillingExportClient Client(BigQueryClient sdk) =>
         new(new Lazy<BigQueryClient>(() => sdk), "project.dataset.table");
 
-    private static Task<IReadOnlyList<GoogleBillingRecord>> FetchAsync(
+    private static Task<GoogleBillingExportResult> FetchAsync(
         GoogleBillingExportClient client,
         CancellationToken cancellationToken = default
     ) =>
@@ -412,15 +443,48 @@ public sealed class GoogleBillingExportClientTests
         return sdk;
     }
 
-    private static void StubQuery(BigQueryClient sdk, BigQueryResults results) =>
+    private static void StubQuery(BigQueryClient sdk, BigQueryResults results, long outOfRangeKeys = 0)
+    {
         sdk.ExecuteQueryAsync(
-                Arg.Any<string>(),
+                Arg.Is<string>(sql => sql.Contains("out_of_range_keys", StringComparison.Ordinal)),
+                Arg.Any<IEnumerable<BigQueryParameter>>(),
+                Arg.Any<QueryOptions>(),
+                null,
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(CountResults(sdk, outOfRangeKeys));
+        sdk.ExecuteQueryAsync(
+                Arg.Is<string>(sql => !sql.Contains("out_of_range_keys", StringComparison.Ordinal)),
                 Arg.Any<IEnumerable<BigQueryParameter>>(),
                 Arg.Any<QueryOptions>(),
                 null,
                 Arg.Any<CancellationToken>()
             )
             .Returns(results);
+    }
+
+    private static BigQueryResults CountResults(BigQueryClient sdk, long count) =>
+        new(
+            sdk,
+            new GetQueryResultsResponse
+            {
+                JobComplete = true,
+                JobReference = new JobReference
+                {
+                    ProjectId = "query-project",
+                    JobId = "job-1",
+                    Location = "EU",
+                },
+                Rows = [new TableRow { F = [new TableCell { V = count.ToString(CultureInfo.InvariantCulture) }] }],
+                Schema = new TableSchema
+                {
+                    Fields = [new TableFieldSchema { Name = "out_of_range_keys", Type = "INTEGER" }],
+                },
+                TotalRows = 1,
+            },
+            null,
+            null
+        );
 
     private static BigQueryResults Results(BigQueryClient sdk, string? nextPageToken = null, params TableRow[] rows) =>
         new(sdk, Response(nextPageToken, rows), null, null);

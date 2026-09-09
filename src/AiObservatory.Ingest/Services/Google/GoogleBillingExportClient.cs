@@ -52,6 +52,24 @@ public sealed class GoogleBillingExportClient(Lazy<BigQueryClient> client, strin
         GROUP BY usage_date, billing_period, service_id, sku_id, currency
         """;
 
+    // The export_time arm of affected_keys has no usage-date bound, so a correction exported
+    // today for usage older than the 31-day line_items scan floor selects keys the main query
+    // can never satisfy: no rows, empty aggregate, and the stored observation silently stays
+    // stale. This companion count makes that loss visible — the source logs it as a warning.
+    // It deliberately re-scans the affected_keys input once per cycle: BigQuery cannot share a
+    // CTE across query jobs, and a single-job script cannot return two result sets.
+    private const string OutOfRangeKeysQueryTemplate = """
+        WITH affected_keys AS (
+          SELECT DISTINCT DATE(usage_start_time) AS usage_date, invoice.month AS billing_period, service.id AS service_id,
+            sku.id AS sku_id, currency
+          FROM `%TABLE%`
+          WHERE (usage_start_time >= @from AND usage_start_time < @through_exclusive) OR export_time > @changes_since
+        )
+        SELECT COUNT(*) AS out_of_range_keys
+        FROM affected_keys
+        WHERE usage_date < DATE_SUB(DATE(@changes_since), INTERVAL 31 DAY)
+        """;
+
     private readonly string _table = ValidateExportTable(table);
 
     public void Dispose()
@@ -62,7 +80,7 @@ public sealed class GoogleBillingExportClient(Lazy<BigQueryClient> client, strin
         }
     }
 
-    public async Task<IReadOnlyList<GoogleBillingRecord>> GetBillingRecordsAsync(
+    public async Task<GoogleBillingExportResult> GetBillingRecordsAsync(
         Instant from,
         Instant throughExclusive,
         Instant changesSince,
@@ -73,6 +91,9 @@ public sealed class GoogleBillingExportClient(Lazy<BigQueryClient> client, strin
         {
             throw new ArgumentOutOfRangeException(nameof(throughExclusive));
         }
+        // The companion count runs first: a correction for usage older than the scan floor is
+        // reported even if the main query below legitimately returns rows for everything else.
+        var outOfRangeKeys = await CountOutOfRangeKeysAsync(from, throughExclusive, changesSince, cancellationToken);
         var query = BuildQuery(_table, from, throughExclusive, changesSince);
         var results = await client.Value.ExecuteQueryAsync(
             query.Sql,
@@ -86,7 +107,34 @@ public sealed class GoogleBillingExportClient(Lazy<BigQueryClient> client, strin
             cancellationToken.ThrowIfCancellationRequested();
             records.Add(MapRow(row));
         }
-        return records.ToImmutableArray();
+        return new GoogleBillingExportResult(records.ToImmutableArray(), outOfRangeKeys);
+    }
+
+    private async Task<long> CountOutOfRangeKeysAsync(
+        Instant from,
+        Instant throughExclusive,
+        Instant changesSince,
+        CancellationToken cancellationToken
+    )
+    {
+        var query = BuildOutOfRangeKeysQuery(_table, from, throughExclusive, changesSince);
+        var results = await client.Value.ExecuteQueryAsync(
+            query.Sql,
+            query.Parameters,
+            new QueryOptions { UseLegacySql = false },
+            cancellationToken: cancellationToken
+        );
+        // COUNT(*) always yields exactly one row; zero rows is treated as zero rather than an
+        // error so a stubbed or empty result cannot mask the main query's records.
+        var rows = results.GetRowsAsync();
+        await using var enumerator = rows.GetAsyncEnumerator(cancellationToken);
+        if (await enumerator.MoveNextAsync())
+        {
+            return enumerator.Current["out_of_range_keys"] is long count
+                ? count
+                : throw new InvalidDataException("Google billing export returned an invalid out-of-range key count.");
+        }
+        return 0;
     }
 
     internal static string ValidateExportTable(string table)
@@ -113,6 +161,16 @@ public sealed class GoogleBillingExportClient(Lazy<BigQueryClient> client, strin
             ]
         );
 
+    internal static GoogleBillingQuery BuildOutOfRangeKeysQuery(string table) =>
+        new(
+            OutOfRangeKeysQueryTemplate.Replace("%TABLE%", ValidateExportTable(table), StringComparison.Ordinal),
+            [
+                new BigQueryParameter("from", BigQueryDbType.Timestamp),
+                new BigQueryParameter("through_exclusive", BigQueryDbType.Timestamp),
+                new BigQueryParameter("changes_since", BigQueryDbType.Timestamp),
+            ]
+        );
+
     private static GoogleBillingQuery BuildQuery(
         string table,
         Instant from,
@@ -121,6 +179,21 @@ public sealed class GoogleBillingExportClient(Lazy<BigQueryClient> client, strin
     ) =>
         new(
             QueryTemplate.Replace("%TABLE%", ValidateExportTable(table), StringComparison.Ordinal),
+            [
+                new BigQueryParameter("from", BigQueryDbType.Timestamp, from.ToDateTimeUtc()),
+                new BigQueryParameter("through_exclusive", BigQueryDbType.Timestamp, throughExclusive.ToDateTimeUtc()),
+                new BigQueryParameter("changes_since", BigQueryDbType.Timestamp, changesSince.ToDateTimeUtc()),
+            ]
+        );
+
+    private static GoogleBillingQuery BuildOutOfRangeKeysQuery(
+        string table,
+        Instant from,
+        Instant throughExclusive,
+        Instant changesSince
+    ) =>
+        new(
+            OutOfRangeKeysQueryTemplate.Replace("%TABLE%", ValidateExportTable(table), StringComparison.Ordinal),
             [
                 new BigQueryParameter("from", BigQueryDbType.Timestamp, from.ToDateTimeUtc()),
                 new BigQueryParameter("through_exclusive", BigQueryDbType.Timestamp, throughExclusive.ToDateTimeUtc()),

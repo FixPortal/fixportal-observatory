@@ -23,6 +23,7 @@ public sealed class GooglePricingSource : IPricingSource, IDisposable
     private readonly bool _ownsClient;
     private readonly TimeSpan _requestTimeout;
     private readonly string _sourceUrl;
+    private readonly TimeProvider _timeProvider;
 
     internal static bool HasVerifiedMappings => VerifiedMappings.Count != 0;
 
@@ -50,7 +51,8 @@ public sealed class GooglePricingSource : IPricingSource, IDisposable
         IOptions<IngestOptions> options,
         IReadOnlyList<GoogleSkuMapping> mappings,
         HttpMessageHandler? handler,
-        TimeSpan? requestTimeout = null
+        TimeSpan? requestTimeout = null,
+        TimeProvider? timeProvider = null
     )
         : this(
             clock,
@@ -59,7 +61,8 @@ public sealed class GooglePricingSource : IPricingSource, IDisposable
             mappings,
             new HttpClient(handler ?? CreateHttpMessageHandler(), handler is null),
             true,
-            requestTimeout
+            requestTimeout,
+            timeProvider
         ) { }
 
     private GooglePricingSource(
@@ -69,7 +72,8 @@ public sealed class GooglePricingSource : IPricingSource, IDisposable
         IReadOnlyList<GoogleSkuMapping> mappings,
         HttpClient client,
         bool ownsClient,
-        TimeSpan? requestTimeout
+        TimeSpan? requestTimeout,
+        TimeProvider? timeProvider = null
     )
     {
         ArgumentNullException.ThrowIfNull(clock);
@@ -109,6 +113,7 @@ public sealed class GooglePricingSource : IPricingSource, IDisposable
         _client.Timeout = Timeout.InfiniteTimeSpan;
         _client.DefaultRequestHeaders.Add("X-Goog-Api-Key", apiKey);
         _ownsClient = ownsClient;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     internal static HttpClientHandler CreateHttpMessageHandler() => new() { AllowAutoRedirect = false };
@@ -130,8 +135,13 @@ public sealed class GooglePricingSource : IPricingSource, IDisposable
             throw new InvalidOperationException("Google catalog has no verified SKU mappings.");
         }
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(_requestTimeout);
+        // The TimeProvider seam keeps the timeout testable: production runs on the system
+        // clock; tests fire the timer manually instead of racing a real short delay.
+        using var timeout = new CancellationTokenSource(_requestTimeout, _timeProvider);
+        using var caller = cancellationToken.Register(
+            static state => ((CancellationTokenSource)state!).Cancel(),
+            timeout
+        );
         var pageToken = string.Empty;
         var seenTokens = new HashSet<string>(StringComparer.Ordinal);
         var evidence = new List<string>();

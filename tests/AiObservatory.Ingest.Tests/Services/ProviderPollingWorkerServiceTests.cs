@@ -10,6 +10,7 @@ using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -519,6 +520,52 @@ public class ProviderPollingWorkerServiceTests(ProviderPollingDatabase database)
     }
 
     [Fact]
+    public async Task RunPollAsync_WhenTheFailureStateWriteAlsoFails_LogsTheCompoundFailureWithoutTheRawException()
+    {
+        // Point the state store at a dead server so MarkFailureAsync throws while the upstream
+        // failure is being persisted. The compound-outage log must not attach that exception:
+        // providers render it as a full ToString() beside the sanitized fields, defeating the
+        // query-string redaction (signed download URLs carry SAS tokens there).
+        var source = Source("compound-source", new SourceIngestionResult(null));
+        var logger = new CapturingLogger();
+        await using var harness = CreateWorker(
+            sources: [source],
+            definitions: [Definition("compound-source")],
+            logger: logger,
+            configureServices: services =>
+            {
+                services.RemoveAll<DbContextOptions<AiObservatoryDbContext>>();
+                services.AddDbContext<AiObservatoryDbContext>(options =>
+                    options.UseNpgsql(
+                        new NpgsqlConnectionStringBuilder(database.ConnectionString)
+                        {
+                            Port = 1,
+                            Timeout = 1,
+                        }.ConnectionString,
+                        npgsql => npgsql.UseNodaTime()
+                    )
+                );
+            }
+        );
+
+        await harness.Worker.RunPollAsync(
+            new LocalDate(2026, 8, 23),
+            new LocalDate(2026, 8, 23),
+            TestContext.Current.CancellationToken
+        );
+
+        var messages = logger.Messages;
+        var exceptions = logger.Exceptions;
+        var compound = messages
+            .Select((message, index) => (message, exception: exceptions[index]))
+            .Where(entry => entry.message.Contains("failure state could not be persisted", StringComparison.Ordinal))
+            .ToList();
+        compound.Should().ContainSingle();
+        compound[0].message.Should().Contain("compound-source");
+        compound[0].exception.Should().BeNull();
+    }
+
+    [Fact]
     public async Task DoesNotStartAnotherCycleWhileASourceCallIsStillRunning()
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -690,6 +737,7 @@ public class ProviderPollingWorkerServiceTests(ProviderPollingDatabase database)
     {
         private readonly Lock _gate = new();
         private readonly List<string> _messages = [];
+        private readonly List<Exception?> _exceptions = [];
 
         public IReadOnlyList<string> Messages
         {
@@ -698,6 +746,17 @@ public class ProviderPollingWorkerServiceTests(ProviderPollingDatabase database)
                 lock (_gate)
                 {
                     return [.. _messages];
+                }
+            }
+        }
+
+        public IReadOnlyList<Exception?> Exceptions
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _exceptions];
                 }
             }
         }
@@ -718,6 +777,7 @@ public class ProviderPollingWorkerServiceTests(ProviderPollingDatabase database)
             lock (_gate)
             {
                 _messages.Add(formatter(state, exception));
+                _exceptions.Add(exception);
             }
         }
 
