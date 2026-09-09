@@ -55,8 +55,16 @@ def test_correct_gate_passes(tmp_path):
 # M33: a failure-only condition is skipped when an upstream job is cancelled, so the
 # required check reports green over a dependency that did not pass.
 def test_failure_only_condition_is_refused(tmp_path):
-    with pytest.raises(SystemExit, match="does not react to 'cancelled'"):
+    with pytest.raises(SystemExit, match="does not react to both 'failure' and 'cancelled'"):
         check(write_workflow(tmp_path, "contains(needs.*.result, 'failure')"))
+
+
+# The converse of M33: a cancelled-only condition is false when an upstream job
+# FAILS, so the gate step is skipped and the required check reports success over a
+# failed dependency.
+def test_cancelled_only_condition_is_refused(tmp_path):
+    with pytest.raises(SystemExit, match="does not react to both 'failure' and 'cancelled'"):
+        check(write_workflow(tmp_path, "contains(needs.*.result, 'cancelled')"))
 
 
 @pytest.mark.parametrize(
@@ -67,8 +75,6 @@ def test_failure_only_condition_is_refused(tmp_path):
         # The bracket spellings name the same reference GitHub resolves by string key.
         "needs['build'].result != 'success'",
         'needs["build"].result != "success"',
-        # A cancelled arm without a failure arm still reacts to both lanes it names.
-        "contains(needs.*.result, 'cancelled')",
     ],
 )
 def test_cancelled_aware_spellings_pass(tmp_path, condition):
@@ -78,7 +84,8 @@ def test_cancelled_aware_spellings_pass(tmp_path, condition):
 def test_bracket_only_gate_is_not_read_as_unreferenced(tmp_path):
     # Before NEEDS_RESULT learnt the index spelling this exited with "has no step
     # whose `if:` references a needs.<job>.result" -- a false RED on a correct gate.
-    assert check(write_workflow(tmp_path, "needs['build'].result == 'cancelled'")) is True
+    condition = "needs['build'].result == 'failure' || needs['build'].result == 'cancelled'"
+    assert check(write_workflow(tmp_path, condition)) is True
 
 
 # M32: YAML lets a plain scalar begin on the line after its key, so the split form
@@ -86,18 +93,21 @@ def test_bracket_only_gate_is_not_read_as_unreferenced(tmp_path):
 # step as not tolerant -- fail-open on a neutered gate.
 def test_split_continue_on_error_is_still_tolerant(tmp_path):
     with pytest.raises(SystemExit, match="continue-on-error"):
-        check(write_workflow(tmp_path, "contains(needs.*.result, 'cancelled')", "continue-on-error:\n          true"))
+        condition = "contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')"
+        check(write_workflow(tmp_path, condition, "continue-on-error:\n          true"))
 
 
 def test_block_scalar_continue_on_error_is_still_tolerant(tmp_path):
     with pytest.raises(SystemExit, match="continue-on-error"):
-        check(write_workflow(tmp_path, "contains(needs.*.result, 'cancelled')", "continue-on-error: >\n          true"))
+        condition = "contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')"
+        check(write_workflow(tmp_path, condition, "continue-on-error: >\n          true"))
 
 
 def test_block_scalar_false_continue_on_error_passes(tmp_path):
     # The header-only read compared the literal `>` against ("false", "") and refused
     # even a false value -- a false RED on a step that genuinely can fail its job.
-    assert check(write_workflow(tmp_path, "contains(needs.*.result, 'cancelled')", "continue-on-error: >\n          false")) is True
+    condition = "contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')"
+    assert check(write_workflow(tmp_path, condition, "continue-on-error: >\n          false")) is True
 
 
 # Capitalised False is the same YAML 1.1 boolean as false; reading it as truthy was
@@ -108,7 +118,7 @@ def test_capitalised_false_continue_on_error_passes(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "value,expected",
+    ("value", "expected"),
     [
         ("False", "false"),
         ("FALSE", "false"),
@@ -122,7 +132,7 @@ def test_normalise_condition_folds_case(value, expected):
 
 
 @pytest.mark.parametrize(
-    "condition,expected",
+    ("condition", "expected"),
     [
         ("needs.build.result != 'success'", ["build"]),
         ("needs['build'].result != 'success'", ["build"]),

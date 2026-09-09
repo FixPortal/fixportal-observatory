@@ -68,6 +68,14 @@ NEEDS_RESULT = re.compile(
 # so the failing step never runs and the required check reports success over a
 # dependency that did not pass.
 CANCELLED_ARM = re.compile(r"['\"]cancelled['\"]|!=\s*['\"]success['\"]")
+# A condition that reacts to a FAILED upstream, in the same two spellings: a
+# 'failure' arm (`contains(needs.*.result, 'failure')`), or the same inequality
+# against success. The hole is the converse of the one CANCELLED_ARM closes: a
+# CANCELLED-ONLY condition is false when an upstream job FAILS, so the failing
+# step is skipped and the required check reports success over a failed
+# dependency. Every referencing condition must match BOTH arms; the
+# `!= 'success'` spelling matches each, so it satisfies both at once.
+FAILURE_ARM = re.compile(r"['\"]failure['\"]|!=\s*['\"]success['\"]")
 BACKSLASH = "\\"
 
 # The gate step's failing command, in the forms this checker will vouch for. Anything
@@ -802,24 +810,34 @@ def assert_gate_semantics(workflow_path, lines, jobs, gate_job, needs):
     # failure-only condition is skipped when an upstream job is cancelled -- a
     # timeout-minutes kill reports cancelled, not failure -- so the failing step
     # never runs and the required check reports success over a dependency that did
-    # not pass. Required of EVERY referencing condition, not one of them: the
-    # surviving failure-only step in a per-job gate is the same hole with company.
+    # not pass. The converse shape skips too: a cancelled-only condition is false
+    # when an upstream job FAILS, with the same green-over-failed result. Every
+    # referencing condition must therefore react to BOTH outcomes, either with an
+    # arm apiece or with a single `!= 'success'` comparison, which is true for
+    # both. Required of EVERY referencing condition, not one of them: the
+    # surviving single-outcome step in a per-job gate is the same hole with
+    # company.
     #
     # CEILING, stated rather than implied: the condition is read TEXTUALLY, never
-    # evaluated, so a 'cancelled' arm in a DEAD branch --
+    # evaluated, so a 'failure' or 'cancelled' arm in a DEAD branch --
     # `contains(needs.*.result, 'cancelled') && false` -- satisfies this check while
     # reacting to nothing. Closing that would mean evaluating arbitrary expressions;
     # the same reasoning step_can_fail states for the `run:` body. What is refused
-    # here is the shape a neutering diff actually takes: dropping the cancelled arm.
+    # here is the shape a neutering diff actually takes: dropping one outcome's
+    # arm.
     for condition, _ in failing:
-        if not CANCELLED_ARM.search(condition):
+        if not (FAILURE_ARM.search(condition) and CANCELLED_ARM.search(condition)):
             sys.exit(
                 f"{workflow_path}: '{gate_job}' step condition `{condition}` references "
-                "a needs result but does not react to 'cancelled'.\n"
-                "A job killed by timeout-minutes reports cancelled, not failure, so a "
-                "failure-only condition skips the failing step and the required check "
-                "reports success. Add a `contains(needs.*.result, 'cancelled')` arm, "
-                "or compare `!= 'success'`."
+                "a needs result but does not react to both 'failure' and 'cancelled'.\n"
+                "A failure-only condition is skipped when an upstream job is "
+                "cancelled -- a timeout-minutes kill reports cancelled, not failure "
+                "-- and a cancelled-only condition is skipped when a job FAILS; "
+                "either way the failing step never runs and the required check "
+                "reports success over a dependency that did not pass. Add a "
+                "`contains(needs.*.result, 'failure')` arm AND a "
+                "`contains(needs.*.result, 'cancelled')` arm, or compare "
+                "`!= 'success'`."
             )
 
     # EVERY declared dependency, not merely one of them. Accepting the first

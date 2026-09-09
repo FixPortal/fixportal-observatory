@@ -24,12 +24,24 @@ def test_docker_action_registry_image_is_a_ref():
     assert hygiene.local_action_refs(document) == ["docker://alpine:3.18"]
 
 
-@pytest.mark.parametrize("image", ["Dockerfile", "./docker/Dockerfile", "build.dockerfile"])
+@pytest.mark.parametrize("image", ["Dockerfile", "./docker/Dockerfile"])
 def test_docker_action_local_build_context_is_not_a_ref(image):
     # A local Dockerfile builds this repository's own reviewed code, like a
     # composite's steps; it has no revision to pin.
     document = {"runs": {"using": "docker", "image": image}}
     assert hygiene.local_action_refs(document) == []
+
+
+@pytest.mark.parametrize(
+    "image",
+    ["build.dockerfile", "mydockerfile", "docker://untrusted/dockerfile"],
+)
+def test_docker_action_non_dockerfile_image_is_a_ref(image):
+    # Only a final component of exactly `Dockerfile` is a local build: the two
+    # near-miss filenames are not valid local images, and a URI-scheme image is a
+    # registry pull whatever its basename -- all three must reach check_ref.
+    document = {"runs": {"using": "docker", "image": image}}
+    assert hygiene.local_action_refs(document) == [image]
 
 
 def test_node_action_contributes_no_refs():
