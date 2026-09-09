@@ -40,8 +40,10 @@ public sealed record PricingSnapshotCandidate(
         try
         {
             var catalog = JsonNode.Parse(normalizedCatalog);
-            var root = catalog?.AsObject();
-            if (root is null)
+            // AsObject() would throw InvalidOperationException (NOT JsonException, so it would
+            // escape the catch below) for array/scalar roots; pattern-match instead so every
+            // non-object root takes the same unmodified-string fallback as malformed JSON.
+            if (catalog is not JsonObject root)
             {
                 return normalizedCatalog;
             }
@@ -49,17 +51,16 @@ public sealed record PricingSnapshotCandidate(
             root.Remove("retrievedAt");
             if (root["entries"] is JsonArray entries)
             {
-                foreach (var entry in entries)
-                {
-                    if (
-                        entry is JsonObject entryObject
-                        && entryObject["effectiveDateIsProviderDeclared"] is JsonValue declared
+                var assumedDates = entries
+                    .OfType<JsonObject>()
+                    .Where(entry =>
+                        entry["effectiveDateIsProviderDeclared"] is JsonValue declared
                         && declared.TryGetValue<bool>(out var isProviderDeclared)
                         && !isProviderDeclared
-                    )
-                    {
-                        entryObject.Remove("effectiveFrom");
-                    }
+                    );
+                foreach (var entry in assumedDates)
+                {
+                    entry.Remove("effectiveFrom");
                 }
             }
 

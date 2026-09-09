@@ -75,8 +75,11 @@ public sealed class PricingRepricingService(
 
     // Reads each source's snapshot rows once through the pass's cache while the shared
     // activation lock is still held, so every event in the pass prices from the same catalog
-    // generation. Notional events are skipped: their resolution reads only the active snapshot,
-    // which GetCoveringSnapshotsAsync never serves from the cache.
+    // generation. Notional events are cached too: GetCoveringSnapshotsAsync serves them from
+    // the same per-source cache, so skipping them would let a notional event whose source is
+    // not yet cached trigger a live read inside RepriceLockedAsync — AFTER the read
+    // transaction commits and the shared activation lock is released — and a concurrent
+    // activation in between would price part of the pass from a newer catalog generation.
     private async Task<Dictionary<string, List<PricingSnapshot>>> LoadSnapshotCacheAsync(
         IReadOnlyList<UsageEvent> events,
         CancellationToken cancellationToken
@@ -85,10 +88,7 @@ public sealed class PricingRepricingService(
         var snapshotsBySourceId = new Dictionary<string, List<PricingSnapshot>>(StringComparer.Ordinal);
         foreach (var usage in events)
         {
-            if (usage.CostBasis != CostBasis.Notional)
-            {
-                await store.GetCoveringSnapshotsAsync(usage, snapshotsBySourceId, cancellationToken);
-            }
+            await store.GetCoveringSnapshotsAsync(usage, snapshotsBySourceId, cancellationToken);
         }
 
         return snapshotsBySourceId;

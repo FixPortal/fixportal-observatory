@@ -117,6 +117,29 @@ public class SlackWebhookProtectorTests
     }
 
     [Theory]
+    [InlineData("!!! not base64 !!!")] // Convert.FromBase64String throws FormatException
+    [InlineData("AAECAwQFBgcICQ==")] // valid base64, 10 bytes < nonce+tag: slicing throws ArgumentOutOfRangeException
+    public void UnprotectValue_returns_the_sentinel_for_a_corrupted_payload_when_a_key_is_configured(string payload)
+    {
+        // Both failures escape Unprotect BEFORE AES-GCM runs, and UnprotectValue runs inside EF
+        // materialisation -- an uncaught throw there makes the whole NotificationSettings row
+        // unreadable and takes email alerting down with Slack, the exact failure the sentinel
+        // design exists to prevent.
+        Environment.SetEnvironmentVariable(SlackWebhookProtector.KeyEnvironmentVariable, "test-passphrase");
+        try
+        {
+            SlackWebhookProtector
+                .UnprotectValue(SlackWebhookProtector.EncryptedPrefix + payload)
+                .Should()
+                .Be(SlackWebhookProtector.UndecryptableSentinel);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(SlackWebhookProtector.KeyEnvironmentVariable, null);
+        }
+    }
+
+    [Theory]
     [InlineData(SlackWebhookProtector.UndecryptableSentinel, true)]
     [InlineData(WebhookUrl, false)]
     [InlineData(null, false)]

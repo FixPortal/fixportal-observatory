@@ -34,7 +34,10 @@ namespace AiObservatory.Data.Migrations
             // the 2026-08-31 conversion deploy were entered in GBP and then converted
             // anyway, leaving them ~21% too low. BudgetRule carries no created timestamp,
             // so those rows cannot be identified by a predicate: surface every rule in the
-            // deploy log for operator review instead of converting anything automatically.
+            // deploy log for operator review instead of converting anything automatically,
+            // AND persist one durable review marker per rule — Npgsql logs NOTICEs at
+            // Debug while production logging starts at Information and the deploy workflow
+            // retains no migration output, so the NOTICE alone never reaches an operator.
             migrationBuilder.Sql(
                 """
                 DO $$
@@ -52,6 +55,18 @@ namespace AiObservatory.Data.Migrations
                         FROM (SELECT "Id", "Provider", "Period", "ThresholdGbp" FROM "BudgetRules" ORDER BY "Id" LIMIT 50) rules;
                         RAISE NOTICE 'BudgetRules GBP conversion needs operator review: % rule(s) exist. Thresholds were converted USD->GBP at 0.79 on 2026-08-31; any rule created between the 2026-08-26 rename and that conversion was already GBP and is now ~21%% too low. Review via GET /budget-rules and correct any affected rule: %',
                             rule_count, rule_list;
+
+                        -- Durable copy of the review list, one row per rule, queryable via
+                        -- SELECT * FROM "DataMigrationMarkers" WHERE "Name" LIKE
+                        -- 'budget-threshold-gbp-conversion:review:%'. No 50-row cap here:
+                        -- the table is cheap and the review must cover every rule. The
+                        -- ON CONFLICT keeps a rollback + re-apply idempotent (Down
+                        -- deliberately keeps the markers, exactly like the conversion
+                        -- marker above).
+                        INSERT INTO "DataMigrationMarkers" ("Name")
+                        SELECT 'budget-threshold-gbp-conversion:review:' || "Id"::text
+                        FROM "BudgetRules"
+                        ON CONFLICT DO NOTHING;
                     END IF;
                 END $$;
                 """

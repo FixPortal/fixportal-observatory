@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Text.Json;
 using AiObservatory.Data.Entities;
 using AiObservatory.Data.Pricing;
@@ -5,6 +6,7 @@ using AiObservatory.Data.Pricing.Catalogs;
 using AiObservatory.Data.Repositories;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NodaTime;
@@ -268,6 +270,76 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
         }
 
         (await _db.UsageEvents.AsNoTracking().SingleAsync(ct)).CostUsd.Should().Be(2m);
+    }
+
+    [Fact]
+    public async Task StandaloneRepricingCachesANotionalsSnapshotsUnderTheActivationLock()
+    {
+        // A notional event's source was previously skipped by the under-lock snapshot cache on
+        // the claim that GetCoveringSnapshotsAsync never serves notional resolutions from the
+        // cache. It does — so the skip let a notional event trigger a live snapshot read inside
+        // RepriceLockedAsync, AFTER the read transaction committed and the shared activation
+        // lock was released, where a concurrent activation could price part of the pass from a
+        // newer catalog generation. The probe fails the test if ANY PricingSnapshots read for
+        // the pass runs outside the short locked read transaction.
+        var ct = TestContext.Current.CancellationToken;
+        await _store.ActivateAsync(Candidate("old", 1m), ct);
+        await _repository.RecordEventAsync(Event("notional", CostBasis.Notional, 8m, 2m), ct);
+        await _store.ActivateAsync(Candidate("new", 2m), ct);
+
+        var probe = new SnapshotReadProbe();
+        var options = new DbContextOptionsBuilder<AiObservatoryDbContext>()
+            .UseNpgsql(_connectionString, npgsql => npgsql.UseNodaTime())
+            .AddInterceptors(probe)
+            .Options;
+        await using var passDb = new AiObservatoryDbContext(options);
+        var passStore = new PricingSnapshotStore(passDb);
+        var passRepricing = new PricingRepricingService(
+            passDb,
+            new UsageRepository(passDb),
+            Resolver(passStore),
+            passStore
+        );
+
+        await passRepricing.RepriceProviderAsync(Provider.OpenAI, ct);
+
+        probe
+            .ReadsOutsideTransaction.Should()
+            .Be(0, "the pre-cached notional snapshots must price the pass — no post-lock lazy read");
+        probe
+            .ReadsInsideTransaction.Should()
+            .BeGreaterThan(0, "the notional event's source must be cached under the shared lock");
+        (await _db.UsageEvents.AsNoTracking().SingleAsync(row => row.EventKey == "notional", ct))
+            .CostUsd.Should()
+            .Be(2m);
+    }
+
+    private sealed class SnapshotReadProbe : DbCommandInterceptor
+    {
+        public int ReadsInsideTransaction { get; private set; }
+        public int ReadsOutsideTransaction { get; private set; }
+
+        public override ValueTask<DbDataReader> ReaderExecutedAsync(
+            DbCommand command,
+            CommandExecutedEventData eventData,
+            DbDataReader result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (command.CommandText.Contains("PricingSnapshots", StringComparison.Ordinal))
+            {
+                if (eventData.Context?.Database.CurrentTransaction is not null)
+                {
+                    ReadsInsideTransaction++;
+                }
+                else
+                {
+                    ReadsOutsideTransaction++;
+                }
+            }
+
+            return base.ReaderExecutedAsync(command, eventData, result, cancellationToken);
+        }
     }
 
     [Fact]

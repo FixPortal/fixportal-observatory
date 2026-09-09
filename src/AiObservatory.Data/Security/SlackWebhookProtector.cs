@@ -127,10 +127,15 @@ public sealed class SlackWebhookProtector
         {
             return protector.Unprotect(value);
         }
-        catch (CryptographicException)
+        catch (Exception exception)
+            when (exception is CryptographicException or FormatException or ArgumentOutOfRangeException)
         {
             // A key that no longer matches degrades exactly like a missing one; the sentinel
-            // can never be mistaken for a corrupt URL to post to.
+            // can never be mistaken for a corrupt URL to post to. FormatException (payload is
+            // not base64) and ArgumentOutOfRangeException (decoded blob shorter than
+            // nonce+tag) are Unprotect failures BEFORE AES-GCM runs -- a corrupted column
+            // value, not a key problem -- but they surface inside EF materialisation just the
+            // same, so they degrade to the sentinel too.
             return UndecryptableSentinel;
         }
     }
