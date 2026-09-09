@@ -113,8 +113,8 @@ public interface IUsageRepository
     /// </summary>
     /// <param name="priced">
     /// The event as it was read when <paramref name="quote"/> was calculated. The write is skipped
-    /// if the locked row's pricing inputs have since moved, so a quote is never applied to an event
-    /// it was not calculated from.
+    /// if the locked row's pricing inputs or cost figures have since moved, so a quote is never
+    /// applied to an event it was not calculated from.
     /// </param>
     /// <param name="quote">The price calculated from <paramref name="priced"/>.</param>
     /// <param name="ct">Cancellation token.</param>
@@ -163,6 +163,7 @@ public interface IUsageRepository
 
     Task<IReadOnlyList<BudgetAlertEmail>> GetDeliverableBudgetAlertEmailsAsync(
         Instant leaseExpiredBefore,
+        Instant createdOnOrAfter,
         CancellationToken ct = default
     );
 
@@ -200,12 +201,21 @@ public interface IUsageRepository
     /// estimated (<see cref="CostBasis.ListPriceEstimate"/>/<see cref="CostBasis.Notional"/>)
     /// event to <see cref="CostBasis.ProviderEstimated"/> and stamps <c>CorrectedAt</c>, so
     /// neither the repricing pass nor a cost-less snapshot replay can silently revert it.
+    /// The rebase happens even when the corrected figure equals the stored one — the operator
+    /// has taken authority over the figure either way.
     /// </summary>
+    /// <param name="newCacheSavingsUsd">
+    /// The cache-savings figure to store alongside the corrected cost, or null to keep the
+    /// event's current value. Pass an explicit figure (0 when the correction has no savings to
+    /// report) so the aggregate's unknown-savings count clears: the rebase removes the row from
+    /// the repricer's scan, so a null left behind is never repaired.
+    /// </param>
     Task<PatchEventCostResult?> PatchEventCostAsync(
         Provider provider,
         string sourceId,
         string eventKey,
         decimal newCostUsd,
+        decimal? newCacheSavingsUsd = null,
         CancellationToken ct = default
     );
 

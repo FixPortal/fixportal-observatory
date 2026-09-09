@@ -598,6 +598,40 @@ public class SpendEntriesEndpointsWafTests(AiObservatoryApiFactory factory) : IC
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    /// <summary>
+    /// The PATCH response goes through the same ToResponse projection as the GET for exactly
+    /// the reason in <see cref="GetEntries_DoesNotPutTheVerbatimProviderPayloadOnTheWire"/> —
+    /// the entity carries RawPayload and it must not go back on the wire. This pins the PATCH
+    /// wire shape so the projection cannot be dropped back to the tracked entity unnoticed.
+    /// </summary>
+    [Fact]
+    public async Task PatchEntry_DoesNotPutTheVerbatimProviderPayloadOnTheWire()
+    {
+        using var client = factory.CreateAdminClient();
+        var ct = TestContext.Current.CancellationToken;
+        var (categoryId, vendorId) = await SeedCatalogAsync(client);
+        var created = await client.PostAsJsonAsync(
+            "/api/spend/entries",
+            new[] { Entry(categoryId, vendorId, $"k-{Guid.NewGuid():N}", source: "Manual") },
+            ct
+        );
+        var id = (await created.Content.ReadFromJsonAsync<JsonElement>(ct))
+            .EnumerateArray()
+            .Single()
+            .GetProperty("id")
+            .GetGuid();
+
+        var response = await client.PatchAsJsonAsync($"/api/spend/entries/{id}", new { Description = "Renamed" }, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var entry = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+        entry.TryGetProperty("rawPayload", out _).Should().BeFalse();
+        // The provenance columns the ledger's consumers do read must survive the projection.
+        entry.GetProperty("sourceId").GetString().Should().Be(UsageSourceIds.ManualLedger);
+        entry.GetProperty("description").GetString().Should().Be("Renamed");
+        entry.GetProperty("amountGbp").GetDecimal().Should().NotBe(0);
+    }
+
     [Fact]
     public async Task PatchingAmountReResolvesAmountGbpAtTheStoredRate()
     {
