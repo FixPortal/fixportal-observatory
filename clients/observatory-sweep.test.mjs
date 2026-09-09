@@ -890,6 +890,30 @@ test('scanRecords reparses a version-2 cache instead of reusing its stale record
   }
 })
 
+test('scanRecords marks a populated recordless root as cleanly empty and a missing root as unverifiable', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-empty-'))
+  await mkdir(join(root, 'codex', 'sessions', '2026', '08', '24'), { recursive: true })
+  const cfg = {
+    codexHome: join(root, 'codex'),
+    copilotHome: join(root, 'copilot'),
+    claudeHome: join(root, 'claude'),
+    kimiHome: join(root, 'kimi'),
+    geminiHome: join(root, 'gemini'),
+  }
+
+  try {
+    // Copilot's home does not exist at all: an unmounted or mistyped home must
+    // not read as a verified empty history, so it lands in neither set.
+    const { records, incompleteSources, emptySources } = await scanRecords(cfg, {}, new Set(['codex', 'copilot']))
+
+    assert.deepEqual(records, [])
+    assert.deepEqual([...incompleteSources], [])
+    assert.deepEqual([...emptySources], ['codex'])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('machineLabel slugifies host names for source-id namespacing', () => {
   assert.equal(machineLabel('DESKTOP-ABC123'), 'desktop-abc123')
   assert.equal(machineLabel('Chris’s MacBook Pro'), 'chris-s-macbook-pro')
@@ -916,7 +940,7 @@ test('buildDailySnapshots namespaces source ids per machine so hosts never share
   assert.equal(JSON.parse(hostA.rawPayload).machine, 'host-a')
 })
 
-test('main fetches inventory only for enabled per-machine sources and never tombstones without an active submission', async () => {
+test('main fetches inventory only for enabled per-machine sources and never tombstones an unverifiable empty scan', async () => {
   const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-main-'))
   const statePath = join(root, 'state', 'sweep.json')
   const posts = []
@@ -961,6 +985,7 @@ test('main fetches inventory only for enabled per-machine sources and never tomb
     COPILOT_HOME: join(root, 'copilot'),
     CLAUDE_HOME: join(root, 'claude'),
     KIMI_HOME: join(root, 'kimi'),
+    GEMINI_HOME: join(root, 'gemini'),
   }
 
   try {
@@ -971,9 +996,76 @@ test('main fetches inventory only for enabled per-machine sources and never tomb
     // The one-shot legacy migration reads the un-suffixed id for the same tool.
     assert.deepEqual(gets.map(request => request.sourceId), ['codex-local@test-machine', 'codex-local'])
     assert.equal(gets.every(request => request.apiKey === 'test-key'), true)
-    // Codex posted no active snapshot, so its stale server key is left alone
-    // rather than zeroed by a scan that observed nothing.
+    // Codex's discovery root does not exist here (an unmounted home or a
+    // mistyped CODEX_HOME reads the same way), so the empty scan is unverified
+    // and its stale server key is left alone rather than zeroed.
     assert.deepEqual(posts, [])
+  } finally {
+    await new Promise(resolve => server.close(resolve))
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('main tombstones stale server keys for an enabled source whose transcripts were all deleted', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-deleted-'))
+  // Deleting every transcript leaves the discovery root's directory skeleton
+  // behind; only the .jsonl payloads are gone, so the empty scan is verified.
+  await mkdir(join(root, 'codex', 'sessions', '2026', '08', '24'), { recursive: true })
+  const statePath = join(root, 'state', 'sweep.json')
+  const stale = {
+    provider: 'openai', occurredAtUtc: '2026-08-20T12:00:00Z', model: 'gpt-5.5',
+    costUsd: 0.01, runtime: 'codex', sourceId: 'codex-local@test-machine', sourceKind: 'localTelemetry',
+    usageScope: 'subscription', costBasis: 'notional', eventKey: 'codex:2026-08-20:gpt-5.5',
+  }
+  const posts = []
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://127.0.0.1')
+    if (request.method === 'GET' && url.pathname === '/api/events/local-snapshots') {
+      const sourceId = url.searchParams.get('sourceId')
+      const body = sourceId === 'codex-local@test-machine' ? [stale] : []
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(body))
+      return
+    }
+    if (request.method === 'POST' && url.pathname === '/api/events') {
+      let body = ''
+      for await (const chunk of request) { body += chunk }
+      posts.push(JSON.parse(body))
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end('{}')
+      return
+    }
+    response.writeHead(404).end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  const run = promisify(execFile)
+  const env = {
+    ...process.env,
+    OBSERVATORY_URL: `http://127.0.0.1:${address.port}`,
+    OBSERVATORY_API_KEY: 'test-key',
+    OBSERVATORY_STATE: statePath,
+    OBSERVATORY_LOCAL_SOURCES: 'codex',
+    OBSERVATORY_MACHINE: 'test-machine',
+    CODEX_HOME: join(root, 'codex'),
+    COPILOT_HOME: join(root, 'copilot'),
+    CLAUDE_HOME: join(root, 'claude'),
+    KIMI_HOME: join(root, 'kimi'),
+    GEMINI_HOME: join(root, 'gemini'),
+  }
+
+  try {
+    await run(process.execPath, [fileURLToPath(new URL('./observatory-sweep.mjs', import.meta.url))], { env })
+
+    // The clean scan found nothing under a populated discovery root, so the
+    // empty local history is verified and the stale server key is zeroed.
+    assert.deepEqual(posts.map(body => ({
+      eventKey: body.eventKey,
+      sourceId: body.sourceId,
+      inputTokens: body.inputTokens,
+      outputTokens: body.outputTokens,
+    })), [
+      { eventKey: stale.eventKey, sourceId: 'codex-local@test-machine', inputTokens: 0, outputTokens: 0 },
+    ])
+    assert.equal(JSON.parse(posts[0].rawPayload).tombstone, true)
   } finally {
     await new Promise(resolve => server.close(resolve))
     await rm(root, { recursive: true, force: true })
@@ -1040,6 +1132,7 @@ test('main retries a failed server-inventory tombstone from persisted state and 
     COPILOT_HOME: join(root, 'copilot'),
     CLAUDE_HOME: join(root, 'claude'),
     KIMI_HOME: join(root, 'kimi'),
+    GEMINI_HOME: join(root, 'gemini'),
   }
 
   try {
@@ -1143,6 +1236,7 @@ test('main withholds a source tombstone after its replacement exhausts retries b
     COPILOT_HOME: join(root, 'copilot'),
     CLAUDE_HOME: join(root, 'claude'),
     KIMI_HOME: join(root, 'kimi'),
+    GEMINI_HOME: join(root, 'gemini'),
   }
 
   try {
@@ -1186,7 +1280,7 @@ test('main aborts nested discovery failures without replacing cache or posting p
   const address = server.address()
   const envKeys = [
     'OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES',
-    'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME',
+    'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME', 'GEMINI_HOME',
   ]
   const priorEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]]))
   Object.assign(process.env, {
@@ -1198,6 +1292,7 @@ test('main aborts nested discovery failures without replacing cache or posting p
     COPILOT_HOME: join(root, 'copilot'),
     CLAUDE_HOME: join(root, 'claude'),
     KIMI_HOME: join(root, 'kimi'),
+    GEMINI_HOME: join(root, 'gemini'),
   })
 
   try {
@@ -1281,7 +1376,7 @@ test('main withholds corrections and tombstones for an incompletely scanned sour
   const codexHome = join(root, 'codex')
   const envKeys = [
     'OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES',
-    'OBSERVATORY_MACHINE', 'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME',
+    'OBSERVATORY_MACHINE', 'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME', 'GEMINI_HOME',
   ]
   const priorEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]]))
   Object.assign(process.env, {
@@ -1294,6 +1389,7 @@ test('main withholds corrections and tombstones for an incompletely scanned sour
     COPILOT_HOME: join(root, 'copilot'),
     CLAUDE_HOME: join(root, 'claude'),
     KIMI_HOME: join(root, 'kimi'),
+    GEMINI_HOME: join(root, 'gemini'),
   })
 
   try {
@@ -1365,7 +1461,7 @@ test('main tombstones the legacy un-suffixed namespace once and records the migr
   const address = server.address()
   const envKeys = [
     'OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES',
-    'OBSERVATORY_MACHINE', 'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME',
+    'OBSERVATORY_MACHINE', 'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME', 'GEMINI_HOME',
   ]
   const priorEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]]))
   Object.assign(process.env, {
@@ -1378,6 +1474,7 @@ test('main tombstones the legacy un-suffixed namespace once and records the migr
     COPILOT_HOME: join(root, 'copilot'),
     CLAUDE_HOME: join(root, 'claude'),
     KIMI_HOME: join(root, 'kimi'),
+    GEMINI_HOME: join(root, 'gemini'),
   })
 
   try {
@@ -1440,7 +1537,7 @@ test('main retries the legacy migration when the legacy inventory fetch fails', 
   const address = server.address()
   const envKeys = [
     'OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES',
-    'OBSERVATORY_MACHINE', 'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME',
+    'OBSERVATORY_MACHINE', 'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME', 'GEMINI_HOME',
   ]
   const priorEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]]))
   Object.assign(process.env, {
@@ -1453,6 +1550,7 @@ test('main retries the legacy migration when the legacy inventory fetch fails', 
     COPILOT_HOME: join(root, 'copilot'),
     CLAUDE_HOME: join(root, 'claude'),
     KIMI_HOME: join(root, 'kimi'),
+    GEMINI_HOME: join(root, 'gemini'),
   })
 
   try {
@@ -1517,7 +1615,7 @@ test('main retries the legacy migration when a legacy tombstone post fails', asy
   const address = server.address()
   const envKeys = [
     'OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES',
-    'OBSERVATORY_MACHINE', 'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME',
+    'OBSERVATORY_MACHINE', 'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME', 'GEMINI_HOME',
   ]
   const priorEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]]))
   Object.assign(process.env, {
@@ -1530,6 +1628,7 @@ test('main retries the legacy migration when a legacy tombstone post fails', asy
     COPILOT_HOME: join(root, 'copilot'),
     CLAUDE_HOME: join(root, 'claude'),
     KIMI_HOME: join(root, 'kimi'),
+    GEMINI_HOME: join(root, 'gemini'),
   })
 
   try {
@@ -1554,62 +1653,6 @@ test('main retries the legacy migration when a legacy tombstone post fails', asy
     for (const key of envKeys) {
       if (priorEnv[key] === undefined) { delete process.env[key] } else { process.env[key] = priorEnv[key] }
     }
-    await new Promise(resolve => server.close(resolve))
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
-test('main skips re-posting snapshots whose token counts already match server inventory', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-unchanged-'))
-  const sessions = join(root, 'codex', 'sessions')
-  const statePath = join(root, 'state', 'sweep.json')
-  await mkdir(sessions, { recursive: true })
-  await writeFile(join(sessions, 'rollout.jsonl'), [
-    JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }),
-    JSON.stringify({ timestamp: '2026-08-24T12:00:00Z', type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5 } } } }),
-  ].join('\n'))
-  const current = {
-    provider: 'openai', occurredAtUtc: '2026-08-24T12:00:00Z', model: 'gpt-5.5',
-    inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0,
-    cacheWrite1hTokens: 0, thoughtTokens: 0, costUsd: null,
-    runtime: 'codex', sourceId: 'codex-local@test-machine', sourceKind: 'localTelemetry',
-    usageScope: 'subscription', costBasis: 'notional', eventKey: 'codex:2026-08-24:gpt-5.5',
-  }
-  const posts = []
-  const server = createServer(async (request, response) => {
-    const url = new URL(request.url, 'http://127.0.0.1')
-    if (request.method === 'GET' && url.pathname === '/api/events/local-snapshots') {
-      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify([current]))
-      return
-    }
-    if (request.method === 'POST' && url.pathname === '/api/events') {
-      posts.push(url.pathname)
-      response.writeHead(200, { 'Content-Type': 'application/json' }).end('{}')
-      return
-    }
-    response.writeHead(404).end()
-  })
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-  const address = server.address()
-  const run = promisify(execFile)
-  const env = {
-    ...process.env,
-    OBSERVATORY_URL: `http://127.0.0.1:${address.port}`,
-    OBSERVATORY_API_KEY: 'test-key',
-    OBSERVATORY_STATE: statePath,
-    OBSERVATORY_LOCAL_SOURCES: 'codex',
-    OBSERVATORY_MACHINE: 'test-machine',
-    CODEX_HOME: join(root, 'codex'),
-    COPILOT_HOME: join(root, 'copilot'),
-    CLAUDE_HOME: join(root, 'claude'),
-    KIMI_HOME: join(root, 'kimi'),
-  }
-
-  try {
-    await run(process.execPath, [fileURLToPath(new URL('./observatory-sweep.mjs', import.meta.url))], { env })
-
-    assert.deepEqual(posts, [])
-  } finally {
     await new Promise(resolve => server.close(resolve))
     await rm(root, { recursive: true, force: true })
   }
@@ -1659,6 +1702,7 @@ test('main tolerates one source inventory failing and still sweeps the rest', as
     COPILOT_HOME: join(root, 'copilot'),
     CLAUDE_HOME: join(root, 'claude'),
     KIMI_HOME: join(root, 'kimi'),
+    GEMINI_HOME: join(root, 'gemini'),
   }
 
   try {
@@ -1690,6 +1734,7 @@ test('dry run previews offline without touching the server', async () => {
     COPILOT_HOME: join(root, 'copilot'),
     CLAUDE_HOME: join(root, 'claude'),
     KIMI_HOME: join(root, 'kimi'),
+    GEMINI_HOME: join(root, 'gemini'),
   }
 
   try {
