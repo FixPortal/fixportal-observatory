@@ -27,6 +27,14 @@ public enum AlertDeliveryResult
     NoRecipientConfigured,
     Sent,
     Failed,
+
+    /// <summary>
+    /// A configured channel terminally refused the delivery (e.g. a Slack webhook answering
+    /// 4xx — rotated URL, deleted channel), as distinct from a transient <see cref="Failed"/>
+    /// (5xx, timeouts) that a later retry can fix. The claim is still not closed — the channel
+    /// configuration may be repaired — but the log must not describe this as a transient failure.
+    /// </summary>
+    PermanentlyRejected,
 }
 
 public interface IAlertNotifier

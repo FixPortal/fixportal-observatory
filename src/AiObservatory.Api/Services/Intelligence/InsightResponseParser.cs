@@ -50,7 +50,10 @@ public class InsightResponseParser
                     InsightType = ParseType(StringOrNull(item, "type") ?? "summary"),
                     Title = title,
                     Body = StringOrNull(item, "body") ?? "",
-                    Data = item["data"]?.ToJsonString() ?? "{}",
+                    // Only an object is kept: the model may answer with "data": [], 5 or "text",
+                    // and every consumer of Insight.Data (e.g. InsightDeduplicator's costBasis
+                    // read) expects the object shape — normalise anything else to none.
+                    Data = item["data"] is JsonObject dataObject ? dataObject.ToJsonString() : "{}",
                 }
             );
         }

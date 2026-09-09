@@ -163,8 +163,11 @@ public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClass
 
             using var client = factory.CreateAdminClient();
             var deleteTask = client.DeleteAsync("/api/insights", ct);
-            var observationDelay = Task.Delay(TimeSpan.FromMilliseconds(250), ct);
-            (await Task.WhenAny(deleteTask, observationDelay)).Should().BeSameAs(observationDelay);
+            // Deterministic negative: the purge must be genuinely blocked on the uncommitted
+            // lease write (its LOCK TABLE is in a PostgreSQL lock wait) before the lease
+            // commits — a fixed delay would pass on a slow machine without the purge ever
+            // contending.
+            await WaitForBlockedStatementAsync("LOCK TABLE \"BudgetAlertClaims\"", ct);
 
             await leaseTx.CommitAsync(ct);
             var response = await deleteTask;
@@ -241,8 +244,10 @@ public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClass
                 acquiredAt.Minus(Duration.FromMinutes(15)),
                 ct
             );
-            var observationDelay = Task.Delay(TimeSpan.FromMilliseconds(250), ct);
-            (await Task.WhenAny(acquisitionTask, observationDelay)).Should().BeSameAs(observationDelay);
+            // Deterministic negative: the acquisition's UPDATE must be genuinely queued behind
+            // the purge's SHARE ROW EXCLUSIVE table lock before the blocker commits — a fixed
+            // delay would pass vacuously on a slow machine.
+            await WaitForBlockedStatementAsync("UPDATE \"BudgetAlertClaims\"", ct);
 
             await blockerTx.CommitAsync(ct);
             var response = await deleteTask;
@@ -363,22 +368,31 @@ public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClass
         await db.BudgetRules.Where(rule => rule.Id == ruleId).ExecuteDeleteAsync(ct);
     }
 
-    private async Task WaitForBlockedInsightDeleteAsync(CancellationToken ct)
+    private async Task WaitForBlockedInsightDeleteAsync(CancellationToken ct) =>
+        await WaitForBlockedStatementAsync("DELETE FROM \"Insights\"", ct);
+
+    /// <summary>
+    /// Waits until another session is in a PostgreSQL heavyweight-lock wait while executing a
+    /// statement whose text contains <paramref name="statementFragment"/> — the deterministic
+    /// replacement for "delay N ms and assert the task had not finished". The fragment must be
+    /// a literal (no LIKE wildcards, no apostrophes).
+    /// </summary>
+    private async Task WaitForBlockedStatementAsync(string statementFragment, CancellationToken ct)
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
         for (var attempt = 0; attempt < 100; attempt++)
         {
             var blocked = await db
-                .Database.SqlQueryRaw<bool>(
-                    """
+                .Database.SqlQuery<bool>(
+                    $"""
                     SELECT EXISTS (
                         SELECT 1
                         FROM pg_stat_activity
                         WHERE datname = current_database()
                             AND pid <> pg_backend_pid()
                             AND wait_event_type = 'Lock'
-                            AND query LIKE '%DELETE FROM "Insights"%'
+                            AND query LIKE '%' || {statementFragment} || '%'
                     ) AS "Value"
                     """
                 )
@@ -391,6 +405,6 @@ public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClass
             await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
         }
 
-        throw new TimeoutException("Insight purge did not reach the expected PostgreSQL lock wait.");
+        throw new TimeoutException($"No session reached the expected PostgreSQL lock wait for '{statementFragment}'.");
     }
 }

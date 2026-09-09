@@ -35,6 +35,11 @@ public class AdversarialReviewService(IAdversarialReviewRepository repo, IClock 
 
     private const int SummaryMaxLength = 80;
 
+    private static bool IsReviewerSlug(string reviewer) =>
+        reviewer.Length > 0
+        && reviewer[0] is >= 'a' and <= 'z'
+        && reviewer.All(character => character is >= 'a' and <= 'z' or >= '0' and <= '9' or '-');
+
     // Operator-supplied run name: trim, null when blank, hard-cap at the column
     // length so an over-long name truncates rather than 500ing on insert.
     private static string? NormalizeSummary(string? summary)
@@ -82,9 +87,15 @@ public class AdversarialReviewService(IAdversarialReviewRepository repo, IClock 
             return Results.BadRequest("Reviewer must be 100 characters or fewer");
         }
 
-        if (reviewer is not ("anthropic" or "google" or "openai" or "moonshot"))
+        // Shape-validate, don't membership-validate: the reviewer set is whichever CLIs the
+        // operator runs, so a hardcoded vendor allowlist would 400 a new reviewer until a code
+        // change shipped. A slug shape (starts with a letter, then lowercase letters, digits
+        // or hyphens) rejects prose and punctuation without enumerating who is allowed.
+        if (!IsReviewerSlug(reviewer))
         {
-            return Results.BadRequest("Reviewer must be anthropic, google, openai, or moonshot");
+            return Results.BadRequest(
+                "Reviewer must be a vendor slug (a lowercase letter, then lowercase letters, digits, or hyphens)"
+            );
         }
 
         if (req.Model.Trim().Length > 200)

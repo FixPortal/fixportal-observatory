@@ -132,19 +132,38 @@ public class IntelligenceWorkerExecutionTests
             }
         );
         var services = new ServiceCollection().AddSingleton(repository).AddSingleton(budget).BuildServiceProvider();
+        // Park the worker inside a controlled delay: observing the requested delay proves the
+        // schedule deterministically, where racing a real 100ms timer only proved the worker
+        // had not YET re-run (a loaded machine passes a spinning worker the same way).
+        var delayRequested = new TaskCompletionSource<TimeSpan>(TaskCreationOptions.RunContinuationsAsynchronously);
         var worker = new IntelligenceWorkerService(
             services.GetRequiredService<IServiceScopeFactory>(),
             clock,
             NullLogger<IntelligenceWorkerService>.Instance
-        );
+        )
+        {
+            DelayAsync = (delay, token) =>
+            {
+                delayRequested.TrySetResult(delay);
+                return Task.Delay(Timeout.InfiniteTimeSpan, token);
+            },
+        };
 
         await worker.StartAsync(ct);
         try
         {
             await firstBudgetCall.Task.WaitAsync(TimeSpan.FromSeconds(30), ct);
 
-            var completed = await Task.WhenAny(secondBudgetCall.Task, Task.Delay(TimeSpan.FromMilliseconds(100), ct));
-            completed.Should().NotBe(secondBudgetCall.Task);
+            var requested = await delayRequested.Task.WaitAsync(TimeSpan.FromSeconds(30), ct);
+            requested
+                .Should()
+                .Be(
+                    TimeSpan.FromHours(24),
+                    "at exact midnight the next cycle is tomorrow's midnight, not an immediate re-run"
+                );
+            secondBudgetCall
+                .Task.IsCompleted.Should()
+                .BeFalse("the worker is parked inside the day-long delay and cannot spin");
         }
         finally
         {

@@ -126,8 +126,14 @@ public static class InsightDeduplicator
         try
         {
             using var data = JsonDocument.Parse(insight.Data);
+            // The root must be an object before TryGetProperty: model-authored `data` can be a
+            // well-formed non-object ("[]", "5", "\"text\""), and TryGetProperty throws
+            // InvalidOperationException — not JsonException — on those, which would escape this
+            // catch and abort the whole generation pass.
             return
-                data.RootElement.TryGetProperty("costBasis", out var value) && value.ValueKind == JsonValueKind.String
+                data.RootElement.ValueKind == JsonValueKind.Object
+                && data.RootElement.TryGetProperty("costBasis", out var value)
+                && value.ValueKind == JsonValueKind.String
                 ? value.GetString()
                 : null;
         }

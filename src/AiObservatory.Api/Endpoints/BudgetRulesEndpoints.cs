@@ -141,7 +141,13 @@ public static class BudgetRulesEndpoints
             BillingPeriod.Monthly => (new LocalDate(today.Year, today.Month, 1), today),
             _ => (today, today),
         };
-        return (nominal.Start > rule.EvaluationStartsOn ? nominal.Start : rule.EvaluationStartsOn, nominal.End);
+        // Clamp BOTH ends to the evaluation boundary: a Daily rule created today has a nominal
+        // window of (yesterday, yesterday), and clamping only Start would return
+        // WindowStart (today) > WindowEnd (yesterday) — an inverted window on the rule's first
+        // day. Accounting is unaffected either way (the spend filter over an inverted range is
+        // simply empty); this keeps the response shape sane for the panel.
+        var start = nominal.Start > rule.EvaluationStartsOn ? nominal.Start : rule.EvaluationStartsOn;
+        return (start, nominal.End < start ? start : nominal.End);
     }
 }
 

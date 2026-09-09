@@ -99,42 +99,36 @@ public class IntelligenceWorkerGitHubBillingTests : IAsyncLifetime
         }.ConnectionString;
     }
 
-    private async Task<SourceSyncState> WaitForStateAsync(
-        Func<SourceSyncState, bool> predicate,
-        string because,
-        CapturingLogger log
-    )
+    private async Task<SourceSyncState> ReadStateAsync(string because, CapturingLogger log)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(30);
-        SourceSyncState? state = null;
-        while (DateTime.UtcNow < deadline)
-        {
-            await using var scope = _factory.Services.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
-            state = await db
-                .SourceSyncStates.AsNoTracking()
-                .SingleOrDefaultAsync(
-                    s => s.SourceId == UsageSourceIds.GitHubBillingApi,
-                    TestContext.Current.CancellationToken
-                );
-            if (state is not null && predicate(state))
-            {
-                return state;
-            }
-
-            await Task.Delay(100, TestContext.Current.CancellationToken);
-        }
-
-        var snapshot = state is null
-            ? "no row"
-            : $"IsConfigured={state.IsConfigured} IsAvailable={state.IsAvailable} "
-                + $"LastAttemptAt={state.LastAttemptAt} LastSuccessAt={state.LastSuccessAt} "
-                + $"Failures={state.ConsecutiveFailureCount} LastError={state.LastError}";
-        predicate(state!)
-            .Should()
-            .BeTrue($"{because}. Row: {snapshot}. Worker log: {string.Join(" | ", log.Messages)}");
-        return state!;
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+        var state = await db
+            .SourceSyncStates.AsNoTracking()
+            .SingleOrDefaultAsync(
+                s => s.SourceId == UsageSourceIds.GitHubBillingApi,
+                TestContext.Current.CancellationToken
+            );
+        state.Should().NotBeNull($"{because}. Worker log: {string.Join(" | ", log.Messages)}");
+        return state;
     }
+
+    // Parks the worker inside a controlled daily delay. Awaiting the park is a deterministic
+    // "one full cycle completed" signal — the GitHub arm's state write is committed before the
+    // delay begins — replacing the old poll-the-database loop with its DateTime.UtcNow deadline.
+    private static IntelligenceWorkerService ParkedWorker(
+        ServiceProvider provider,
+        CapturingLogger log,
+        TaskCompletionSource parked
+    ) =>
+        new(provider.GetRequiredService<IServiceScopeFactory>(), new FakeClock(Now), log)
+        {
+            DelayAsync = (_, token) =>
+            {
+                parked.TrySetResult();
+                return Task.Delay(Timeout.InfiniteTimeSpan, token);
+            },
+        };
 
     [Fact]
     public async Task AnUnscopedTokenIsRecordedAsASourceFailureNotAnEmptySuccess()
@@ -142,17 +136,14 @@ public class IntelligenceWorkerGitHubBillingTests : IAsyncLifetime
         var provider = await BuildWorkerHostAsync(new ThrowingBillingClient());
         await using var _ = provider;
         var log = new CapturingLogger();
-        var worker = new IntelligenceWorkerService(
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            new FakeClock(Now),
-            log
-        );
+        var parked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var worker = ParkedWorker(provider, log, parked);
 
         await worker.StartAsync(TestContext.Current.CancellationToken);
         try
         {
-            var state = await WaitForStateAsync(
-                s => s.LastError is not null,
+            await parked.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+            var state = await ReadStateAsync(
                 "a 403/404 from GitHub must reach MarkFailureAsync, not read as a quiet month",
                 log
             );
@@ -178,17 +169,14 @@ public class IntelligenceWorkerGitHubBillingTests : IAsyncLifetime
         var provider = await BuildWorkerHostAsync(new EmptyBillingClient());
         await using var _ = provider;
         var log = new CapturingLogger();
-        var worker = new IntelligenceWorkerService(
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            new FakeClock(Now),
-            log
-        );
+        var parked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var worker = ParkedWorker(provider, log, parked);
 
         await worker.StartAsync(TestContext.Current.CancellationToken);
         try
         {
-            var state = await WaitForStateAsync(
-                s => s.LastSuccessAt is not null,
+            await parked.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+            var state = await ReadStateAsync(
                 "zero spend is a real result, not a failure — it stays a successful sync",
                 log
             );

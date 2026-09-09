@@ -13,6 +13,10 @@ public class IntelligenceWorkerService(
 ) : BackgroundService
 {
     private static readonly Duration GitHubBillingRefreshInterval = Duration.FromDays(1);
+
+    // Test seam for the daily park between cycles: the unit lane observes the computed delay
+    // and controls its completion instead of racing a real timer to prove the worker is parked.
+    internal Func<TimeSpan, CancellationToken, Task> DelayAsync { get; init; } = Task.Delay;
     private static readonly Regex UriQuery = new(
         @"(https?://[^\s?]+)\?[^\s]*",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
@@ -36,7 +40,7 @@ public class IntelligenceWorkerService(
             {
                 try
                 {
-                    await Task.Delay(delay, stoppingToken);
+                    await DelayAsync(delay, stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {

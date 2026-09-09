@@ -27,6 +27,36 @@ public class InsightResponseParserTests
         results[1].Body.Should().Contain("400 tokens");
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("5")]
+    [InlineData("\"text\"")]
+    public void Parse_normalises_non_object_data_to_an_empty_object(string data)
+    {
+        // Consumers of Insight.Data expect the object shape (e.g. the deduplicator's costBasis
+        // read); the model may answer with "data": [], 5 or "text", so anything but an object
+        // is normalised to none rather than stored.
+        var json = $$"""[{"type":"anomaly","title":"Odd spike","body":"Worth keeping.","data":{{data}}}]""";
+
+        var sut = new InsightResponseParser();
+        var now = Instant.FromUtc(2026, 6, 2, 8, 0);
+        var results = sut.Parse(json, new LocalDate(2026, 6, 1), new LocalDate(2026, 6, 1), now);
+
+        results.Should().ContainSingle().Which.Data.Should().Be("{}");
+    }
+
+    [Fact]
+    public void Parse_keeps_an_object_data_document_verbatim()
+    {
+        var json = """[{"type":"anomaly","title":"Odd spike","body":"Worth keeping.","data":{"costBasis":"billed"}}]""";
+
+        var sut = new InsightResponseParser();
+        var now = Instant.FromUtc(2026, 6, 2, 8, 0);
+        var results = sut.Parse(json, new LocalDate(2026, 6, 1), new LocalDate(2026, 6, 1), now);
+
+        results.Should().ContainSingle().Which.Data.Should().Be("""{"costBasis":"billed"}""");
+    }
+
     [Fact]
     public void Parse_throws_a_descriptive_error_for_malformed_json()
     {

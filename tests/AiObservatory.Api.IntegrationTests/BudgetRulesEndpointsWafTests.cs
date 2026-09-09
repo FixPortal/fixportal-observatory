@@ -180,6 +180,53 @@ public class BudgetRulesEndpointsWafTests(AiObservatoryApiFactory factory)
         ruleJson.GetProperty("currentSpendGbp").GetDecimal().Should().Be(12.34m);
     }
 
+    // A Daily rule created today has a nominal window of (yesterday, yesterday), and clamping
+    // only the start to EvaluationStartsOn (today) used to return WindowStart > WindowEnd.
+    [Fact]
+    public async Task GetBudgetRules_DailyRuleCreatedTodayDoesNotReturnAnInvertedWindow()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = factory.CreateAdminClient();
+        var createdResponse = await client.PostAsJsonAsync(
+            "/api/budget-rules",
+            new
+            {
+                Provider = (string?)null,
+                Period = "daily",
+                ThresholdGbp = 25m,
+            },
+            ct
+        );
+        var created = await createdResponse.Content.ReadFromJsonAsync<JsonElement>(ct);
+        var ruleId = created.GetProperty("id").GetGuid();
+        var today = factory.Services.GetRequiredService<IClock>().GetCurrentInstant().InUtc().Date;
+
+        var response = await client.GetFromJsonAsync<JsonElement>("/api/budget-rules", ct);
+        var ruleJson = response.EnumerateArray().Single(item => item.GetProperty("id").GetGuid() == ruleId);
+
+        ruleJson.GetProperty("windowStart").GetString().Should().Be(today.ToString("yyyy-MM-dd", null));
+        ruleJson.GetProperty("windowEnd").GetString().Should().Be(today.ToString("yyyy-MM-dd", null));
+
+        // The assembly shares one database (parallelism is off), so today's spend is whatever
+        // every test in the run has filed under today — the monthly-window sibling above files
+        // 99 for Anthropic. Derive the expectation from the store with the endpoint's own
+        // semantics instead of asserting 0: the window pins prove the clamp, this proves the
+        // reported total is the sum over that clamped window.
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+        var expectedSpend = await db
+            .SpendEntries.AsNoTracking()
+            .Where(entry => entry.OccurredOn == today)
+            .Join(
+                db.SpendVendors.AsNoTracking(),
+                entry => entry.VendorId,
+                vendor => vendor.Id,
+                (entry, vendor) => entry.AmountGbp
+            )
+            .SumAsync(ct);
+        ruleJson.GetProperty("currentSpendGbp").GetDecimal().Should().Be(expectedSpend);
+    }
+
     [Fact]
     public async Task DeleteBudgetRule_WhenIdDoesNotExist_ReturnsNotFound()
     {

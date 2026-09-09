@@ -32,15 +32,18 @@ public class GitHubBillingClient(HttpClient http, string org, ILogger<GitHubBill
     public const string HttpClientName = "github-billing";
 
     /// <summary>
-    /// Usage for one calendar year, or an empty list when the year predates the org's
-    /// billing history.
+    /// Usage for one calendar year, or an empty list when the org has no billed usage that
+    /// year. An empty list is ONLY the 200-with-no-rows case: a 403/404 is not an empty year
+    /// and throws (see remarks), so "the year predates the billing history" and "the token
+    /// cannot see this year" are never conflated.
     /// </summary>
     /// <remarks>
     /// Throws <see cref="GitHubBillingUnavailableException"/> on 403/404 — a token missing
     /// the billing scope must surface as a source failure, not as an empty (and therefore
     /// "successful") sync: the two are indistinguishable downstream and the status surface
     /// would report the source healthy while the entire org bill went missing. The worker
-    /// isolates this arm already, so throwing does not take the rest of the daily cycle down.
+    /// isolates this arm already, and the sync isolates each YEAR, so a throw for one year
+    /// neither takes the rest of the daily cycle down nor skips the other year's fetch.
     /// </remarks>
     /// <exception cref="GitHubBillingUnavailableException">
     /// The token cannot see the org's billing (403/404 — most often a missing billing scope).
