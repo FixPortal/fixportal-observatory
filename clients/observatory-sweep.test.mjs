@@ -1593,7 +1593,9 @@ test('main retries the legacy migration when a legacy tombstone post fails', asy
     if (request.method === 'GET' && url.pathname === '/api/events/local-snapshots') {
       const sourceId = url.searchParams.get('sourceId')
       if (sourceId === 'codex-local') { legacyGets++ }
-      const body = sourceId === 'codex-local' ? [legacyRecord('codex:2026-08-10:gpt-5.5')] : []
+      const body = sourceId === 'codex-local'
+        ? [legacyRecord('codex:2026-08-10:gpt-5.5'), legacyRecord('codex:2026-08-11:gpt-5.5')]
+        : []
       response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(body))
       return
     }
@@ -1602,7 +1604,7 @@ test('main retries the legacy migration when a legacy tombstone post fails', asy
       for await (const chunk of request) { body += chunk }
       const parsed = JSON.parse(body)
       posts.push(parsed)
-      if (parsed.sourceId === 'codex-local') {
+      if (parsed.sourceId === 'codex-local' && parsed.eventKey === 'codex:2026-08-10:gpt-5.5') {
         response.writeHead(failLegacyPosts ? 500 : 200, { 'Content-Type': 'application/json' }).end('{}')
         return
       }
@@ -1635,6 +1637,11 @@ test('main retries the legacy migration when a legacy tombstone post fails', asy
     const { main } = await import('./observatory-sweep.mjs')
     await main()
 
+    assert.equal(
+      posts.some(body => body.sourceId === 'codex-local' && body.eventKey === 'codex:2026-08-11:gpt-5.5'),
+      true,
+      'a failed tombstone does not stop the remaining legacy keys from posting',
+    )
     let state = JSON.parse(await readFile(statePath, 'utf8'))
     assert.equal(state.legacySourceMigration?.codex, undefined, 'a failed tombstone leaves the migration pending')
 

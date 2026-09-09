@@ -768,7 +768,6 @@ async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc
     for (const snapshot of legacyInventory) {
       if (!await postEvent(url, apiKey, { ...zeroSnapshot(snapshot), observedAtUtc })) {
         completed = false
-        break
       }
     }
     if (!completed) {
