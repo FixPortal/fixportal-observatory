@@ -316,11 +316,30 @@ public sealed class BillingObservationWriterTests : IAsyncLifetime
 
         var first = Writer(firstDb, 1m).RecordAsync(Observation(), "openai", "api-usage", ct);
         var second = Writer(secondDb, 1m).RecordAsync(Observation(), "openai", "api-usage", ct);
-        // The gate's victim is mid-INSERT; the sibling is mid-advisory-lock — both overlapped.
-        await WaitForBlockedStatementAsync("INSERT INTO \"BillingObservations\"", ct);
-        await WaitForBlockedStatementAsync("pg_advisory_xact_lock", ct);
+        try
+        {
+            // The gate's victim is mid-INSERT; the sibling is mid-advisory-lock — both overlapped.
+            await WaitForBlockedStatementAsync("INSERT INTO \"BillingObservations\"", ct);
+            await WaitForBlockedStatementAsync("pg_advisory_xact_lock", ct);
+        }
+        finally
+        {
+            // Release the gate BEFORE the writers are awaited, on every path: they are blocked
+            // on it, so a timed-out wait that skipped the release stranded them — their faults
+            // went unobserved and DisposeAsync deleted the database under live connections,
+            // reporting a single timeout as a teardown failure instead.
+            await gateTransaction.RollbackAsync(CancellationToken.None);
+            try
+            {
+                await Task.WhenAll(first, second);
+            }
+            catch
+            {
+                // Observation only on the failure path; the happy-path await below surfaces a
+                // genuine writer failure.
+            }
+        }
 
-        await gateTransaction.RollbackAsync(ct);
         var results = await Task.WhenAll(first, second);
 
         results.Should().ContainSingle(result => result == BillingWriteDisposition.Created);
@@ -337,7 +356,8 @@ public sealed class BillingObservationWriterTests : IAsyncLifetime
     /// </summary>
     private async Task WaitForBlockedStatementAsync(string statementFragment, CancellationToken ct)
     {
-        for (var attempt = 0; attempt < 100; attempt++)
+        // 600 x 50 ms = 30 s, the same budget the other contention helpers in this suite use.
+        for (var attempt = 0; attempt < 600; attempt++)
         {
             var blocked = await _db
                 .Database.SqlQuery<bool>(

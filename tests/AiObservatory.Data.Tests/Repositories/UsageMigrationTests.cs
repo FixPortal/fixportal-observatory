@@ -475,6 +475,43 @@ public class UsageMigrationTests : IAsyncLifetime
             )
             .SingleAsync(ct);
         convertedOnce.Should().Be(97.53m);
+
+        // The NOTICE is all but invisible to operators (Npgsql logs notices at Debug and the
+        // deploy workflow retains no migration output), so the review list is also persisted:
+        // one durable marker per rule, next to the conversion marker.
+        var reviewMarker = $"budget-threshold-gbp-conversion:review:{ruleId}";
+        var reviewMarkers = await db
+            .Database.SqlQueryRaw<string>(
+                """
+                SELECT "Name" AS "Value"
+                FROM "DataMigrationMarkers"
+                WHERE "Name" LIKE 'budget-threshold-gbp-conversion:review:%'
+                """
+            )
+            .ToListAsync(ct);
+        reviewMarkers.Should().Equal(reviewMarker);
+
+        // Durable and idempotent across a rollback + re-apply: the guard's Down deliberately
+        // keeps the markers, and the replayed Up re-inserts them ON CONFLICT DO NOTHING, so
+        // the review list neither disappears nor duplicates.
+        await migrator.MigrateAsync("20260826130157_AddBudgetAlertsAndRenameThresholdToGbp", ct);
+        await migrator.MigrateAsync(cancellationToken: ct);
+        var replayedMarkers = await db
+            .Database.SqlQueryRaw<string>(
+                """
+                SELECT "Name" AS "Value"
+                FROM "DataMigrationMarkers"
+                WHERE "Name" LIKE 'budget-threshold-gbp-conversion:review:%'
+                """
+            )
+            .ToListAsync(ct);
+        replayedMarkers.Should().Equal(reviewMarker);
+        var replayedThreshold = await db
+            .Database.SqlQuery<decimal>(
+                $"""SELECT "ThresholdGbp" AS "Value" FROM "BudgetRules" WHERE "Id" = {ruleId}"""
+            )
+            .SingleAsync(ct);
+        replayedThreshold.Should().Be(97.53m);
     }
 
     [Theory]

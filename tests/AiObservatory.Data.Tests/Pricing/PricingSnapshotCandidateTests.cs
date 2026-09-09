@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using AiObservatory.Data.Pricing;
 using AiObservatory.Data.Pricing.Catalogs;
@@ -70,6 +72,21 @@ public sealed class PricingSnapshotCandidateTests
         var hash = PricingSnapshotCandidate.ComputeContentHash("evidence", "not json {");
 
         hash.Should().NotBe(PricingSnapshotCandidate.ComputeContentHash("evidence", "other {"));
+    }
+
+    [Theory]
+    [InlineData("[1,2,3]")] // array root
+    [InlineData("\"just a string\"")] // scalar root
+    [InlineData("42")] // scalar root
+    [InlineData("null")] // null node: JsonNode.Parse returns null
+    public void ContentHashFallsBackToTheUnmodifiedCatalogForANonObjectJsonRoot(string catalog)
+    {
+        // AsObject() throws InvalidOperationException for these roots — not JsonException — so
+        // it escaped the malformed-JSON catch and crashed hash computation before validation
+        // could report. The fallback hashes the unmodified string instead.
+        var expected = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("evidence" + '\n' + catalog)));
+
+        PricingSnapshotCandidate.ComputeContentHash("evidence", catalog).Should().Be(expected);
     }
 
     private static OpenAiPriceCatalog Catalog(
