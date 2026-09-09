@@ -29,7 +29,8 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
   // A vendor's default category applies only while it exists in the live list passed to
   // the picker — an archived default has no matching <option>, so the select would
   // display one category while state silently held another (the trap SpendVendorCatalog's
-  // categoryOptions guards against). Fall back to the first live category instead.
+  // categoryOptions guards against). The first-live-category fallback is for the
+  // initialiser only; mid-form it would clobber the category the user already picked.
   const liveDefaultCategoryId = (vendor: SpendVendor | undefined) => {
     const preferred = vendor?.defaultCategoryId
     return preferred && categories.some(c => c.id === preferred) ? preferred : categories[0]?.id ?? ''
@@ -62,10 +63,11 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
 
   function onVendorChange(id: string) {
     setVendorId(id)
-    // Follow the vendor's default category, but only as a starting point — and only
-    // when it is still a live, selectable category (see liveDefaultCategoryId).
-    const vendor = vendors.find(v => v.id === id)
-    if (vendor?.defaultCategoryId) setCategoryId(liveDefaultCategoryId(vendor))
+    // Follow the vendor's default category as a starting point — but only when it is
+    // still a live, selectable category. Falling back to the first live category here
+    // (as the initialiser does) would clobber the category the user already picked.
+    const defaultId = vendors.find(v => v.id === id)?.defaultCategoryId
+    if (defaultId && categories.some(c => c.id === defaultId)) setCategoryId(defaultId)
   }
 
   function handleSave() {

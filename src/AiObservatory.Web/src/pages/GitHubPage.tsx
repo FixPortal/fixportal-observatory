@@ -25,8 +25,12 @@ export default function GitHubPage() {
   const isError = [prsError, summaryError, ciError, reviewersError, previousPrs.isError, previousSummary.isError, previousCi.isError].some(Boolean)
   // The summary asserts deltas against the comparison period, so it must wait for ALL
   // six queries — otherwise it prints zeros with fabricated deltas while they load.
+  // The same holds on failure: a settled-but-failed query yields empty arrays, which
+  // would print zeros and deltas computed against zero, so errors gate it too.
   const comparisonLoading = [prsLoading, summaryLoading, ciLoading,
     previousPrs.isLoading, previousSummary.isLoading, previousCi.isLoading].some(Boolean)
+  const comparisonError = [prsError, summaryError, ciError,
+    previousPrs.isError, previousSummary.isError, previousCi.isError].some(Boolean)
   const repos = [...new Set([
     ...prs, ...summary, ...ci, ...reviewers, ...previousPrs.prs, ...previousSummary.summary, ...previousCi.ci,
   ].map(item => item.repo))].sort()
@@ -74,6 +78,10 @@ export default function GitHubPage() {
       )}
       {comparisonLoading ? (
         <div className="chart-skeleton" aria-label="Loading GitHub period comparison" />
+      ) : comparisonError ? (
+        <p className="panel-note" role="status">
+          Comparison unavailable — the period data couldn’t be loaded, so no deltas are shown.
+        </p>
       ) : (
         <div className="comparison-summary" aria-label="GitHub period comparison">
           <ComparisonMetric label="Pull requests" selected={visiblePrs.length} comparison={comparisonPrs.length} />

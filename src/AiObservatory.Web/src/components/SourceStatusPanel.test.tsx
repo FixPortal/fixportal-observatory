@@ -87,7 +87,10 @@ test('shows readable API-only sources without inventing setup links and does not
 
   data.isError = true
   rerender(<SourceStatusPanel />)
-  expect(screen.queryByRole('button', { name: /Data sources/ })).not.toBeInTheDocument()
+  // The panel is the only visible surface for /source-statuses: on failure it must
+  // stay rendered as a collapsed shell carrying the error, not vanish silently.
+  expect(screen.getByRole('button', { name: /Data sources/ })).toBeInTheDocument()
+  expect(screen.getByText('Couldn’t load collection status')).toBeInTheDocument()
 })
 
 test('keeps the registry rows in place while source status is loading', () => {
@@ -102,4 +105,18 @@ test('keeps the registry rows in place while source status is loading', () => {
   expect(within(panel).getByText('GitHub billing')).toBeInTheDocument()
   expect(within(panel).getAllByText('Loading')).toHaveLength(17)
   expect(within(panel).queryByRole('link')).not.toBeInTheDocument()
+})
+
+test('renders the collapsed shell with an inline error when source statuses fail to load', () => {
+  data.isError = true
+  render(<SourceStatusPanel />)
+
+  const panelButton = screen.getByRole('button', { name: /Data sources/ })
+  expect(panelButton).toHaveAttribute('aria-expanded', 'false')
+  expect(screen.getByText('Couldn’t load collection status')).toBeInTheDocument()
+
+  fireEvent.click(panelButton)
+  expect(panelButton).toHaveAttribute('aria-expanded', 'true')
+  expect(screen.getByText(/try refreshing/)).toBeInTheDocument()
+  expect(screen.queryByRole('listitem')).not.toBeInTheDocument()
 })

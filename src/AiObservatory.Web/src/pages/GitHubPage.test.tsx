@@ -17,7 +17,7 @@ vi.mock('../lib/dateRange', () => ({
   }),
 }))
 
-const state = vi.hoisted(() => ({ loading: false }))
+const state = vi.hoisted(() => ({ loading: false, error: false }))
 
 vi.mock('../api/queries', () => ({
   localDate: (date: Date) => date.toISOString().slice(0, 10),
@@ -30,7 +30,7 @@ vi.mock('../api/queries', () => ({
       { repo: 'fix-portal/a', number: 1, title: 'First PR', author: 'chris', state: 'merged', createdAt: '2026-08-01T09:00:00Z', mergedAt: '2026-08-01T12:00:00Z', reviewCount: 1, turnaroundHours: 2 },
       { repo: 'fix-portal/b', number: 2, title: 'Second PR', author: 'chris', state: 'open', createdAt: '2026-08-02T09:00:00Z', mergedAt: null, reviewCount: 0, turnaroundHours: null },
     ],
-    isError: false,
+    isError: state.error,
     isLoading: state.loading,
   }),
   useGitHubCommitSummary: (from: Date) => ({
@@ -41,7 +41,7 @@ vi.mock('../api/queries', () => ({
       { repo: 'fix-portal/a', commitCount: 3, additions: 10, deletions: 2 },
       { repo: 'fix-portal/b', commitCount: 8, additions: 40, deletions: 15 },
     ],
-    isError: false,
+    isError: state.error,
     isLoading: state.loading,
   }),
   useGitHubCi: (from: Date) => ({
@@ -52,7 +52,7 @@ vi.mock('../api/queries', () => ({
       { repo: 'fix-portal/a', workflowName: 'CI', totalRuns: 10, failedRuns: 0, successRate: 100 },
       { repo: 'fix-portal/b', workflowName: 'CI', totalRuns: 10, failedRuns: 2, successRate: 80 },
     ],
-    isError: false,
+    isError: state.error,
     isLoading: state.loading,
   }),
   useGitHubReviews: () => ({
@@ -60,7 +60,7 @@ vi.mock('../api/queries', () => ({
       { repo: 'fix-portal/a', reviewer: 'coderabbitai[bot]', isBot: true, reviewCount: 3, pullRequestCount: 2, approvedCount: 2, changesRequestedCount: 1, avgFirstReviewHours: 0.4 },
       { repo: 'fix-portal/b', reviewer: 'chris', isBot: false, reviewCount: 1, pullRequestCount: 1, approvedCount: 1, changesRequestedCount: 0, avgFirstReviewHours: 10 },
     ],
-    isError: false,
+    isError: state.error,
     isLoading: state.loading,
   }),
 }))
@@ -108,6 +108,21 @@ describe('GitHubPage', () => {
       expect(screen.getByLabelText('Loading GitHub period comparison')).toBeInTheDocument()
     } finally {
       state.loading = false
+    }
+  })
+
+  it('withholds the comparison summary when a contributing query fails instead of printing zeros with fabricated deltas', () => {
+    // On failure with no cache the arrays settle empty, so the unguarded summary
+    // would render zero counts and compute deltas against zero.
+    state.error = true
+    try {
+      render(<GitHubPage />)
+
+      expect(screen.queryByRole('group', { name: 'Pull requests comparison' })).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Loading GitHub period comparison')).not.toBeInTheDocument()
+      expect(screen.getByRole('status')).toHaveTextContent(/comparison unavailable/i)
+    } finally {
+      state.error = false
     }
   })
 })

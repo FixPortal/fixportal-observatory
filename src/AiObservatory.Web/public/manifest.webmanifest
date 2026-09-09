@@ -1,7 +1,7 @@
 {
-  "name": "FixPortal AI Observatory",
-  "short_name": "AI Observatory",
-  "description": "FixPortal AI Observatory — Claude Code usage and spend telemetry.",
+  "name": "FixPortal Observatory",
+  "short_name": "Observatory",
+  "description": "Multi-provider AI usage and cost evidence with explicit provenance, pricing, and source health.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0d1117",
