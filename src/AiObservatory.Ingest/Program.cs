@@ -331,9 +331,18 @@ static void RegisterPricingSources(IServiceCollection services, IConfiguration c
         // would activate the class by constructor and bind the DEFAULT unnamed HttpClient, so
         // the hardened primary handler (AllowAutoRedirect = false) and RemoveAllLoggers would
         // not apply — re-sending X-Goog-Api-Key across any cross-host redirect.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Scoped<IPricingSource>(sp => sp.GetRequiredService<GooglePricingSource>())
-        );
+        // TryAddEnumerable cannot de-duplicate this shape either: on a factory descriptor it reads
+        // the implementation type from the factory's generic arguments, gets IPricingSource itself,
+        // and throws ArgumentException at registration — so a plain guarded AddScoped is the only
+        // safe factory shape here.
+        if (
+            !services.Any(descriptor =>
+                descriptor.ServiceType == typeof(IPricingSource) && descriptor.ImplementationFactory is not null
+            )
+        )
+        {
+            services.AddScoped<IPricingSource>(sp => sp.GetRequiredService<GooglePricingSource>());
+        }
     }
 
     services.AddScoped<BundledPricingCatalogLoader>();

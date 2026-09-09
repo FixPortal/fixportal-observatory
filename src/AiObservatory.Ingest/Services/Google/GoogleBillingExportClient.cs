@@ -93,7 +93,18 @@ public sealed class GoogleBillingExportClient(Lazy<BigQueryClient> client, strin
         }
         // The companion count runs first: a correction for usage older than the scan floor is
         // reported even if the main query below legitimately returns rows for everything else.
-        var outOfRangeKeys = await CountOutOfRangeKeysAsync(from, throughExclusive, changesSince, cancellationToken);
+        // It only feeds a warning, so a transient count failure must not abort the export —
+        // degrade to "count unavailable" (null) and still run the main query. Cancellation is
+        // not a failure and keeps its normal semantics.
+        long? outOfRangeKeys;
+        try
+        {
+            outOfRangeKeys = await CountOutOfRangeKeysAsync(from, throughExclusive, changesSince, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            outOfRangeKeys = null;
+        }
         var query = BuildQuery(_table, from, throughExclusive, changesSince);
         var results = await client.Value.ExecuteQueryAsync(
             query.Sql,

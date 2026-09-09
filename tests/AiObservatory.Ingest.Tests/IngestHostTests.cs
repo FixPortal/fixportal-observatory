@@ -518,6 +518,39 @@ public class IngestHostTests
             .BeFalse();
     }
 
+    [Fact]
+    public async Task GooglePricingWithVerifiedMappingsResolvesThroughTheTypedClientRegistration()
+    {
+        // VerifiedMappings is empty until the SKU list is verified, so the host-build path that
+        // registers GooglePricingSource cannot be reached through configuration alone — flip the
+        // internal gate for the duration of this test.
+        var original = GooglePricingSource.HasVerifiedMappings;
+        GooglePricingSource.HasVerifiedMappings = true;
+        try
+        {
+            await using var factory = new IngestFactory();
+            factory.Settings["GOOGLE_CLOUD_CATALOG_API_KEY"] = "configured-key";
+            factory.Settings["GOOGLE_CLOUD_CATALOG_SERVICE_ID"] = "configured-service";
+
+            using var scope = factory.Services.CreateScope();
+
+            scope
+                .ServiceProvider.GetServices<IPricingSource>()
+                .Should()
+                .ContainSingle(source => source is GooglePricingSource);
+            scope
+                .ServiceProvider.GetServices<PricingSourceDefinition>()
+                .Should()
+                .ContainSingle(definition => definition.SourceId == PricingSourceIds.GoogleCloudCatalog)
+                .Which.IsConfigured.Should()
+                .BeTrue();
+        }
+        finally
+        {
+            GooglePricingSource.HasVerifiedMappings = original;
+        }
+    }
+
     private static bool ExceptionChainContains(Exception ex, string fragment)
     {
         if (ex.Message.Contains(fragment, StringComparison.Ordinal))
