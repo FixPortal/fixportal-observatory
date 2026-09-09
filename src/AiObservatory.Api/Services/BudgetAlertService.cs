@@ -1,6 +1,7 @@
 using System.Globalization;
 using AiObservatory.Data.Entities;
 using AiObservatory.Data.Repositories;
+using MimeKit;
 using NodaTime;
 
 namespace AiObservatory.Api.Services;
@@ -51,18 +52,17 @@ public class BudgetAlertService(
             return fallback;
         }
 
-        // Last '@', because the local part of an address may legally quote one.
-        var at = sender.LastIndexOf('@');
-        if (at < 0)
+        // Parse as a mailbox rather than slicing from the last '@': a display-name sender
+        // ("Alerts <alerts@example.com>") must yield "example.com", not "example.com>", and a
+        // quoted local part may legally contain an '@' of its own. MimeKit's lenient default
+        // also accepts a bare word as a local-part-only mailbox with no domain, so a sender
+        // with no parseable domain still falls back rather than emitting "budget-alert-{id}@".
+        if (!MailboxAddress.TryParse(sender, out var mailbox) || mailbox.Domain.Length == 0)
         {
             return fallback;
         }
 
-        // Trim BEFORE testing for empty. "alerts@ " has a character after the '@', so a
-        // length check alone passes it, and the trimmed domain is then empty — which would
-        // emit "budget-alert-{id}@", not a valid Message-Id.
-        var domain = sender[(at + 1)..].Trim();
-        return domain.Length == 0 ? fallback : domain;
+        return mailbox.Domain;
     }
 
     // virtual to match the other de-interfaced services (FxRateProvider, AnthropicIntelligenceClient):
@@ -107,6 +107,7 @@ public class BudgetAlertService(
         foreach (
             var pending in await repository.GetDeliverableBudgetAlertEmailsAsync(
                 deliveryStartedAt.Minus(BudgetAlertEmailLease.Duration),
+                deliveryStartedAt.Minus(MaxDeliveryAge),
                 ct
             )
         )
@@ -115,24 +116,26 @@ public class BudgetAlertService(
         }
     }
 
-    // Days at or before the last trigger already have their claim (or were under threshold
-    // when scanned), so the daily rescan lower-bounds at a grace window behind that watermark
-    // instead of re-reading the rule's whole lifetime on every run. The grace still catches
-    // late-arriving usage landing just behind the watermark.
-    private const int DailyRescanGraceDays = 7;
+    // Claims older than this leave the delivery set. LastTriggeredAt is a claim-CREATION stamp,
+    // not a statement about which dates have been scanned, so it cannot bound delivery either —
+    // but unbounded, a claim that can never deliver (no channel configured, a terminally dead
+    // webhook) is re-leased and re-warned on every pass forever, starving newer claims once the
+    // batch size is reached and bursting every historical alert at an operator who configures a
+    // channel months later. The claim is NOT closed: it stays pending, so a channel configured
+    // inside the window still receives the alert — the bound only stops selecting stale ones.
+    private static readonly Duration MaxDeliveryAge = Duration.FromDays(30);
 
+    // The daily rescan runs from the rule's evaluation boundary on every run — there is no
+    // watermark. LastTriggeredAt stamps claim creation, not "dates scanned so far": spend lands
+    // behind any earlier day (a backdated manual entry, or GitHub billing rows pinned to the
+    // month start and re-upserted with a rising amount all month), so a trailing window behind
+    // the last trigger permanently drops those days once any claim fires more than the window
+    // after them. The scan is one grouped SQL query and GetOrCreateBudgetAlertAsync is
+    // idempotent per (rule, period), so re-reading the rule's whole lifetime is cheap and can
+    // never double-alert.
     private async Task CheckDailyRuleSafelyAsync(BudgetRule rule, LocalDate through, Instant now, CancellationToken ct)
     {
         var from = rule.EvaluationStartsOn;
-        if (rule.LastTriggeredAt is { } lastTriggeredAt)
-        {
-            var watermark = lastTriggeredAt.InUtc().Date.PlusDays(-DailyRescanGraceDays);
-            if (watermark > from)
-            {
-                from = watermark;
-            }
-        }
-
         if (from > through)
         {
             return;
@@ -327,9 +330,12 @@ public class BudgetAlertService(
                 return;
             }
 
-            // No channel actually delivered (nothing configured, or every channel reported
-            // failure without throwing). Marking the claim sent here would drop it from the
-            // deliverable set forever, so release the lease and leave it pending for retry.
+            // No channel actually delivered. The claim is deliberately NOT closed: notification
+            // settings are runtime-editable, so the lease is released and the claim stays
+            // pending — but only within MaxDeliveryAge, after which the deliverable query stops
+            // selecting it. The outcome distinguishes why: NoRecipientConfigured (nothing set
+            // up), PermanentlyRejected (a channel terminally refused, e.g. a rotated Slack
+            // webhook's 4xx), or Failed (transient — 5xx/timeouts, the only kind retry can fix).
             await repository.ReleaseBudgetAlertEmailLeaseAsync(email.ClaimId, leaseId, ct);
             logger.LogWarning(
                 "Budget alert email for rule {RuleId} was not delivered on any channel ({Outcome}); its lease was released so the claim stays pending and retries",

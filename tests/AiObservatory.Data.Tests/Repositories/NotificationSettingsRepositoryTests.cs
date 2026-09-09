@@ -9,6 +9,7 @@ using Npgsql;
 namespace AiObservatory.Data.Tests.Repositories;
 
 [Trait("Category", "Integration")]
+[Collection("SlackWebhookProtectionKey")]
 public class NotificationSettingsRepositoryTests : IAsyncLifetime
 {
     private string _connStr = null!;
@@ -113,6 +114,46 @@ public class NotificationSettingsRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetNotificationSettings_materialises_with_a_sentinel_when_the_protection_key_is_lost()
+    {
+        // M13: reading an encrypted row back without the key used to throw inside EF
+        // materialisation, taking the whole singleton row (and email alerting with it) down
+        // and leaving "clear the value" unreachable through the API. The row must still
+        // materialise -- email intact, the webhook degraded to the sentinel the Slack
+        // notifier refuses -- and the stored ciphertext must survive so a restored key
+        // recovers the URL.
+        var ct = TestContext.Current.CancellationToken;
+        const string webhookUrl = "https://hooks.slack.com/services/T0/B0/secret";
+        Environment.SetEnvironmentVariable(SlackWebhookProtector.KeyEnvironmentVariable, "integration-test-key");
+        try
+        {
+            _ctx.NotificationSettings.Add(
+                new NotificationSettings
+                {
+                    AlertEmailTo = "alerts@example.com",
+                    SlackWebhookUrl = webhookUrl,
+                    UpdatedAt = Instant.FromUtc(2026, 9, 8, 0, 0),
+                }
+            );
+            await _ctx.SaveChangesAsync(ct);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(SlackWebhookProtector.KeyEnvironmentVariable, null);
+        }
+
+        _ctx.ChangeTracker.Clear();
+
+        var settings = await _repo.GetNotificationSettingsAsync(ct);
+
+        settings.Should().NotBeNull();
+        settings.AlertEmailTo.Should().Be("alerts@example.com");
+        // Had the value been stored as plaintext the read would return the URL itself, so
+        // reaching the sentinel also proves the row really was encrypted at rest.
+        settings.SlackWebhookUrl.Should().Be(SlackWebhookProtector.UndecryptableSentinel);
+    }
+
+    [Fact]
     public async Task NotificationSettings_rejects_a_row_with_a_non_singleton_id()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -130,3 +171,11 @@ public class NotificationSettingsRepositoryTests : IAsyncLifetime
         await save.Should().ThrowAsync<DbUpdateException>();
     }
 }
+
+// SLACK_WEBHOOK_PROTECTION_KEY is process-wide, and these two test classes are on opposite
+// sides of it: this one sets the variable to prove at-rest encryption, while
+// SlackWebhookProtectorTests asserts no-key behaviour. Serialised into one collection that
+// never runs in parallel with any other, so a test holding the key set can never overlap
+// one asserting it is unset (same house idiom as Ingest.Tests' ProviderPollingWorker).
+[CollectionDefinition("SlackWebhookProtectionKey", DisableParallelization = true)]
+public class SlackWebhookProtectionKeyCollection;
