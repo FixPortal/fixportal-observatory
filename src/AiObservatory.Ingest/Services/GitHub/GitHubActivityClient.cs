@@ -230,12 +230,52 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
     {
         var sinceStr = LocalDatePattern.Iso.Format(since);
         var results = new List<GitHubWorkflowRunRecord>();
+        var seenRunIds = new HashSet<long>();
+        // Backfill cursor: the oldest run seen so far. When the pagination cap stops a window
+        // short, the next window ends at the cursor (inclusive range end, so the boundary run
+        // arrives again and is dropped by id) and successive windows walk backwards until one
+        // completes under the cap — a capped listing therefore terminates the backfill instead
+        // of re-fetching the identical window on every poll cycle.
+        Instant? cursor = null;
+        while (true)
+        {
+            var window = await FetchWorkflowRunWindowAsync(repo, sinceStr, cursor, results, seenRunIds, ct);
+            if (!window.Truncated)
+            {
+                return new GitHubWorkflowRunResult(results, Truncated: false);
+            }
+            // No new run below the cursor means the window cannot be narrowed further (more
+            // than a cap's worth of runs share its oldest created_at second, the API's
+            // coarsest range granularity) — report the listing truncated rather than spin.
+            if (window.OldestSeen is null || cursor is { } previous && window.OldestSeen >= previous)
+            {
+                return new GitHubWorkflowRunResult(results, Truncated: true);
+            }
+            cursor = window.OldestSeen;
+        }
+    }
+
+    private async Task<(Instant? OldestSeen, bool Truncated)> FetchWorkflowRunWindowAsync(
+        string repo,
+        string sinceStr,
+        Instant? cursor,
+        List<GitHubWorkflowRunRecord> results,
+        HashSet<long> seenRunIds,
+        CancellationToken ct
+    )
+    {
+        // The created filter is one search-style qualifier: an unbounded lower bound, or an
+        // inclusive range up to the cursor once the walk has started.
+        var created = cursor is { } upper
+            ? $"{sinceStr}..{InstantPattern.ExtendedIso.Format(upper)}"
+            : $"%3E%3D{sinceStr}";
         var truncated = false;
+        Instant? oldestSeen = null;
         var page = 1;
         while (true)
         {
             using var response = await http.GetAsync(
-                $"/repos/{repo}/actions/runs?created=%3E%3D{sinceStr}&per_page={PerPage}&page={page}",
+                $"/repos/{repo}/actions/runs?created={created}&per_page={PerPage}&page={page}",
                 ct
             );
             CheckRateLimit(response);
@@ -246,15 +286,25 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
 
             foreach (var run in body.WorkflowRuns)
             {
+                if (!seenRunIds.Add(run.Id))
+                {
+                    continue;
+                }
+
+                var createdAt = InstantPattern.ExtendedIso.Parse(run.CreatedAt).Value;
                 results.Add(
                     new GitHubWorkflowRunRecord(
                         Truncate(repo, 200),
                         run.Id,
                         Truncate(run.Name ?? "(unnamed)", 200),
                         Truncate(run.Conclusion ?? run.Status, 20),
-                        InstantPattern.ExtendedIso.Parse(run.CreatedAt).Value
+                        createdAt
                     )
                 );
+                if (oldestSeen is null || createdAt < oldestSeen)
+                {
+                    oldestSeen = createdAt;
+                }
             }
 
             if (body.WorkflowRuns.Count < PerPage)
@@ -264,15 +314,16 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
             if (page * PerPage >= WorkflowRunsPaginationCap)
             {
                 logger.LogWarning(
-                    "GitHub workflow-runs result cap reached for {Repo}; narrowing the backfill window may be required",
-                    repo
+                    "GitHub workflow-runs result cap reached for {Repo}; walking the backfill window backwards from {OldestSeen}",
+                    repo,
+                    oldestSeen
                 );
                 truncated = true;
                 break;
             }
             page++;
         }
-        return new GitHubWorkflowRunResult(results, truncated);
+        return (oldestSeen, truncated);
     }
 
     private static string Truncate(string value, int maxLength) =>

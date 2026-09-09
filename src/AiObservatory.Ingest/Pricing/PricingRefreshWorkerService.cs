@@ -30,15 +30,19 @@ public sealed class PricingRefreshWorkerService(
             }
             catch (Exception exception)
             {
-                logger.LogError(
-                    exception,
-                    "Daily pricing refresh pass failed: {Error}",
-                    ProviderPollingWorkerService.SanitizeError(exception.Message)
-                );
+                LogRefreshPassFailure(exception);
             }
             await Task.Delay(TimeSpan.FromDays(1), stoppingToken);
         }
     }
+
+    // The exception object is NOT passed to the log: providers render it as a full ToString()
+    // beside the sanitized field, defeating the query-string redaction.
+    private void LogRefreshPassFailure(Exception exception) =>
+        logger.LogError(
+            "Daily pricing refresh pass failed: {Error}",
+            ProviderPollingWorkerService.SanitizeError(exception.Message)
+        );
 
     public async Task RunOnceAsync(CancellationToken cancellationToken)
     {

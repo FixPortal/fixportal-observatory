@@ -6,6 +6,7 @@ using AiObservatory.Ingest.Services.Google;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NodaTime;
 using NodaTime.Testing;
@@ -171,7 +172,7 @@ public sealed class GoogleBillingExportSourcePostgresTests : IAsyncLifetime
         };
         client
             .GetBillingRecordsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), watermark, Arg.Any<CancellationToken>())
-            .Returns([correction]);
+            .Returns(new GoogleBillingExportResult([correction], 0));
 
         await Source(client, 1m)
             .IngestAsync(new LocalDate(2026, 8, 1), new LocalDate(2026, 8, 1), TestContext.Current.CancellationToken);
@@ -207,7 +208,7 @@ public sealed class GoogleBillingExportSourcePostgresTests : IAsyncLifetime
                 Arg.Any<Instant>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns([]);
+            .Returns(new GoogleBillingExportResult([], 0));
 
         await Source(client, 1m)
             .IngestAsync(new LocalDate(2026, 8, 3), new LocalDate(2026, 8, 5), TestContext.Current.CancellationToken);
@@ -233,9 +234,7 @@ public sealed class GoogleBillingExportSourcePostgresTests : IAsyncLifetime
                 Arg.Any<Instant>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(
-                Task.FromException<IReadOnlyList<GoogleBillingRecord>>(new InvalidOperationException("query failed"))
-            );
+            .Returns(Task.FromException<GoogleBillingExportResult>(new InvalidOperationException("query failed")));
 
         var act = () =>
             Source(client, 1m)
@@ -252,6 +251,53 @@ public sealed class GoogleBillingExportSourcePostgresTests : IAsyncLifetime
         (await _db.DailyAggregates.CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
     }
 
+    [Fact]
+    public async Task IngestAsync_when_corrections_fall_outside_the_scan_floor_logs_a_warning()
+    {
+        // The companion count reports affected keys the pruned line_items scan can never
+        // return; without the warning those late corrections would go silently stale.
+        var client = Substitute.For<IGoogleBillingExportClient>();
+        client
+            .GetBillingRecordsAsync(
+                Arg.Any<Instant>(),
+                Arg.Any<Instant>(),
+                Arg.Any<Instant>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new GoogleBillingExportResult([Record()], 2));
+        var logger = new CapturingLogger();
+
+        await Source(client, 1m, logger)
+            .IngestAsync(new LocalDate(2026, 8, 1), new LocalDate(2026, 8, 1), TestContext.Current.CancellationToken);
+
+        logger
+            .Warnings.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("2 billing correction key(s)")
+            .And.Contain("31-day scan floor");
+    }
+
+    [Fact]
+    public async Task IngestAsync_when_every_affected_key_is_covered_logs_no_warning()
+    {
+        var client = Substitute.For<IGoogleBillingExportClient>();
+        client
+            .GetBillingRecordsAsync(
+                Arg.Any<Instant>(),
+                Arg.Any<Instant>(),
+                Arg.Any<Instant>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new GoogleBillingExportResult([Record()], 0));
+        var logger = new CapturingLogger();
+
+        await Source(client, 1m, logger)
+            .IngestAsync(new LocalDate(2026, 8, 1), new LocalDate(2026, 8, 1), TestContext.Current.CancellationToken);
+
+        logger.Warnings.Should().BeEmpty();
+    }
+
     private GoogleBillingExportSource Source(IReadOnlyList<GoogleBillingRecord> records, decimal fxRate)
     {
         var client = Substitute.For<IGoogleBillingExportClient>();
@@ -262,11 +308,15 @@ public sealed class GoogleBillingExportSourcePostgresTests : IAsyncLifetime
                 Arg.Any<Instant>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(records);
+            .Returns(new GoogleBillingExportResult(records, 0));
         return Source(client, fxRate);
     }
 
-    private GoogleBillingExportSource Source(IGoogleBillingExportClient client, decimal fxRate)
+    private GoogleBillingExportSource Source(
+        IGoogleBillingExportClient client,
+        decimal fxRate,
+        ILogger<GoogleBillingExportSource>? logger = null
+    )
     {
         var fx = Substitute.For<FxRateProvider>(_http, _cache, NullLogger<FxRateProvider>.Instance);
         fx.GetGbpRateOnAsync(Arg.Any<string>(), Arg.Any<LocalDate>(), Arg.Any<CancellationToken>()).Returns(fxRate);
@@ -274,8 +324,32 @@ public sealed class GoogleBillingExportSourcePostgresTests : IAsyncLifetime
             client,
             new SourceSyncStateStore(_db),
             new BillingObservationWriter(_db, fx, new FakeClock(Instant.FromUtc(2026, 8, 5, 1, 0))),
-            NullLogger<GoogleBillingExportSource>.Instance
+            logger ?? NullLogger<GoogleBillingExportSource>.Instance
         );
+    }
+
+    private sealed class CapturingLogger : ILogger<GoogleBillingExportSource>
+    {
+        public List<string> Warnings { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (logLevel == LogLevel.Warning)
+            {
+                Warnings.Add(formatter(state, exception));
+            }
+        }
     }
 
     private static GoogleBillingRecord Record(

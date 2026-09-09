@@ -4,7 +4,7 @@ namespace AiObservatory.Ingest.Services.Google;
 
 public interface IGoogleBillingExportClient
 {
-    Task<IReadOnlyList<GoogleBillingRecord>> GetBillingRecordsAsync(
+    Task<GoogleBillingExportResult> GetBillingRecordsAsync(
         Instant from,
         Instant throughExclusive,
         Instant changesSince,

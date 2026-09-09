@@ -327,7 +327,13 @@ static void RegisterPricingSources(IServiceCollection services, IConfiguration c
             .AddHttpClient<GooglePricingSource>()
             .ConfigurePrimaryHttpMessageHandler(_ => GooglePricingSource.CreateHttpMessageHandler())
             .RemoveAllLoggers();
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IPricingSource, GooglePricingSource>());
+        // Resolve through the typed-client registration: a direct Scoped<IPricingSource, GooglePricingSource>
+        // would activate the class by constructor and bind the DEFAULT unnamed HttpClient, so
+        // the hardened primary handler (AllowAutoRedirect = false) and RemoveAllLoggers would
+        // not apply — re-sending X-Goog-Api-Key across any cross-host redirect.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<IPricingSource>(sp => sp.GetRequiredService<GooglePricingSource>())
+        );
     }
 
     services.AddScoped<BundledPricingCatalogLoader>();
