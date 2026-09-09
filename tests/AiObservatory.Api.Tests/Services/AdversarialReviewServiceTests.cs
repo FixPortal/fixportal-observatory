@@ -153,9 +153,35 @@ public class AdversarialReviewServiceTests
     }
 
     [Fact]
-    public async Task RecordRun_unknown_reviewer_returns_bad_request()
+    public async Task RecordRun_accepts_a_reviewer_slug_outside_the_original_four_vendors()
     {
+        // The reviewer set is whichever CLIs the operator runs; a hardcoded vendor allowlist
+        // would 400 a new reviewer until a code change shipped. Shape is validated instead.
+        var newId = Guid.NewGuid();
+        _repo
+            .RecordRunAsync(Arg.Any<AdversarialReviewRun>(), Arg.Any<CancellationToken>())
+            .Returns((newId, Existed: false));
+
         var result = await CreateSut().RecordRunAsync(ValidRequest(reviewer: "moonsh0t"), CancellationToken.None);
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(201);
+        await _repo
+            .Received(1)
+            .RecordRunAsync(
+                Arg.Is<AdversarialReviewRun>(r => r != null && r.Reviewer == "moonsh0t"),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Theory]
+    [InlineData("bad reviewer")] // whitespace is prose, not a slug
+    [InlineData("vendor_x")] // underscore is not in the slug alphabet
+    [InlineData("vendor/x")] // path separator
+    [InlineData("-anthropic")] // must start with a letter
+    [InlineData("anthropic!")]
+    public async Task RecordRun_rejects_a_reviewer_that_is_not_a_vendor_slug(string reviewer)
+    {
+        var result = await CreateSut().RecordRunAsync(ValidRequest(reviewer: reviewer), CancellationToken.None);
 
         result.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(400);
         await _repo.DidNotReceive().RecordRunAsync(Arg.Any<AdversarialReviewRun>(), Arg.Any<CancellationToken>());

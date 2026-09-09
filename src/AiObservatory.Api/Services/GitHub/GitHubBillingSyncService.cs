@@ -35,12 +35,7 @@ public class GitHubBillingSyncService(
     public async Task<int> SyncAsync(CancellationToken ct = default)
     {
         var now = clock.GetCurrentInstant();
-        var currentYear = now.InUtc().Year;
-        var items = new List<GitHubBillingUsageItem>();
-        foreach (var year in new[] { currentYear - 1, currentYear })
-        {
-            items.AddRange(await client.GetUsageAsync(year, ct));
-        }
+        var items = await FetchUsageItemsAsync(now.InUtc().Year, ct);
 
         if (items.Count == 0)
         {
@@ -55,10 +50,11 @@ public class GitHubBillingSyncService(
             var (vendorKey, categoryKey) = ProductMap.GetValueOrDefault(line.Product, Fallback);
             try
             {
-                var disposition = await writer.RecordAsync(ToObservation(line, now), vendorKey, categoryKey, ct);
+                var observation = ToObservation(line, now);
+                var disposition = await writer.RecordAsync(observation, vendorKey, categoryKey, ct);
                 if (
                     disposition != BillingWriteDisposition.Unchanged
-                    && (line.NetAmount != 0m || disposition == BillingWriteDisposition.Corrected)
+                    && (observation.NetAmount != 0m || disposition == BillingWriteDisposition.Corrected)
                 )
                 {
                     written++;
@@ -89,16 +85,55 @@ public class GitHubBillingSyncService(
         return written;
     }
 
+    // Per-year isolation: a prior-year 403/404 must not abort the sync before the
+    // current year is fetched — the open month's spend is the sync's whole purpose.
+    // Only a current-year failure rethrows (an every-year failure lands there too,
+    // since the current year is one of the two); a prior-year-only failure is
+    // logged and the sync proceeds with the year GitHub did answer.
+    private async Task<List<GitHubBillingUsageItem>> FetchUsageItemsAsync(int currentYear, CancellationToken ct)
+    {
+        var items = new List<GitHubBillingUsageItem>();
+        GitHubBillingUnavailableException? currentYearFailure = null;
+        foreach (var year in new[] { currentYear - 1, currentYear })
+        {
+            try
+            {
+                items.AddRange(await client.GetUsageAsync(year, ct));
+            }
+            catch (GitHubBillingUnavailableException exception)
+            {
+                currentYearFailure ??= year == currentYear ? exception : null;
+                logger.LogWarning(
+                    exception,
+                    "GitHub billing: usage for {Year} is unavailable; continuing with the remaining years",
+                    year
+                );
+            }
+        }
+
+        if (currentYearFailure is not null)
+        {
+            throw currentYearFailure;
+        }
+
+        return items;
+    }
+
+    // Coalesce here, not at the lookup: System.Text.Json binds a missing `product`/`sku`
+    // to null despite the non-nullable record members, and a null key into ProductMap's
+    // GetValueOrDefault throws ArgumentNullException outside the per-line failure guard.
+    // The sentinel, not "": BillingObservationWriter rejects blank Service/Sku, so an empty
+    // coalesce would die in the per-line catch and escalate to a source failure; "unknown"
+    // passes validation and lands the row where an operator can see the data was incomplete.
+    private const string UnknownSegment = "unknown";
+
     private static IEnumerable<BillingLine> Aggregate(IEnumerable<GitHubBillingUsageItem> items) =>
         items
-            // Coalesce here, not at the lookup: System.Text.Json binds a missing `product`/`sku`
-            // to null despite the non-nullable record members, and a null key into ProductMap's
-            // GetValueOrDefault throws ArgumentNullException outside the per-line failure guard.
             .GroupBy(item =>
                 (
                     Month: LocalDate.FromDateOnly(item.Date).With(DateAdjusters.StartOfMonth),
-                    Product: item.Product ?? "",
-                    Sku: item.Sku ?? ""
+                    Product: item.Product ?? UnknownSegment,
+                    Sku: item.Sku ?? UnknownSegment
                 )
             )
             .Select(group => new BillingLine(
@@ -113,8 +148,29 @@ public class GitHubBillingSyncService(
             .ThenBy(line => line.Product, StringComparer.Ordinal)
             .ThenBy(line => line.Sku, StringComparer.Ordinal);
 
-    private static BillingObservation ToObservation(BillingLine line, Instant observedAt) =>
-        new()
+    private BillingObservation ToObservation(BillingLine line, Instant observedAt)
+    {
+        // Construct the ledger invariant rather than assert it: the writer throws unless
+        // Gross + Credit = Net exactly, and three independent sums of GitHub's figures are not
+        // guaranteed to balance. The constructed net always satisfies the invariant; when
+        // GitHub's reported net disagrees, the divergence is logged and GitHub's own triple is
+        // kept verbatim in RawPayload, so no information is lost either way.
+        var netAmount = line.GrossAmount - line.DiscountAmount;
+        if (netAmount != line.NetAmount)
+        {
+            logger.LogWarning(
+                "GitHub billing: {Product}/{Sku} in {Month} reports net {ReportedNet} but gross {GrossAmount} minus discount {DiscountAmount} is {ConstructedNet}; retaining the constructed figure (GitHub's triple stays in RawPayload)",
+                line.Product,
+                line.Sku,
+                line.Month,
+                line.NetAmount,
+                line.GrossAmount,
+                line.DiscountAmount,
+                netAmount
+            );
+        }
+
+        return new()
         {
             ProviderKey = "github",
             SourceId = UsageSourceIds.GitHubBillingApi,
@@ -131,7 +187,7 @@ public class GitHubBillingSyncService(
             // The ledger's invariant is Gross + Credit = Net (same as the Google arm), and
             // GitHub's discountAmount is positive, so it lands as a negative credit.
             CreditAmount = -line.DiscountAmount,
-            NetAmount = line.NetAmount,
+            NetAmount = netAmount,
             RawPayload = JsonSerializer.Serialize(
                 new
                 {
@@ -145,6 +201,7 @@ public class GitHubBillingSyncService(
             ),
             ObservedAt = observedAt,
         };
+    }
 
     private static string ObservationKeyFor(BillingLine line)
     {
@@ -155,9 +212,10 @@ public class GitHubBillingSyncService(
         // historical month on the first sync after deploy. Length-prefix only when a segment
         // carries the ':' delimiter, which the plain form cannot disambiguate
         // (product="a:b"/sku="c" against product="a"/sku="b:c").
-        var material = line.Product.Contains(':') || line.Sku.Contains(':')
-            ? $"{Part(line.Product)}{Part(line.Sku)}"
-            : $"{line.Product}:{line.Sku}";
+        var material =
+            line.Product.Contains(':') || line.Sku.Contains(':')
+                ? $"{Part(line.Product)}{Part(line.Sku)}"
+                : $"{line.Product}:{line.Sku}";
         var readable = $"github:{month}:{material}";
         if (readable.Length <= 200)
         {

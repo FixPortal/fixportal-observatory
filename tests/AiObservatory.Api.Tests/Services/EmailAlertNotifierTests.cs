@@ -149,6 +149,45 @@ public class EmailAlertNotifierTests
     }
 
     [Fact]
+    public async Task NotifyAsync_falls_through_to_the_smtp_user_when_email_from_is_blank_but_set()
+    {
+        // A blank-but-set BUDGET_ALERT_EMAIL_FROM used to shadow a valid SMTP user (`??` only
+        // sees null), so the empty From failed the parse and the whole channel reported
+        // unconfigured — the email arm silently disabled by an env var that looked like noise.
+        var smtp = Substitute.For<ISmtpClient>();
+        smtp.IsConnected.Returns(true);
+        MimeMessage? sent = null;
+        smtp.When(x => x.SendAsync(Arg.Any<MimeMessage>(), Arg.Any<CancellationToken>(), Arg.Any<ITransferProgress>()))
+            .Do(x => sent = x.Arg<MimeMessage>());
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["BUDGET_ALERT_EMAIL_FROM"] = "",
+                    ["BUDGET_ALERT_SMTP_USER"] = "obs@example.com",
+                }
+            )
+            .Build();
+        var repo = Substitute.For<IUsageRepository>();
+        repo.GetNotificationSettingsAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                new NotificationSettings
+                {
+                    AlertEmailTo = "alerts@example.com",
+                    UpdatedAt = Instant.FromUtc(2026, 8, 30, 0, 0),
+                }
+            );
+
+        var sut = new EmailAlertNotifier(smtp, config, repo, NullLogger<EmailAlertNotifier>.Instance);
+        var result = await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
+
+        result.Should().Be(AlertDeliveryResult.Sent);
+        sent.Should().NotBeNull();
+        sent.From.ToString().Should().Contain("obs@example.com");
+    }
+
+    [Fact]
     public async Task NotifyAsync_treats_an_unparseable_sender_as_unconfigured_instead_of_throwing()
     {
         var smtp = Substitute.For<ISmtpClient>();

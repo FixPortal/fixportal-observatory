@@ -26,7 +26,14 @@ public sealed class EmailAlertNotifier(
         var port = int.TryParse(config["BUDGET_ALERT_SMTP_PORT"], out var p) ? p : 587;
         var user = config["BUDGET_ALERT_SMTP_USER"] ?? string.Empty;
         var pass = config["BUDGET_ALERT_SMTP_PASS"] ?? string.Empty;
-        var from = config["BUDGET_ALERT_EMAIL_FROM"] ?? user;
+        // Blank-but-set falls through to the SMTP user: `??` only sees null, so an empty
+        // BUDGET_ALERT_EMAIL_FROM would shadow a valid user and disable the channel outright
+        // (the empty From fails the parse below). Same shape as ResolveMessageIdDomain.
+        var from = config["BUDGET_ALERT_EMAIL_FROM"];
+        if (string.IsNullOrWhiteSpace(from))
+        {
+            from = user;
+        }
 
         // The recipient is runtime-editable and the startup backfill seed bypasses the
         // endpoint's validation, so an unparseable address can reach us. Treat it as

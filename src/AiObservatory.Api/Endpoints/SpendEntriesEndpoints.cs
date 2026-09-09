@@ -558,8 +558,33 @@ public static class SpendEntriesEndpoints
         }
 
         await db.SaveChangesAsync(ct);
-        return Results.Ok(entry);
+        // Same wire shape as the GET: the entity carries RawPayload (the provider billing
+        // response verbatim and unredacted), which must not go back on the wire — the GET's
+        // inline projection can't be reused here because EF needs it as an expression, so the
+        // entity-to-response mapping for materialized rows lives in ToResponse.
+        return Results.Ok(ToResponse(entry));
     }
+
+    private static SpendEntryResponse ToResponse(SpendEntry e) =>
+        new(
+            e.Id,
+            e.OccurredOn,
+            e.VendorId,
+            e.CategoryId,
+            e.Amount,
+            e.Currency,
+            e.AmountGbp,
+            e.FxRate,
+            e.Description,
+            e.Source,
+            e.EntryKey,
+            e.RecordedAt,
+            e.SourceId,
+            e.SourceKind,
+            e.UsageScope,
+            e.CostBasis,
+            e.ObservedAt
+        );
 
     /// <summary>
     /// Returns a rejection reason when the converted amount rounds to zero at the stored

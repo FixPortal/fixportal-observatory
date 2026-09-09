@@ -32,6 +32,9 @@
       widened reach stops at the test assembly and these stay off the API's surface.
     -->
     <InternalsVisibleTo Include="AiObservatory.Api.Tests" />
+    <!-- The integration lane parks the intelligence worker inside its daily delay via the
+         internal DelayAsync seam, so a worker cycle can be awaited deterministically. -->
+    <InternalsVisibleTo Include="AiObservatory.Api.IntegrationTests" />
   </ItemGroup>
 
 </Project>

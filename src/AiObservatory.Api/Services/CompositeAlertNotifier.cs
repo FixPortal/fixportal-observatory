@@ -41,8 +41,19 @@ public sealed class CompositeAlertNotifier(
             return AlertDeliveryResult.Sent;
         }
 
-        return slackResult == AlertDeliveryResult.Failed || emailResult == AlertDeliveryResult.Failed
-            ? AlertDeliveryResult.Failed
+        // Precedence after Sent: a transient failure outranks a terminal rejection (a later
+        // pass may still deliver through the transiently-failing channel), which outranks a
+        // bare "nothing configured" -- the most specific reason the claim did not deliver wins,
+        // so the delivery log can tell a dead webhook apart from an unconfigured instance.
+        if (slackResult == AlertDeliveryResult.Failed || emailResult == AlertDeliveryResult.Failed)
+        {
+            return AlertDeliveryResult.Failed;
+        }
+
+        return
+            slackResult == AlertDeliveryResult.PermanentlyRejected
+            || emailResult == AlertDeliveryResult.PermanentlyRejected
+            ? AlertDeliveryResult.PermanentlyRejected
             : AlertDeliveryResult.NoRecipientConfigured;
     }
 }

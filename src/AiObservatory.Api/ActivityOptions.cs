@@ -47,19 +47,44 @@ public class ActivityOptions
         }
 
         var asScalar = cfg[key];
-        return string.IsNullOrWhiteSpace(asScalar)
-            ? []
-            : Clean(asScalar.Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries));
+        if (string.IsNullOrWhiteSpace(asScalar))
+        {
+            return [];
+        }
+
+        // An unresolved Key Vault reference must be rejected BEFORE the delimited split: App
+        // Service leaves "@Microsoft.KeyVault(VaultName=v;SecretName=s)" in place verbatim when
+        // the secret is unreadable, and ';' is in the split set, so splitting first would yield
+        // two slash-free, whitespace-free fragments that both look like owners. Empty means
+        // allow-everything here, which fails open: the tabs show data instead of going blank,
+        // and the disallowed-projects cleanup (which negates this list and deletes) becomes a
+        // no-op instead of matching every stored session.
+        var trimmed = asScalar.Trim();
+        if (IsUnresolvedKeyVaultReference(trimmed))
+        {
+            return [];
+        }
+
+        return Clean(trimmed.Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries));
     }
 
-    // An owner is a single path segment. The no-'/' rule is also what discards an unresolved
-    // "@Microsoft.KeyVault(...)" reference, which App Service leaves in place verbatim when the
-    // secret is absent or unreadable: the SecretUri form contains several slashes, and the
-    // VaultName/SecretName form contains one. Without that, the literal would be registered as an
-    // owner and would quietly filter every real session out of the dashboard.
+    // The no-'/' rule alone does NOT discard an unresolved "@Microsoft.KeyVault(...)" reference:
+    // only the SecretUri form contains slashes; the VaultName/SecretName form has none. Without
+    // an explicit check the literal would be registered as an owner and would quietly filter
+    // every real session out of the dashboard — or, negated by the disallowed-projects cleanup,
+    // match every session for deletion.
+    private static bool IsUnresolvedKeyVaultReference(string value) =>
+        value.StartsWith("@Microsoft.KeyVault(", StringComparison.OrdinalIgnoreCase);
+
     private static string[] Clean(IEnumerable<string> values) =>
         [.. values.Select(v => v.Trim()).Where(IsOwnerName).Distinct(StringComparer.Ordinal)];
 
+    // An owner is a single path segment: non-empty, no '/', no whitespace, and not an
+    // unresolved Key Vault reference (see above — the array shape can carry one too when an
+    // indexed environment variable holds it).
     private static bool IsOwnerName(string value) =>
-        value.Length > 0 && !value.Contains('/') && !value.Any(char.IsWhiteSpace);
+        value.Length > 0
+        && !value.Contains('/')
+        && !value.Any(char.IsWhiteSpace)
+        && !IsUnresolvedKeyVaultReference(value);
 }

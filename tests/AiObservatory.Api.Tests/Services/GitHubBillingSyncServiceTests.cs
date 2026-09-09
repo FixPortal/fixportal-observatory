@@ -6,6 +6,7 @@ using AiObservatory.Data.Spend;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NodaTime;
 using NodaTime.Testing;
@@ -220,18 +221,118 @@ public sealed class GitHubBillingSyncServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task MissingProductOrSkuStaysInsideThePerLineGuard()
+    public async Task MissingProductOrSkuLandsUnderTheUnknownSentinel()
     {
         // A3: System.Text.Json binds an omitted `product`/`sku` to null despite the
         // non-nullable record members, and a null ProductMap key used to throw
         // ArgumentNullException outside the try — one malformed line aborted the whole sync.
+        // The coalesce target is "unknown", NOT "": the production writer rejects blank
+        // Service/Sku, so an empty coalesce would die in the per-line catch and escalate to a
+        // source failure. The sentinel passes validation, which is what lets this row land.
         var writes = new List<CapturedWrite>();
         var sut = Create(ClientReturning(Item(null!, null!, 10m), Item("actions", "linux", 20m)), Writer(writes));
 
         var written = await sut.SyncAsync(TestContext.Current.CancellationToken);
 
         written.Should().Be(2);
-        writes.Select(write => (write.Observation.Service, write.Observation.Sku)).Should().Contain(("", ""));
+        writes
+            .Select(write => (write.Observation.Service, write.Observation.Sku))
+            .Should()
+            .Contain(("unknown", "unknown"));
+    }
+
+    [Fact]
+    public async Task ConstructsNetFromGrossMinusDiscountAndKeepsGitHubsTripleInRawPayload()
+    {
+        // M18: the writer enforces Gross + Credit = Net exactly, and three independent sums of
+        // GitHub's figures are not guaranteed to balance — a mismatching triple used to throw
+        // out of Validate and fail the whole source. The net is constructed instead, GitHub's
+        // reported figures stay in RawPayload, and the divergence is logged.
+        var writes = new List<CapturedWrite>();
+        var logger = new CapturingLogger();
+        var sut = Create(
+            ClientReturning(Item("actions", "linux", 12.01m, grossAmount: 15m, discountAmount: 2.98m)),
+            Writer(writes),
+            logger
+        );
+
+        var written = await sut.SyncAsync(TestContext.Current.CancellationToken);
+
+        written.Should().Be(1);
+        var observation = writes.Should().ContainSingle().Which.Observation;
+        observation.GrossAmount.Should().Be(15m);
+        observation.CreditAmount.Should().Be(-2.98m);
+        observation
+            .NetAmount.Should()
+            .Be(12.02m, "the constructed gross-minus-discount satisfies the ledger invariant");
+        (observation.GrossAmount + observation.CreditAmount).Should().Be(observation.NetAmount);
+        using var raw = JsonDocument.Parse(observation.RawPayload);
+        raw.RootElement.GetProperty("netAmount").GetDecimal().Should().Be(12.01m, "GitHub's own figure is preserved");
+        logger
+            .Messages.Should()
+            .ContainSingle(m => m.Contains("12.01") && m.Contains("12.02") && m.Contains("constructed"));
+    }
+
+    [Fact]
+    public async Task APriorYearOutageDoesNotStopTheCurrentYearBeingFetched()
+    {
+        // M19: the loop fetches currentYear - 1 first, and a 403/404 there used to abort the
+        // sync before the current year was ever requested — zero GitHub spend, forever. Only a
+        // current-year failure is a source failure now.
+        var client = ClientReturning(Item("actions", "linux", 10m));
+        client
+            .GetUsageAsync(2025, Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromException<IReadOnlyList<GitHubBillingUsageItem>>(
+                    new GitHubBillingUnavailableException("prior year invisible to this token")
+                )
+            );
+        var writes = new List<CapturedWrite>();
+        var sut = Create(client, Writer(writes));
+
+        var written = await sut.SyncAsync(TestContext.Current.CancellationToken);
+
+        written.Should().Be(1);
+        writes.Should().ContainSingle();
+        await client.Received(1).GetUsageAsync(2026, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ACurrentYearOutageIsStillASourceFailure()
+    {
+        var client = ClientReturning();
+        client
+            .GetUsageAsync(2026, Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromException<IReadOnlyList<GitHubBillingUsageItem>>(
+                    new GitHubBillingUnavailableException("current year invisible to this token")
+                )
+            );
+        var sut = Create(client, Writer([]));
+
+        var act = () => sut.SyncAsync(TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<GitHubBillingUnavailableException>())
+            .Which.Message.Should()
+            .Contain("current year");
+    }
+
+    [Fact]
+    public async Task EveryYearUnavailableIsStillASourceFailure()
+    {
+        var client = ClientReturning();
+        client
+            .GetUsageAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromException<IReadOnlyList<GitHubBillingUsageItem>>(
+                    new GitHubBillingUnavailableException("token lacks billing read scope")
+                )
+            );
+        var sut = Create(client, Writer([]));
+
+        var act = () => sut.SyncAsync(TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<GitHubBillingUnavailableException>();
     }
 
     [Fact]
@@ -261,8 +362,11 @@ public sealed class GitHubBillingSyncServiceTests : IDisposable
         writes.Select(write => write.Observation.ObservationKey).Should().OnlyHaveUniqueItems();
     }
 
-    private static GitHubBillingSyncService Create(GitHubBillingClient client, BillingObservationWriter writer) =>
-        new(client, writer, new FakeClock(Now), NullLogger<GitHubBillingSyncService>.Instance);
+    private static GitHubBillingSyncService Create(
+        GitHubBillingClient client,
+        BillingObservationWriter writer,
+        ILogger<GitHubBillingSyncService>? logger = null
+    ) => new(client, writer, new FakeClock(Now), logger ?? NullLogger<GitHubBillingSyncService>.Instance);
 
     private GitHubBillingClient ClientReturning(params GitHubBillingUsageItem[] items)
     {
@@ -317,4 +421,29 @@ public sealed class GitHubBillingSyncServiceTests : IDisposable
     ) => new(new DateOnly(2026, month, day), product, sku, grossAmount ?? netAmount, discountAmount, netAmount);
 
     private sealed record CapturedWrite(BillingObservation Observation, string VendorKey, string CategoryKey);
+
+    private sealed class CapturingLogger : ILogger<GitHubBillingSyncService>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable BeginScope<TState>(TState state)
+            where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        ) => Messages.Add(formatter(state, exception));
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+
+            public void Dispose() { }
+        }
+    }
 }

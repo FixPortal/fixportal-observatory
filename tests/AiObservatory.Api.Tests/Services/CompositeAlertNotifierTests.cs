@@ -59,6 +59,23 @@ public class CompositeAlertNotifierTests
         AlertDeliveryResult.NoRecipientConfigured,
         AlertDeliveryResult.NoRecipientConfigured
     )]
+    // A transient failure outranks a terminal rejection: a later pass may still deliver
+    // through the transiently-failing channel, so the claim must not read as dead.
+    [InlineData(AlertDeliveryResult.PermanentlyRejected, AlertDeliveryResult.Failed, AlertDeliveryResult.Failed)]
+    [InlineData(AlertDeliveryResult.Failed, AlertDeliveryResult.PermanentlyRejected, AlertDeliveryResult.Failed)]
+    // A terminal rejection outranks a bare "nothing configured" — the most specific reason
+    // the claim did not deliver wins.
+    [InlineData(
+        AlertDeliveryResult.PermanentlyRejected,
+        AlertDeliveryResult.NoRecipientConfigured,
+        AlertDeliveryResult.PermanentlyRejected
+    )]
+    [InlineData(
+        AlertDeliveryResult.NoRecipientConfigured,
+        AlertDeliveryResult.PermanentlyRejected,
+        AlertDeliveryResult.PermanentlyRejected
+    )]
+    [InlineData(AlertDeliveryResult.PermanentlyRejected, AlertDeliveryResult.Sent, AlertDeliveryResult.Sent)]
     public async Task NotifyAsync_reports_sent_only_when_a_channel_actually_delivered(
         AlertDeliveryResult slackResult,
         AlertDeliveryResult emailResult,

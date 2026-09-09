@@ -136,6 +136,27 @@ public class InsightDeduplicatorTests
         InsightDeduplicator.ShouldSuppress(candidate, [existing], Subjects, Now).Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("5")]
+    [InlineData("\"text\"")]
+    public void A_non_object_data_document_falls_back_to_subject_matching_instead_of_throwing(string data)
+    {
+        // M20: model-authored `data` can be any well-formed JSON, and TryGetProperty on a
+        // non-object root throws InvalidOperationException — not the JsonException the guard
+        // caught — aborting the whole generation pass once any same-type insight was
+        // unacknowledged. A non-object root declares no cost basis, so subject decides.
+        var existing = Insight(
+            InsightType.Anomaly,
+            "gpt-5.6-sol billed spend spiked",
+            generatedAt: Now - Duration.FromDays(1),
+            data: data
+        );
+        var candidate = Insight(InsightType.Anomaly, "gpt-5.6-sol billed spend still elevated", data: data);
+
+        InsightDeduplicator.ShouldSuppress(candidate, [existing], Subjects, Now).Should().BeTrue();
+    }
+
     [Fact]
     public void Suppresses_a_repeat_on_the_same_cost_basis()
     {
