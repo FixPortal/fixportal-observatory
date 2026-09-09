@@ -25,7 +25,9 @@ public sealed class GooglePricingSource : IPricingSource, IDisposable
     private readonly string _sourceUrl;
     private readonly TimeProvider _timeProvider;
 
-    internal static bool HasVerifiedMappings => VerifiedMappings.Count != 0;
+    // The setter exists so composition-root tests can exercise the Google registration path
+    // before the first verified SKU mappings ship; production code only ever reads it.
+    internal static bool HasVerifiedMappings { get; set; } = VerifiedMappings.Count != 0;
 
     // Typed client: DI supplies an IHttpClientFactory-managed client (registered in Program),
     // so the handler and its connection pool are pooled across refresh passes.

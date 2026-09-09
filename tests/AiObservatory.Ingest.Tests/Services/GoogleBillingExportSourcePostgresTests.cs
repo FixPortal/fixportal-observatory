@@ -298,6 +298,35 @@ public sealed class GoogleBillingExportSourcePostgresTests : IAsyncLifetime
         logger.Warnings.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task IngestAsync_when_the_out_of_range_count_is_unavailable_logs_a_distinct_warning_and_still_writes()
+    {
+        // A failed companion count degrades to null: the export's records are complete and must
+        // still be written, with a "count unavailable" warning instead of the stale-correction one.
+        var client = Substitute.For<IGoogleBillingExportClient>();
+        client
+            .GetBillingRecordsAsync(
+                Arg.Any<Instant>(),
+                Arg.Any<Instant>(),
+                Arg.Any<Instant>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new GoogleBillingExportResult([Record()], null));
+        var logger = new CapturingLogger();
+
+        await Source(client, 1m, logger)
+            .IngestAsync(new LocalDate(2026, 8, 1), new LocalDate(2026, 8, 1), TestContext.Current.CancellationToken);
+
+        logger
+            .Warnings.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("count was unavailable")
+            .And.NotContain("billing correction key(s)");
+        (await _db.BillingObservations.CountAsync(TestContext.Current.CancellationToken)).Should().Be(1);
+        (await _db.SpendEntries.CountAsync(TestContext.Current.CancellationToken)).Should().Be(1);
+    }
+
     private GoogleBillingExportSource Source(IReadOnlyList<GoogleBillingRecord> records, decimal fxRate)
     {
         var client = Substitute.For<IGoogleBillingExportClient>();

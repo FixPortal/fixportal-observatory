@@ -287,6 +287,53 @@ public sealed class GoogleBillingExportClientTests
         result.OutOfRangeAffectedKeyCount.Should().Be(3);
     }
 
+    [Fact]
+    public async Task GetBillingRecordsAsync_when_the_count_query_fails_still_returns_records_with_a_null_count()
+    {
+        // The count only feeds the stale-correction warning, so a transient failure must not
+        // abort the export: the main query still runs and the count degrades to null.
+        var sdk = Substitute.For<BigQueryClient>();
+        sdk.ExecuteQueryAsync(
+                Arg.Is<string>(sql => sql.Contains("out_of_range_keys", StringComparison.Ordinal)),
+                Arg.Any<IEnumerable<BigQueryParameter>>(),
+                Arg.Any<QueryOptions>(),
+                null,
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromException<BigQueryResults>(new InvalidOperationException("count failed")));
+        sdk.ExecuteQueryAsync(
+                Arg.Is<string>(sql => !sql.Contains("out_of_range_keys", StringComparison.Ordinal)),
+                Arg.Any<IEnumerable<BigQueryParameter>>(),
+                Arg.Any<QueryOptions>(),
+                null,
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Results(sdk, null, RestRow("sku-1")));
+
+        var result = await FetchAsync(Client(sdk), TestContext.Current.CancellationToken);
+
+        result.Records.Select(record => record.SkuId).Should().Equal("sku-1");
+        result.OutOfRangeAffectedKeyCount.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetBillingRecordsAsync_when_the_count_query_is_cancelled_still_throws()
+    {
+        var sdk = Substitute.For<BigQueryClient>();
+        sdk.ExecuteQueryAsync(
+                Arg.Is<string>(sql => sql.Contains("out_of_range_keys", StringComparison.Ordinal)),
+                Arg.Any<IEnumerable<BigQueryParameter>>(),
+                Arg.Any<QueryOptions>(),
+                null,
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromException<BigQueryResults>(new OperationCanceledException()));
+
+        var act = () => FetchAsync(Client(sdk), TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     [Theory]
     [InlineData(" 02608")]
     [InlineData("2026+8")]
