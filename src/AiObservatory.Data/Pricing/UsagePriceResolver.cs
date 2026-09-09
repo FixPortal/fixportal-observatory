@@ -61,8 +61,9 @@ public sealed class UsagePriceResolver
             return null;
         }
 
-        // Newest covering snapshot first, but a refresh that retires this model must not make the
-        // event unpriceable: fall through to older retained snapshots until one produces a quote.
+        // The active snapshot comes first, but a refresh that retires this model must not make
+        // the event unpriceable: fall through to older retained snapshots until one produces a
+        // quote.
         foreach (var snapshot in snapshots)
         {
             var quote = calculator.Calculate(usage, snapshot.NormalizedCatalog);

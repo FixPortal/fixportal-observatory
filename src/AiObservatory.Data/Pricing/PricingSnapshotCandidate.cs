@@ -19,25 +19,51 @@ public sealed record PricingSnapshotCandidate(
 {
     /// <summary>
     /// Snapshot identity: the SHA-256 of the raw evidence AND the normalized catalog content,
-    /// excluding the catalog's retrieval stamp. Including the normalized content means a
-    /// normaliser fix that produces a corrected catalog from unchanged provider evidence still
-    /// counts as new content and is activated (and repriced from) instead of short-circuiting
-    /// as <see cref="PricingActivationResult.Unchanged"/>; excluding <c>retrievedAt</c> means a
-    /// re-fetch of unchanged evidence, which re-stamps the fetch time, still compares equal.
+    /// excluding fetch-derived stamps. Including the normalized content means a normaliser fix
+    /// that produces a corrected catalog from unchanged provider evidence still counts as new
+    /// content and is activated (and repriced from) instead of short-circuiting as
+    /// <see cref="PricingActivationResult.Unchanged"/>. The excluded stamps — the catalog's
+    /// <c>retrievedAt</c> and every entry's assumed (non-provider-declared) <c>effectiveFrom</c>,
+    /// which live sources set to the fetch date — change on every re-fetch of unchanged
+    /// evidence, so hashing them would activate a byte-identical duplicate snapshot (and run a
+    /// redundant full reprice) after every refresh. Provider-declared effective dates are real
+    /// content and stay hashed.
     /// </summary>
     public static string ComputeContentHash(string rawEvidence, string normalizedCatalog)
     {
-        var identity = rawEvidence + '\n' + WithoutRetrievalStamp(normalizedCatalog);
+        var identity = rawEvidence + '\n' + WithoutFetchStamps(normalizedCatalog);
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity)));
     }
 
-    private static string WithoutRetrievalStamp(string normalizedCatalog)
+    private static string WithoutFetchStamps(string normalizedCatalog)
     {
         try
         {
             var catalog = JsonNode.Parse(normalizedCatalog);
-            catalog?.AsObject().Remove("retrievedAt");
-            return catalog?.ToJsonString() ?? normalizedCatalog;
+            var root = catalog?.AsObject();
+            if (root is null)
+            {
+                return normalizedCatalog;
+            }
+
+            root.Remove("retrievedAt");
+            if (root["entries"] is JsonArray entries)
+            {
+                foreach (var entry in entries)
+                {
+                    if (
+                        entry is JsonObject entryObject
+                        && entryObject["effectiveDateIsProviderDeclared"] is JsonValue declared
+                        && declared.TryGetValue<bool>(out var isProviderDeclared)
+                        && !isProviderDeclared
+                    )
+                    {
+                        entryObject.Remove("effectiveFrom");
+                    }
+                }
+            }
+
+            return root.ToJsonString();
         }
         catch (JsonException)
         {

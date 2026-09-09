@@ -290,6 +290,54 @@ public sealed class PricingSnapshotStoreTests : IAsyncLifetime
         (await _store.GetActiveAsync(PricingSourceIds.OpenAi, ct))!.ContentHash.Should().Be(newOnly.ContentHash);
     }
 
+    [Fact]
+    public async Task GetCatalogForDatePricesPreCatalogHistoryFromTheEarliestAssumedSnapshot()
+    {
+        // Two live-refresh catalogs, each stamping its entries with the fetch date (assumed,
+        // not provider-declared). Usage predating both must price from the EARLIEST assumed
+        // window: the newest fetched rates did not exist yet at that usage date.
+        var ct = TestContext.Current.CancellationToken;
+        var august = Candidate("august catalog", 1m, new LocalDate(2026, 8, 24));
+        var september = Candidate(
+            "september catalog",
+            2m,
+            new LocalDate(2026, 9, 24),
+            retrievedAt: RetrievedAt.Plus(Duration.FromDays(31))
+        );
+        await _store.ActivateAsync(august, ct);
+        await _store.ActivateAsync(september, ct);
+
+        var july = await _store.GetCatalogForDateAsync(Provider.OpenAI, new LocalDate(2026, 7, 31), ct);
+
+        july!.ContentHash.Should().Be(august.ContentHash);
+        var catalog = JsonSerializer.Deserialize<OpenAiPriceCatalog>(july.NormalizedCatalog, JsonOptions)!;
+        catalog.Resolve("gpt-5.4", "standard", "short", "global", new LocalDate(2026, 7, 31))!.Input.Should().Be(1m);
+    }
+
+    [Fact]
+    public async Task GetCatalogForDateRestoresAReactivatedCatalogForEstimatedPricing()
+    {
+        // Reactivating an earlier catalog deliberately does not re-stamp RetrievedAt; ranking
+        // retrieval time above activation would keep the superseded newer catalog pricing
+        // everything, silently diverging from the reported activation state.
+        var ct = TestContext.Current.CancellationToken;
+        var first = Candidate("first document", 1m, new LocalDate(2026, 8, 1));
+        var second = Candidate(
+            "second document",
+            2m,
+            new LocalDate(2026, 9, 1),
+            retrievedAt: RetrievedAt.Plus(Duration.FromMinutes(1))
+        );
+        await _store.ActivateAsync(first, ct);
+        await _store.ActivateAsync(second, ct);
+        (await _store.ActivateAsync(first, ct)).Should().Be(PricingActivationResult.Activated);
+
+        var october = await _store.GetCatalogForDateAsync(Provider.OpenAI, new LocalDate(2026, 10, 15), ct);
+
+        october!.ContentHash.Should().Be(first.ContentHash);
+        (await _store.GetActiveAsync(PricingSourceIds.OpenAi, ct))!.ContentHash.Should().Be(first.ContentHash);
+    }
+
     [Theory]
     [InlineData("kimi-highSpeed")]
     [InlineData("google-contextThreshold")]
@@ -504,6 +552,29 @@ public sealed class PricingSnapshotStoreTests : IAsyncLifetime
         var snapshots = await _db.PricingSnapshots.AsNoTracking().ToListAsync(ct);
         snapshots.Should().HaveCount(2);
         snapshots.Single(x => x.IsActive).ContentHash.Should().Be(corrected.ContentHash);
+    }
+
+    [Fact]
+    public async Task ActivateTreatsARefetchThatOnlyRestampsFetchDerivedDatesAsUnchanged()
+    {
+        // A daily re-fetch of unchanged provider evidence re-stamps the catalog's retrievedAt
+        // and every assumed effectiveFrom with the new fetch date. Neither is content, so the
+        // refresh must compare equal instead of inserting a duplicate snapshot and repricing.
+        var ct = TestContext.Current.CancellationToken;
+        var original = Candidate("unchanged evidence", 1m, new LocalDate(2026, 8, 24));
+        (await _store.ActivateAsync(original, ct)).Should().Be(PricingActivationResult.Activated);
+        var refetched = Candidate(
+            "unchanged evidence",
+            1m,
+            new LocalDate(2026, 9, 24),
+            retrievedAt: RetrievedAt.Plus(Duration.FromDays(31))
+        );
+
+        (await _store.ActivateAsync(refetched, ct)).Should().Be(PricingActivationResult.Unchanged);
+
+        var stored = await _db.PricingSnapshots.AsNoTracking().SingleAsync(ct);
+        stored.ContentHash.Should().Be(original.ContentHash);
+        stored.RetrievedAt.Should().Be(original.RetrievedAt);
     }
 
     [Fact]

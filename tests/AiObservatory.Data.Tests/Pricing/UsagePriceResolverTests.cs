@@ -491,6 +491,77 @@ public sealed class UsagePriceResolverTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ResolverFallsThroughToAnOlderSnapshotForANotionalModelRetiredFromTheActiveCatalog()
+    {
+        // Notional events get the same retained-snapshot fall-through as dated pricing: the
+        // active catalog has dropped the model, so the older snapshot that still carries it
+        // prices the event instead of leaving it permanently unpriced.
+        var ct = TestContext.Current.CancellationToken;
+        await _store.ActivateAsync(Candidate(OpenAiCatalog()), ct);
+        var refreshed = new OpenAiPriceCatalog(
+            "USD",
+            "https://developers.openai.com/api/docs/pricing.md",
+            RetrievedAt.Plus(Duration.FromDays(1)),
+            [
+                new OpenAiPriceEntry(
+                    "gpt-6",
+                    ["gpt-6"],
+                    EffectiveFrom,
+                    false,
+                    "standard",
+                    "short",
+                    "global",
+                    4m,
+                    1m,
+                    20m,
+                    6m
+                ),
+            ]
+        );
+        await _store.ActivateAsync(Candidate(refreshed), ct);
+        var usage = Event(Provider.OpenAI, "gpt-5.4", "{}", costBasis: CostBasis.Notional);
+
+        var quote = await Resolver().ResolveAsync(usage, ct);
+
+        quote!.CostUsd.Should().Be(12m);
+    }
+
+    [Fact]
+    public async Task ResolverPricesNotionalUsageFromTheActiveSnapshotBeforeRetainedOnes()
+    {
+        // The active catalog prices notional usage; older retained snapshots are only a
+        // fall-through for models the active one can no longer price.
+        var ct = TestContext.Current.CancellationToken;
+        await _store.ActivateAsync(Candidate(OpenAiCatalog()), ct);
+        var refreshed = new OpenAiPriceCatalog(
+            "USD",
+            "https://developers.openai.com/api/docs/pricing.md",
+            RetrievedAt.Plus(Duration.FromDays(1)),
+            [
+                new OpenAiPriceEntry(
+                    "gpt-5.4",
+                    ["gpt-5.4"],
+                    EffectiveFrom,
+                    false,
+                    "standard",
+                    "short",
+                    "global",
+                    4m,
+                    1m,
+                    20m,
+                    6m
+                ),
+            ]
+        );
+        await _store.ActivateAsync(Candidate(refreshed), ct);
+        var usage = Event(Provider.OpenAI, "gpt-5.4", "{}", costBasis: CostBasis.Notional);
+
+        var quote = await Resolver().ResolveAsync(usage, ct);
+
+        quote!.CostUsd.Should().Be(24m);
+    }
+
+    [Fact]
     public void OpenAiCalculatorDefaultsToTheStandardPublicTierForSparseNotionalTelemetry()
     {
         var usage = Event(Provider.OpenAI, "gpt-5.4", "{}", costBasis: CostBasis.Notional);

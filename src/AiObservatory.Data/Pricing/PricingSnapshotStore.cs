@@ -176,10 +176,11 @@ public sealed class PricingSnapshotStore(AiObservatoryDbContext db)
     ) => FirstOrDefaultAsync(GetCoveringSnapshotsAsync(usage, snapshotsBySourceId, cancellationToken));
 
     /// <summary>
-    /// Every snapshot covering <paramref name="usage"/>'s date, newest retrieval first. Callers
-    /// resolving a price must walk the list until one actually prices the event's model: the
-    /// newest snapshot wins on date alone, but a catalog refresh that retires a model must fall
-    /// through to an older retained snapshot that still carries it, not return nothing.
+    /// Every snapshot covering <paramref name="usage"/>'s date, the active snapshot first and
+    /// then newest retrieval. Callers resolving a price must walk the list until one actually
+    /// prices the event's model: the first-listed snapshot wins on date alone, but a catalog
+    /// refresh that retires a model must fall through to an older retained snapshot that still
+    /// carries it, not return nothing.
     /// </summary>
     internal async Task<IReadOnlyList<PricingSnapshot>> GetCoveringSnapshotsAsync(
         UsageEvent usage,
@@ -187,16 +188,18 @@ public sealed class PricingSnapshotStore(AiObservatoryDbContext db)
         CancellationToken cancellationToken
     )
     {
-        if (usage.CostBasis == CostBasis.Notional)
-        {
-            var active = await GetActiveForUsageAsync(usage, cancellationToken);
-            return active is null ? [] : [active];
-        }
-
         var sourceId = GetSourceId(usage);
         if (sourceId is null)
         {
             return [];
+        }
+
+        // Notional events price from the active catalog rather than a dated window, but with
+        // the same retained-snapshot fall-through as dated pricing: a refresh that retires a
+        // model the local sweepers still report must not leave them permanently unpriced.
+        if (usage.CostBasis == CostBasis.Notional)
+        {
+            return await GetSnapshotsAsync(sourceId, snapshotsBySourceId, cancellationToken);
         }
 
         var snapshots = await GetSnapshotsAsync(sourceId, snapshotsBySourceId, cancellationToken);
@@ -204,18 +207,29 @@ public sealed class PricingSnapshotStore(AiObservatoryDbContext db)
         return CoveringSnapshots(snapshots, usageDate);
     }
 
-    // Strict date coverage first: the newest snapshot with a window genuinely spanning the
-    // usage date wins. Only when NO snapshot strictly covers the date — e.g. history predating
-    // the first bundled fetch — fall back to snapshots carrying assumed (non-provider-declared)
-    // effective dates, whose earliest window is treated as open-ended backwards (see
-    // EffectiveWindow). Keeping the fallback second preserves the retained-snapshot design: an
-    // older window in a superseded catalog still serves the dates it strictly covers.
+    // Strict date coverage first: the first-listed snapshot (active, then newest retrieval)
+    // with a window genuinely spanning the usage date wins. Only when NO snapshot strictly
+    // covers the date — e.g. history predating the first bundled fetch — fall back to
+    // snapshots carrying assumed (non-provider-declared) effective dates, whose earliest
+    // window is treated as open-ended backwards (see EffectiveWindow). Keeping the fallback
+    // second preserves the retained-snapshot design: an older window in a superseded catalog
+    // still serves the dates it strictly covers.
     private static List<PricingSnapshot> CoveringSnapshots(List<PricingSnapshot> snapshots, LocalDate usageDate)
     {
         var covering = snapshots.Where(snapshot => Covers(snapshot, usageDate)).ToList();
-        return covering.Count > 0
-            ? covering
-            : snapshots.Where(snapshot => CoverageOf(snapshot).HasAssumedEffectiveDate).ToList();
+        if (covering.Count > 0)
+        {
+            return covering;
+        }
+
+        // Live sources stamp assumed effective dates with the fetch date, so a fallback left
+        // in retrieval order would price history predating every catalog from the NEWEST
+        // fetched rates. The earliest assumed window reaches open-ended backwards, so the
+        // earliest-reaching snapshot is the best estimate for such dates.
+        return snapshots
+            .Where(snapshot => CoverageOf(snapshot).HasAssumedEffectiveDate)
+            .OrderBy(snapshot => CoverageOf(snapshot).EarliestEffectiveFrom)
+            .ToList();
     }
 
     private static SnapshotCoverage CoverageOf(PricingSnapshot snapshot) =>
@@ -225,12 +239,6 @@ public sealed class PricingSnapshotStore(AiObservatoryDbContext db)
     {
         var snapshots = await covering;
         return snapshots.Count == 0 ? null : snapshots[0];
-    }
-
-    private Task<PricingSnapshot?> GetActiveForUsageAsync(UsageEvent usage, CancellationToken cancellationToken)
-    {
-        var sourceId = GetSourceId(usage);
-        return sourceId is null ? Task.FromResult<PricingSnapshot?>(null) : GetActiveAsync(sourceId, cancellationToken);
     }
 
     private async Task<PricingSnapshot?> GetCatalogForDateAsync(
@@ -258,11 +266,15 @@ public sealed class PricingSnapshotStore(AiObservatoryDbContext db)
     {
         if (snapshotsBySourceId is null || !snapshotsBySourceId.TryGetValue(sourceId, out var snapshots))
         {
+            // Activation outranks retrieval time: reactivating a historic snapshot (the A -> B
+            // -> A path) deliberately does not re-stamp RetrievedAt, so a list ordered by
+            // retrieval alone would keep the superseded newer catalog outranking the
+            // reactivated one, and estimated pricing would ignore the activation.
             snapshots = await db
                 .PricingSnapshots.AsNoTracking()
                 .Where(candidate => candidate.SourceId == sourceId)
-                .OrderByDescending(candidate => candidate.RetrievedAt)
-                .ThenByDescending(candidate => candidate.IsActive)
+                .OrderByDescending(candidate => candidate.IsActive)
+                .ThenByDescending(candidate => candidate.RetrievedAt)
                 .ToListAsync(cancellationToken);
             snapshotsBySourceId?.Add(sourceId, snapshots);
         }
