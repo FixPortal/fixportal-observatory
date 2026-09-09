@@ -155,19 +155,35 @@ public class GitHubBillingSyncService(
         // guaranteed to balance. The constructed net always satisfies the invariant; when
         // GitHub's reported net disagrees, the divergence is logged and GitHub's own triple is
         // kept verbatim in RawPayload, so no information is lost either way.
-        var netAmount = line.GrossAmount - line.DiscountAmount;
-        if (netAmount != line.NetAmount)
+        var grossAmount = line.GrossAmount;
+        decimal netAmount;
+        if (grossAmount == 0m && line.NetAmount != 0m)
         {
-            logger.LogWarning(
-                "GitHub billing: {Product}/{Sku} in {Month} reports net {ReportedNet} but gross {GrossAmount} minus discount {DiscountAmount} is {ConstructedNet}; retaining the constructed figure (GitHub's triple stays in RawPayload)",
-                line.Product,
-                line.Sku,
-                line.Month,
-                line.NetAmount,
-                line.GrossAmount,
-                line.DiscountAmount,
-                netAmount
-            );
+            // GitHub omitted grossAmount/discountAmount on every item of this line, so they
+            // summed to 0m while the reported net stayed positive. Constructing net =
+            // gross - discount would zero a real spend, and the writer treats a zero net as
+            // "no spend" — deleting any existing spend row for the key. Take GitHub's
+            // reported net as truth and reconstruct the gross around it so the invariant
+            // still holds with the discount preserved.
+            netAmount = line.NetAmount;
+            grossAmount = line.NetAmount + line.DiscountAmount;
+        }
+        else
+        {
+            netAmount = grossAmount - line.DiscountAmount;
+            if (netAmount != line.NetAmount)
+            {
+                logger.LogWarning(
+                    "GitHub billing: {Product}/{Sku} in {Month} reports net {ReportedNet} but gross {GrossAmount} minus discount {DiscountAmount} is {ConstructedNet}; retaining the constructed figure (GitHub's triple stays in RawPayload)",
+                    line.Product,
+                    line.Sku,
+                    line.Month,
+                    line.NetAmount,
+                    line.GrossAmount,
+                    line.DiscountAmount,
+                    netAmount
+                );
+            }
         }
 
         return new()
@@ -183,7 +199,7 @@ public class GitHubBillingSyncService(
             Service = line.Product,
             Sku = line.Sku,
             Currency = Currency,
-            GrossAmount = line.GrossAmount,
+            GrossAmount = grossAmount,
             // The ledger's invariant is Gross + Credit = Net (same as the Google arm), and
             // GitHub's discountAmount is positive, so it lands as a negative credit.
             CreditAmount = -line.DiscountAmount,
