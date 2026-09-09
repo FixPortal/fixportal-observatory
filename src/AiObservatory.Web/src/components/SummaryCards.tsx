@@ -25,7 +25,7 @@ function tokensCardValue(loading: boolean, hasAggregates: boolean, totalTokens: 
 export default function SummaryCards() {
   const range = useMemo(() => dashboardDateRange(), [])
   const { aggregates, isLoading: aggregatesLoading } = useAggregates(range.from, range.to)
-  const { report: billedReporting, isLoading: billedLoading } = useBilledReporting(range.from, range.to)
+  const { report: billedReporting, isLoading: billedLoading, isError: billedError } = useBilledReporting(range.from, range.to)
   const { insights, isLoading: insightsLoading } = useInsights()
   const rate = useUsdToGbp()
   const summary = summarizeCosts(aggregates, [])
@@ -51,7 +51,10 @@ export default function SummaryCards() {
             <p>This uses the same rolling {AGGREGATES_DAYS_RANGE}-day window as every financial lane.</p>
           </InfoPopover>
         </div>
-        <div className="card-value card-value--lead">{moneyCardValue(billedLoading, billedGbp, 1)}</div>
+        <div className="card-value card-value--lead">
+          {billedError ? 'Unavailable' : moneyCardValue(billedLoading, billedGbp, 1)}
+        </div>
+        {billedError && <div className="card-sub">Couldn’t load billed spend — try refreshing</div>}
       </Card>
       <Card>
         <div className="card-label card-label--row">

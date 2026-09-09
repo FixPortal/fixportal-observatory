@@ -77,7 +77,17 @@ const statusPresentation: Record<string, { variant: 'ok' | 'warn' | 'bad' | 'inf
 
 export default function SourceStatusPanel() {
   const { statuses, isError, isLoading } = useSourceStatuses()
-  if (isError) return null
+  // A failed fetch must not vanish the panel: it is the only visible surface for
+  // /source-statuses, so render the collapsed shell with the failure inline.
+  if (isError) {
+    return (
+      <div className="collapsible-panel-zone source-status-zone">
+        <CollapsiblePanel id="data-sources" title="Data sources" summary="Couldn’t load collection status">
+          <p className="source-status__intro">Couldn’t load collection status — try refreshing.</p>
+        </CollapsiblePanel>
+      </div>
+    )
+  }
   const rows = mergeSourceStatuses(statuses)
   const reporting = rows.filter(row => row.status === 'fresh').length
   const notConnected = rows.filter(row => row.status === 'notConfigured').length

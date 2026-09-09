@@ -10,13 +10,14 @@ const data = vi.hoisted(() => ({
   insightsLoading: false,
   billedReporting: null as BilledReporting | null,
   billedLoading: false,
+  billedError: false,
 }))
 
 vi.mock('../api/queries', () => ({
   AGGREGATES_DAYS_RANGE: 31,
   useAggregates: () => ({ aggregates: data.aggregates, isError: false, isLoading: data.aggregatesLoading }),
   useInsights: () => ({ insights: data.insights, isError: false, isLoading: data.insightsLoading }),
-  useBilledReporting: () => ({ report: data.billedReporting ?? undefined, isLoading: data.billedLoading, isError: false }),
+  useBilledReporting: () => ({ report: data.billedReporting ?? undefined, isLoading: data.billedLoading, isError: data.billedError }),
   dashboardDateRange: () => ({ from: new Date('2026-08-01T12:00:00'), to: new Date('2026-08-31T12:00:00') }),
 }))
 
@@ -51,6 +52,7 @@ beforeEach(() => {
   data.aggregatesLoading = false
   data.insightsLoading = false
   data.billedLoading = false
+  data.billedError = false
 })
 
 describe('SummaryCards loading state', () => {
@@ -73,6 +75,19 @@ describe('SummaryCards loading state', () => {
 
     const card = screen.getByText('Billed spend · 31 days').closest('.fpds-card')
     expect(card).toHaveTextContent('…')
+    expect(card).not.toHaveTextContent('Not reported')
+  })
+
+  test('shows an unavailable state on the Billed spend card when reporting fails, not "Not reported"', () => {
+    // A fetch failure must not render as a factual claim of data absence on the
+    // lead financial card — nothing else on Overview signals the outage.
+    data.billedReporting = null
+    data.billedError = true
+    render(<SummaryCards />)
+
+    const card = screen.getByText('Billed spend · 31 days').closest('.fpds-card')
+    expect(card).toHaveTextContent('Unavailable')
+    expect(card).toHaveTextContent('Couldn’t load billed spend')
     expect(card).not.toHaveTextContent('Not reported')
   })
 })

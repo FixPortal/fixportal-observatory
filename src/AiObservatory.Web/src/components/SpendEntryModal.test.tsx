@@ -143,6 +143,44 @@ describe('SpendEntryModal', () => {
     expect(screen.getByLabelText(/category/i)).toHaveValue('c1')
   })
 
+  const twoCategories = [
+    categories[0],
+    { id: 'c2', key: 'subscription', displayName: 'Subscription', colorVar: '--c', sortOrder: 2, archivedAt: null },
+  ]
+  const twoVendors = [
+    vendors[0],
+    { id: 'v2', key: 'openai', displayName: 'OpenAI', provider: 'openai', defaultCategoryId: 'archived-cat', archivedAt: null },
+  ]
+
+  function renderTwoVendorModal(vendorList = twoVendors) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={qc}>
+        <SpendEntryModal categories={twoCategories} vendors={vendorList} from={from} to={to} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    )
+  }
+
+  it('keeps the chosen category when the new vendor’s default is archived', () => {
+    // Mid-form the first-live-category fallback is wrong: switching to a vendor whose
+    // default is archived must not clobber the category the user already picked.
+    renderTwoVendorModal()
+
+    fireEvent.change(screen.getByLabelText(/category/i), { target: { value: 'c2' } })
+    fireEvent.change(screen.getByLabelText(/vendor/i), { target: { value: 'v2' } })
+
+    expect(screen.getByLabelText(/category/i)).toHaveValue('c2')
+  })
+
+  it('applies the new vendor’s default on vendor change when it is live', () => {
+    renderTwoVendorModal(twoVendors.map(v => v.id === 'v2' ? { ...v, defaultCategoryId: 'c2' } : v))
+
+    expect(screen.getByLabelText(/category/i)).toHaveValue('c1')
+    fireEvent.change(screen.getByLabelText(/vendor/i), { target: { value: 'v2' } })
+
+    expect(screen.getByLabelText(/category/i)).toHaveValue('c2')
+  })
+
   it('surfaces a rejected verdict instead of closing', async () => {
     vi.spyOn(client, 'postSpendEntries')
       .mockResolvedValue([{ id: null, status: 'rejected', reason: 'Unknown VendorId' }])
