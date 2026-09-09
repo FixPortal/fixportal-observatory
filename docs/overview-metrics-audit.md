@@ -1,6 +1,6 @@
 # Overview metrics audit
 
-This is the canonical definition and reconciliation record for the Overview cards. Update it when a card's calculation, source authority, or audit result changes. Never include credentials or private raw payloads.
+This is the canonical definition and reconciliation record for the Overview cards. Update it when a card's calculation, source authority, or audit result changes. Never include credentials, private raw payloads, or personal financial figures.
 
 ## Billed spend
 
@@ -36,60 +36,53 @@ For the dates displayed by the card:
    - the sum of `categorySeries.amountGbp`.
 4. Group raw rows by `sourceId`, vendor, category, currency, and entry-key identity. Arithmetic agreement proves only internal consistency; it does not prove that two rows are not the same supplier charge.
 5. Reconcile each acquisition lane to its authority:
-   - `portal`: matching Tax Portal expense IDs and the feed's VAT basis;
+   - custom or private feeds: the feed's own source records and basis;
    - `github-billing-api`: GitHub enhanced billing usage, using net amounts;
    - other provider sources: their retained `BillingObservation` identities and upstream billed export or API.
 6. Record unresolved overlaps, freshness differences, missing source access, and whether supplier invoices or receipts were inspected.
 
 ### Audit — 2026-08-28
 
-Window: **2026-07-29 through 2026-08-28**, inclusive.
+Window: **2026-07-29 through 2026-08-28**, inclusive. This audit ran against a private deployment; amounts are withheld as personal financial figures, and the record keeps the shape of the finding rather than the numbers.
 
-The card displayed **£1,133.87** from 25 ledger rows. Its unrounded value, raw-row sum, daily-series sum, and vendor-series sum all agreed at **£1,133.8723** with a zero arithmetic delta.
+The card's displayed total, its unrounded value, raw-row sum, daily-series sum, and vendor-series sum all agreed exactly, with a zero arithmetic delta — internally consistent, but financially overstated.
 
 Source composition:
 
-| Source | Rows | GBP | Reconciliation |
-| --- | ---: | ---: | --- |
-| Tax Portal expenses | 8 | 810.6400 | All eight expense IDs matched the Tax Portal source amounts and VAT basis. |
-| Canonical GitHub provider observations | 9 | 166.1696 | Matched the retained provider-feed snapshot. |
-| Migrated legacy GitHub snapshots | 8 | 157.0627 | Every row had a canonical counterpart and was counted a second time. |
-| **Displayed total** | **25** | **1,133.8723** | Arithmetically consistent but financially overstated. |
+| Source | Rows | Reconciliation |
+| --- | ---: | --- |
+| A private expense feed | 8 | Every entry matched the feed's source records and basis. |
+| Canonical GitHub provider observations | 9 | Matched the retained provider-feed snapshot. |
+| Migrated legacy GitHub snapshots | 8 | Every row had a canonical counterpart and was counted a second time. |
+| **Displayed total** | **25** | Arithmetically consistent but financially overstated. |
 
-The internally corrected value at the same Observatory snapshot was **£976.8096**, displayed as **£976.81**. A direct GitHub API check later in the audit had advanced by £0.0638 at the same stored FX rate, producing a then-current comparison of **£976.8734**; that difference was source freshness, not another ledger discrepancy.
+The internally corrected value at the same Observatory snapshot was roughly a sixth lower. A direct GitHub API check later in the audit had advanced slightly at the same stored FX rate; that difference was source freshness, not another ledger discrepancy.
 
 The duplicate lineage was:
 
 1. The original GitHub billing sync wrote deterministic `github:<month>:<product>:<sku>` API ledger rows.
 2. `20260824172007_AddObservationProvenance` conservatively labelled every pre-existing spend row `legacy-spend` rather than guessing its origin.
 3. The retained-observation writer introduced canonical `github-billing-api` rows but originally adopted an old key only when its row already carried the new source ID. The migrated production rows therefore did not match and new rows were inserted.
-4. Production held 18 legacy GitHub rows from May through August, totalling £451.6050. All 18 had canonical counterparts; no unpaired legacy GitHub row was found. Closed months May, June, and July matched their canonical counterparts exactly. August's stale snapshots differed because the canonical month continued accruing.
+4. Production held 18 legacy GitHub rows from May through August. All 18 had canonical counterparts; no unpaired legacy GitHub row was found. Closed months May, June, and July matched their canonical counterparts exactly. August's stale snapshots differed because the canonical month continued accruing.
 
 Remediation:
 
 - [`20260828082356_RemovePairedLegacyGitHubSpend.cs`](../src/AiObservatory.Data/Migrations/20260828082356_RemovePairedLegacyGitHubSpend.cs) deletes only API/`legacy-spend` GitHub rows whose canonical `github-billing-api` counterpart exists.
 - [`BillingObservationWriter.cs`](../src/AiObservatory.Data/Spend/BillingObservationWriter.cs) adopts an unpaired migrated GitHub row on first retained observation, preventing recurrence when an older database is upgraded.
-- Portal and genuinely unpaired legacy spend are retained.
-- This audit reconciled the Observatory to Tax Portal source records and GitHub's billing API. It did not independently inspect every supplier invoice or receipt.
+- Custom feed and genuinely unpaired legacy spend are retained.
+- This audit reconciled the Observatory to the private feed's source records and GitHub's billing API. It did not independently inspect every supplier invoice or receipt.
 
 ### Post-remediation verification — 2026-08-28
 
-After the duplicate-removal migration deployed, the same inclusive window contained **17 rows totalling £976.9121**, displayed as **£976.91**:
+After the duplicate-removal migration deployed, the same inclusive window contained **17 rows**: 8 from the private expense feed, 9 canonical GitHub provider observations, and zero migrated legacy GitHub rows.
 
-| Source | Rows | GBP |
-| --- | ---: | ---: |
-| Tax Portal expenses | 8 | 810.6400 |
-| Canonical GitHub provider observations | 9 | 166.2721 |
-| Migrated legacy GitHub snapshots | 0 | 0.0000 |
-| **Reconciled total** | **17** | **976.9121** |
-
-The raw ledger sum, `reporting.totalGbp`, daily series, and vendor series all agreed at £976.9121. The small movement from figures recorded earlier in the audit was additional canonical GitHub source activity, not reintroduced legacy duplication.
+The raw ledger sum, `reporting.totalGbp`, daily series, and vendor series all agreed exactly. The small movement from figures recorded earlier in the audit was additional canonical GitHub source activity, not reintroduced legacy duplication.
 
 ## Spend page relationship
 
 Spend is the ledger drill-down for Overview. Its default unfiltered date range is therefore the same rolling 31-calendar-day inclusive window as `Billed spend`; for the same mounted end date, its entry count and total must reconcile exactly with the Overview card.
 
-Before 2026-08-28, Spend silently used a separate 90-day window. On that date it showed 54 rows totalling £4,358.0181 for 2026-05-30 through 2026-08-28, while the Overview window contained 17 rows totalling £976.9121. The additional £3,381.1060 across 37 rows was valid older spend, not an arithmetic discrepancy. Spend now takes its default from the shared `dashboardDateRange` and displays its dates explicitly.
+Before 2026-08-28, Spend silently used a separate 90-day window. On that date it showed 54 rows for 2026-05-30 through 2026-08-28, while the Overview window contained 17 rows. The additional 37 rows were valid older spend, not an arithmetic discrepancy. Spend now takes its default from the shared `dashboardDateRange` and displays its dates explicitly.
 
 ### Spend range and comparison semantics
 
@@ -106,7 +99,7 @@ Catalog semantics:
 
 - A **vendor** is the supplier identity used for ledger grouping, not a distinct billing lane or purchase type.
 - A **category** describes what was purchased and sits on each entry. One vendor can span several categories.
-- Anthropic therefore appears once in the vendor catalog even when its entries include both Subscription and Credits. In the 90-day audit above, its seven rows comprised four Credits entries (£718.28) and three Subscription entries (£450.00).
+- A vendor therefore appears once in the vendor catalog even when its entries span several categories — the 90-day audit above included a single AI vendor whose rows comprised both Credits and Subscription entries.
 - `SpendVendor.Provider` is only an optional link to a token-metered provider; it does not split the supplier into separate vendors.
 - `SpendCategory.ColorVar` is an internal compatibility field retained by the API/data model. The current Spend UI does not consume it, so catalog users are not asked to enter CSS variables.
 - Renames and default-category edits require an explicit row-level Save; Cancel restores the persisted value without writing. Archive/unarchive remains an explicit reversible action.

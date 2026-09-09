@@ -27,9 +27,9 @@ Restore uses public feeds; no GitHub Packages token is required.
 docker compose up --build
 ```
 
-This starts PostgreSQL, the API, provider/pricing ingest, and the frontend at [http://localhost:4173](http://localhost:4173). The compose seed populates synthetic sample data; it is labelled `demo-seed` and is not a representation of provider billing. Optional GitHub billing uses `GITHUB_TOKEN` plus `GITHUB_BILLING_ORG`; the token needs the broader access listed in [provider setup](docs/provider-setup.md#non-provider-sources).
+This starts PostgreSQL, the API, provider/pricing ingest, and the frontend at [http://localhost:4173](http://localhost:4173). The compose seed populates synthetic sample data; it is labelled `demo-seed` and is not a representation of provider billing. Optional GitHub billing uses `GITHUB_TOKEN` plus `GITHUB_BILLING_ORG`; the token needs the broader access listed in [provider setup](docs/provider-setup.md#compatibility-github-and-manual-sources).
 
-For a manual run, install .NET SDK 10, Node `^22.22.2`, `^24.15.0`, or `>=26.0.0`, and PostgreSQL 16. The commands below reuse the Compose database and its local development credentials:
+For a manual run, install .NET SDK 10, Node `^22.22.2`, `^24.15.0`, or `>=26.0.0`, and PostgreSQL 16. The sweeper client needs Node 24 or later; see [Local producers](clients/README.md). The commands below reuse the Compose database and its local development credentials:
 
 ```powershell
 docker compose up -d --wait db
@@ -112,6 +112,14 @@ Requests use `X-Observatory-Key` when API keys are configured. The most useful e
 | `GET` | `/api/insights` | Generated insights |
 
 Import the [Postman collection](docs/observatory.postman_collection.json), set `base_url` and `api_key`, and use its source-aware event examples. It is a representative collection, not an exhaustive API specification.
+
+## Bringing your own data
+
+Observatory accepts private evidence through three supported paths, none of which requires publishing anything to this repository:
+
+- **Usage events.** `POST /api/events` accepts a provenance-labelled snapshot (`sourceId`, `sourceKind`, `usageScope`, `costBasis`); the [Postman collection](docs/observatory.postman_collection.json) carries source-aware examples. Events are source-scoped, so re-posting a corrected snapshot replaces its previous contribution.
+- **Spend entries.** The Spend page records manual ledger entries under the `manual-ledger` source; they behave like provider-billed rows in every total and reconciliation.
+- **A private adapter.** For recurring feeds — a custom expense source, an internal billing export — [adding a provider](docs/adding-a-provider.md) describes the compile-time adapter seam. An adapter can live in your own fork or deployment; it never needs to be upstreamed.
 
 ## Contributing
 
