@@ -174,24 +174,34 @@ public sealed class FirstPartyDocumentFetcherTests
     [Fact]
     public async Task FetchAppliesTheLinkedTimeoutToABlockedHandler()
     {
+        // Deterministic: the manual timer fires the linked timeout only after the handler is
+        // genuinely blocked on it — no short real delay whose scheduling could outrace the
+        // assertion on a loaded machine. The 30s request timeout never elapses in real time,
+        // so an unwired seam hangs the fetch until the WaitAsync bound fails the test.
+        var timeProvider = new ManualTimeProvider();
+        var handlerBlocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var fetcher = new FirstPartyDocumentFetcher(
             Source,
             ["docs.example.test"],
             new RecordingHandler(
                 async (_, token) =>
                 {
+                    handlerBlocked.TrySetResult();
                     await Task.Delay(Timeout.InfiniteTimeSpan, token);
                     return Response(HttpStatusCode.OK, "unreachable");
                 }
             ),
-            TimeSpan.FromMilliseconds(20)
+            TimeSpan.FromSeconds(30),
+            timeProvider
         );
-        var started = TimeProvider.System.GetTimestamp();
 
-        var act = () => fetcher.FetchAsync(TestContext.Current.CancellationToken);
+        var fetch = fetcher.FetchAsync(TestContext.Current.CancellationToken);
+        await handlerBlocked.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        timeProvider.FireTimers();
+
+        var act = () => fetch.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
-        TimeProvider.System.GetElapsedTime(started).Should().BeLessThan(TimeSpan.FromSeconds(1));
     }
 
     [Fact]
@@ -254,6 +264,41 @@ public sealed class FirstPartyDocumentFetcherTests
         {
             Requests.Add(request.RequestUri!);
             return _response(request, cancellationToken);
+        }
+    }
+
+    // A TimeProvider whose timers never fire on their own: Change records nothing, so the
+    // only way a CancelAfter cancellation happens is the test calling FireTimers. That turns
+    // "the linked timeout interrupted a blocked request" into a synchronised sequence instead
+    // of a race against a short real delay.
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private readonly List<ManualTimer> _timers = [];
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = new ManualTimer(callback, state);
+            _timers.Add(timer);
+            return timer;
+        }
+
+        public void FireTimers()
+        {
+            foreach (var timer in _timers)
+            {
+                timer.Fire();
+            }
+        }
+
+        private sealed class ManualTimer(TimerCallback callback, object? state) : ITimer
+        {
+            public bool Change(TimeSpan dueTime, TimeSpan period) => true;
+
+            public void Fire() => callback(state);
+
+            public void Dispose() { }
+
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }
     }
 }

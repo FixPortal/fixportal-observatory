@@ -135,8 +135,13 @@ public class BudgetAlertServiceTests
     }
 
     [Fact]
-    public async Task CheckAndAlert_rescans_a_daily_rule_only_from_the_grace_window_behind_its_last_trigger()
+    public async Task CheckAndAlert_rescans_a_daily_rule_from_its_evaluation_boundary_even_after_triggering()
     {
+        // M15: LastTriggeredAt is a claim-creation stamp, not a scanned-dates watermark.
+        // Spend lands behind any earlier day — a backdated manual entry, or GitHub billing
+        // rows pinned to the month start and re-upserted with a rising amount all month — so
+        // the rescan must cover the rule's whole lifetime, not a trailing window behind the
+        // last trigger (which used to drop those days forever).
         var rule = Rule(
             BillingPeriod.Daily,
             lastTriggeredAt: Instant.FromUtc(2026, 5, 20, 8, 0),
@@ -147,14 +152,34 @@ public class BudgetAlertServiceTests
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
-        // Days at or before the last trigger already have their claim; the rescan lower-bounds
-        // at a 7-day grace window behind that watermark instead of the rule's whole lifetime.
         await _repo
             .Received(1)
             .GetDailyBilledSpendGbpAsync(
-                new LocalDate(2026, 5, 13),
+                new LocalDate(2026, 4, 1),
                 new LocalDate(2026, 6, 1),
                 null,
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task CheckAndAlert_bounds_the_delivery_set_by_lease_expiry_and_claim_age()
+    {
+        var rule = Rule(BillingPeriod.Daily);
+        StubRules(rule);
+        StubBilledSpend(rule, 0m);
+
+        await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
+
+        // The age floor keeps an undeliverable claim from being re-leased and re-warned on
+        // every pass forever (M17): the FakeClock never advances, so both bounds derive from
+        // the same fixed "now".
+        var now = _clock.GetCurrentInstant();
+        await _repo
+            .Received(1)
+            .GetDeliverableBudgetAlertEmailsAsync(
+                now.Minus(Duration.FromMinutes(15)),
+                now.Minus(Duration.FromDays(30)),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -209,7 +234,9 @@ public class BudgetAlertServiceTests
             15m,
             Instant.FromUtc(2026, 6, 2, 0, 1)
         );
-        _repo.GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<CancellationToken>()).Returns([email]);
+        _repo
+            .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
+            .Returns([email]);
         _repo
             .TryAcquireBudgetAlertEmailLeaseAsync(
                 claimId,
@@ -268,6 +295,9 @@ public class BudgetAlertServiceTests
     [InlineData(null, "alerts@ ", null, "observatory.local")]
     // No '@' at all is not an address, so there is nothing to derive.
     [InlineData(null, "not-an-address", null, "observatory.local")]
+    // A display-name sender must contribute only its domain: slicing from the last '@' kept
+    // the closing angle bracket and stamped "budget-alert-{id}@example.com>" on the Message-Id.
+    [InlineData(null, "Alerts <alerts@example.com>", null, "example.com")]
     public async Task CheckAndAlert_DerivesTheMessageIdDomainFromConfiguration(
         string? explicitDomain,
         string? sender,
@@ -287,7 +317,9 @@ public class BudgetAlertServiceTests
             15m,
             Instant.FromUtc(2026, 6, 2, 0, 1)
         );
-        _repo.GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<CancellationToken>()).Returns([email]);
+        _repo
+            .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
+            .Returns([email]);
         _repo
             .TryAcquireBudgetAlertEmailLeaseAsync(
                 claimId,
@@ -336,7 +368,7 @@ public class BudgetAlertServiceTests
         var rule = Rule(BillingPeriod.Weekly, lastTriggeredAt: Instant.FromUtc(2026, 6, 1, 8, 0));
         StubRules(rule);
         _repo
-            .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<CancellationToken>())
+            .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
             .Returns([
                 new BudgetAlertEmail(
                     claimId,
@@ -407,7 +439,7 @@ public class BudgetAlertServiceTests
             );
 
         _repo
-            .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<CancellationToken>())
+            .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
             .Returns([Email(firstClaimId), Email(secondClaimId)]);
         var acquisitions = new List<(Guid ClaimId, Instant AcquiredAt, Instant LeaseExpiredBefore)>();
         _repo
@@ -519,7 +551,7 @@ public class BudgetAlertServiceTests
                 );
             });
         _repo
-            .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<CancellationToken>())
+            .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
                 pending
                     .Values.Where(email => !sent.Contains(email.ClaimId))
@@ -704,6 +736,7 @@ public class BudgetAlertServiceTests
     [Theory]
     [InlineData(AlertDeliveryResult.NoRecipientConfigured)]
     [InlineData(AlertDeliveryResult.Failed)]
+    [InlineData(AlertDeliveryResult.PermanentlyRejected)]
     public async Task CheckAndAlert_does_not_mark_sent_and_releases_the_lease_when_no_channel_delivered(
         AlertDeliveryResult outcome
     )
@@ -713,7 +746,7 @@ public class BudgetAlertServiceTests
         StubRules(rule);
         StubBilledSpend(rule, 0m);
         _repo
-            .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<CancellationToken>())
+            .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
             .Returns([
                 new BudgetAlertEmail(
                     claimId,
@@ -763,7 +796,7 @@ public class BudgetAlertServiceTests
         StubRules(rule);
         StubBilledSpend(rule, 0m);
         _repo
-            .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<CancellationToken>())
+            .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
             .Returns([
                 new BudgetAlertEmail(
                     claimId,
@@ -928,7 +961,7 @@ public class BudgetAlertServiceTests
                 );
             });
         _repo
-            .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<CancellationToken>())
+            .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
             .Returns(_ => pending is null ? [] : [pending]);
         _repo
             .TryAcquireBudgetAlertEmailLeaseAsync(

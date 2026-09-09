@@ -4,6 +4,10 @@ using AwesomeAssertions;
 
 namespace AiObservatory.Data.Tests.Security;
 
+// Shares the process-wide SLACK_WEBHOOK_PROTECTION_KEY with the repository tests: this class
+// asserts no-key behaviour while a sibling sets the variable, so both are serialised into one
+// non-parallel collection (see NotificationSettingsRepositoryTests).
+[Collection("SlackWebhookProtectionKey")]
 public class SlackWebhookProtectorTests
 {
     private const string WebhookUrl = "https://hooks.slack.com/services/T0/B0/xyz";
@@ -72,15 +76,52 @@ public class SlackWebhookProtectorTests
     }
 
     [Fact]
-    public void UnprotectValue_throws_for_encrypted_value_when_no_key_is_configured()
+    public void UnprotectValue_returns_the_sentinel_for_an_encrypted_value_when_no_key_is_configured()
     {
         // The test host never sets SLACK_WEBHOOK_PROTECTION_KEY (integration tests rely on
-        // the no-key pass-through), so the facade must refuse an encrypted value loudly
-        // rather than hand a corrupt URL to the notifier.
+        // the no-key pass-through). The facade runs inside EF materialisation, where a throw
+        // would make the whole NotificationSettings row unreadable and take email alerting
+        // down with Slack -- so the read path degrades to a sentinel, and the loud failure
+        // belongs to the Slack notifier that actually needs the plaintext.
         Environment.GetEnvironmentVariable(SlackWebhookProtector.KeyEnvironmentVariable).Should().BeNull();
 
-        var act = () => SlackWebhookProtector.UnprotectValue(SlackWebhookProtector.EncryptedPrefix + "AAAA");
+        SlackWebhookProtector
+            .UnprotectValue(SlackWebhookProtector.EncryptedPrefix + "AAAA")
+            .Should()
+            .Be(SlackWebhookProtector.UndecryptableSentinel);
+    }
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*SLACK_WEBHOOK_PROTECTION_KEY*");
+    [Fact]
+    public void UnprotectValue_passes_plaintext_through_when_no_key_is_configured()
+    {
+        Environment.GetEnvironmentVariable(SlackWebhookProtector.KeyEnvironmentVariable).Should().BeNull();
+
+        SlackWebhookProtector.UnprotectValue(WebhookUrl).Should().Be(WebhookUrl);
+    }
+
+    [Fact]
+    public void UnprotectValue_returns_the_sentinel_under_a_rotated_key()
+    {
+        // A key that no longer matches the one a value was encrypted under degrades exactly
+        // like a missing key -- the row must still materialise.
+        var stored = new SlackWebhookProtector("original-passphrase").Protect(WebhookUrl);
+        Environment.SetEnvironmentVariable(SlackWebhookProtector.KeyEnvironmentVariable, "rotated-passphrase");
+        try
+        {
+            SlackWebhookProtector.UnprotectValue(stored).Should().Be(SlackWebhookProtector.UndecryptableSentinel);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(SlackWebhookProtector.KeyEnvironmentVariable, null);
+        }
+    }
+
+    [Theory]
+    [InlineData(SlackWebhookProtector.UndecryptableSentinel, true)]
+    [InlineData(WebhookUrl, false)]
+    [InlineData(null, false)]
+    public void IsUndecryptable_identifies_only_the_sentinel(string? value, bool expected)
+    {
+        SlackWebhookProtector.IsUndecryptable(value).Should().Be(expected);
     }
 }

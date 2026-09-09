@@ -20,6 +20,7 @@ public sealed class FirstPartyDocumentFetcher : IDisposable
     private readonly bool _ownsClient;
     private readonly TimeSpan _requestTimeout;
     private readonly Uri _source;
+    private readonly TimeProvider _timeProvider;
 
     public FirstPartyDocumentFetcher(HttpClient client, Uri source, IEnumerable<string> allowedHosts)
     {
@@ -27,13 +28,15 @@ public sealed class FirstPartyDocumentFetcher : IDisposable
         (_allowedHosts, _source, _requestTimeout) = Validate(source, allowedHosts, null);
         _client = client;
         _client.Timeout = Timeout.InfiniteTimeSpan;
+        _timeProvider = TimeProvider.System;
     }
 
     internal FirstPartyDocumentFetcher(
         Uri source,
         IEnumerable<string> allowedHosts,
         HttpMessageHandler? handler,
-        TimeSpan? requestTimeout = null
+        TimeSpan? requestTimeout = null,
+        TimeProvider? timeProvider = null
     )
     {
         (_allowedHosts, _source, _requestTimeout) = Validate(source, allowedHosts, requestTimeout);
@@ -42,6 +45,7 @@ public sealed class FirstPartyDocumentFetcher : IDisposable
             Timeout = Timeout.InfiniteTimeSpan,
         };
         _ownsClient = true;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public void Dispose()
@@ -54,8 +58,13 @@ public sealed class FirstPartyDocumentFetcher : IDisposable
 
     public async Task<FirstPartyDocument> FetchAsync(CancellationToken cancellationToken)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(_requestTimeout);
+        // The TimeProvider seam keeps the timeout testable: production runs on the system
+        // clock; tests fire the timer manually instead of racing a real short delay.
+        using var timeout = new CancellationTokenSource(_requestTimeout, _timeProvider);
+        using var caller = cancellationToken.Register(
+            static state => ((CancellationTokenSource)state!).Cancel(),
+            timeout
+        );
         var current = _source;
         var redirects = 0;
 

@@ -12,12 +12,22 @@ namespace AiObservatory.Data.Security;
 /// in infra config rather than the database. When the variable is unset the value passes
 /// through unchanged, so existing self-hosted deployments keep working until they opt in by
 /// setting it; values written before then stay readable because <see cref="Unprotect"/> returns
-/// anything without the <see cref="EncryptedPrefix"/> marker as-is.
+/// anything without the <see cref="EncryptedPrefix"/> marker as-is. An encrypted value that can
+/// no longer be decrypted (the key unset, or rotated away from the one the value was encrypted
+/// with) reads back as <see cref="UndecryptableSentinel"/> rather than throwing inside EF
+/// materialisation -- see <see cref="UnprotectValue"/>.
 /// </summary>
 public sealed class SlackWebhookProtector
 {
     public const string KeyEnvironmentVariable = "SLACK_WEBHOOK_PROTECTION_KEY";
     public const string EncryptedPrefix = "enc:v1:";
+
+    /// <summary>
+    /// Read-path marker for a stored value that cannot be decrypted. Never a valid webhook URL
+    /// (the API requires an https://hooks.slack.com/ shape), so it cannot be confused with a
+    /// real -- or a corrupt -- URL to post to; the Slack notifier refuses it loudly.
+    /// </summary>
+    public const string UndecryptableSentinel = "<undecryptable>";
 
     private const int NonceSize = 12;
     private const int TagSize = 16;
@@ -89,6 +99,17 @@ public sealed class SlackWebhookProtector
         return FromEnvironment()?.Protect(value) ?? value;
     }
 
+    /// <summary>
+    /// Read side of the value converter, so it runs INSIDE EF materialisation and must not
+    /// throw for an undecryptable value: a throw there fails the whole NotificationSettings
+    /// row read, taking every reader down with it (the settings GET, the PUT that loads the
+    /// row before it could clear the value, and email alerting alongside Slack) and leaving
+    /// hand-run SQL as the only remedy. An encrypted value that cannot be decrypted -- the
+    /// key unset, or no longer the one the value was encrypted with -- comes back as
+    /// <see cref="UndecryptableSentinel"/> so the row still materialises; the loud failure
+    /// lives in the Slack notifier, the one place the plaintext is actually needed. The
+    /// stored ciphertext is untouched, so restoring the key recovers the URL.
+    /// </summary>
     public static string? UnprotectValue(string? value)
     {
         if (value is null)
@@ -99,19 +120,24 @@ public sealed class SlackWebhookProtector
         var protector = FromEnvironment();
         if (protector is null)
         {
-            if (value.StartsWith(EncryptedPrefix, StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException(
-                    $"The stored Slack webhook URL is encrypted but {KeyEnvironmentVariable} is not set; "
-                        + "restore the key or clear NotificationSettings.SlackWebhookUrl."
-                );
-            }
-
-            return value;
+            return value.StartsWith(EncryptedPrefix, StringComparison.Ordinal) ? UndecryptableSentinel : value;
         }
 
-        return protector.Unprotect(value);
+        try
+        {
+            return protector.Unprotect(value);
+        }
+        catch (CryptographicException)
+        {
+            // A key that no longer matches degrades exactly like a missing one; the sentinel
+            // can never be mistaken for a corrupt URL to post to.
+            return UndecryptableSentinel;
+        }
     }
+
+    /// <summary>True when a materialised value is the <see cref="UndecryptableSentinel"/>.</summary>
+    public static bool IsUndecryptable(string? value) =>
+        string.Equals(value, UndecryptableSentinel, StringComparison.Ordinal);
 
     private static SlackWebhookProtector? FromEnvironment()
     {

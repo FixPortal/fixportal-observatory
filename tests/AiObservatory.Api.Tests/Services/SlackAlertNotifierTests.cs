@@ -3,6 +3,7 @@ using System.Text.Json;
 using AiObservatory.Api.Services;
 using AiObservatory.Data.Entities;
 using AiObservatory.Data.Repositories;
+using AiObservatory.Data.Security;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -96,6 +97,36 @@ public class SlackAlertNotifierTests
 
         result.Should().Be(AlertDeliveryResult.NoRecipientConfigured);
         handler.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task NotifyAsync_throws_for_an_undecryptable_stored_webhook()
+    {
+        // M13: when the protection key is lost, the read path yields a sentinel instead of
+        // throwing inside EF materialisation (which took the whole settings row, and email
+        // alerting with it, down). The plaintext is actually needed HERE, so the hard
+        // failure lives here -- CompositeAlertNotifier catches and logs it on every pass,
+        // which a silent NoRecipientConfigured would never surface.
+        var handler = new CapturingHandler(HttpStatusCode.OK);
+        using var http = new HttpClient(handler);
+        var repo = Substitute.For<IUsageRepository>();
+        repo.GetNotificationSettingsAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                new NotificationSettings
+                {
+                    SlackWebhookUrl = SlackWebhookProtector.UndecryptableSentinel,
+                    UpdatedAt = Instant.FromUtc(2026, 8, 30, 0, 0),
+                }
+            );
+        var clock = new FakeClock(Instant.FromUtc(2026, 8, 30, 0, 0));
+
+        var sut = new SlackAlertNotifier(http, repo, clock, NullLogger<SlackAlertNotifier>.Instance);
+        var act = () => sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*SLACK_WEBHOOK_PROTECTION_KEY*");
+        handler.Requests.Should().BeEmpty();
+        await repo.DidNotReceive()
+            .MarkBudgetAlertSlackSentAsync(Arg.Any<Guid>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -201,8 +232,48 @@ public class SlackAlertNotifierTests
         var sut = new SlackAlertNotifier(http, repo, clock, logger);
         var result = await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
-        result.Should().Be(AlertDeliveryResult.Failed);
+        result.Should().Be(AlertDeliveryResult.PermanentlyRejected);
         logger.Messages.Should().ContainSingle(m => m.Contains("invalid_payload") && m.Contains("BadRequest"));
+    }
+
+    /// <summary>
+    /// A 4xx (rotated webhook, channel_not_found) is static — the same request fails the same
+    /// way on every retry — so it is recorded distinctly from a transient 5xx/429, the only
+    /// kind a later pass can fix (M17).
+    /// </summary>
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest, AlertDeliveryResult.PermanentlyRejected)]
+    [InlineData(HttpStatusCode.Forbidden, AlertDeliveryResult.PermanentlyRejected)]
+    [InlineData(HttpStatusCode.NotFound, AlertDeliveryResult.PermanentlyRejected)]
+    [InlineData(HttpStatusCode.Gone, AlertDeliveryResult.PermanentlyRejected)]
+    [InlineData(HttpStatusCode.TooManyRequests, AlertDeliveryResult.Failed)]
+    [InlineData(HttpStatusCode.InternalServerError, AlertDeliveryResult.Failed)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, AlertDeliveryResult.Failed)]
+    public async Task NotifyAsync_classifies_terminal_4xx_apart_from_transient_failures(
+        HttpStatusCode status,
+        AlertDeliveryResult expected
+    )
+    {
+        var handler = new CapturingHandler(status, "channel_not_found");
+        using var http = new HttpClient(handler);
+        var repo = Substitute.For<IUsageRepository>();
+        repo.GetNotificationSettingsAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                new NotificationSettings
+                {
+                    SlackWebhookUrl = "https://hooks.slack.com/services/T0/B0/xyz",
+                    UpdatedAt = Instant.FromUtc(2026, 8, 30, 0, 0),
+                }
+            );
+        repo.GetBudgetAlertSlackSentAsync(ClaimId, Arg.Any<CancellationToken>()).Returns(false);
+        var clock = new FakeClock(Instant.FromUtc(2026, 8, 30, 0, 0));
+
+        var sut = new SlackAlertNotifier(http, repo, clock, NullLogger<SlackAlertNotifier>.Instance);
+        var result = await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
+
+        result.Should().Be(expected);
+        await repo.DidNotReceive()
+            .MarkBudgetAlertSlackSentAsync(Arg.Any<Guid>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
