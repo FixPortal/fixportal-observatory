@@ -151,7 +151,7 @@ public class UsageMigrationTests : IAsyncLifetime
             UsageSourceIds.LegacyApi,
             "legacy-null-cost-a",
             0m,
-            TestContext.Current.CancellationToken
+            ct: TestContext.Current.CancellationToken
         );
 
         patch.Should().NotBeNull();
@@ -426,6 +426,55 @@ public class UsageMigrationTests : IAsyncLifetime
 
         restoredThreshold.Should().Be(97.53m);
         removedObjects.Should().BeEmpty();
+
+        // The marker recorded by GuardBudgetThresholdGbpConversion survives the rollback
+        // (its Down deliberately keeps it), so the re-applied conversion Up skips instead
+        // of converting a second time: 97.53 stays 97.53 rather than shrinking to 77.05.
+        var markers = await afterMigration
+            .Database.SqlQueryRaw<string>("""SELECT "Name" AS "Value" FROM "DataMigrationMarkers" """)
+            .ToListAsync(ct);
+        markers.Should().Contain("BudgetThresholdsConvertedToGbp");
+
+        await rollbackMigrator.MigrateAsync(cancellationToken: ct);
+        var replayedThreshold = await afterMigration
+            .Database.SqlQuery<decimal>(
+                $"""SELECT "ThresholdGbp" AS "Value" FROM "BudgetRules" WHERE "Id" = {existingRuleId}"""
+            )
+            .SingleAsync(ct);
+        replayedThreshold.Should().Be(97.53m);
+    }
+
+    [Fact]
+    public async Task GuardBudgetThresholdGbpConversion_SurfacesRulesForOperatorReview()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var ruleId = Guid.Parse("30000000-0000-0000-0000-000000000009");
+        await using var db = new AiObservatoryDbContext(_options);
+        var migrator = db.Database.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260826130157_AddBudgetAlertsAndRenameThresholdToGbp", ct);
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO "BudgetRules" ("Id", "Period", "ThresholdGbp")
+            VALUES ({ruleId}, 'Daily', 123.45)
+            """,
+            ct
+        );
+
+        var notices = new List<string>();
+        var connection = (NpgsqlConnection)db.Database.GetDbConnection();
+        connection.Notice += (_, args) => notices.Add(args.Notice.MessageText);
+        await migrator.MigrateAsync(cancellationToken: ct);
+
+        // Rules created between the rename and the conversion cannot be told apart by a
+        // predicate, so the guard migration lists every rule in the deploy log instead of
+        // converting anything automatically.
+        notices.Should().Contain(notice => notice.Contains("operator review") && notice.Contains(ruleId.ToString()));
+        var convertedOnce = await db
+            .Database.SqlQuery<decimal>(
+                $"""SELECT "ThresholdGbp" AS "Value" FROM "BudgetRules" WHERE "Id" = {ruleId}"""
+            )
+            .SingleAsync(ct);
+        convertedOnce.Should().Be(97.53m);
     }
 
     [Theory]
@@ -518,14 +567,189 @@ public class UsageMigrationTests : IAsyncLifetime
         await save.Should().ThrowAsync<DbUpdateException>();
     }
 
-    [Fact]
-    public async Task AddObservationProvenance_DropsProvenanceDefaultsAfterBackfill()
+    public static IEnumerable<object[]> SchemaGuardViolationSeeds =>
+        new[]
+        {
+            new object[]
+            {
+                """
+                    INSERT INTO "Subscriptions" ("Id", "Provider", "Name", "CostAmount", "Currency", "BillingInterval", "BillingDay", "ActiveFrom")
+                    VALUES ('60000000-0000-0000-0000-000000000001', 'Google', 'Bad billing day', 1, 'GBP', 'Monthly', 32, '2026-01-01')
+                    """,
+                """
+                    DELETE FROM "Subscriptions" WHERE "Id" = '60000000-0000-0000-0000-000000000001'
+                    """,
+                "CK_Subscription_BillingDay_Valid",
+            },
+            new object[]
+            {
+                """
+                    INSERT INTO "SpendEntries" ("Id", "OccurredOn", "VendorId", "CategoryId", "Amount", "Currency", "AmountGbp", "FxRate", "Source", "RecordedAt")
+                    SELECT '60000000-0000-0000-0000-000000000002', '2026-08-01',
+                           (SELECT "Id" FROM "SpendVendors" WHERE "Key" = 'github-actions'),
+                           (SELECT "Id" FROM "SpendCategories" WHERE "Key" = 'ci'),
+                           1, 'usd', 1, 1, 'Portal', '2026-08-31T00:00:00Z'
+                    """,
+                """
+                    DELETE FROM "SpendEntries" WHERE "Id" = '60000000-0000-0000-0000-000000000002'
+                    """,
+                "CK_SpendEntry_Currency_Normalized",
+            },
+            new object[]
+            {
+                """
+                    INSERT INTO "NotificationSettings" ("Id", "UpdatedAt")
+                    VALUES ('33333333-3333-3333-3333-333333333399', '2026-08-31T00:00:00Z')
+                    """,
+                """
+                    DELETE FROM "NotificationSettings" WHERE "Id" = '33333333-3333-3333-3333-333333333399'
+                    """,
+                "CK_NotificationSettings_Singleton",
+            },
+            new object[]
+            {
+                """
+                    INSERT INTO "DailyAggregates" ("Date", "Provider", "Model", "InputTokens", "OutputTokens", "CacheReadTokens", "CacheWriteTokens", "CacheWrite1hTokens", "CostUsd", "RequestCount", "UnknownCacheSavingsCount")
+                    VALUES ('2026-08-31', 'OpenAI', 'gpt-5.4', 1, 1, 0, 0, 0, 1, 1, -1)
+                    """,
+                """
+                    DELETE FROM "DailyAggregates" WHERE "Date" = '2026-08-31' AND "Provider" = 'OpenAI' AND "Model" = 'gpt-5.4'
+                    """,
+                "CK_DailyAggregate_UnknownCacheSavingsCount_NonNegative",
+            },
+        };
+
+    // Rows written before the C# guards existed are unaudited: a plain ADD CONSTRAINT would
+    // abort the whole migration with a bare check-violation and no row list, so the
+    // migration refuses up front with an actionable message instead.
+    [Theory]
+    [MemberData(nameof(SchemaGuardViolationSeeds))]
+    public async Task EnforceSchemaGuardConstraints_RefusesWhileHistoricRowsViolate(
+        string seedSql,
+        string cleanupSql,
+        string constraintName
+    )
     {
         var ct = TestContext.Current.CancellationToken;
         await using var db = new AiObservatoryDbContext(_options);
-        await db.Database.MigrateAsync(ct);
+        var migrator = db.Database.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260831001140_AddUsageEventCorrectedAt", ct);
+        await db.Database.ExecuteSqlRawAsync(seedSql, ct);
 
-        var lingeringDefaults = await db
+        var refused = () => migrator.MigrateAsync("20260831010733_EnforceSchemaGuardConstraints", ct);
+
+        await refused.Should().ThrowAsync<PostgresException>().WithMessage($"*refused*{constraintName}*");
+
+        // Once the violating row is reconciled, the same migration applies and the
+        // constraint holds.
+        await db.Database.ExecuteSqlRawAsync(cleanupSql, ct);
+        await migrator.MigrateAsync(cancellationToken: ct);
+        var enforced = await db
+            .Database.SqlQuery<int>(
+                $"""SELECT count(*)::int AS "Value" FROM pg_constraint WHERE conname = {constraintName}"""
+            )
+            .SingleAsync(ct);
+        enforced.Should().Be(1);
+    }
+
+    public static IEnumerable<object[]> TightenedGuardViolationSeeds =>
+        new[]
+        {
+            new object[]
+            {
+                """
+                    INSERT INTO "UsageEvents" ("Id", "Provider", "OccurredAt", "IngestedAt", "InputTokens", "OutputTokens", "CostUsd", "RawPayload", "SourceId", "SourceKind", "UsageScope", "CostBasis", "ObservedAt")
+                    VALUES ('60000000-0000-0000-0000-000000000003', 'OpenAI', '2026-08-31T00:30:00Z', '2026-08-31T00:30:00Z', 1, 1, 5, jsonb_build_object(), 'openai-usage-api', 'ProviderApi', 'Api', 'None', '2026-08-31T00:30:00Z')
+                    """,
+                """
+                    DELETE FROM "UsageEvents" WHERE "Id" = '60000000-0000-0000-0000-000000000003'
+                    """,
+                "CK_UsageEvent_NoneCostBasis_NoCost",
+            },
+            new object[]
+            {
+                """
+                    INSERT INTO "BillingObservations" ("Id", "ProviderKey", "SourceId", "SourceKind", "UsageScope", "CostBasis", "ObservationKey", "OccurredOn", "Currency", "GrossAmount", "CreditAmount", "NetAmount", "RawPayload", "ObservedAt")
+                    VALUES ('60000000-0000-0000-0000-000000000004', 'openai', 'openai-costs-api', 'ProviderApi', 'Api', 'Billed', '2026-08:positive-credit', '2026-08-01', 'USD', 8, 2, 10, jsonb_build_object(), '2026-08-31T00:00:00Z')
+                    """,
+                """
+                    DELETE FROM "BillingObservations" WHERE "Id" = '60000000-0000-0000-0000-000000000004'
+                    """,
+                "CK_BillingObservation_Credit_Sign",
+            },
+        };
+
+    [Theory]
+    [MemberData(nameof(TightenedGuardViolationSeeds))]
+    public async Task ConvertBudgetThresholdsToGbpAndTightenGuards_RefusesWhileHistoricRowsViolate(
+        string seedSql,
+        string cleanupSql,
+        string constraintName
+    )
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = new AiObservatoryDbContext(_options);
+        var migrator = db.Database.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260831012811_ProtectSlackWebhookUrlAtRest", ct);
+        await db.Database.ExecuteSqlRawAsync(seedSql, ct);
+
+        var refused = () => migrator.MigrateAsync("20260831085032_ConvertBudgetThresholdsToGbpAndTightenGuards", ct);
+
+        await refused.Should().ThrowAsync<PostgresException>().WithMessage($"*refused*{constraintName}*");
+
+        await db.Database.ExecuteSqlRawAsync(cleanupSql, ct);
+        await migrator.MigrateAsync(cancellationToken: ct);
+        var enforced = await db
+            .Database.SqlQuery<int>(
+                $"""SELECT count(*)::int AS "Value" FROM pg_constraint WHERE conname = {constraintName}"""
+            )
+            .SingleAsync(ct);
+        enforced.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DropObservationProvenanceDefaults_RemovesProvenanceDefaultsAfterBackfill()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = new AiObservatoryDbContext(_options);
+        var migrator = db.Database.GetService<IMigrator>();
+
+        // AddObservationProvenance is already recorded in production with the defaults
+        // still present, so its restored Up leaves them in place; dropping them is the
+        // job of the later DropObservationProvenanceDefaults migration on every database.
+        await migrator.MigrateAsync("20260824172007_AddObservationProvenance", ct);
+        var defaultsAtProvenance = await ProvenanceDefaultsAsync(db, ct);
+        defaultsAtProvenance.Should().HaveCount(14);
+
+        await migrator.MigrateAsync(cancellationToken: ct);
+        var lingeringDefaults = await ProvenanceDefaultsAsync(db, ct);
+        lingeringDefaults.Should().BeEmpty();
+
+        // With the defaults gone, a direct insert that omits provenance fails rather than
+        // silently acquiring synthetic 'legacy-api' / 'Legacy' / epoch values.
+        var omitProvenance = () =>
+            db.Database.ExecuteSqlRawAsync(
+                """
+                INSERT INTO "UsageEvents" ("Id", "Provider", "OccurredAt", "IngestedAt", "InputTokens", "OutputTokens", "RawPayload")
+                VALUES ('70000000-0000-0000-0000-000000000001', 'OpenAI', '2026-09-01T00:30:00Z', '2026-09-01T00:30:00Z', 1, 1, jsonb_build_object())
+                """,
+                ct
+            );
+        await omitProvenance.Should().ThrowAsync<PostgresException>();
+
+        // The drop survives a rollback and re-apply: Down re-adds the defaults, and the
+        // replayed Up removes them again without error (DROP DEFAULT is a no-op when no
+        // default exists).
+        await migrator.MigrateAsync("20260824172007_AddObservationProvenance", ct);
+        var restoredDefaults = await ProvenanceDefaultsAsync(db, ct);
+        restoredDefaults.Should().HaveCount(14);
+        await migrator.MigrateAsync(cancellationToken: ct);
+        var defaultsAfterReplay = await ProvenanceDefaultsAsync(db, ct);
+        defaultsAfterReplay.Should().BeEmpty();
+    }
+
+    private static async Task<List<string>> ProvenanceDefaultsAsync(AiObservatoryDbContext db, CancellationToken ct) =>
+        await db
             .Database.SqlQueryRaw<string>(
                 """
                 SELECT table_name || '.' || column_name AS "Value"
@@ -544,9 +768,6 @@ public class UsageMigrationTests : IAsyncLifetime
                 """
             )
             .ToListAsync(ct);
-
-        lingeringDefaults.Should().BeEmpty();
-    }
 
     [Fact]
     public async Task AddUsageEventTelemetryIdentity_RollbackRefusesWhileUnknownCostsExist()
