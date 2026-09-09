@@ -28,11 +28,6 @@ const LOCAL_SOURCE_IDS = {
 // records, so scanRecords flags its source incomplete and main withholds that
 // source's corrections and tombstones until a complete scan succeeds.
 const PARSE_CACHE_VERSION = 3
-// Token fields compared against server inventory to skip unchanged re-posts.
-const SNAPSHOT_TOKEN_FIELDS = [
-  'inputTokens', 'outputTokens', 'cacheReadTokens',
-  'cacheWriteTokens', 'cacheWrite1hTokens', 'thoughtTokens',
-]
 // Gemini Developer API standard-tier pricing changes above this documented prompt-token threshold.
 const GEMINI_LONG_CONTEXT_THRESHOLD = 200_000
 
@@ -388,7 +383,16 @@ export async function parseAntigravityDatabase(path, transcriptContent, report =
   }]
 }
 
-/** Slugify a machine name for the per-machine source-id suffix. */
+/**
+ * Slugify a machine name for the per-machine source-id suffix.
+ *
+ * ponytail: distinct names can collapse to one slug (`build.example` and
+ * `build-example` both become `build-example`), merging two machines into a
+ * single source-id namespace where they can tombstone each other's history.
+ * The slug rules cannot change without renaming every suffixed source id and
+ * re-doubling server history — a worse defect — so the mitigation is
+ * operational: set OBSERVATORY_MACHINE to a unique value on a colliding host.
+ */
 export function machineLabel(value) {
   const label = String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   return label || 'unknown-machine'
@@ -683,6 +687,9 @@ async function postEvent(url, apiKey, body) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
+    // The body is never read; cancel it so the socket frees up now instead of
+    // whenever GC gets around to it.
+    await response.body?.cancel()
     if (!response.ok) { log(`POST ${response.status} for ${body.eventKey}`); return false }
     return true
   } catch (error) {
@@ -704,7 +711,10 @@ async function fetchSnapshotInventory(url, apiKey, enabled, machine) {
         `${url}/api/events/local-snapshots?sourceId=${encodeURIComponent(sourceId)}`,
         apiKey,
       )
-      if (!response.ok) { throw new Error(`Inventory GET ${response.status} for ${sourceId}`) }
+      if (!response.ok) {
+        await response.body?.cancel()
+        throw new Error(`Inventory GET ${response.status} for ${sourceId}`)
+      }
       const snapshots = await response.json()
       if (!Array.isArray(snapshots)
         || snapshots.some(snapshot => !snapshot || typeof snapshot !== 'object'
@@ -740,7 +750,10 @@ async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc
         `${url}/api/events/local-snapshots?sourceId=${encodeURIComponent(legacyId)}`,
         apiKey,
       )
-      if (!response.ok) { throw new Error(`Inventory GET ${response.status} for ${legacyId}`) }
+      if (!response.ok) {
+        await response.body?.cancel()
+        throw new Error(`Inventory GET ${response.status} for ${legacyId}`)
+      }
       legacyInventory = await response.json()
       if (!Array.isArray(legacyInventory)
         || legacyInventory.some(snapshot => !snapshot || typeof snapshot !== 'object'
@@ -792,9 +805,32 @@ export const listJsonl = (dir, out = [], io = { readdir, stat }, topLevel = true
 
 const listDatabases = dir => listMatching(dir, name => name.endsWith('.db'))
 
+// A discovery root that is missing or holds no entries at all proves nothing
+// about the source's history: the home may be unmounted (an empty mount point
+// lists exactly like this) or a *_HOME override may be mistyped. Only a
+// populated root makes an empty scan authoritative.
+async function discoveryRootPopulated(dir) {
+  try { return (await readdir(dir)).length > 0 }
+  catch { return false }
+}
+
+/**
+ * Scan every enabled source and return its records plus two disjoint source
+ * sets. `incompleteSources` hit an unreadable-and-uncached file, so their
+ * corrections and tombstones are withheld. `emptySources` scanned cleanly and
+ * found no records under a populated discovery root, so their empty history is
+ * verified and their stale server keys may be tombstoned. A source whose root
+ * is missing or entry-less (unmounted home, mistyped *_HOME) lands in neither
+ * set and keeps its tombstones suppressed.
+ */
 export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
   const records = []
   const incompleteSources = new Set()
+  const emptySources = new Set()
+  const noteScan = async (tool, root, result) => {
+    if (result.incomplete) { incompleteSources.add(tool) }
+    else if (result.records.length === 0 && await discoveryRootPopulated(root)) { emptySources.add(tool) }
+  }
   if (state.parseCacheVersion !== PARSE_CACHE_VERSION) {
     state.files = {}
     state.parseCacheVersion = PARSE_CACHE_VERSION
@@ -802,7 +838,8 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
   state.files ??= {}
 
   if (enabled.has('codex')) {
-    const files = await discover(join(cfg.codexHome, 'sessions'))
+    const root = join(cfg.codexHome, 'sessions')
+    const files = await discover(root)
     const result = await updateFileCache(files, state.files.codex, content => {
       const parsed = parseCodex(content)
       if (!parsed) { return [] }
@@ -817,12 +854,13 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
       }]
     })
     state.files.codex = result.cache
-    if (result.incomplete) { incompleteSources.add('codex') }
+    await noteScan('codex', root, result)
     for (const record of result.records) { records.push(record) }
   }
 
   if (enabled.has('copilot')) {
-    const files = (await discover(join(cfg.copilotHome, 'session-state')))
+    const root = join(cfg.copilotHome, 'session-state')
+    const files = (await discover(root))
       .filter(file => basename(file.path) === 'events.jsonl')
     const result = await updateFileCache(files, state.files.copilot, content => {
       const parsed = parseCopilot(content)
@@ -838,40 +876,44 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
       }))
     })
     state.files.copilot = result.cache
-    if (result.incomplete) { incompleteSources.add('copilot') }
+    await noteScan('copilot', root, result)
     for (const record of result.records) { records.push(record) }
   }
 
   if (enabled.has('claude')) {
-    const files = await discover(join(cfg.claudeHome, 'projects'))
+    const root = join(cfg.claudeHome, 'projects')
+    const files = await discover(root)
     const result = await updateFileCache(files, state.files.claude, content => parseClaude(content))
     state.files.claude = result.cache
-    if (result.incomplete) { incompleteSources.add('claude') }
+    await noteScan('claude', root, result)
     for (const record of result.records) { records.push(record) }
   }
 
   if (enabled.has('kimi')) {
-    const files = (await discover(join(cfg.kimiHome, 'sessions')))
+    const root = join(cfg.kimiHome, 'sessions')
+    const files = (await discover(root))
       .filter(file => basename(file.path) === 'wire.jsonl')
     const result = await updateFileCache(files, state.files.kimi, content => parseKimi(content))
     state.files.kimi = result.cache
-    if (result.incomplete) { incompleteSources.add('kimi') }
+    await noteScan('kimi', root, result)
     for (const record of result.records) { records.push(record) }
   }
 
   if (enabled.has('gemini')) {
-    const files = (await discover(join(cfg.geminiHome, 'tmp')))
+    const root = join(cfg.geminiHome, 'tmp')
+    const files = (await discover(root))
       .filter(file => /[\\/]gem-review-[^\\/]+[\\/]chats[\\/]session-[^\\/]+\.jsonl$/i.test(file.path))
     const result = await updateFileCache(files, state.files.gemini, content => parseGeminiReview(content))
     state.files.gemini = result.cache
-    if (result.incomplete) { incompleteSources.add('gemini') }
+    await noteScan('gemini', root, result)
     for (const record of result.records) { records.push(record) }
   }
 
   if (enabled.has('antigravity')) {
     const conversationRoot = join(cfg.geminiHome, 'antigravity-cli')
+    const root = join(conversationRoot, 'conversations')
     const files = []
-    for (const file of await listDatabases(join(conversationRoot, 'conversations'))) {
+    for (const file of await listDatabases(root)) {
       const sessionId = basename(file.path, '.db')
       const transcriptPath = join(conversationRoot, 'brain', sessionId, '.system_generated', 'logs', 'transcript.jsonl')
       try {
@@ -888,11 +930,11 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
       path => path,
     )
     state.files.antigravity = result.cache
-    if (result.incomplete) { incompleteSources.add('antigravity') }
+    await noteScan('antigravity', root, result)
     for (const record of result.records) { records.push(record) }
   }
 
-  return { records, incompleteSources }
+  return { records, incompleteSources, emptySources }
 }
 
 export async function main({ discover = listJsonl, now = () => new Date() } = {}) {
@@ -921,7 +963,7 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   if (!DRY_RUN) {
     await migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc)
   }
-  const { records, incompleteSources } = await scanRecords(cfg, state, enabled, discover)
+  const { records, incompleteSources, emptySources } = await scanRecords(cfg, state, enabled, discover)
   const snapshots = buildDailySnapshots(records, machine)
   const submissions = planSnapshotSubmissions(snapshots, inventory)
   await saveState(statePath, state)
@@ -933,22 +975,15 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     [...incompleteSources].map(tool => localSourceId(tool, machine)),
   )
 
-  // Unchanged snapshots need no re-post: inventory already carries the server's
-  // token counts for every enabled source, so diffing against it keeps a steady
-  // run at one request per genuinely changed key instead of re-posting the whole
-  // local history every interval.
-  const inventoryTokens = new Map(
-    inventory.map(snapshot => [`${snapshot.sourceId}\n${snapshot.eventKey}`, snapshot]),
-  )
-  const unchanged = (snapshot) => {
-    const prior = inventoryTokens.get(`${snapshot.sourceId}\n${snapshot.eventKey}`)
-    return prior !== undefined && SNAPSHOT_TOKEN_FIELDS.every(
-      field => Number.isFinite(prior[field]) && prior[field] === snapshot[field],
-    )
-  }
-
   let posted = 0
   const activeSucceeded = new Map()
+  // A source whose clean scan verified an empty local history (populated
+  // discovery root, no read failures, no records) has nothing left to replace:
+  // seed success so its stale server keys can be tombstoned below. Every other
+  // source without active submissions stays unseeded and keeps suppressing.
+  for (const tool of emptySources) {
+    activeSucceeded.set(localSourceId(tool, machine), true)
+  }
   const incompleteNoted = new Set()
   for (const submission of submissions.filter(item => item.active)) {
     if (incompleteSourceIds.has(submission.snapshot.sourceId)) {
@@ -956,13 +991,6 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
         console.error(`Scan incomplete for ${submission.snapshot.sourceId}; its corrections and tombstones are withheld this run.`)
         incompleteNoted.add(submission.snapshot.sourceId)
       }
-      continue
-    }
-    if (unchanged(submission.snapshot)) {
-      activeSucceeded.set(
-        submission.snapshot.sourceId,
-        activeSucceeded.get(submission.snapshot.sourceId) ?? true,
-      )
       continue
     }
     const succeeded = await postEvent(
@@ -985,10 +1013,12 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     // An incompletely scanned source must not be tombstoned either: the key may
     // only have vanished from the scan, not from disk.
     if (incompleteSourceIds.has(submission.snapshot.sourceId)) { continue }
-    // Tombstones post only for a source whose active submissions all succeeded
-    // this run. `undefined` (source not in the enabled subset, or no active
-    // snapshots at all) and `false` (a replacement exhausted retries) both
-    // suppress, so a partial or disabled run can never zero server history.
+    // Tombstones post only for a source whose replacement is verified: either
+    // its active submissions all succeeded this run, or its clean scan proved
+    // an empty local history (seeded above). `false` (a replacement exhausted
+    // retries) and `undefined` (a disabled, incompletely scanned, or
+    // unverifiable source) both suppress, so a partial or disabled run can
+    // never zero server history.
     if (activeSucceeded.get(submission.snapshot.sourceId) !== true) { continue }
     // Server inventory is the durable retry marker: a failed tombstone remains
     // visible and is compensated by the next scheduled reconciliation.
