@@ -30,7 +30,7 @@ The difference, same config otherwise, as measured in July 2026:
 | Invocation | Tests in the lane | Runtime |
 |---|---|---|
 | From repository root | 246 (unit + integration) | >55 min (timed out) |
-| From `tests/AiObservatory.Api.Tests` | 133 (unit only) | ~40s |
+| From `tests/AiObservatory.Api.Tests` | 373 (unit only, re-counted 2026-09) | ~40s |
 
 **Do not use those test counts as the regression check.** They were a usable tell only while
 the unit project was small; it has since grown past 240 tests on its own (see *What the score
@@ -114,7 +114,7 @@ auth filters.
 
 ### What the score means now
 
-**Currently ~50% (2026-07-30), up from ~19%.** The ~19% was an honest reading of a real gap:
+**Currently 46.3% — 222 of 436 valid mutants uncovered (2026-09-04 run), up from ~19%.** The ~19% was an honest reading of a real gap:
 most scoped mutants reported `NoCoverage` because the money paths — FX conversion, the GitHub
 billing sync, the ledger's own validation — were exercised only by integration tests, which
 are deliberately not in this lane. That gap has now been closed where it can be, by unit tests
