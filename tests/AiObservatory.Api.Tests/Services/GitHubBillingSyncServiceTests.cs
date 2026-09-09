@@ -273,6 +273,49 @@ public sealed class GitHubBillingSyncServiceTests : IDisposable
             .ContainSingle(m => m.Contains("12.01") && m.Contains("12.02") && m.Contains("constructed"));
     }
 
+    [Theory]
+    // gross, discount, reportedNet → expected gross, credit, net on the observation
+    [InlineData(0, 0, 10, 10, 0, 10)] // absent gross/discount: reported net kept, gross reconstructed
+    [InlineData(0, 2, 10, 12, -2, 10)] // absent gross with a reported discount: rebuilt around the net
+    [InlineData(15, 3, 12, 15, -3, 12)] // balanced triple: unchanged behaviour
+    public async Task AnAbsentGrossAmountKeepsTheReportedNetInsteadOfZeroingTheSpend(
+        int grossAmount,
+        int discountAmount,
+        int reportedNet,
+        int expectedGross,
+        int expectedCredit,
+        int expectedNet
+    )
+    {
+        // The writer treats a zero net as "no spend" and deletes any existing spend row for the
+        // key, so a line whose grossAmount GitHub omitted must not construct net = gross -
+        // discount = 0: the reported net is kept and the gross reconstructed around it.
+        var writes = new List<CapturedWrite>();
+        var sut = Create(
+            ClientReturning(
+                Item("actions", "linux", reportedNet, grossAmount: grossAmount, discountAmount: discountAmount)
+            ),
+            Writer(writes)
+        );
+
+        var written = await sut.SyncAsync(TestContext.Current.CancellationToken);
+
+        written.Should().Be(1);
+        var observation = writes.Should().ContainSingle().Which.Observation;
+        observation.GrossAmount.Should().Be(expectedGross);
+        observation.CreditAmount.Should().Be(expectedCredit);
+        observation.NetAmount.Should().Be(expectedNet);
+        (observation.GrossAmount + observation.CreditAmount)
+            .Should()
+            .Be(observation.NetAmount, "the database enforces gross + credit = net");
+        using var raw = JsonDocument.Parse(observation.RawPayload);
+        raw.RootElement.GetProperty("grossAmount")
+            .GetDecimal()
+            .Should()
+            .Be(grossAmount, "GitHub's own figure is preserved verbatim in RawPayload");
+        raw.RootElement.GetProperty("netAmount").GetDecimal().Should().Be(reportedNet);
+    }
+
     [Fact]
     public async Task APriorYearOutageDoesNotStopTheCurrentYearBeingFetched()
     {
