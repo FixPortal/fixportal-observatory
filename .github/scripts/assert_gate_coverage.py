@@ -49,14 +49,25 @@ COMMENT_OR_BLANK = re.compile(r"^\s*(?:\#.*)?$")
 # CAPTURED rather than merely matched, because "some dependency is referenced" is not
 # the assertion that matters: a gate declaring `needs: [build, lint]` whose condition
 # names only `build` reports success while `lint` fails.
-NEEDS_RESULT = re.compile(r"needs\.([A-Za-z0-9_*-]+)\.result")
-# A `run:` command that ends the shell non-zero. `exit 0`, `true`, or no exit at all
-# leaves the step incapable of failing whatever its condition says.
-NONZERO_EXIT = re.compile(r"^(?:exit\s+0*[1-9][0-9]*|false)\b")
-# Where one shell command ends and the next begins. Matching NONZERO_EXIT only at the
-# start of a line rejected the ordinary one-liner `if [ -n "$x" ]; then exit 1; fi`,
-# which is a false RED on a correct gate.
-COMMAND_BOUNDARY = re.compile(r"(?:;|&&|\|\||\bthen\b|\belse\b|\bdo\b|\{)")
+# The job id is also reachable by INDEX syntax -- `needs['build'].result` and
+# `needs["build"].result` are the same reference GitHub resolves by string key.
+# Matching only the dot spelling found NO referenced ids in a bracket-written gate,
+# which exited "has no step whose `if:` references a needs.<job>.result" -- a false
+# RED on a correct gate. Each spelling captures its id in its own group;
+# needs_result_ids flattens the tuple findall would otherwise return.
+NEEDS_RESULT = re.compile(
+    r"needs(?:\.([A-Za-z0-9_*-]+)"
+    r"|\['([A-Za-z0-9_*-]+)'\]"
+    r'|\["([A-Za-z0-9_*-]+)"\])\.result'
+)
+# A condition that reacts to a CANCELLED upstream, in either of the spellings that
+# do: a 'cancelled' arm (`contains(needs.*.result, 'cancelled')`), or an inequality
+# against success (`needs.build.result != 'success'`, which is true for failure and
+# cancelled alike). A FAILURE-ONLY condition is skipped when an upstream job is
+# cancelled -- and a job killed by timeout-minutes reports cancelled, not failure --
+# so the failing step never runs and the required check reports success over a
+# dependency that did not pass.
+CANCELLED_ARM = re.compile(r"['\"]cancelled['\"]|!=\s*['\"]success['\"]")
 BACKSLASH = "\\"
 
 # The gate step's failing command, in the forms this checker will vouch for. Anything
@@ -100,12 +111,13 @@ ACCEPTED_FAILING_FORMS = tuple(
         # every repo running it, so they stay. Narrowing them is a separate, estate-wide
         # change with its own rollout. (CodeRabbit, PR #135.)
         #
-        # echo "..." ; exit 1     (message then failure, either separator style)
-        rf"{_ECHO}\s*(?:;|&&)\s*exit\s+0*[1-9][0-9]*",
+        # echo "..." ; exit 1     (message then failure, either separator style,
+        # optional trailing redirection on the exit)
+        rf"{_ECHO}\s*(?:;|&&)\s*exit\s+0*[1-9][0-9]*{_REDIR}",
         # if <test>; then <echo>; exit 1; fi   -- the house one-liner
-        rf"if\s+.+?;\s*then\s+(?:{_ECHO};\s*)?exit\s+0*[1-9][0-9]*;\s*fi",
+        rf"if\s+.+?;\s*then\s+(?:{_ECHO};\s*)?exit\s+0*[1-9][0-9]*{_REDIR};\s*fi",
         # if <test>; then exit 1; fi   with the echo inside on its own already covered
-        r"if\s+.+?;\s*then\s+exit\s+0*[1-9][0-9]*;\s*fi",
+        rf"if\s+.+?;\s*then\s+exit\s+0*[1-9][0-9]*{_REDIR};\s*fi",
         # PowerShell. `shell: pwsh` gate steps are house style in the .NET repos and
         # `throw 'upstream failed'` is how one fails, so rejecting it was a false RED
         # on a correct gate - the direction that gets a working control deleted to make
@@ -262,6 +274,17 @@ def other_block_key_pattern(indent):
 
 def _first_group(match):
     return next(g for g in match.groups() if g is not None)
+
+
+def needs_result_ids(condition):
+    """The job ids whose `.result` a condition references, either spelling.
+
+    NEEDS_RESULT carries one capture group per spelling (dot, single-quoted index,
+    double-quoted index), so findall would return TUPLES with two empty strings
+    each -- and `referenced.update(ids)` would then store the empties alongside the
+    id, corrupting the coverage comparison below.
+    """
+    return [_first_group(match) for match in NEEDS_RESULT.finditer(condition)]
 
 
 def strip_comment(line):
@@ -428,11 +451,17 @@ def normalise_condition(value):
     Compound conditions survive normalisation as themselves (`always()&&x`) and so are
     correctly NOT equal to `always()` -- a gate that runs only sometimes is the defect
     being caught, not a spelling variant of the fix.
+
+    Case is folded: `False` and `FALSE` are the same YAML 1.1 boolean as `false`, and
+    GitHub resolves expression function names case-insensitively, so `Always()` is the
+    same condition as `always()`. Without the fold a capitalised `continue-on-error:
+    False` read as TRUTHY -- not in `("false", "")` -- and a correct gate was reported
+    as unable to fail. False RED on a required check.
     """
     value = strip_comment(value).strip().strip("'\"").strip()
     if value.startswith("${{") and value.endswith("}}"):
         value = value[3:-2]
-    return value.replace(" ", "")
+    return value.replace(" ", "").lower()
 
 
 def continuation_lines(block, index, indent):
@@ -537,8 +566,8 @@ def ends_non_zero(body):
 
       * `echo "\\n exit 1 \\n"` and a backslash-continued `echo \\ / exit 1` -- quote
         state was per physical line, so inert string content read as a command;
-      * `echo then exit 1` -- `then` is a COMMAND_BOUNDARY, so the argument split the
-        line and `exit 1` became a segment of its own;
+      * `echo then exit 1` -- `then` counted as a command boundary, so the argument
+        split the line and `exit 1` became a segment of its own;
       * `exit 1 | true` -- no single `|` in the boundary alternation, and the pattern
         matched on a prefix;
       * `false || true` -- same shape, opposite operator.
@@ -591,7 +620,21 @@ def step_can_fail(block, span, key_indent):
         match = tolerant_key.match(block[i])
         if not match or len(match.group(1)) != key_indent:
             continue
-        if normalise_condition(match.group(2)) not in ("false", ""):
+        value = strip_comment(match.group(2)).strip()
+        if not value or BLOCK_SCALAR.match(value):
+            # Resolve through continuation_lines exactly as `run:` below. YAML lets a
+            # plain scalar begin on the line AFTER its key, so
+            #
+            #     continue-on-error:
+            #       true
+            #
+            # IS `continue-on-error: true` -- while the header-only read captured an
+            # empty value, and `"" in ("false", "")` vouched for the step as NOT
+            # tolerant. Fail-OPEN on the check whose whole purpose is resisting a
+            # neutering diff.
+            body, _ = continuation_lines(block, i, key_indent)
+            value = " ".join(strip_comment(entry).strip() for entry in body)
+        if normalise_condition(value) not in ("false", ""):
             return False, "carries `continue-on-error`, so it cannot fail the job"
 
     run_key = step_key_pattern(key_indent, "run")
@@ -740,7 +783,7 @@ def assert_gate_semantics(workflow_path, lines, jobs, gate_job, needs):
     referenced = set()
     failing = []
     for condition, index in step_conditions(block, step_indent):
-        ids = NEEDS_RESULT.findall(condition)
+        ids = needs_result_ids(condition)
         if not ids:
             continue
         referenced.update(ids)
@@ -754,6 +797,30 @@ def assert_gate_semantics(workflow_path, lines, jobs, gate_job, needs):
             "`needs.*.result` appearing only in a `run:` body -- an echo of the upstream "
             "results, say -- gates nothing."
         )
+
+    # Which OUTCOMES the condition reacts to, not merely that it references one. A
+    # failure-only condition is skipped when an upstream job is cancelled -- a
+    # timeout-minutes kill reports cancelled, not failure -- so the failing step
+    # never runs and the required check reports success over a dependency that did
+    # not pass. Required of EVERY referencing condition, not one of them: the
+    # surviving failure-only step in a per-job gate is the same hole with company.
+    #
+    # CEILING, stated rather than implied: the condition is read TEXTUALLY, never
+    # evaluated, so a 'cancelled' arm in a DEAD branch --
+    # `contains(needs.*.result, 'cancelled') && false` -- satisfies this check while
+    # reacting to nothing. Closing that would mean evaluating arbitrary expressions;
+    # the same reasoning step_can_fail states for the `run:` body. What is refused
+    # here is the shape a neutering diff actually takes: dropping the cancelled arm.
+    for condition, _ in failing:
+        if not CANCELLED_ARM.search(condition):
+            sys.exit(
+                f"{workflow_path}: '{gate_job}' step condition `{condition}` references "
+                "a needs result but does not react to 'cancelled'.\n"
+                "A job killed by timeout-minutes reports cancelled, not failure, so a "
+                "failure-only condition skips the failing step and the required check "
+                "reports success. Add a `contains(needs.*.result, 'cancelled')` arm, "
+                "or compare `!= 'success'`."
+            )
 
     # EVERY declared dependency, not merely one of them. Accepting the first
     # `needs.<job>.result` it saw meant a gate declaring `needs: [build, lint]` whose
@@ -800,7 +867,7 @@ def assert_gate_semantics(workflow_path, lines, jobs, gate_job, needs):
         ok, reason = step_can_fail(block, span, len(match.group(1)))
         if not ok:
             continue
-        ids = set(NEEDS_RESULT.findall(condition))
+        ids = set(needs_result_ids(condition))
         if "*" in ids:
             wildcard_covered = True
         covered.update(ids - {"*"})

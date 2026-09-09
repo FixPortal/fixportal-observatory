@@ -128,11 +128,12 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  # The repository carries three node:test suites that no job ran, so none of them could fail a
-  # pull request. That mattered most for public-restore-contract, which is the only guard against
-  # silently reintroducing the private NuGet feed a public consumer cannot restore from: a
-  # regression would have shipped green. They cannot ride in build-web — that job runs from
-  # src/AiObservatory.Web, and vitest's include pattern cannot reach a root-level .mjs.
+  # The repository's node:test suites used to have no job running them, so none of them
+  # could fail a pull request. That mattered most for public-restore-contract, which is
+  # the only guard against silently reintroducing the private NuGet feed a public
+  # consumer cannot restore from: a regression would have shipped green. They cannot
+  # ride in build-web — that job runs from src/AiObservatory.Web, and vitest's include
+  # pattern cannot reach a root-level .mjs.
   contract-tests:
     name: Contract tests (node:test)
     runs-on: ubuntu-latest
@@ -161,6 +162,7 @@ jobs:
       - name: Repository contract suites
         run: >-
           node --test
+          tests/deploy-contract.test.mjs
           tests/docs-contract.test.mjs
           tests/public-restore-contract.test.mjs
           clients/observatory-sweep.test.mjs
