@@ -97,6 +97,7 @@ public sealed class GoogleBillingExportClient(Lazy<BigQueryClient> client, strin
         // degrade to "count unavailable" (null) and still run the main query. Cancellation is
         // not a failure and keeps its normal semantics.
         long? outOfRangeKeys;
+        Exception? outOfRangeCountFailure = null;
         try
         {
             outOfRangeKeys = await CountOutOfRangeKeysAsync(from, throughExclusive, changesSince, cancellationToken);
@@ -104,6 +105,7 @@ public sealed class GoogleBillingExportClient(Lazy<BigQueryClient> client, strin
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             outOfRangeKeys = null;
+            outOfRangeCountFailure = exception;
         }
         var query = BuildQuery(_table, from, throughExclusive, changesSince);
         var results = await client.Value.ExecuteQueryAsync(
@@ -118,7 +120,7 @@ public sealed class GoogleBillingExportClient(Lazy<BigQueryClient> client, strin
             cancellationToken.ThrowIfCancellationRequested();
             records.Add(MapRow(row));
         }
-        return new GoogleBillingExportResult(records.ToImmutableArray(), outOfRangeKeys);
+        return new GoogleBillingExportResult(records.ToImmutableArray(), outOfRangeKeys, outOfRangeCountFailure);
     }
 
     private async Task<long> CountOutOfRangeKeysAsync(

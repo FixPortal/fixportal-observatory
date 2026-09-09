@@ -502,7 +502,14 @@ public sealed class OpenAiAdminClient(HttpClient http) : IOpenAiAdminClient
 
     private static decimal RequireDecimal(JsonElement element, string propertyName)
     {
-        if (!element.TryGetProperty(propertyName, out var value) || !value.TryGetDecimal(out var parsed))
+        // The ValueKind guard comes first, exactly as in RequireInt64: TryGetDecimal throws
+        // InvalidOperationException for a non-number kind, bypassing the documented
+        // InvalidDataException contract.
+        if (
+            !element.TryGetProperty(propertyName, out var value)
+            || value.ValueKind != JsonValueKind.Number
+            || !value.TryGetDecimal(out var parsed)
+        )
         {
             throw new InvalidDataException($"OpenAI response is missing {propertyName}.");
         }
@@ -515,7 +522,9 @@ public sealed class OpenAiAdminClient(HttpClient http) : IOpenAiAdminClient
         {
             return null;
         }
-        if (!value.TryGetDecimal(out var parsed))
+        // Same ValueKind guard as RequireDecimal: a string like "1.5" makes TryGetDecimal
+        // throw InvalidOperationException instead of the documented InvalidDataException.
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetDecimal(out var parsed))
         {
             throw new InvalidDataException($"OpenAI {propertyName} must be numeric or null.");
         }

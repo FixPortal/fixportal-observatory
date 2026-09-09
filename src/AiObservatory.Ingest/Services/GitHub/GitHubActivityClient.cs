@@ -18,6 +18,10 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
     // Caps the Actions list-runs endpoint (not the Search API, which this client never calls).
     private const int WorkflowRunsPaginationCap = 1000;
 
+    // One GetWorkflowRunsAsync call walks at most this many capped windows backwards; a
+    // truncated result then carries the cursor so the next cycle resumes (see the method).
+    private const int MaxWindowsPerCall = 5;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
@@ -240,7 +244,12 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
         // earlier truncated cycle resumes the walk where it stopped; the cursor is returned
         // with a truncated result so the caller can persist the new position.
         Instant? cursor = resumeCursor;
-        while (true)
+        // Per-call window budget: each window costs up to ~10 requests, so an unbounded walk
+        // burns the shared rate-limit headroom CheckRateLimit guards until it throws — which
+        // aborts the remaining repositories this cycle. The budget bounds one call; a
+        // truncated result carries the cursor, so the next cycle resumes the walk instead of
+        // restarting it.
+        for (var windowBudget = MaxWindowsPerCall; windowBudget > 0; windowBudget--)
         {
             var window = await FetchWorkflowRunWindowAsync(repo, sinceStr, cursor, results, seenRunIds, ct);
             if (!window.Truncated)
@@ -256,6 +265,8 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
             }
             cursor = window.OldestSeen;
         }
+
+        return new GitHubWorkflowRunResult(results, Truncated: true, cursor);
     }
 
     private async Task<(Instant? OldestSeen, bool Truncated)> FetchWorkflowRunWindowAsync(
