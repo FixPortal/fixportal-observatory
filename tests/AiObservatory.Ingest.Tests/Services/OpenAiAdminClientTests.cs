@@ -354,6 +354,50 @@ public sealed class OpenAiAdminClientTests : IDisposable
         await act.Should().ThrowAsync<InvalidDataException>();
     }
 
+    [Theory]
+    [InlineData("""{"value": "12.34", "currency": "usd"}""", "2.5")]
+    [InlineData("""{"value": 12.34, "currency": "usd"}""", "\"7\"")]
+    public async Task GetCostsAsync_RejectsAStringTypedMoneyFactAsInvalidDataNotInvalidOperation(
+        string amountJson,
+        string quantityJson
+    )
+    {
+        // JsonElement.TryGetDecimal throws InvalidOperationException for a non-number kind, so
+        // string-typed money facts must be rejected on ValueKind first to keep the documented
+        // InvalidDataException contract — first case RequireDecimal, second OptionalDecimal.
+        var start = From.AtStartOfDayInZone(DateTimeZone.Utc).ToInstant().ToUnixTimeSeconds();
+        var json = $$"""
+            {
+              "object": "page",
+              "data": [
+                {
+                  "object": "bucket",
+                  "start_time": {{start}},
+                  "end_time": {{start + 86_400}},
+                  "results": [
+                    {
+                      "object": "organization.costs.result",
+                      "amount": {{amountJson}},
+                      "line_item": null,
+                      "project_id": null,
+                      "api_key_id": null,
+                      "quantity": {{quantityJson}},
+                      "quantity_unit": "tokens"
+                    }
+                  ]
+                }
+              ],
+              "has_more": false,
+              "next_page": null
+            }
+            """;
+        var sut = CreateSut(new QueueHandler(_ => Ok(json)));
+
+        var act = () => sut.GetCostsAsync(From, Through, TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+    }
+
     [Fact]
     public async Task GetUsageAsync_RejectsAStringTypedOptionalLaneAsInvalidDataNotInvalidOperation()
     {

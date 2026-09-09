@@ -67,6 +67,19 @@ def test_cancelled_only_condition_is_refused(tmp_path):
         check(write_workflow(tmp_path, "contains(needs.*.result, 'cancelled')"))
 
 
+# An outcome token that is not bound to a needs result reacts to nothing upstream:
+# `github.event.action == 'cancelled'` mentions 'cancelled' but the gate step still
+# skips when a dependency is cancelled, so it must not satisfy either arm.
+def test_unbound_outcome_token_is_refused(tmp_path):
+    with pytest.raises(SystemExit, match="does not react to both 'failure' and 'cancelled'"):
+        check(
+            write_workflow(
+                tmp_path,
+                "contains(needs.*.result, 'failure') || github.event.action == 'cancelled'",
+            )
+        )
+
+
 @pytest.mark.parametrize(
     "condition",
     [

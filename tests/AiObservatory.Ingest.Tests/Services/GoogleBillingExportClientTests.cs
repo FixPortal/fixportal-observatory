@@ -314,6 +314,13 @@ public sealed class GoogleBillingExportClientTests
 
         result.Records.Select(record => record.SkuId).Should().Equal("sku-1");
         result.OutOfRangeAffectedKeyCount.Should().BeNull();
+        // The failure is carried, not discarded, so the "count unavailable" warning can name
+        // the cause.
+        result
+            .OutOfRangeCountFailure.Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Be("count failed");
     }
 
     [Fact]

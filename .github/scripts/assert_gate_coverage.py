@@ -60,22 +60,35 @@ NEEDS_RESULT = re.compile(
     r"|\['([A-Za-z0-9_*-]+)'\]"
     r'|\["([A-Za-z0-9_*-]+)"\])\.result'
 )
-# A condition that reacts to a CANCELLED upstream, in either of the spellings that
-# do: a 'cancelled' arm (`contains(needs.*.result, 'cancelled')`), or an inequality
-# against success (`needs.build.result != 'success'`, which is true for failure and
-# cancelled alike). A FAILURE-ONLY condition is skipped when an upstream job is
-# cancelled -- and a job killed by timeout-minutes reports cancelled, not failure --
-# so the failing step never runs and the required check reports success over a
-# dependency that did not pass.
-CANCELLED_ARM = re.compile(r"['\"]cancelled['\"]|!=\s*['\"]success['\"]")
-# A condition that reacts to a FAILED upstream, in the same two spellings: a
-# 'failure' arm (`contains(needs.*.result, 'failure')`), or the same inequality
-# against success. The hole is the converse of the one CANCELLED_ARM closes: a
-# CANCELLED-ONLY condition is false when an upstream job FAILS, so the failing
-# step is skipped and the required check reports success over a failed
-# dependency. Every referencing condition must match BOTH arms; the
-# `!= 'success'` spelling matches each, so it satisfies both at once.
-FAILURE_ARM = re.compile(r"['\"]failure['\"]|!=\s*['\"]success['\"]")
+# A needs-result REFERENCE in any of the three spellings NEEDS_RESULT captures -- the
+# shared core of the outcome arms below. An outcome token only counts when it BINDS to
+# an upstream result: `github.event.action == 'cancelled'` mentions the token without
+# reacting to any dependency's outcome, so the arms must not match it.
+_NEEDS_REF = r"needs(?:\.[A-Za-z0-9_*-]+|\['[A-Za-z0-9_*-]+'\]|\[\"[A-Za-z0-9_*-]+\"\])\.result"
+# A condition that reacts to a CANCELLED upstream, in the spellings that do: a
+# needs-bound 'cancelled' arm (`contains(needs.*.result, 'cancelled')` or
+# `needs.build.result == 'cancelled'`), or a needs-bound inequality against success
+# (`needs.build.result != 'success'`, which is true for failure and cancelled alike).
+# A FAILURE-ONLY condition is skipped when an upstream job is cancelled -- and a job
+# killed by timeout-minutes reports cancelled, not failure -- so the failing step
+# never runs and the required check reports success over a dependency that did not
+# pass.
+CANCELLED_ARM = re.compile(
+    r"contains\(\s*" + _NEEDS_REF + r"\s*,\s*['\"]cancelled['\"]\s*\)"
+    r"|" + _NEEDS_REF + r"\s*==\s*['\"]cancelled['\"]"
+    r"|" + _NEEDS_REF + r"\s*!=\s*['\"]success['\"]"
+)
+# A condition that reacts to a FAILED upstream, in the same needs-bound spellings.
+# The hole is the converse of the one CANCELLED_ARM closes: a CANCELLED-ONLY
+# condition is false when an upstream job FAILS, so the failing step is skipped and
+# the required check reports success over a failed dependency. Every referencing
+# condition must match BOTH arms; the needs-bound `!= 'success'` spelling matches
+# each, so it satisfies both at once.
+FAILURE_ARM = re.compile(
+    r"contains\(\s*" + _NEEDS_REF + r"\s*,\s*['\"]failure['\"]\s*\)"
+    r"|" + _NEEDS_REF + r"\s*==\s*['\"]failure['\"]"
+    r"|" + _NEEDS_REF + r"\s*!=\s*['\"]success['\"]"
+)
 BACKSLASH = "\\"
 
 # The gate step's failing command, in the forms this checker will vouch for. Anything

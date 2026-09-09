@@ -39,8 +39,10 @@ public sealed class GoogleBillingExportSource(
             // The companion count query failed and the client degraded to "unavailable": the
             // records below are complete, but a late correction older than the scan floor would
             // go silently stale this cycle. Distinct from the stale-correction warning so an
-            // operator can tell "detection broken" from "corrections present".
+            // operator can tell "detection broken" from "corrections present" — and logged
+            // WITH the failure so the cause is not lost.
             logger.LogWarning(
+                result.OutOfRangeCountFailure,
                 "Google: the out-of-range billing correction key count was unavailable; stale corrections affecting usage older than the 31-day scan floor cannot be detected in this cycle"
             );
         }

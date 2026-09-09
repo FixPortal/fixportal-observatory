@@ -4,6 +4,7 @@ using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NodaTime;
+using NodaTime.Text;
 
 namespace AiObservatory.Ingest.Tests.Services;
 
@@ -813,6 +814,38 @@ public sealed class GitHubActivityClientTests : IDisposable
 
         result.Truncated.Should().BeTrue();
         result.ResumeCursor.Should().Be(Instant.FromUtc(2026, 7, 1, 9, 0));
+    }
+
+    [Fact]
+    public async Task GetWorkflowRunsAsync_StopsAtThePerCallWindowBudgetAndReturnsTheCursor()
+    {
+        // Every window here is truncated AND advancing, so only the per-call budget stops the
+        // walk: five windows (5 x 10 page requests) and no sixth, with the fifth window's
+        // oldest run as the resume cursor.
+        var requestCount = 0;
+        var handler = new StubHandler(req =>
+        {
+            var request = requestCount++;
+            var window = request / 10; // WorkflowRunsPaginationCap is 10 pages of 100
+            var createdAt = InstantPattern.ExtendedIso.Format(
+                Instant.FromUtc(2026, 6, 19, 9, 0).Minus(Duration.FromDays(window))
+            );
+            // Ids unique across windows too: duplicates are dropped before OldestSeen moves.
+            var page = FullPage(request * 1000, createdAt);
+            return JsonResponse($$"""{"workflow_runs":[{{page}}]}""");
+        });
+        var sut = CreateSut(handler);
+
+        var result = await sut.GetWorkflowRunsAsync(
+            "fix-portal/example",
+            new LocalDate(2026, 6, 1),
+            resumeCursor: null,
+            TestContext.Current.CancellationToken
+        );
+
+        result.Truncated.Should().BeTrue();
+        result.ResumeCursor.Should().Be(Instant.FromUtc(2026, 6, 15, 9, 0));
+        handler.RequestedUrls.Should().HaveCount(50);
     }
 
     private static string FullPage(int idOffset, string createdAt) =>

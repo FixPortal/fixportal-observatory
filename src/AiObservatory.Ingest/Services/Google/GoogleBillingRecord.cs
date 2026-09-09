@@ -26,5 +26,10 @@ public sealed record GoogleBillingRecord(
 /// </param>
 public sealed record GoogleBillingExportResult(
     IReadOnlyList<GoogleBillingRecord> Records,
-    long? OutOfRangeAffectedKeyCount
+    long? OutOfRangeAffectedKeyCount,
+    /// <summary>
+    /// The exception the companion count query failed with, when it failed — carried so the
+    /// "count unavailable" warning can name the cause instead of just the degradation.
+    /// </summary>
+    Exception? OutOfRangeCountFailure = null
 );
