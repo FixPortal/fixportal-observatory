@@ -1,5 +1,11 @@
 # Performance sweep — 2026-08-29
 
+> **Archival experiment record, not documentation.** This describes the codebase
+> as it was on the date in the filename; where it and the current code disagree,
+> the code is right. It is kept as the record of why the repricing path looks the
+> way it does. Audit artefacts it references live in the maintainer's private
+> archive and are not published.
+
 ## Accepted finding
 
 `PERF-001` — "Aggregate delta pair issues four PostgreSQL round trips per repriced event where one upsert suffices".

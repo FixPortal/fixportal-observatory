@@ -45,7 +45,8 @@ Pricing refreshes daily and shortly after startup when the last successful refre
 - [OpenAI pricing](https://developers.openai.com/api/docs/pricing.md)
 - [Claude pricing](https://platform.claude.com/docs/en/about-claude/pricing.md)
 - [Kimi documentation](https://platform.kimi.ai/docs/llms.txt)
-- [Gemini Developer API pricing](https://ai.google.dev/gemini-api/docs/pricing)
+
+The Gemini Developer API catalog is bundled rather than fetched: `gemini-developer-api-pricing` loads from the shipped catalog at startup and is unaffected by fetch outages.
 
 The [Google Cloud Billing Catalog API](https://docs.cloud.google.com/billing/v1/how-tos/catalog-api) is the planned official authority, but is currently unfetched and unavailable: `GooglePricingSource.VerifiedMappings` is empty, so its source definition remains not configured during pricing checks.
 

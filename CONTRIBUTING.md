@@ -72,8 +72,9 @@ npm run build
 npm run doctor
 ```
 
-The .NET tests need a PostgreSQL instance; the README shows a one-line Docker
-command to spin one up.
+The database-backed .NET tests need Docker: they self-start a PostgreSQL
+Testcontainer when `TEST_DB_CONNECTION` is unset, or use that variable's
+instance when it is set.
 
 ## Branches and commits
 

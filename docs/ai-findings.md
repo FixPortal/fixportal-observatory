@@ -4,6 +4,9 @@ GitHub's Copilot **AI Findings** set has no dismiss API or UI. This file
 substitutes for the missing dismiss UI so the same by-design issues do not get
 re-investigated on each scan.
 
+It is maintainer bookkeeping kept in the open, not product documentation; nothing
+here is needed to run or contribute to Observatory.
+
 Scope is the AI Findings set only. **Code Quality** findings and **code-scanning
 security alerts** are both dismissable on GitHub, which records the verdict
 durably — do not add rows for those.

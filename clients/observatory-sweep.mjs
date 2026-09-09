@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// AI Observatory local usage sweeper (drop-in).
+// Observatory local usage sweeper (drop-in).
 //
 // Rebuilds cumulative daily/model snapshots from six local CLI stores, then
 // POSTs them to `/api/events`. Source ids carry a per-machine suffix
