@@ -49,7 +49,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-production
+  # A direct dispatch owns the production lock here. A call owns it in ci.yml's
+  # deploy job; taking the same lock again in its child would wait on itself.
+  group: ${{ github.event_name == 'workflow_dispatch' && 'deploy-production' || format('deploy-called-{0}', github.run_id) }}
   cancel-in-progress: false
 
 # `github.ref` is the CALLER's ref inside a called workflow, so this one condition

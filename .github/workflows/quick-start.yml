@@ -1,0 +1,32 @@
+name: Quick-start qualification
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '37 3 * * 4'
+
+concurrency:
+  group: quick-start-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  compose-smoke:
+    name: Compose quick-start smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Lint workflows (actionlint)
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2
+        with:
+          shellcheck: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Build and verify the credential-free quick start
+        run: node scripts/compose-smoke.mjs

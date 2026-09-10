@@ -48,3 +48,15 @@ test('ensure-ingest-running is wired with always()', async () => {
   // a silently dead worker. always() is what restarts it in the failure lane too.
   assert.match(ensure, /^ {4}if:.*\balways\(\)/m, "ensure-ingest-running must carry `always()` in its `if:` -- without it a failed deploy skips the restart and leaves the ingest worker stopped")
 })
+
+test('both deploy entry points acquire the production lock without re-entering it', async () => {
+  const ci = await read('.github/workflows/ci.yml')
+  const deploy = await read('.github/workflows/deploy.yml')
+  const caller = jobBlock(ci, 'deploy')
+  assert.match(caller, /concurrency:\s*\r?\n\s+group: deploy-production\s*\r?\n\s+cancel-in-progress: false/)
+  assert.match(caller, /if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/)
+  assert.match(caller, /uses: \.\/\.github\/workflows\/deploy.yml/)
+  assert.match(deploy, /group: \$\{\{ github.event_name == 'workflow_dispatch' && 'deploy-production' \|\| format\('deploy-called-\{0\}', github.run_id\) \}\}/)
+  assert.match(deploy, /^  cancel-in-progress: false$/m)
+  assert.match(ci, /^  cancel-in-progress: false$/m)
+})

@@ -303,6 +303,29 @@ public class ApiKeyEndpointFilterTests
         result.Should().BeOfType<UnauthorizedHttpResult>();
     }
 
+    [Theory]
+    [InlineData("POST")]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    [InlineData("DELETE")]
+    public async Task InvokeAsync_WhenMutation_RejectsValidReadOnlyKey(string method)
+    {
+        _config["OBSERVATORY_API_KEY"].Returns("admin-key-12345");
+        _config["OBSERVATORY_READONLY_API_KEY"].Returns("readonly-key-12345");
+        var context = EndpointFilterInvocationContext.Create(CreateHttpContext(method, "readonly-key-12345"));
+        var nextCalled = false;
+        ValueTask<object?> Next(EndpointFilterInvocationContext _)
+        {
+            nextCalled = true;
+            return ValueTask.FromResult<object?>(Results.Ok());
+        }
+
+        var result = await _sut.InvokeAsync(context, Next);
+
+        nextCalled.Should().BeFalse();
+        result.Should().BeOfType<UnauthorizedHttpResult>();
+    }
+
     [Fact]
     public async Task InvokeAsync_WhenMutationAndAdminKeyConfigured_RejectsWrongLengthAdminKey()
     {

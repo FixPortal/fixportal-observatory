@@ -61,7 +61,7 @@ npm run lint
 ```
 
 ```powershell
-npm test
+npm test -- --coverage
 ```
 
 ```powershell
@@ -75,6 +75,30 @@ npm run doctor
 The database-backed .NET tests need Docker: they self-start a PostgreSQL
 Testcontainer when `TEST_DB_CONNECTION` is unset, or use that variable's
 instance when it is set.
+
+From the repository root, check the complete Docker quick start with Node and
+Docker Compose 2.24.4 or newer. This builds the documented stack in a disposable
+project, checks seeded API data and worker health, and removes its own containers
+and database volume afterwards. It ignores local provider credentials and uses a
+random loopback port so it can run alongside your development stack.
+The same check runs weekly and on manual dispatch in **Quick-start qualification**;
+the full container build stays outside the per-PR test budget.
+See the [qualification record](docs/oss-qualification.md) for measured results and
+the live-provider checks that remain unverified.
+
+```powershell
+node scripts/compose-smoke.mjs
+```
+
+The policy checker regression suites also run in CI:
+
+```powershell
+python -m pip install pytest
+```
+
+```powershell
+python -m pytest .github/scripts -q
+```
 
 ## Branches and commits
 

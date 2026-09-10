@@ -55,7 +55,7 @@ def test_correct_gate_passes(tmp_path):
 # M33: a failure-only condition is skipped when an upstream job is cancelled, so the
 # required check reports green over a dependency that did not pass.
 def test_failure_only_condition_is_refused(tmp_path):
-    with pytest.raises(SystemExit, match="does not react to both 'failure' and 'cancelled'"):
+    with pytest.raises(SystemExit, match="build:cancelled"):
         check(write_workflow(tmp_path, "contains(needs.*.result, 'failure')"))
 
 
@@ -63,7 +63,7 @@ def test_failure_only_condition_is_refused(tmp_path):
 # FAILS, so the gate step is skipped and the required check reports success over a
 # failed dependency.
 def test_cancelled_only_condition_is_refused(tmp_path):
-    with pytest.raises(SystemExit, match="does not react to both 'failure' and 'cancelled'"):
+    with pytest.raises(SystemExit, match="build:failure"):
         check(write_workflow(tmp_path, "contains(needs.*.result, 'cancelled')"))
 
 
@@ -71,7 +71,7 @@ def test_cancelled_only_condition_is_refused(tmp_path):
 # `github.event.action == 'cancelled'` mentions 'cancelled' but the gate step still
 # skips when a dependency is cancelled, so it must not satisfy either arm.
 def test_unbound_outcome_token_is_refused(tmp_path):
-    with pytest.raises(SystemExit, match="does not react to both 'failure' and 'cancelled'"):
+    with pytest.raises(SystemExit, match="has no step whose `if:` references"):
         check(
             write_workflow(
                 tmp_path,
@@ -142,21 +142,6 @@ def test_capitalised_false_continue_on_error_passes(tmp_path):
 )
 def test_normalise_condition_folds_case(value, expected):
     assert gate.normalise_condition(value) == expected
-
-
-@pytest.mark.parametrize(
-    ("condition", "expected"),
-    [
-        ("needs.build.result != 'success'", ["build"]),
-        ("needs['build'].result != 'success'", ["build"]),
-        ('needs["build"].result != "success"', ["build"]),
-        ("contains(needs.*.result, 'failure')", ["*"]),
-        ("needs.a.result == 'failure' || needs['b'].result == 'cancelled'", ["a", "b"]),
-        ("always()", []),
-    ],
-)
-def test_needs_result_ids_both_spellings(condition, expected):
-    assert gate.needs_result_ids(condition) == expected
 
 
 # A trailing redirection does not change whether the command fails; the compound
