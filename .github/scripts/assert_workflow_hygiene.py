@@ -315,24 +315,28 @@ def composite_step_refs(document):
     return refs
 
 
-def is_local_docker_build(image):
+def is_local_docker_build(image, action_dir):
     """True when a docker action's `runs.image` builds from the action's own
     directory rather than pulling a registry image.
 
     GitHub's metadata syntax accepts exactly one filename for that local build --
-    `Dockerfile` -- so only a final path component of that name (compared
-    case-insensitively) exempts the image from the pin check: `Dockerfile`,
-    `./docker/Dockerfile`. A suffix match is not the same rule: `build.dockerfile`
-    and `mydockerfile` are not valid local build files, and an image carrying a
-    URI scheme (`docker://untrusted/dockerfile`) is a registry pull whatever its
-    basename, so all of those stay refs to be pin-checked.
+    `Dockerfile`, case-sensitive (a capital `D`, no capital `f`), at a path relative
+    to the action's own directory. Basename matching alone is not enough either:
+    `myregistry.example.com/Dockerfile` has no `://` and that exact basename too,
+    and would wrongly exempt a real registry pull from the pin check (a mutable,
+    unpinned tag reads as clean). Requiring the path to resolve to an actual file
+    under `action_dir` is what tells the two apart -- a registry host has no such
+    file checked out, and a genuine local build does. Both points raised by
+    CodeRabbit on the upstream review.
     """
     if "://" in image:
         return False
-    return image.rsplit("/", 1)[-1].lower() == "dockerfile"
+    if image.rsplit("/", 1)[-1] != "Dockerfile":
+        return False
+    return (action_dir / image).is_file()
 
 
-def local_action_refs(document):
+def local_action_refs(document, action_dir):
     """Every ref a local action manifest causes to run: composite `uses:` steps,
     plus the registry image of a DOCKER action.
 
@@ -344,18 +348,17 @@ def local_action_refs(document):
     why `action_refs` pin-checks those, and it is checked here through the same
     check_ref.
 
-    A `Dockerfile` build -- the final path component named exactly that, the one
-    filename GitHub's metadata syntax accepts, so `build.dockerfile` does not
-    qualify -- builds from the action's own directory: this repository's own
-    reviewed code, like a composite's steps, with no revision to pin, so it is not
-    a ref. An image with a URI scheme is a registry pull whatever its basename, so
+    A `Dockerfile` build -- resolved against `action_dir`, the directory holding the
+    action's own manifest -- is this repository's own reviewed code, like a
+    composite's steps, with no revision to pin, so it is not a ref. An image with a
+    URI scheme is a registry pull whatever its basename, so
     `docker://untrusted/dockerfile` is checked like any other image.
     """
     refs = composite_step_refs(document)
     runs = document.get("runs")
     if isinstance(runs, dict) and runs.get("using") == "docker":
         image = runs.get("image")
-        if isinstance(image, str) and not is_local_docker_build(image):
+        if isinstance(image, str) and not is_local_docker_build(image, action_dir):
             refs.append(image)
     return refs
 
@@ -602,7 +605,7 @@ def check_local_action(job, ref, origin, unpinned, visited):
         )
         return True, unpinned
 
-    for inner_ref in local_action_refs(inner):
+    for inner_ref in local_action_refs(inner, manifest.parent):
         bad, unpinned = check_ref(f"{job} -> {ref}", inner_ref, manifest, unpinned)
         failed = failed or bad
         if not inner_ref.startswith("./") or is_reusable_workflow_ref(inner_ref):
