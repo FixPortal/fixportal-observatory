@@ -43,6 +43,12 @@ all 437 API unit tests passed again. Independent local code review found the evi
 misidentification described above; the correction and test were re-reviewed with no
 remaining findings. This local review does not substitute for the required PR reviewers.
 
+The follow-up is folded into [PR #238](https://github.com/FixPortal/fixportal-observatory/pull/238),
+preserving its canonical hygiene-checker sync. Its nine failing tests were reproduced,
+then repaired to pass fixture action directories and create actual Dockerfiles.
+Registry-lookalike and filename-case cases extend the Python suite to 40 passing tests.
+The combined branch also passed the full .NET, frontend, and Node suites above.
+
 Live Google billing validation is still **Not assessed**: the deployment recheck still
 has no `GOOGLE_CLOUD_PROJECT_ID` / `GOOGLE_BILLING_EXPORT_TABLE` pair. M24 needs the real
 export table and an existing access method, not more synthetic fixtures. The full
