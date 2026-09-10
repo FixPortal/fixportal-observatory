@@ -93,8 +93,8 @@ public sealed class GitHubBillingSyncServiceTests : IDisposable
         var writes = new List<CapturedWrite>();
         var sut = Create(
             ClientReturning(
-                Item("actions", "linux", 10m, day: 1),
-                Item("actions", "linux", 15m, day: 2),
+                Item("actions", "linux", 10m, day: 1, grossAmount: 12m, discountAmount: 2m),
+                Item("actions", "linux", 15m, day: 2, grossAmount: 19m, discountAmount: 4m),
                 Item("actions", "windows", 20m)
             ),
             Writer(writes)
@@ -107,6 +107,13 @@ public sealed class GitHubBillingSyncServiceTests : IDisposable
             .Select(write => (write.Observation.Sku, write.Observation.NetAmount))
             .Should()
             .BeEquivalentTo([("linux", 25m), ("windows", 20m)]);
+        var linux = writes.Single(write => write.Observation.Sku == "linux").Observation;
+        linux.GrossAmount.Should().Be(31m);
+        linux.CreditAmount.Should().Be(-6m);
+        using var raw = JsonDocument.Parse(linux.RawPayload);
+        raw.RootElement.GetProperty("grossAmount").GetDecimal().Should().Be(31m);
+        raw.RootElement.GetProperty("discountAmount").GetDecimal().Should().Be(6m);
+        raw.RootElement.GetProperty("netAmount").GetDecimal().Should().Be(25m);
     }
 
     [Fact]
