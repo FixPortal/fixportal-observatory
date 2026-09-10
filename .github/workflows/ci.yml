@@ -32,6 +32,12 @@ jobs:
         with:
           shellcheck: true
 
+      - name: Install policy checker test runner
+        run: python3 -m pip install pytest
+
+      - name: Policy checker regression tests
+        run: python3 -m pytest .github/scripts -q
+
   backend:
     name: Backend (.NET)
     runs-on: ubuntu-latest
@@ -125,7 +131,7 @@ jobs:
 
       - run: npm ci
       - run: npm run lint
-      - run: npm test
+      - run: npm test -- --coverage
       - run: npm run build
 
   # The repository's node:test suites used to have no job running them, so none of them
@@ -227,6 +233,9 @@ jobs:
     name: Deploy
     needs: [ci-gate]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     uses: ./.github/workflows/deploy.yml
     secrets: inherit
     permissions:

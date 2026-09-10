@@ -4,6 +4,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   test: {
+    // Bound concurrent jsdom/TypeScript initialization on high-core developer hosts.
+    maxWorkers: 4,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],

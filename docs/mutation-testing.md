@@ -114,7 +114,7 @@ auth filters.
 
 ### What the score means now
 
-**Currently 46.3% — 222 of 436 valid mutants uncovered (2026-09-04 run), up from ~19%.** The ~19% was an honest reading of a real gap:
+**2026-09-04 baseline: 46.3% — 222 of 436 valid mutants uncovered, up from ~19%.** The ~19% was an honest reading of a real gap:
 most scoped mutants reported `NoCoverage` because the money paths — FX conversion, the GitHub
 billing sync, the ledger's own validation — were exercised only by integration tests, which
 are deliberately not in this lane. That gap has now been closed where it can be, by unit tests
@@ -142,15 +142,18 @@ Doing this needed two things worth knowing about:
   integration project, outside this lane. Same precedent as
   `GitHubActivityEndpoints.ComputeSuccessRate`.
 
-**The remainder is structural, not a backlog.** Of the ~195 mutants still `NoCoverage`:
+The 2026-09-10 local run reports 222 `NoCoverage` mutants. These are outside this
+unit-only lane; that is a limitation of its scope, not proof that every mutation
+would be caught by the integration suite:
 
 | File | Mutants | Why |
 |---|---:|---|
 | `SpendCatalogEndpoints.cs` | 93 | private async HTTP handler bodies |
-| `SpendEntriesEndpoints.cs` | 75 | private async HTTP handler bodies |
-| `GitHubBillingRegistration.cs` | 25 | DI wiring |
+| `SpendEntriesEndpoints.cs` | 119 | private async HTTP handler bodies |
+| `GitHubBillingRegistration.cs` | 9 | DI wiring |
+| `ApiKeyEndpointFilter.cs` | 1 | HTTP authentication path |
 
-Those handler bodies are covered — by the WAF tests in the integration project, which this
+Those handler bodies are exercised by the WAF tests in the integration project, which this
 lane deliberately excludes. Chasing them here would mean either booting a host (which is what
 made the run time out in the first place) or refactoring endpoints for testability, and
 neither buys a better engineering decision.
@@ -159,6 +162,54 @@ Most surviving mutants are string literals and removed log statements, which are
 by asserting on log text. One is genuinely equivalent: `isNew = true` on the insert path is
 unobservable because `Aggregate` guarantees one line per entry key per run, so no later line in
 the same run can collide with it.
+
+## Warnings-as-errors qualification (2026-09-10)
+
+Two local Stryker 4.16.0 runs used the same API source at `7ea496f`, the same
+`stryker-config.json`, and the unit-project invocation above. Only
+`TreatWarningsAsErrors` changed between runs; it was restored to `true` afterwards.
+Both discovered 428 unit tests. Counts below come from the scoped JSON reports,
+not Stryker's broader compilation-stage console count.
+
+| Setting | Valid | Compile errors | No coverage | Killed | Survived | Score |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `true` (retained) | 455 | 143 | 222 | 222 | 11 | 48.8% |
+| `false` (comparison only) | 455 | 143 | 222 | 221 | 12 | 48.6% |
+
+Both had zero timeouts and 426 ignored mutants. The compile-error sets matched
+by file, start location, and mutator. This refutes warnings-as-errors shrinking
+the testable set **for this source/configuration**: both expose 233 covered,
+compiling mutants. Matching by file, location, mutator, and replacement reveals
+19 killed/survived outcome changes (a net difference of one), including auth and
+billing aggregation mutations. Their cause remains unverified; this comparison
+does not establish repeatable kill attribution or justify relaxing compiler enforcement.
+The existing compile errors and uncovered mutants have not been eliminated.
+
+Reports are locally generated under the unit project's `StrykerOutput/`:
+`2026-09-10.14-49-40/reports/mutation-report.json` (`true`) and
+`2026-09-10.14-53-43/reports/mutation-report.json` (`false`). Summarize either with
+`scripts/summarize-stryker.ps1 -ReportPath <report>`; these generated reports are
+not committed. This is a local qualification, not a replacement for the weekly
+GitHub artifact.
+
+One concrete gap was isolated and fixed in the tests: routing every method through
+GET authorization survived a serial run of `ApiKeyEndpointFilter.cs`. The new
+four-case theory rejects POST/PUT/PATCH/DELETE with a valid read-only key. Manually
+injecting that routing fault failed all four cases; restoring production logic
+passed. Serial Stryker on the same file then reported 36 killed, zero survived,
+one uncovered (97.30%, not 100%). No production authorization code changed.
+
+Reproduce from the unit-test directory:
+
+```powershell
+dotnet stryker --config-file ../../stryker-config.json --mutate '**/ApiKeyEndpointFilter.cs' --concurrency 1
+```
+
+The before/after reports are `2026-09-10.15-09-46` and `2026-09-10.15-12-00`
+under `StrykerOutput/`. This verifies that specific regression guard; it does not
+resolve the broader run-to-run outcome differences above. The whole-scope score
+must remain informational, and critical surviving/killed claims need targeted
+verification rather than inference from its total.
 
 ## Reading a slow run
 

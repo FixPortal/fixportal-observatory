@@ -51,9 +51,9 @@ jobs:
         # working-directory is LOAD-BEARING, not tidiness. Stryker's `test-projects` config
         # key does not restrict execution: from the repository root it discovers every test
         # project referencing AiObservatory.Api -- including the integration project -- and
-        # runs all 246 tests against every mutant. Run from the unit test project and it
-        # uses that project alone (133 tests). Verified by the "Number of tests found" line
-        # in the log below; 246 there means this has regressed. See docs/mutation-testing.md.
+        # runs those tests against every mutant. Run from the unit test project and it
+        # uses that project alone. Compare "Number of tests found" against that project's
+        # current test inventory, not a historical magic number. See docs/mutation-testing.md.
         #
         # Measured at ~32 seconds locally. The budget is generous on purpose: if it is ever
         # hit, something has changed structurally and the diagnosis is that log line, not

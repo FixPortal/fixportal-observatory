@@ -61,6 +61,19 @@ az deployment group create -g fpaiobs-rg -f infra/main.bicep -p anthropicBilling
 
 Google export rows preserve native export currency and credits. `export_time` advances when late corrections arrive, so affected stable groups are reaggregated. This is billed evidence, not token telemetry or an invoice clone; GBP display follows the existing historical FX path.
 
+The current source scan has a usage-date floor of 31 days before `changes_since`.
+Corrections for older usage cannot refresh stored observations: the companion
+query detects affected keys and the worker logs a warning; it does not backfill
+them. Check those warnings before treating the export as reconciled.
+
+**UNVERIFIED: live BigQuery partition pruning and query cost (review finding M24).**
+SQL-shape tests do not establish how a real export table or view is partitioned.
+Before enabling this lane, inspect its partition metadata and dry-run both queries
+from `GoogleBillingExportClient.cs` with representative parameters. Record bytes
+processed and check recent, boundary-day, and older corrected usage against source
+totals. A missing pruning benefit or omitted/mismatched billing group refutes the
+qualification; do not claim full historical correction coverage with this scan floor.
+
 > [!WARNING]
 > Exclude `claude` from `OBSERVATORY_LOCAL_SOURCES` when `claude-code-usage-api` covers the same account/activity. The independent lanes do not cross-deduplicate.
 
