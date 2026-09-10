@@ -31,7 +31,10 @@
     "mutation-level": "Standard",
     "coverage-analysis": "perTest",
     "test-runner": "mtp",
-    "concurrency": 4,
+    // Stryker.NET 4.16.0's MTP runner changes attribution across identical parallel runs.
+    // Two serial runs matched all 1,024 scoped mutant outcomes (2026-09-10).
+    // Keep serial until a runner upgrade passes the same comparison; see docs/mutation-testing.md.
+    "concurrency": 1,
     "thresholds": {
       "high": 80,
       "low": 70,

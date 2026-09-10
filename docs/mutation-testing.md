@@ -8,7 +8,9 @@ This document exists because the setup looks over-specified and is not. Every co
 below was established by measurement after the nightly run failed for three consecutive
 days in July 2026, and three plausible fixes shipped without changing the outcome.
 
-The run takes **about 40 seconds**. If it ever takes minutes, something below has regressed.
+The September 10 serial qualification took **60–84 seconds locally**, including the final
+billing assertions below. Diagnose material slowdowns using the lane inventory and per-mutant
+cost, not the historical 40-second parallel baseline.
 
 ## Run Stryker from the unit test project directory
 
@@ -210,6 +212,77 @@ under `StrykerOutput/`. This verifies that specific regression guard; it does no
 resolve the broader run-to-run outcome differences above. The whole-scope score
 must remain informational, and critical surviving/killed claims need targeted
 verification rather than inference from its total.
+
+## Repeatability qualification (2026-09-10 follow-up)
+
+Repeating the unchanged source/configuration at `deabf21` reproduced the problem
+without changing warnings-as-errors. Both runs discovered 432 Stryker test cases;
+the ordinary MTP unit invocation expanded 437 cases.
+
+| Workers | Run | Killed | Survived | No coverage | Compile errors | Timeouts | Seconds |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 4 | `repeatability-current-1` | 222 | 11 | 222 | 143 | 0 | 54.4 |
+| 4 | `repeatability-current-2` | 221 | 12 | 222 | 143 | 0 | 58.5 |
+| 1 | `repeatability-serial-1` | 189 | 44 | 222 | 143 | 0 | 65.2 |
+| 1 | `repeatability-serial-2` | 189 | 44 | 222 | 143 | 0 | 76.5 |
+
+The parallel pair changed **15 individual killed/survived outcomes**. The serial
+pair matched **all 1,024 scoped records**, keyed by file, source location, mutator,
+and replacement, not unstable mutant IDs. Each report also had 426 ignored mutants.
+The serial score is 41.54%; the lower number is not a test-suite regression.
+
+A concrete false kill was checked independently: deleting the final informational
+log statement in `GitHubBillingSyncService.SyncAsync` passed all 437 unit cases.
+Parallel Stryker called that deletion killed in one run and survived in the other;
+both serial runs called it survived. The log statement was restored afterwards.
+This is consistent with the MTP attribution problem reported in
+[Stryker.NET #3742](https://github.com/stryker-mutator/stryker-net/issues/3742), not
+proof of its precise internal mechanism in this application.
+
+The retained configuration therefore uses **one worker**, with the same MTP runner,
+coverage analysis, mutation scope, compiler enforcement, and time budgets. Do not
+restore parallelism solely to recover the higher score. An upgrade must first pass
+the same per-mutant repeatability comparison and targeted fault checks.
+
+The stable survivors also exposed missing billing assertions. The aggregation test
+now checks gross 31, credits -6, net 25, and the retained gross/discount/net evidence
+for two records. Replacing any of those three `Sum` calls with `Max` fails that test;
+all temporary mutations were restored. This adds protection without changing billing
+logic or making tests depend on log wording.
+
+After the gross/discount assertions, `repeatability-final-1` and `repeatability-final-2` again
+matched all 1,024 records: 190 killed, 43 survived, 222 uncovered, 143 compile errors,
+426 ignored, zero timeouts (41.76%; 74.4 and 69.8 seconds). Gross and discount
+`Sum` to `Max` mutations were killed; the reported-net mutation survived because the
+ledger net is reconstructed from gross minus discount. Disabling mutant mixing did
+not change those counts. Independent review caught an initial misidentification of
+that survivor as discount; it was a real missing assertion, not a false survivor.
+The added raw `netAmount` assertion rejects a manually injected net `Sum` to `Max`
+fault (expected 25, observed 15).
+
+With all three assertions retained, `repeatability-reviewed-1` and
+`repeatability-reviewed-2` matched all 1,024 records again: 191 killed, 42 survived,
+222 uncovered, 143 compile errors, 426 ignored, zero timeouts (41.98%; 83.7 and
+59.7 seconds). All three billing `Sum` to `Max` mutations are now reported killed.
+
+A diagnostic run with coverage analysis off, scoped to `GitHubBillingSyncService`,
+reported all 77 tested mutants killed, including the independently checked harmless
+log deletion. That is another false kill, not evidence of 100% protection. Neither
+diagnostic setting is retained. Until the runner is qualified against these canaries,
+use direct fault injection for consequential billing/security claims and keep the
+mutation score informational.
+
+Reports remain local generated artifacts under
+`tests/AiObservatory.Api.Tests/StrykerOutput/<run>/reports/mutation-report.json`.
+Repeat from that test directory, using a different output name for each run:
+
+```powershell
+dotnet stryker --config-file ../../stryker-config.json --reporter json --output StrykerOutput/qualification-1
+```
+
+This mitigates the observed parallel instability; it does not prove every surviving
+mutant is a real test gap. Static-initializer mutation attribution is not qualified
+by this comparison, and integration-only handlers remain outside this unit lane.
 
 ## Reading a slow run
 
