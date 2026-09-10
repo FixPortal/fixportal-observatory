@@ -1,0 +1,60 @@
+{
+  "skus": [
+    {
+      "name": "services/synthetic-service/skus/sku-input-us",
+      "skuId": "sku-input-us",
+      "description": "Synthetic Agent Platform text input tokens in US",
+      "category": {
+        "serviceDisplayName": "Gemini Enterprise Agent Platform",
+        "resourceFamily": "AI Platform",
+        "resourceGroup": "Generative AI",
+        "usageType": "OnDemand"
+      },
+      "serviceRegions": ["us"],
+      "pricingInfo": [
+        {
+          "effectiveTime": "2026-08-20T12:34:56.123456789Z",
+          "summary": "Synthetic fixture price; not a live Google rate",
+          "pricingExpression": {
+            "usageUnit": "token",
+            "usageUnitDescription": "token",
+            "baseUnit": "token",
+            "baseUnitDescription": "token",
+            "baseUnitConversionFactor": 1,
+            "displayQuantity": 1000000,
+            "tieredRates": [
+              {
+                "startUsageAmount": 0,
+                "unitPrice": {
+                  "currencyCode": "USD",
+                  "units": "0",
+                  "nanos": 1250
+                }
+              }
+            ]
+          },
+          "aggregationInfo": {
+            "aggregationLevel": "PROJECT",
+            "aggregationInterval": "DAILY",
+            "aggregationCount": 1
+          },
+          "currencyConversionRate": 1
+        }
+      ],
+      "serviceProviderName": "Google",
+      "geoTaxonomy": {
+        "type": "REGIONAL",
+        "regions": ["us"]
+      }
+    },
+    {
+      "name": "services/synthetic-service/skus/sku-unmapped",
+      "skuId": "sku-unmapped",
+      "description": "Synthetic Agent Platform text input SKU that is deliberately unmapped",
+      "category": {
+        "serviceDisplayName": "Gemini Enterprise Agent Platform"
+      }
+    }
+  ],
+  "nextPageToken": "page two/+?"
+}

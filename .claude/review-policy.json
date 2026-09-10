@@ -1,0 +1,68 @@
+{
+  "$comment": [
+    "PR review risk tiering. Read by ~/.claude/hooks/pr-review-policy.sh.",
+    "Any file matching 'high' => HIGH (Gitar + CodeRabbit). All files matching 'low' => LOW.",
+    "Everything else => NORMAL (Gitar only). No match anywhere => NORMAL, deliberately.",
+    "",
+    "This repo has all four high-risk shapes at once: EF migrations, real Azure infra",
+    "(infra/ + infra.yml + deploy.yml), an auth surface, and a MONEY LEDGER.",
+    "AiObservatory.Data/Spend is spend-ledger persistence - the brief's worked example of",
+    "a change worth spending a CodeRabbit review on was exactly this area (PR #100, where",
+    "review caught a DateOnly vs DateTimeOffset wire-format bug against a billing API).",
+    "",
+    "LOW justification for THIS repo: docs/ is developer documentation with no site build.",
+    "clients/ is generated API client code that ships - NORMAL, not low.",
+    "",
+    "Markdown is '**/*.md', NOT '*.md'. A single star compiles to [^/]* and is therefore",
+    "root-anchored: README.md matched, clients/README.md did not, so a docs-only PR",
+    "touching both fell through to NORMAL.",
+    "",
+    "Dependency manifests (package.json, package-lock.json, Directory.Packages.props,",
+    "**/*.csproj) were REMOVED from 'high' on 2026-07-29 and must not be added back. They are",
+    "what Dependabot edits, and dependency PRs are out of AI code review on both vendors:",
+    "CodeRabbit refuses bot authors outright and Gitar's bot review is switched off, because",
+    "reviewing every bump exhausts the allowance and starves the changes that need it. Listing",
+    "them HIGH would demand a reviewer that can never run - coverage on paper, none in fact. CI",
+    "plus Dependabot's own advisory data is what gates a bump. nuget.config, global.json, .npmrc",
+    "and Directory.Build.props stay HIGH: registry/feed and analyzer config, not bot-edited.",
+    "",
+    "'.github/workflows/**' LEFT the high list on 2026-08-19 and is asserted in",
+    "review-policy-guard.yml instead, on the same reasoning that removed .gitignore on",
+    "2026-08-02: the hook tiers by path glob, so it cannot tell a permissions one-liner from",
+    "a rewrite of the deploy job, and bills a metered CodeRabbit review either way. Measured",
+    "over 100 HIGH PRs in the preceding 30 days: config-only diffs were 27 of them and",
+    "produced FOUR actionable comments between them, against 174 from code-bearing diffs,",
+    "while 45 of the 100 got no CodeRabbit verdict at all - throttled out at 73 reviews per",
+    "7 days against a 30/7d threshold. The glob was not buying review of workflow changes;",
+    "it was crowding out review of code.",
+    "",
+    "Do NOT re-add it without first removing the corresponding assertions from the guard.",
+    "Deleting the guard itself needs no reviewer: \"Review policy intact\" is a REQUIRED",
+    "status check, so removing the workflow means the check never reports and no PR merges."
+  ],
+
+  "version": 1,
+
+  "high": [
+    ".github/workflows/ci.yml",
+    ".github/workflows/review-policy-guard.yml",
+    ".github/scripts/assert_workflow_hygiene.py",
+    ".github/scripts/assert_gate_coverage.py",
+    ".claude/review-policy.json",
+    ".coderabbit.yaml",
+    "**/Migrations/**",
+    "infra/**",
+    "**/*.bicep",
+    ".config/dotnet-tools.json",
+    "nuget.config",
+    "Directory.Build.props",
+    "src/AiObservatory.Data/Spend/**",
+    "src/AiObservatory.Web/src/auth/**"
+  ],
+
+  "low": [
+    "docs/**",
+    "**/*.md",
+    ".vscode/**"
+  ]
+}

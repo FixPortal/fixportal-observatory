@@ -1,0 +1,627 @@
+{
+  "info": {
+    "name": "Observatory",
+    "description": "Representative API requests for the Observatory service.\n\nSetup:\n1. Set `base_url` to `http://localhost:5039/api` (local) or your deployed API base URL ending in `/api`.\n2. Set `api_key` to your `OBSERVATORY_API_KEY` value when needed.\n3. In Development, GET is keyless only when both `OBSERVATORY_API_KEY` and `OBSERVATORY_READONLY_API_KEY` are unset; otherwise either configured key is required. Non-GET is keyless when `OBSERVATORY_API_KEY` is unset; when configured, its admin key is required. Non-Development refuses to start unless `OBSERVATORY_API_KEY`, `OBSERVATORY_READONLY_API_KEY`, and `OBSERVATORY_IDE_API_KEY` are present, non-default, and mutually distinct.\n\nAfter creating a subscription, insight lookup, or budget rule, copy the returned `id` into the matching collection variable (`subscription_id`, `insight_id`, `budget_rule_id`).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5039/api",
+      "description": "Change to your deployed API base URL ending in `/api` for production."
+    },
+    {
+      "key": "api_key",
+      "value": "",
+      "description": "Admin key for writes. In Development, GET is keyless only when both `OBSERVATORY_API_KEY` and `OBSERVATORY_READONLY_API_KEY` are unset; Non-GET is keyless when `OBSERVATORY_API_KEY` is unset."
+    },
+    {
+      "key": "subscription_id",
+      "value": "00000000-0000-0000-0000-000000000000",
+      "description": "Set from the id returned by POST /subscriptions."
+    },
+    {
+      "key": "insight_id",
+      "value": "00000000-0000-0000-0000-000000000000",
+      "description": "Set from the id returned by GET /insights."
+    },
+    {
+      "key": "budget_rule_id",
+      "value": "00000000-0000-0000-0000-000000000000",
+      "description": "Set from the id returned by POST /budget-rules."
+    },
+    {
+      "key": "event_id",
+      "value": "00000000-0000-0000-0000-000000000000",
+      "description": "Set from the id returned by POST /events."
+    },
+    {
+      "key": "event_key",
+      "value": "my-event-key-001",
+      "description": "Source-scoped idempotency key used when ingesting events."
+    }
+  ],
+  "item": [
+    {
+      "name": "Sources",
+      "item": [
+        {
+          "name": "Get source status",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/sources/status",
+              "host": ["{{base_url}}"],
+              "path": ["sources", "status"]
+            },
+            "description": "Returns configured, fresh, stale, failing, unavailable, or not-configured source status without treating it as process liveness."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Events",
+      "item": [
+        {
+          "name": "Ingest event",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"anthropic\",\n  \"model\": \"claude-sonnet-4-6\",\n  \"inputTokens\": 1500,\n  \"outputTokens\": 800,\n  \"cacheReadTokens\": 200,\n  \"cacheWriteTokens\": 0,\n  \"cacheWrite1hTokens\": 0,\n  \"costUsd\": null,\n  \"sourceId\": \"anthropic-usage-api\",\n  \"sourceKind\": \"providerApi\",\n  \"usageScope\": \"api\",\n  \"costBasis\": \"listPriceEstimate\",\n  \"observedAtUtc\": \"2026-08-25T10:00:00Z\",\n  \"eventKey\": \"{{event_key}}\",\n  \"rawPayload\": \"{\\\"service_tier\\\":\\\"standard\\\",\\\"speed\\\":\\\"standard\\\",\\\"inference_geo\\\":\\\"global\\\",\\\"cache_creation\\\":{\\\"ephemeral_5m_input_tokens\\\":0,\\\"ephemeral_1h_input_tokens\\\":0}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/events",
+              "host": ["{{base_url}}"],
+              "path": ["events"]
+            },
+            "description": "Ingest a single usage event. Valid providers: `anthropic`, `google`, `copilot`, `openai`, and `moonshot`.\n\n`eventKey` is optional and source-scoped: a second POST with the same `sourceId` and `eventKey` corrects that snapshot without creating a duplicate row.\n\n`occurredAtUtc` (optional) backfills the event onto the correct day; omit it to use ingestion time."
+          }
+        },
+        {
+          "name": "Ingest event (backfilled)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"openai\",\n  \"model\": \"codex\",\n  \"inputTokens\": 5000,\n  \"outputTokens\": 2000,\n  \"cacheReadTokens\": 0,\n  \"cacheWriteTokens\": 0,\n  \"cacheWrite1hTokens\": 0,\n  \"costUsd\": null,\n  \"sourceId\": \"codex-local\",\n  \"sourceKind\": \"localTelemetry\",\n  \"usageScope\": \"subscription\",\n  \"costBasis\": \"notional\",\n  \"occurredAtUtc\": \"2026-06-20T14:30:00Z\",\n  \"observedAtUtc\": \"2026-08-25T10:00:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/events",
+              "host": ["{{base_url}}"],
+              "path": ["events"]
+            },
+            "description": "Ingest an event with a historical timestamp. The event aggregates onto the day of `occurredAtUtc`, not today."
+          }
+        },
+        {
+          "name": "Get event by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/events/{{event_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["events", "{{event_id}}"]
+            },
+            "description": "Retrieve a single event by its GUID. Set the `event_id` collection variable from the id returned by POST /events."
+          }
+        },
+        {
+          "name": "List events by provider",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/events?provider=anthropic&limit=100",
+              "host": ["{{base_url}}"],
+              "path": ["events"],
+              "query": [
+                { "key": "provider", "value": "anthropic", "description": "Required. One of: anthropic, google, copilot, openai, moonshot." },
+                { "key": "from", "value": null, "description": "Optional. ISO 8601 timestamp (e.g. 2026-06-01T00:00:00Z).", "disabled": true },
+                { "key": "to", "value": null, "description": "Optional. ISO 8601 timestamp.", "disabled": true },
+                { "key": "limit", "value": "100", "description": "Max rows to return (1–10000, default 10000)." }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Aggregates",
+      "item": [
+        {
+          "name": "Get daily aggregates",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/aggregates",
+              "host": ["{{base_url}}"],
+              "path": ["aggregates"],
+              "query": [
+                { "key": "from", "value": "2026-06-01", "description": "Start date (yyyy-MM-dd). Default: 30-day inclusive window (today-29 through today).", "disabled": true },
+                { "key": "to", "value": "2026-06-21", "description": "End date (yyyy-MM-dd). Default: 30-day inclusive window (today-29 through today).", "disabled": true }
+              ]
+            },
+            "description": "Daily token usage and cost broken down by provider and model. Default range is the 30-day inclusive window (today-29 through today)."
+          }
+        },
+        {
+          "name": "Purge provider (admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/aggregates?provider=anthropic",
+              "host": ["{{base_url}}"],
+              "path": ["aggregates"],
+              "query": [
+                { "key": "provider", "value": "anthropic", "description": "Required. Deletes all raw events and daily aggregates for this provider. Irreversible." }
+              ]
+            },
+            "description": "Delete all usage events and daily aggregates for a single provider. Use before a clean backfill. Irreversible."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Insights",
+      "item": [
+        {
+          "name": "List insights",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/insights",
+              "host": ["{{base_url}}"],
+              "path": ["insights"]
+            },
+            "description": "Returns the 50 most recent AI-generated insights, ordered newest first. Types: anomaly, efficiency, recommendation, summary."
+          }
+        },
+        {
+          "name": "Acknowledge insight",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/insights/{{insight_id}}/acknowledge",
+              "host": ["{{base_url}}"],
+              "path": ["insights", "{{insight_id}}", "acknowledge"]
+            },
+            "description": "Mark an insight as read. Returns 204 No Content."
+          }
+        },
+        {
+          "name": "Explain insight",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/insights/{{insight_id}}/explain",
+              "host": ["{{base_url}}"],
+              "path": ["insights", "{{insight_id}}", "explain"]
+            },
+            "description": "Ask the Anthropic SDK to generate a deeper explanation of the insight. Requires ANTHROPIC_API_KEY to be configured."
+          }
+        },
+        {
+          "name": "Generate insights (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/insights/generate",
+              "host": ["{{base_url}}"],
+              "path": ["insights", "generate"]
+            },
+            "description": "Trigger on-demand insight generation for today. Returns { generated: N }. Requires ANTHROPIC_API_KEY."
+          }
+        },
+        {
+          "name": "Clear all insights (admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/insights",
+              "host": ["{{base_url}}"],
+              "path": ["insights"]
+            },
+            "description": "Delete all insights. Irreversible. Use before regenerating from scratch."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Subscriptions",
+      "item": [
+        {
+          "name": "List subscriptions",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/subscriptions",
+              "host": ["{{base_url}}"],
+              "path": ["subscriptions"]
+            }
+          }
+        },
+        {
+          "name": "Create subscription",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"anthropic\",\n  \"name\": \"Claude Pro\",\n  \"costAmount\": 18.00,\n  \"currency\": \"GBP\",\n  \"billingDay\": 15,\n  \"activeFrom\": \"2026-01-01\",\n  \"activeTo\": null\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/subscriptions",
+              "host": ["{{base_url}}"],
+              "path": ["subscriptions"]
+            },
+            "description": "Create a flat monthly subscription. `currency` must be `GBP` or `USD`. `billingDay` is 1–31. `activeTo` is null for ongoing subscriptions. `activeFrom` and `activeTo` use ISO date format (`yyyy-MM-dd`)."
+          }
+        },
+        {
+          "name": "Get subscription by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/subscriptions/{{subscription_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["subscriptions", "{{subscription_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Update subscription",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"anthropic\",\n  \"name\": \"Claude Pro\",\n  \"costAmount\": 20.00,\n  \"currency\": \"GBP\",\n  \"billingDay\": 15,\n  \"activeFrom\": \"2026-01-01\",\n  \"activeTo\": null\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/subscriptions/{{subscription_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["subscriptions", "{{subscription_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Set extra usage cost",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 5.50\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/subscriptions/{{subscription_id}}/extra-usage",
+              "host": ["{{base_url}}"],
+              "path": ["subscriptions", "{{subscription_id}}", "extra-usage"]
+            },
+            "description": "Override the extra usage cost overlay for a subscription period. Pass `null` to clear it."
+          }
+        },
+        {
+          "name": "Delete subscription",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/subscriptions/{{subscription_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["subscriptions", "{{subscription_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Budget Rules",
+      "item": [
+        {
+          "name": "List budget rules",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/budget-rules",
+              "host": ["{{base_url}}"],
+              "path": ["budget-rules"]
+            }
+          }
+        },
+        {
+          "name": "Create budget rule",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"anthropic\",\n  \"period\": \"monthly\",\n  \"thresholdUsd\": 100.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/budget-rules",
+              "host": ["{{base_url}}"],
+              "path": ["budget-rules"]
+            },
+            "description": "Create a budget alert rule. `provider` is optional (null = across all providers). `period` values: `daily`, `weekly`, `monthly`. A conditional email notification is sent when email alerts are configured and spend crosses `thresholdUsd` within the period."
+          }
+        },
+        {
+          "name": "Create global budget rule",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": null,\n  \"period\": \"daily\",\n  \"thresholdUsd\": 5.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/budget-rules",
+              "host": ["{{base_url}}"],
+              "path": ["budget-rules"]
+            },
+            "description": "A rule with provider null applies across all providers combined."
+          }
+        },
+        {
+          "name": "Get budget rule by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/budget-rules/{{budget_rule_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["budget-rules", "{{budget_rule_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete budget rule",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/budget-rules/{{budget_rule_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["budget-rules", "{{budget_rule_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notification Settings",
+      "item": [
+        {
+          "name": "Get notification settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/notification-settings",
+              "host": ["{{base_url}}"],
+              "path": ["notification-settings"]
+            },
+            "description": "Returns whether an alert email and/or Slack webhook are configured, plus a masked value for each (e.g. `ch***@fixportal.org`). The real values are never returned."
+          }
+        },
+        {
+          "name": "Update notification settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"alertEmailTo\": \"chris@fixportal.org\",\n  \"slackWebhookUrl\": \"https://hooks.slack.com/services/T0/B0/xyz\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/notification-settings",
+              "host": ["{{base_url}}"],
+              "path": ["notification-settings"]
+            },
+            "description": "Updates the singleton notification settings row. Either field can be omitted to leave it unchanged, or set to null/empty to clear it. GET returns masked values only; provide a non-empty replacement value to change a configured field."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Caveman Sessions",
+      "description": "Tracks Claude Code Caveman-mode session statistics. Posted by the caveman-stats skill hook.",
+      "item": [
+        {
+          "name": "Upsert sessions",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessions\": [\n    {\n      \"sessionId\": \"session-abc-123\",\n      \"occurredAtUtc\": \"2026-06-21T10:00:00Z\",\n      \"mode\": \"full\",\n      \"model\": \"claude-sonnet-4-6\",\n      \"outputTokens\": 4200,\n      \"estSavedTokens\": 1800,\n      \"estSavedUsd\": 0.009\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/caveman-sessions",
+              "host": ["{{base_url}}"],
+              "path": ["caveman-sessions"]
+            },
+            "description": "Upsert up to 1000 Caveman sessions in one call. Existing sessionId values are updated, new ones are inserted."
+          }
+        },
+        {
+          "name": "Get stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/caveman-stats",
+              "host": ["{{base_url}}"],
+              "path": ["caveman-stats"]
+            },
+            "description": "Returns lifetime totals: session count, output tokens, estimated saved tokens, estimated saved cost."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Adversarial Review",
+      "description": "Tracks cross-vendor adversarial code review runs. Posted by the external-review.ps1 script.",
+      "item": [
+        {
+          "name": "Record review run",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventType\": \"adversarial-review-run\",\n  \"role\": \"reviewer\",\n  \"reviewer\": \"anthropic\",\n  \"model\": \"claude-sonnet-4-6\",\n  \"inputTokens\": 12000,\n  \"outputTokens\": 3500,\n  \"costUsd\": 0.18,\n  \"reviewDurationMs\": 14200,\n  \"issuesRaised\": 7,\n  \"issuesAccepted\": 4,\n  \"runId\": \"2026-06-21T10:00:00Z\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/adversarial-review/runs",
+              "host": ["{{base_url}}"],
+              "path": ["adversarial-review", "runs"]
+            }
+          }
+        },
+        {
+          "name": "List review runs",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/adversarial-review/runs",
+              "host": ["{{base_url}}"],
+              "path": ["adversarial-review", "runs"]
+            }
+          }
+        },
+        {
+          "name": "Get review stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/adversarial-review/stats",
+              "host": ["{{base_url}}"],
+              "path": ["adversarial-review", "stats"]
+            },
+            "description": "Returns aggregate stats across all review runs: total runs, cost, issues raised/accepted, acceptance rate."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dev (local only)",
+      "description": "Development-only endpoints. Only available when the API runs in the Development environment (`ASPNETCORE_ENVIRONMENT=Development`). Not deployed to production.",
+      "item": [
+        {
+          "name": "Seed sample data",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Observatory-Key", "value": "{{api_key}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/dev/seed",
+              "host": ["{{base_url}}"],
+              "path": ["dev", "seed"]
+            },
+            "description": "Seeds sample aggregates, subscriptions, budget rules, and insights only when the relevant tables are empty; otherwise it skips them. The fastest way to see a populated dashboard locally."
+          }
+        }
+      ]
+    }
+  ]
+}

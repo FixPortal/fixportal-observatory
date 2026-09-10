@@ -1,0 +1,362 @@
+# FixPortal shared C# code-style rules.
+# Checked in directly: Directory.Build.props imports this file via
+# GlobalAnalyzerConfigFiles, so edit it here — it is not packaged or generated.
+# Formatter-only keys live in the root .editorconfig.
+
+is_global = true
+global_level = 100
+
+#### Shared .NET (C# + VB) conventions ####
+
+# Simplified boolean / interpolation / namespace-match
+dotnet_style_prefer_simplified_boolean_expressions = true
+dotnet_diagnostic.IDE0075.severity = suggestion
+
+dotnet_style_prefer_simplified_interpolation = true
+dotnet_diagnostic.IDE0071.severity = suggestion
+
+dotnet_style_namespace_match_folder = true
+dotnet_diagnostic.IDE0130.severity = suggestion
+
+# Field preferences
+dotnet_style_readonly_field = true
+dotnet_diagnostic.IDE0044.severity = error
+
+# Parameter preferences
+dotnet_code_quality_unused_parameters = all
+dotnet_diagnostic.IDE0060.severity = error
+
+#### .NET Coding Conventions ####
+
+# Organize usings
+dotnet_separate_import_directive_groups = false
+dotnet_sort_system_directives_first = true
+
+# this. / Me. preferences
+# All four qualification options map to IDE0003 (remove this. / Me. qualifier).
+dotnet_style_qualification_for_event = false
+dotnet_style_qualification_for_field = false
+dotnet_style_qualification_for_method = false
+dotnet_style_qualification_for_property = false
+dotnet_diagnostic.IDE0003.severity = error
+
+# Language keywords vs BCL types
+# Both predefined-type options share IDE0049.
+dotnet_style_predefined_type_for_locals_parameters_members = true
+dotnet_style_predefined_type_for_member_access = true
+dotnet_diagnostic.IDE0049.severity = error
+
+# Parentheses preferences
+# All four parentheses options share IDE0047 (remove unnecessary parentheses).
+dotnet_style_parentheses_in_arithmetic_binary_operators = never_if_unnecessary
+dotnet_style_parentheses_in_other_binary_operators = never_if_unnecessary
+dotnet_style_parentheses_in_other_operators = never_if_unnecessary
+dotnet_style_parentheses_in_relational_binary_operators = never_if_unnecessary
+dotnet_diagnostic.IDE0047.severity = error
+
+# Modifier preferences
+dotnet_style_require_accessibility_modifiers = for_non_interface_members
+dotnet_diagnostic.IDE0040.severity = error
+
+# Expression-level preferences
+dotnet_style_coalesce_expression = true
+dotnet_diagnostic.IDE0029.severity = suggestion
+
+dotnet_style_collection_initializer = true
+dotnet_diagnostic.IDE0028.severity = error
+
+dotnet_style_explicit_tuple_names = true
+dotnet_diagnostic.IDE0033.severity = error
+
+dotnet_style_null_propagation = true
+dotnet_diagnostic.IDE0031.severity = error
+
+dotnet_style_object_initializer = true
+dotnet_diagnostic.IDE0017.severity = error
+
+# IDE0032 kept at suggestion, not warning: field-backed properties whose accessors
+# carry side-effects (e.g. an init accessor that sets a companion flag) cannot collapse
+# to an auto-property, so the rule false-positives. IDE-visible but non-build-gating.
+# (Lesson from fixportal-engine PR#87.)
+dotnet_style_prefer_auto_properties = true
+dotnet_diagnostic.IDE0032.severity = suggestion
+
+dotnet_style_prefer_compound_assignment = true
+dotnet_diagnostic.IDE0054.severity = error
+
+dotnet_style_prefer_conditional_expression_over_assignment = true
+dotnet_diagnostic.IDE0045.severity = error
+
+# IDE0046 is also suppressed explicitly in the suppressions block below (both agree: none).
+dotnet_style_prefer_conditional_expression_over_return = true
+dotnet_diagnostic.IDE0046.severity = none
+
+# Both inferred-name options share IDE0037.
+dotnet_style_prefer_inferred_anonymous_type_member_names = true
+dotnet_style_prefer_inferred_tuple_names = true
+dotnet_diagnostic.IDE0037.severity = error
+
+dotnet_style_prefer_is_null_check_over_reference_equality_method = true
+dotnet_diagnostic.IDE0041.severity = error
+
+# IDE0300 covers collection-expression rewrites (array literals, etc.); IDE0305 covers
+# fluent ToList()/ToArray() → collection-expression conversions.
+dotnet_style_prefer_collection_expression = true
+dotnet_diagnostic.IDE0300.severity = suggestion
+dotnet_diagnostic.IDE0305.severity = suggestion
+
+#### C# Coding Conventions ####
+
+csharp_using_directive_placement = outside_namespace
+dotnet_diagnostic.IDE0065.severity = error
+
+csharp_prefer_simple_using_statement = true
+dotnet_diagnostic.IDE0063.severity = error
+
+csharp_prefer_braces = true:error
+dotnet_diagnostic.IDE0011.severity = error
+
+# file_scoped namespace → IDE0161; block-scoped (the disallowed form) → IDE0160.
+csharp_style_namespace_declarations = file_scoped
+dotnet_diagnostic.IDE0161.severity = error
+
+csharp_style_prefer_method_group_conversion = true
+dotnet_diagnostic.IDE0200.severity = suggestion
+
+# IDE0210 = prefer top-level statements; IDE0211 = prefer method declaration.
+# false means "prefer method declaration" (IDE0211).
+csharp_style_prefer_top_level_statements = false
+dotnet_diagnostic.IDE0210.severity = suggestion
+
+# IDE0290 is also suppressed explicitly in the suppressions block below (both agree: none).
+csharp_style_prefer_primary_constructors = true
+dotnet_diagnostic.IDE0290.severity = none
+
+csharp_style_implicit_object_creation_when_type_is_apparent = true
+dotnet_diagnostic.IDE0090.severity = suggestion
+
+# Expression-bodied members
+csharp_style_expression_bodied_methods = false
+dotnet_diagnostic.IDE0022.severity = silent
+
+csharp_style_expression_bodied_constructors = false
+dotnet_diagnostic.IDE0021.severity = silent
+
+# IDE0023 = non-conversion operators; IDE0024 = conversion operators.
+csharp_style_expression_bodied_operators = true
+dotnet_diagnostic.IDE0023.severity = error
+dotnet_diagnostic.IDE0024.severity = error
+
+csharp_style_expression_bodied_properties = true
+dotnet_diagnostic.IDE0025.severity = error
+
+csharp_style_expression_bodied_indexers = true
+dotnet_diagnostic.IDE0026.severity = error
+
+csharp_style_expression_bodied_accessors = true
+dotnet_diagnostic.IDE0027.severity = error
+
+# IDE0053 is also suppressed explicitly in the suppressions block below (both agree: none).
+csharp_style_expression_bodied_lambdas = true
+dotnet_diagnostic.IDE0053.severity = none
+
+csharp_style_expression_bodied_local_functions = true
+dotnet_diagnostic.IDE0061.severity = error
+
+# Pattern matching preferences
+csharp_style_pattern_matching_over_as_with_null_check = true
+dotnet_diagnostic.IDE0019.severity = error
+
+# IDE0020 = use pattern over is+cast; IDE0038 = use pattern in switch.
+csharp_style_pattern_matching_over_is_with_cast_check = true
+dotnet_diagnostic.IDE0020.severity = error
+dotnet_diagnostic.IDE0038.severity = error
+
+csharp_style_prefer_switch_expression = true
+dotnet_diagnostic.IDE0066.severity = error
+
+csharp_style_prefer_pattern_matching = true
+dotnet_diagnostic.IDE0078.severity = suggestion
+
+csharp_style_prefer_not_pattern = true
+dotnet_diagnostic.IDE0083.severity = suggestion
+
+csharp_style_prefer_extended_property_pattern = true
+dotnet_diagnostic.IDE0170.severity = suggestion
+
+# Null-checking preferences
+csharp_style_conditional_delegate_call = true
+dotnet_diagnostic.IDE1005.severity = error
+
+# Modifier preferences
+csharp_prefer_static_local_function = true
+dotnet_diagnostic.IDE0062.severity = error
+
+csharp_preferred_modifier_order = public,private,protected,internal,file,static,extern,new,virtual,abstract,sealed,override,readonly,unsafe,required,volatile,async
+dotnet_diagnostic.IDE0036.severity = error
+
+# Expression-level preferences
+csharp_prefer_simple_default_expression = true
+dotnet_diagnostic.IDE0034.severity = error
+
+csharp_style_deconstructed_variable_declaration = true
+dotnet_diagnostic.IDE0042.severity = suggestion
+
+csharp_style_inlined_variable_declaration = true
+dotnet_diagnostic.IDE0018.severity = error
+
+csharp_style_pattern_local_over_anonymous_function = true
+dotnet_diagnostic.IDE0039.severity = error
+
+csharp_style_prefer_index_operator = true
+dotnet_diagnostic.IDE0056.severity = suggestion
+
+csharp_style_prefer_range_operator = true
+dotnet_diagnostic.IDE0057.severity = suggestion
+
+csharp_style_throw_expression = true
+dotnet_diagnostic.IDE0016.severity = suggestion
+
+csharp_style_unused_value_assignment_preference = discard_variable
+dotnet_diagnostic.IDE0059.severity = suggestion
+
+csharp_style_unused_value_expression_statement_preference = discard_variable
+dotnet_diagnostic.IDE0058.severity = suggestion
+
+#### Naming styles ####
+
+# Rules
+dotnet_naming_rule.interface_should_be_begins_with_i.severity = warning
+dotnet_naming_rule.interface_should_be_begins_with_i.symbols = interface
+dotnet_naming_rule.interface_should_be_begins_with_i.style = begins_with_i
+
+dotnet_naming_rule.types_should_be_pascal_case.severity = warning
+dotnet_naming_rule.types_should_be_pascal_case.symbols = types
+dotnet_naming_rule.types_should_be_pascal_case.style = pascal_case
+
+dotnet_naming_rule.non_field_members_should_be_pascal_case.severity = warning
+dotnet_naming_rule.non_field_members_should_be_pascal_case.symbols = non_field_members
+dotnet_naming_rule.non_field_members_should_be_pascal_case.style = pascal_case
+
+# Symbol specifications
+dotnet_naming_symbols.interface.applicable_kinds = interface
+dotnet_naming_symbols.interface.applicable_accessibilities = public, internal, private, protected, protected_internal, private_protected
+
+dotnet_naming_symbols.types.applicable_kinds = class, struct, interface, enum
+dotnet_naming_symbols.types.applicable_accessibilities = public, internal, private, protected, protected_internal, private_protected
+
+dotnet_naming_symbols.non_field_members.applicable_kinds = property, event, method
+dotnet_naming_symbols.non_field_members.applicable_accessibilities = public, internal, private, protected, protected_internal, private_protected
+
+# Naming styles
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+
+dotnet_naming_style.begins_with_i.required_prefix = I
+dotnet_naming_style.begins_with_i.capitalization = pascal_case
+
+#### Analyzer suppressions ####
+# Cosmetic / API-shape rules silenced as project-wide defaults.
+# Security, nullable-reference, and disposal rules are intentionally NOT silenced —
+# re-evaluate per project before adding any to this list.
+
+# --- Style / API design (cosmetic; project-specific judgement) ---
+dotnet_diagnostic.CA1000.severity = none
+dotnet_diagnostic.CA1002.severity = none
+dotnet_diagnostic.CA1008.severity = none
+dotnet_diagnostic.CA1019.severity = none
+dotnet_diagnostic.CA1024.severity = none
+dotnet_diagnostic.CA1030.severity = none
+dotnet_diagnostic.CA1032.severity = none
+dotnet_diagnostic.CA1034.severity = none
+dotnet_diagnostic.CA1040.severity = none
+dotnet_diagnostic.CA1051.severity = none
+dotnet_diagnostic.CA1054.severity = none
+dotnet_diagnostic.CA1056.severity = none
+dotnet_diagnostic.CA1062.severity = none
+dotnet_diagnostic.CA1515.severity = none
+dotnet_diagnostic.CA1700.severity = none
+dotnet_diagnostic.CA1711.severity = none
+dotnet_diagnostic.CA1716.severity = none
+dotnet_diagnostic.CA1724.severity = none
+dotnet_diagnostic.CA1812.severity = none
+dotnet_diagnostic.CA1819.severity = none
+dotnet_diagnostic.CA1822.severity = none
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1860.severity = none
+dotnet_diagnostic.CA2007.severity = none
+dotnet_diagnostic.CA2201.severity = none
+dotnet_diagnostic.CA2211.severity = none
+dotnet_diagnostic.CA2225.severity = none
+dotnet_diagnostic.CA2227.severity = none
+dotnet_diagnostic.CA2234.severity = none
+
+# --- Culture / string comparison (re-enable per project if you serve i18n) ---
+dotnet_diagnostic.CA1304.severity = none
+dotnet_diagnostic.CA1307.severity = none
+dotnet_diagnostic.CA1308.severity = none
+dotnet_diagnostic.CA1309.severity = none
+dotnet_diagnostic.CA1311.severity = none
+
+# --- Exception handling (judgement calls) ---
+dotnet_diagnostic.CA1031.severity = none
+
+# --- Agent-friendly safety diagnostics ---
+# CA1062 and CA2007 are overridden here to suggestion (from none above) — last write wins.
+dotnet_diagnostic.CS8602.severity = warning
+dotnet_diagnostic.CS8604.severity = warning
+dotnet_diagnostic.CA1062.severity = suggestion
+dotnet_diagnostic.CA2007.severity = suggestion
+
+# --- IDE style rules (covered by option settings above; explicit severity wins) ---
+dotnet_diagnostic.IDE0046.severity = none
+dotnet_diagnostic.IDE0053.severity = none
+# CSharpier owns C# whitespace, wrapping, and layout.
+dotnet_diagnostic.IDE0055.severity = none
+dotnet_diagnostic.IDE0270.severity = none
+dotnet_diagnostic.IDE0290.severity = none
+
+# --- SonarAnalyzer (cognitive-complexity gate) ---
+# SonarAnalyzer.CSharp is a direct PackageReference in Directory.Build.props. S3776
+# is the complexity gate: prefer cognitive complexity over cyclomatic, which
+# over-counts flat switch/ternary dispatch. Default threshold 15. Warning severity
+# here — but this repo treats warnings as errors, so it is build-breaking in practice.
+dotnet_diagnostic.S3776.severity = warning
+
+# --- SonarAnalyzer (LINQ / loop style) ---
+# S3267: foreach + if implicit filter should use .Where(). Warning not error so that
+# the rare side-effecting loop (e.g. TryRemove) can be suppressed with a comment.
+dotnet_diagnostic.S3267.severity = warning
+
+# --- BCL throw-helper modernization (advisory) ---
+# Flag the verbose `if (x is null) throw new ArgumentNullException(...)` form and
+# code-fix it to the BCL throw helper (ArgumentNullException.ThrowIfNull, etc.).
+# Suggestion, NOT warning: at warning+ severity these fire on every existing guard
+# clause across a consumer repo, and under TreatWarningsAsErrors each becomes a hard
+# build error — reddening CI on legacy code that is otherwise correct (this broke 7
+# estate consumers on ~108 hits). Suggestion surfaces + code-fixes the finding in the
+# IDE without gating the build. A repo wanting enforcement opts in locally.
+dotnet_diagnostic.CA1510.severity = suggestion   # Use ArgumentNullException throw helper
+dotnet_diagnostic.CA1511.severity = suggestion   # Use ArgumentException throw helper
+dotnet_diagnostic.CA1512.severity = suggestion   # Use ArgumentOutOfRangeException throw helper
+dotnet_diagnostic.CA1513.severity = suggestion   # Use ObjectDisposedException throw helper
+
+# CA1707 — underscores: the source scoped this to all .cs files (including FIX protocol
+# identifiers and test method names). In a global config there are no glob sections;
+# setting it globally here. Consumer repos that need a stricter subset can override per
+# directory in their own .editorconfig.
+dotnet_diagnostic.CA1707.severity = none
+
+# --- Unused using cleanup (advisory) ---
+# Flag unused using directives in the IDE (squiggle + fix-on-save). Suggestion,
+# NOT warning: at warning+ severity Roslyn emits an EnableGenerateDocumentationFile
+# build diagnostic on every project lacking <GenerateDocumentationFile>true>, which
+# becomes a hard error under TreatWarningsAsErrors (nags/reds the build even when
+# there are zero unused usings). Suggestion surfaces + code-fixes the finding
+# without that. A repo wanting build/CI enforcement opts in locally with
+# GenerateDocumentationFile=true (+ NoWarn CS1591) and IDE0005.severity=warning.
+dotnet_diagnostic.IDE0005.severity = suggestion  # Remove unnecessary usings (IDE-only)
+
+# DELIBERATELY NOT SILENCED — do not add back unless project-specific reason:
+#   CA5394, CA5401, CA2326, CA2327, S6781  — security
+#   CS8600, CS8602, CS8603, CS8604, CS8618  — nullable reference types
+#   CA1063, CA1816, CA2213, S3881           — IDisposable safety

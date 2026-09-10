@@ -1,0 +1,51 @@
+{
+  "skus": [
+    {
+      "name": "services/synthetic-service/skus/sku-output-global",
+      "skuId": "sku-output-global",
+      "description": "Synthetic Agent Platform text output tokens globally",
+      "category": {
+        "serviceDisplayName": "Gemini Enterprise Agent Platform",
+        "resourceFamily": "AI Platform",
+        "resourceGroup": "Generative AI",
+        "usageType": "OnDemand"
+      },
+      "serviceRegions": ["global"],
+      "pricingInfo": [
+        {
+          "effectiveTime": "2026-08-21T01:02:03Z",
+          "summary": "Synthetic fixture price; not a live Google rate",
+          "pricingExpression": {
+            "usageUnit": "token",
+            "usageUnitDescription": "token",
+            "baseUnit": "token",
+            "baseUnitDescription": "token",
+            "baseUnitConversionFactor": 1,
+            "displayQuantity": 1000000,
+            "tieredRates": [
+              {
+                "startUsageAmount": 0,
+                "unitPrice": {
+                  "currencyCode": "USD",
+                  "units": "0",
+                  "nanos": 15000
+                }
+              }
+            ]
+          },
+          "aggregationInfo": {
+            "aggregationLevel": "PROJECT",
+            "aggregationInterval": "DAILY",
+            "aggregationCount": 1
+          },
+          "currencyConversionRate": 1
+        }
+      ],
+      "serviceProviderName": "Google",
+      "geoTaxonomy": {
+        "type": "GLOBAL",
+        "regions": []
+      }
+    }
+  ]
+}

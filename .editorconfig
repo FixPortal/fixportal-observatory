@@ -1,0 +1,56 @@
+# Thin formatter configuration. Analyzer/style rules come from the vendored global config;
+# only documented project-specific exceptions belong below.
+
+root = true
+
+#### Baseline (applies to every file type) ####
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 4
+tab_width = 4
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+#### Project / config files (2-space convention) ####
+[*.{csproj,fsproj,vbproj,proj,props,targets}]
+indent_size = 2
+
+[*.{json,yml,yaml,xml,config}]
+indent_size = 2
+
+[*.md]
+# markdown line breaks are two trailing spaces — don't trim them
+trim_trailing_whitespace = false
+
+#### C# files ####
+[*.cs]
+end_of_line = crlf
+indent_size = 4
+indent_style = space
+tab_width = 4
+max_line_length = 120
+
+# Roslyn formatter compatibility. The vendored global config owns these values, but
+# dotnet format needs them in a hierarchical .editorconfig to activate its fixers.
+csharp_prefer_braces = true:error
+dotnet_style_predefined_type_for_locals_parameters_members = true:error
+dotnet_style_predefined_type_for_member_access = true:error
+
+#### Project-specific rule overrides ####
+
+# EF Core generated migrations are tool output.
+[**/Migrations/**]
+generated_code = true
+
+# Fixed upstream API endpoints are protocol constants, not deploy-time paths.
+[src/AiObservatory.Ingest/Program.cs]
+dotnet_diagnostic.S1075.severity = none
+
+# RFC 1918 networks are the explicit trust boundary for forwarded headers.
+[src/AiObservatory.Api/Program.cs]
+dotnet_diagnostic.S1313.severity = none
+
+# Local-only credential used by EF design-time tooling; never loaded at runtime.
+[src/AiObservatory.Data/AiObservatoryDbContextFactory.cs]
+dotnet_diagnostic.S2068.severity = none

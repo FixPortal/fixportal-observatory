@@ -1,0 +1,100 @@
+name: Mutation
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 2 * * 5'
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    name: Mutation (Stryker.NET API pilot)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # No PostgreSQL service and no TEST_DB_CONNECTION, deliberately. Stryker runs only
+    # AiObservatory.Api.Tests, which is unit-only: no WebApplicationFactory, no database
+    # packages, and crucially not the PostgresTestAssemblyFixture (an xUnit ASSEMBLY fixture
+    # that starts a Testcontainers PostgreSQL when TEST_DB_CONNECTION is unset -- assembly
+    # fixtures ignore test filters, so it must not be linked into this project).
+    #
+    # This job spent months quietly running the whole database-backed suite against every
+    # mutant. Having nothing to connect to means that regression fails loudly and instantly
+    # instead of creeping toward the timeout. If this starts failing on connection errors,
+    # something database-backed has been added to the unit project -- move it to
+    # AiObservatory.Api.IntegrationTests. Do not add a service here.
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore AiObservatory.slnx
+
+      - name: Restore dotnet tools
+        run: dotnet tool restore
+
+      - name: Run Stryker
+        id: stryker
+        # working-directory is LOAD-BEARING, not tidiness. Stryker's `test-projects` config
+        # key does not restrict execution: from the repository root it discovers every test
+        # project referencing AiObservatory.Api -- including the integration project -- and
+        # runs those tests against every mutant. Run from the unit test project and it
+        # uses that project alone. Compare "Number of tests found" against that project's
+        # current test inventory, not a historical magic number. See docs/mutation-testing.md.
+        #
+        # Measured at ~32 seconds locally. The budget is generous on purpose: if it is ever
+        # hit, something has changed structurally and the diagnosis is that log line, not
+        # the timeout.
+        timeout-minutes: 10
+        working-directory: tests/AiObservatory.Api.Tests
+        run: dotnet stryker --config-file ../../stryker-config.json
+
+      - name: Summarize
+        if: always()
+        shell: pwsh
+        env:
+          STRYKER_OUTCOME: ${{ steps.stryker.outcome }}
+        run: |
+          # StrykerOutput lands beside the test project, because that is where Stryker runs.
+          $latest = Get-ChildItem tests/AiObservatory.Api.Tests/StrykerOutput -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $latest) {
+            "Mutation report was not produced (Stryker outcome: $env:STRYKER_OUTCOME)." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            exit 1
+          }
+          $report = Join-Path $latest.FullName 'reports/mutation-report.json'
+          if (-not (Test-Path -LiteralPath $report)) {
+            "Mutation JSON report was not produced (Stryker outcome: $env:STRYKER_OUTCOME)." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            exit 1
+          }
+          $jsonSummary = Join-Path $latest.FullName 'reports/mutation-summary.json'
+          $mdSummary = Join-Path $latest.FullName 'reports/mutation-summary.md'
+          .\scripts\summarize-stryker.ps1 -ReportPath $report -JsonOutputPath $jsonSummary -MarkdownOutputPath $mdSummary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+      - name: Upload mutation summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-summary
+          path: tests/AiObservatory.Api.Tests/StrykerOutput/**/reports/mutation-summary.*
+          if-no-files-found: ignore
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report
+          path: tests/AiObservatory.Api.Tests/StrykerOutput/**
+          if-no-files-found: error

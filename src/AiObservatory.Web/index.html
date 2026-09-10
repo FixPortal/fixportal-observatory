@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0b0f17" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>FixPortal Observatory</title>
+    <meta name="description" content="Multi-provider AI usage and cost evidence with explicit provenance, pricing, and source health." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="FixPortal" />
+    <meta property="og:title" content="FixPortal Observatory" />
+    <meta property="og:description" content="Multi-provider AI usage and cost evidence with explicit provenance, pricing, and source health." />
+    <meta property="og:url" content="https://observatory.fixportal.org/" />
+    <meta property="og:image" content="https://observatory.fixportal.org/opengraph.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="FixPortal Observatory" />
+    <meta name="twitter:image" content="https://observatory.fixportal.org/opengraph.png" />
+    <!-- Set the theme synchronously before paint to avoid a flash of the wrong
+         theme. ThemeProvider still owns runtime switching; this only seeds the
+         initial value from the 'aiobs-theme' key / system preference. -->
+    <script>
+      (function () {
+        try {
+          var m = localStorage.getItem('aiobs-theme')
+          var dark = m === 'dark' || ((m === null || m === 'system') &&
+            window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        } catch (e) { /* ignore */ }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

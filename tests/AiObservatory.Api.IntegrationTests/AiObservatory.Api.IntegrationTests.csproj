@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Split out of AiObservatory.Api.Tests on 2026-07-29. These tests boot the real host via
+    WebApplicationFactory and migrate a throwaway PostgreSQL database; the unit project does
+    neither. The split is not tidiness; it is what keeps them out of the mutation lane.
+    Stryker lists only AiObservatory.Api.Tests, so exclusion is now structural. It was
+    previously attempted with test-case-filter, which Stryker's MTP runner ignores silently,
+    so every mutant paid for a host boot and a migration. See docs/mutation-testing.md.
+  -->
+
+  <PropertyGroup>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="MailKit" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="NodaTime.Testing" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AiObservatory.Api\AiObservatory.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Supplies PostgreSQL when TEST_DB_CONNECTION is unset. Deliberately NOT linked into
+         the unit project any more: it is an assembly fixture, so it runs whatever the test
+         filter says, and the unit lane must stay database-free. -->
+    <Compile Include="..\PostgresTestAssemblyFixture.cs" Link="PostgresTestAssemblyFixture.cs" />
+    <!-- Shared with the unit project, which owns it (FxRateProvider and GitHubBillingClient
+         tests use it too). Linked rather than duplicated. -->
+    <Compile Include="..\AiObservatory.Api.Tests\Services\StubHttpMessageHandler.cs"
+             Link="Services\StubHttpMessageHandler.cs" />
+    <Content Include="..\AiObservatory.Api.Tests\Fixtures\routing.decided.v1.json"
+             Link="Fixtures\routing.decided.v1.json"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

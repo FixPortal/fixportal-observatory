@@ -1,0 +1,100 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: aiobservatory
+      POSTGRES_USER: aiobs
+      POSTGRES_PASSWORD: aiobs
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aiobs -d aiobservatory"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: src/AiObservatory.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      DB_CONNECTION: "Host=db;Database=aiobservatory;Username=aiobs;Password=aiobs"
+      OBSERVATORY_API_KEY: ${OBSERVATORY_API_KEY:-change-me}
+      # Billing needs Plan read on a fine-grained PAT or admin:org on a classic PAT.
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_BILLING_ORG: ${GITHUB_BILLING_ORG:-}
+      # Comma-separated GitHub account names whose projects and repositories appear in the
+      # Activity and GitHub tabs. Leave unset to show everything, which is the default —
+      # set it only if you want those tabs narrowed to specific owners.
+      Activity__ProjectOwners: ${OBSERVATORY_PROJECT_OWNERS:-}
+      # ANTHROPIC_API_KEY: sk-ant-...   # optional — leave unset to skip AI insights
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf -H 'X-Observatory-Key: ${OBSERVATORY_API_KEY:-change-me}' http://localhost:8080/api/aggregates || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  seed:
+    image: curlimages/curl:latest
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["curl", "-sf", "-X", "POST", "http://api:8080/api/dev/seed", "-H", "X-Observatory-Key: ${OBSERVATORY_API_KEY:-change-me}"]
+    restart: "no"
+
+  ingest:
+    build:
+      context: .
+      dockerfile: src/AiObservatory.Ingest/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      DB_CONNECTION: "Host=db;Database=aiobservatory;Username=aiobs;Password=aiobs"
+      ANTHROPIC_BILLING_KEY: ${ANTHROPIC_BILLING_KEY:-}
+      CLAUDE_CODE_USAGE_ENABLED: ${CLAUDE_CODE_USAGE_ENABLED:-}
+      OPENAI_ADMIN_KEY: ${OPENAI_ADMIN_KEY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      COPILOT_ORG: ${COPILOT_ORG:-}
+      GOOGLE_CLOUD_PROJECT_ID: ${GOOGLE_CLOUD_PROJECT_ID:-}
+      GOOGLE_BILLING_EXPORT_TABLE: ${GOOGLE_BILLING_EXPORT_TABLE:-}
+      GOOGLE_CLOUD_CATALOG_API_KEY: ${GOOGLE_CLOUD_CATALOG_API_KEY:-}
+      GOOGLE_CLOUD_CATALOG_SERVICE_ID: ${GOOGLE_CLOUD_CATALOG_SERVICE_ID:-}
+      Ingest__GitHubRepoAllowlist: ${INGEST_GITHUB_REPO_ALLOWLIST:-}
+      Ingest__PollingIntervalMinutes: ${INGEST_POLLING_INTERVAL_MINUTES:-60}
+      Ingest__LookbackDays: ${INGEST_LOOKBACK_DAYS:-3}
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  web:
+    build:
+      context: src/AiObservatory.Web
+      dockerfile: Dockerfile
+      args:
+        # Baked into the image layers and the served JS bundle. VITE_* is
+        # browser-shipped by definition, so the key gains no new exposure here —
+        # but do NOT publish this image anywhere the key should not be readable.
+        VITE_API_KEY: ${OBSERVATORY_API_KEY:-change-me}
+    # Bound to loopback only, matching db above: the dashboard is a local-only dev
+    # surface and its api is served unauthenticated behind a shared change-me key.
+    ports:
+      - "127.0.0.1:4173:80"
+    depends_on:
+      - api
+
+volumes:
+  db-data:

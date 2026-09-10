@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>AiObservatory.Ingest</AssemblyName>
+    <RootNamespace>AiObservatory.Ingest</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      ASP.NET Core without switching to the Web SDK. This stays a background worker
+      (ProviderPollingWorkerService does all the real work), but Linux App Service is
+      HTTP-first: it probes the container's port and kills anything that does not answer.
+      A host that binds no port can never pass, and this app restart-looped indefinitely
+      while both the portal and `az webapp show` reported "state": "Running" (that is the
+      SITE state, not the container's). See the README's "Ingest worker configuration"
+      section for the full account.
+
+      A FrameworkReference rather than Sdk="Microsoft.NET.Sdk.Web" on purpose: the Web SDK
+      emits the top-level entry point as a PUBLIC global-namespace Program, which collides
+      with the API's own public partial Program in AiObservatory.Api.Tests (that project
+      references both assemblies) and breaks every WebApplicationFactory test with CS0433.
+      This keeps the generated Program internal and invisible across the assembly boundary.
+    -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Google.Cloud.BigQuery.V2" />
+    <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <!--
+      Microsoft.Extensions.Hosting / .Http / .Options.DataAnnotations used to be listed
+      here. The FrameworkReference above already ships all three in the ASP.NET Core shared
+      framework, so keeping them produced NU1510 ("will not be pruned") on every build.
+      Removing them changes nothing at runtime (the same assemblies resolve from the
+      framework) and keeps the restore graph honest about where they come from.
+    -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AiObservatory.Data\AiObservatory.Data.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="AiObservatory.Ingest.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,6 @@
+@AiObservatory.Api_HostAddress = http://localhost:5039
+
+GET {{AiObservatory.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

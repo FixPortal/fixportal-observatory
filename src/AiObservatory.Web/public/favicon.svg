@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="FixPortal avatar">
+  <defs>
+    <radialGradient id="orangePortal" cx="50%" cy="50%" r="55%">
+      <stop offset="0%"   stop-color="#FFF4D6"/>
+      <stop offset="38%"  stop-color="#FFB347"/>
+      <stop offset="78%"  stop-color="#FF6B1A"/>
+      <stop offset="100%" stop-color="#A83400"/>
+    </radialGradient>
+    <radialGradient id="blueShadow" cx="50%" cy="50%" r="55%">
+      <stop offset="0%"   stop-color="#7CC3F0"/>
+      <stop offset="60%"  stop-color="#1A8FE8"/>
+      <stop offset="100%" stop-color="#003D7A"/>
+    </radialGradient>
+    <radialGradient id="bg" cx="50%" cy="50%" r="70%">
+      <stop offset="0%"   stop-color="#1f2937"/>
+      <stop offset="100%" stop-color="#0b0f17"/>
+    </radialGradient>
+    <filter id="softBlur" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- Blue portal cast as a soft 3D shadow of the orange, offset +30 right, +8 down -->
+  <ellipse cx="256" cy="264" rx="98" ry="178" fill="url(#blueShadow)" filter="url(#softBlur)" opacity="0.95"/>
+
+  <!-- Orange portal -->
+  <ellipse cx="226" cy="256" rx="98" ry="178" fill="url(#orangePortal)"/>
+  <ellipse cx="226" cy="256" rx="64" ry="142" fill="none" stroke="#FFE8B8" stroke-width="3.5" opacity="0.8"/>
+  <ellipse cx="226" cy="256" rx="32" ry="90"  fill="none" stroke="#FFE8B8" stroke-width="2"   opacity="0.55"/>
+</svg>

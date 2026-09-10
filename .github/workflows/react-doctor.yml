@@ -1,0 +1,33 @@
+name: React Doctor
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+concurrency:
+  group: react-doctor-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  react-doctor:
+    name: React Doctor
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: millionco/react-doctor@013f7373f91a3b9e68bd1dc7d4d354f4b041b117 # v2.2.9
+        # with:
+        #   fail-on: warning      # "error" (default) | "warning" | "none"
+        #   comment: false        # disable sticky PR summary comment
+        #   annotations: false    # disable inline annotations
+        #   version: "0.2.18"     # pin to a specific version
+        #   directory: apps/web   # scan a sub-directory

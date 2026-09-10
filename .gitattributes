@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.sh text eol=lf
+*.png binary
+*.cs text eol=crlf
+eng/analysis/CodeStyle.globalconfig text eol=lf

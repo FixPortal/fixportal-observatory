@@ -1,0 +1,96 @@
+reviews:
+  profile: assertive
+  poem: false
+  high_level_summary: true
+  review_status: true
+  collapse_walkthrough: true
+  request_changes_workflow: true
+
+  tools:
+    eslint:
+      enabled: false
+
+  auto_review:
+    # Reviews are LABEL-TRIGGERED, not automatic. Per CodeRabbit's config reference:
+    # when `enabled` is false, a positive label match still triggers a review, so
+    # `labels: ["review-high"]` is the trigger rather than an exclusion filter.
+    #
+    # WHY: with auto-review on, every PR was reviewed on open regardless of tier
+    # (observed live on NORMAL-tier PR #104), so tiering trimmed only the EXTRA
+    # requests an agent made, never the baseline one. Worse, the two ways a PR can end
+    # up unreviewed — nobody asked, and CodeRabbit was throttled — looked identical.
+    # With the trigger explicit, "no review present on a HIGH PR" is unambiguously a
+    # gate failure.
+    #
+    # The label is applied by ~/.claude/hooks/pr-review-gate.sh at PR-create time when
+    # the tier from .claude/review-policy.json is HIGH. A hook applies it rather than
+    # an instruction telling the agent to, because an instruction can be skipped.
+    # If labelling fails the hook falls back to commenting "@coderabbitai review":
+    # an unlabelled PR registers no CodeRabbit check at all, and pr-review-watch.sh
+    # reads a persistently absent check as "not installed" and stops gating on it —
+    # which would let a HIGH PR through unreviewed.
+    enabled: false
+    labels: ["review-high"]
+    drafts: false
+    # Pause automatic incremental reviews after 2 reviewed commits (default 5).
+    # Still load-bearing with label triggering: once a PR carries the label, each
+    # subsequent push re-reviews it. CodeRabbit meters reviews per DEVELOPER IDENTITY
+    # across every repo, in a rolling 7-day window degrading from 30 reviews/7d, and
+    # every push spends one. This enforces push-batching mechanically instead of
+    # relying on remembering to batch.
+    auto_pause_after_reviewed_commits: 2
+    # ignore_title_keywords REMOVED 2026-07-28. It listed "chore:", and Dependabot
+    # titles in this estate are literally "chore: Bump X" — so every dependency PR was
+    # being skipped silently. What gets skipped is decided by PATH via
+    # .claude/review-policy.json and by AUTHOR below — never by a title, which can lie
+    # about what a PR touches.
+    #
+    # REVERSED 2026-07-29. This block previously said "do NOT add ignore_usernames for
+    # dependabot[bot]/renovate[bot]", on the grounds that dependency changes were classed
+    # HIGH and Gitar skipped bot authors, so silencing CodeRabbit too would leave them
+    # unreviewed. Zero AI review of dependency bumps is now the intended state: the estate
+    # raises enough of them that reviewing each one exhausts the allowance and starves the
+    # changes that need it. Gitar's bot review is switched off as well, and dependency
+    # manifests are no longer classed HIGH in the review policy. CI plus Dependabot's own
+    # advisory data is what gates a bump. CodeRabbit already declines bot authors ("Review
+    # skipped: bot user not eligible for review"), so this states the intent rather than
+    # leaving it incidental to a vendor behaviour that can change.
+    ignore_usernames:
+      - "dependabot[bot]"
+      - "renovate[bot]"
+
+  path_filters:
+    - "!**/bin/**"
+    - "!**/obj/**"
+    - "!**/dist/**"
+    - "!**/build/**"
+    - "!**/coverage/**"
+    - "!**/*.lock"
+    - "!**/package-lock.json"
+    - "!**/pnpm-lock.yaml"
+    - "!**/yarn.lock"
+
+  instructions: |
+    Review as a senior engineer. Prioritise correctness, security, maintainability,
+    testability, and accidental complexity.
+
+    Do not nitpick style unless it affects readability or consistency.
+    Prefer actionable findings over commentary.
+    Call out missing tests for changed behaviour.
+    Treat generated files, lock files, snapshots, and formatting churn as low value.
+
+    For .NET code, pay particular attention to:
+    - async/await correctness
+    - cancellation token propagation
+    - nullability
+    - DI lifetime mistakes
+    - EF Core query behaviour
+    - exception handling and logging
+    - test coverage around edge cases
+
+    For TypeScript/React code, pay particular attention to:
+    - state/effect dependency bugs
+    - request spam or accidental polling
+    - accessibility regressions
+    - error/loading/empty states
+    - unnecessary re-renders

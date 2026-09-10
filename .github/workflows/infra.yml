@@ -1,0 +1,39 @@
+name: Infra
+
+# Infrastructure changes are operator-applied once their external preconditions
+# (such as creating Key Vault secrets) are satisfied. Application deploys verify
+# required references independently before replacing a running ZIP.
+on: workflow_dispatch
+
+concurrency:
+  group: infra-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-infra:
+    name: Deploy (Bicep infra)
+    runs-on: ubuntu-latest
+    # `production` is required, not decorative: the federated credential on the
+    # fpaiobs-deploy app registration is scoped to
+    # `repo:FixPortal/fixportal-observatory:environment:production`, so a job outside
+    # that environment receives a token Azure will not accept. It also brings the
+    # environment's deployment branch policy with it, restricting this manual lane to
+    # main -- which is the right bar for a job that applies Bicep to the resource group.
+    environment: production
+    permissions:
+      contents: read
+      # Mints the short-lived OIDC token azure/login exchanges for an Azure one.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Bicep (incremental)
+        run: az deployment group create -g fpaiobs-rg -f infra/main.bicep

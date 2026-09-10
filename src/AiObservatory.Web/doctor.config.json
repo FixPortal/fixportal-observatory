@@ -1,0 +1,7 @@
+{
+  "rules": {
+    "react-doctor/prefer-useReducer": "off",
+    "react-doctor/no-derived-useState": "off",
+    "react-doctor/rerender-state-only-in-handlers": "off"
+  }
+}

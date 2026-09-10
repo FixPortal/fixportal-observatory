@@ -1,0 +1,270 @@
+name: Deploy
+
+# CALLED BY ci.yml, NOT TRIGGERED BY workflow_run.
+#
+# This used to run `on: workflow_run: [CI]`, gated per job on the triggering run
+# having been a push on main. That was a correct pwn-request mitigation, and it was
+# also the ONLY thing standing between a fork pull request and the production Azure
+# credentials -- this repository is public, the secrets were repository-scoped, and
+# the whole defence was four `if:` expressions. Add a fifth job without the gate, or
+# edit one of the four, and there is nothing else.
+#
+# `workflow_call` removes the class instead of mitigating it. There is no privileged
+# trigger left to reason about: the deployment runs INSIDE ci.yml's own push-on-main
+# run, after ci-gate, so it still deploys only a commit whose CI passed -- which is
+# the guarantee workflow_run was providing and a plain `on: push` would have lost,
+# because this estate rebase-merges and the merged SHA is one CI never saw as a PR
+# head.
+#
+# ONE EXCEPTION TO THAT GUARANTEE, and it is deliberate: workflow_dispatch below is a
+# second entry point that does NOT pass through ci-gate. A manual dispatch deploys
+# whatever is on main, CI result or not -- `if:` checks the ref, not the CI outcome.
+# Dispatching needs write access and main is protected, so it is a break-glass lane
+# rather than a hole; but "only a commit whose CI passed" describes the workflow_call
+# path, not this one.
+#
+# Defence in depth, so this no longer rests on a condition anyone can forget: every
+# job below names the `production` environment, whose deployment branch policy admits
+# main alone. GitHub refuses the environment's secrets to a run on any other ref
+# regardless of what the `if:` says.
+#
+# AZURE AUTH IS OIDC, NOT A STORED CREDENTIAL. azure/login exchanges a short-lived
+# GitHub token for an Azure one against a federated credential on the fpaiobs-deploy
+# app registration, whose subject is
+# `repo:FixPortal/fixportal-observatory:environment:production`. That subject is why
+# the `environment:` above is load-bearing rather than decorative: a job outside the
+# production environment gets a token Azure will not accept. There is no client secret
+# to leak, expire or rotate, and the three ids below are identifiers rather than
+# secrets, so they are environment VARIABLES.
+#
+# The Static Web Apps deployment token is the one credential that remains. The classic
+# deploy action still requires it -- Azure/static-web-apps#312 is open, and no RBAC
+# role grants SWA deploy rights. The resource-level OIDC alternative
+# (properties.deploymentAuthPolicy = "GitHub") is deliberately NOT used: it has been
+# reported as unrecoverable once set, with the site refusing token auth afterwards, and
+# this is a Free-tier production site. That token deploys static files to one SWA,
+# which is a far smaller prize than the Contributor role OIDC just replaced.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  # A direct dispatch owns the production lock here. A call owns it in ci.yml's
+  # deploy job; taking the same lock again in its child would wait on itself.
+  group: ${{ github.event_name == 'workflow_dispatch' && 'deploy-production' || format('deploy-called-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+# `github.ref` is the CALLER's ref inside a called workflow, so this one condition
+# covers both entry points: ci.yml's push-on-main run, and a manual dispatch, which
+# must also be from main.
+jobs:
+  deploy-api:
+    timeout-minutes: 20
+    name: Deploy (api)
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' }}
+    environment: production
+    permissions:
+      contents: read
+      # Mints the short-lived OIDC token azure/login exchanges for an Azure access
+      # token. Granted only on the jobs that authenticate to Azure -- deploy-web uses
+      # the Static Web Apps deployment token instead and gets no id-token.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.x'
+      - name: Publish
+        run: dotnet publish src/AiObservatory.Api -c Release -o ./publish/api
+      - uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Verify the IDE Key Vault reference is resolved
+        run: |
+          subscription_id=$(az account show --query id -o tsv)
+          reference_status=$(az rest --method get \
+            --url "https://management.azure.com/subscriptions/$subscription_id/resourceGroups/fpaiobs-rg/providers/Microsoft.Web/sites/fpaiobs-api/config/configreferences/appsettings/OBSERVATORY_IDE_API_KEY?api-version=2025-05-01" \
+            --query "properties.status" -o tsv)
+          if [ "$reference_status" != "Resolved" ]; then
+            echo "::error::OBSERVATORY_IDE_API_KEY Key Vault reference is not Resolved (status: ${reference_status:-missing})."
+            exit 1
+          fi
+      - name: Stop ingest before running API migrations
+        run: |
+          az webapp stop --resource-group fpaiobs-rg --name fpaiobs-ingest
+          deadline=$(( $(date +%s) + 120 ))
+          while [ "$(az webapp show --resource-group fpaiobs-rg --name fpaiobs-ingest --query state -o tsv)" != "Stopped" ]; do
+            [ "$(date +%s)" -lt "$deadline" ] || {
+              echo "::error::Ingest did not stop; refusing to migrate under an active worker."
+              exit 1
+            }
+            sleep 5
+          done
+      - uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3
+        with:
+          app-name: fpaiobs-api
+          package: ./publish/api
+
+      # A green webapps-deploy does NOT mean the app runs. On 2026-07-28 a transfer
+      # landed a corrupt AiObservatory.Api.dll; the container then failed every startup
+      # probe with BadImageFormatException until App Service stopped the site, while both
+      # that deploy AND the next one reported success. Production was down for ~25 minutes
+      # with nothing red anywhere. This step is what turns that into a failed deploy.
+      #
+      # Exactly 401 proves the app is serving: every /api route sits behind
+      # ApiKeyEndpointFilter, so an unauthenticated probe gets 401 from a HEALTHY app.
+      # That is deliberate — it avoids putting the API key in this workflow just to
+      # health-check it. Everything else is a failure: 5xx and 000 (connection refused /
+      # DNS / TLS), but also 200 (a placeholder page on a misnamed or empty package),
+      # 3xx (a redirect), 404 (a misrouted deployment), and 403 (a stopped site) —
+      # none of which come from our code.
+      - name: Verify the API is serving
+        run: |
+          # Bounded by a wall-clock DEADLINE, not an attempt count. With a per-request
+          # timeout the two multiply: 30 attempts x 30s + 29 sleeps x 20s is ~24m40s,
+          # not the 10 minutes a cold start needs. A deploy job that can hang for 25
+          # minutes is its own availability problem.
+          deadline=$(( $(date +%s) + 600 ))
+          while :; do
+            # Assign, then fall back on curl's EXIT STATUS. Do NOT write
+            # `$(curl ... || echo 000)`: on a transport failure curl prints 000 to
+            # stdout AND exits non-zero, so that form yields the string "000000",
+            # which matches neither arm of the case below and is read as HEALTHY —
+            # exactly inverting this step's purpose.
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+              https://fpaiobs-api.azurewebsites.net/api/aggregates) || code=000
+            echo "probe -> HTTP $code"
+            case "$code" in
+              401) echo "API is serving (HTTP $code)"; exit 0 ;;
+              *) : ;;
+            esac
+            [ "$(date +%s)" -lt "$deadline" ] || break
+            sleep 15
+          done
+          echo "::error::API never returned the expected 401 after deploy — it is not serving our app."
+          exit 1
+
+  deploy-ingest:
+    timeout-minutes: 20
+    name: Deploy (ingest)
+    needs: deploy-api
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' }}
+    environment: production
+    permissions:
+      contents: read
+      # Mints the short-lived OIDC token azure/login exchanges for an Azure one.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.x'
+      - name: Publish
+        run: dotnet publish src/AiObservatory.Ingest -c Release -o ./publish/ingest
+      - uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3
+        with:
+          app-name: fpaiobs-ingest
+          package: ./publish/ingest
+
+  ensure-ingest-running:
+    name: Ensure ingest is running
+    needs: [deploy-api, deploy-ingest]
+    runs-on: ubuntu-latest
+    if: ${{ always() && github.ref == 'refs/heads/main' }}
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+      # Mints the short-lived OIDC token azure/login exchanges for an Azure one.
+      id-token: write
+    steps:
+      - uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Start ingest after deployment
+        run: az webapp start --resource-group fpaiobs-rg --name fpaiobs-ingest
+
+      # This runs even when either deployment fails. A failed deployment therefore leaves
+      # a red workflow and a verified running worker, rather than a silently stopped one.
+      - name: Verify the ingest worker is healthy
+        run: |
+          deadline=$(( $(date +%s) + 600 ))
+          while :; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+              https://fpaiobs-ingest.azurewebsites.net/healthz) || code=000
+            echo "probe -> HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "Ingest worker is healthy"
+              # Logging only, and explicitly best-effort: `run:` executes under bash -e,
+              # so an unguarded transient failure here would fail the deploy AFTER the
+              # health check had already passed.
+              curl -s --max-time 15 https://fpaiobs-ingest.azurewebsites.net/healthz || true
+              exit 0
+            fi
+            [ "$(date +%s)" -lt "$deadline" ] || break
+            sleep 15
+          done
+          echo "::error::Ingest worker never returned 200 from /healthz after deploy."
+          exit 1
+
+  deploy-web:
+    timeout-minutes: 20
+    name: Deploy (web)
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' }}
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm ci
+        working-directory: src/AiObservatory.Web
+      - run: npm run build
+        working-directory: src/AiObservatory.Web
+        env:
+          # All VITE_* below are build-time, baked into the public SPA bundle.
+          # They are public identifiers (API URL, Entra app/tenant ids, scope) —
+          # NOT secrets — so they live here rather than in a gitignored .env*,
+          # which was silently dropped in the public-release history rewrite (the
+          # original "Couldn't reach the API" + "session expired" outages).
+          #
+          # SWA Free tier can't proxy /api to the API App Service, so the prod
+          # build calls the API cross-origin at its absolute URL.
+          VITE_API_BASE: https://fpaiobs-api.azurewebsites.net
+          # Entra (Azure AD) sign-in config. Without these the SPA's MSAL wiring
+          # is a no-op (authEnabled=false) → no bearer token → API 401.
+          VITE_AAD_CLIENT_ID: f3a9736e-1ba6-43b6-89f7-e799a9f93e9a
+          VITE_AAD_TENANT_ID: c5eac41f-0525-4692-8705-7822be64d5ae
+          VITE_AAD_API_SCOPE: api://f3a9736e-1ba6-43b6-89f7-e799a9f93e9a/access_as_user
+          VITE_ATTRIBUTION_NAME: FixPortal
+          VITE_ATTRIBUTION_URL: https://github.com/FixPortal
+      - uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOYMENT_TOKEN }}
+          action: upload
+          app_location: src/AiObservatory.Web/dist
+          output_location: ''
+          skip_app_build: true
