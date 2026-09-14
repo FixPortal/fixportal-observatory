@@ -151,13 +151,27 @@ def test_normalise_condition_folds_case(value, expected):
     [
         'echo "failed"; exit 1 >&2',
         'echo "failed" && exit 1 2>/dev/null',
-        'if [ -z "$x" ]; then exit 1 >&2; fi',
-        'if [ -z "$x" ]; then echo "missing"; exit 1 >&2; fi',
         "exit 1 >&2",
     ],
 )
 def test_failing_forms_accept_trailing_redirection(body):
     assert gate.ends_non_zero(body)
+
+
+# The `if <test>; then exit 1; fi` spellings EXIT ZERO when their test fails -- the same
+# fail-open as the `||`/`&&` guards the checker already refused. They were carried as a
+# stated residual until the estate was measured and no gate used them. Pinned here as a
+# refusal rather than deleted: a silent deletion is indistinguishable from a test
+# dropped for being inconvenient.
+@pytest.mark.parametrize(
+    "body",
+    [
+        'if [ -z "$x" ]; then exit 1 >&2; fi',
+        'if [ -z "$x" ]; then echo "missing"; exit 1 >&2; fi',
+    ],
+)
+def test_a_test_guarding_the_exit_is_refused(body):
+    assert not gate.ends_non_zero(body)
 
 
 @pytest.mark.parametrize(
