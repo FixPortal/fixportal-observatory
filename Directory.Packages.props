@@ -7,7 +7,7 @@
     <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.34.0.3385" />
     <!-- xUnit v3 -->
     <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
-    <PackageVersion Include="xunit.v3" Version="4.0.0" />
+    <PackageVersion Include="xunit.v3" Version="4.0.1" />
     <PackageVersion Include="TngTech.ArchUnitNET.xUnitV3" Version="0.13.4" />
     <!-- Test infrastructure -->
     <PackageVersion Include="NSubstitute" Version="6.2.0" />
