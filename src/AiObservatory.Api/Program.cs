@@ -52,7 +52,12 @@ builder.Services.AddSingleton(
 );
 
 builder.Services.AddTransient<MailKit.Net.Smtp.ISmtpClient, MailKit.Net.Smtp.SmtpClient>();
+
+// Transient, matching ISmtpClient: the sender connects and disconnects per send, so it holds
+// no state worth sharing and must never hand two callers the same live connection.
+builder.Services.AddTransient<SmtpMailSender>();
 builder.Services.AddKeyedTransient<IAlertNotifier, EmailAlertNotifier>("email");
+builder.Services.AddScoped<SourceHealthDigestService>();
 
 // The webhook URL is the credential (its path is the whole auth), so this client's
 // HttpClientFactory logging handlers are removed -- otherwise every budget alert writes the

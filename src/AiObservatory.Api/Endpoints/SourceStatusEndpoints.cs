@@ -1,3 +1,4 @@
+using AiObservatory.Api.Services;
 using AiObservatory.Data;
 using AiObservatory.Data.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -13,30 +14,11 @@ public static class SourceStatusEndpoints
         return app;
     }
 
-    public static string Classify(SourceSyncState state, Instant now)
-    {
-        if (!state.IsConfigured)
-        {
-            return "notConfigured";
-        }
-        if (state.IsAvailable == false)
-        {
-            return "unavailable";
-        }
-        if (state.ConsecutiveFailureCount > 0)
-        {
-            return "failing";
-        }
-        if (state.LastSuccessAt is null)
-        {
-            return "configured";
-        }
-
-        var elapsedNanoseconds = (now - state.LastSuccessAt.Value).ToInt128Nanoseconds();
-        var staleAfterNanoseconds =
-            (Int128)state.ExpectedRefreshIntervalSeconds * 2 * NodaConstants.NanosecondsPerSecond;
-        return elapsedNanoseconds > staleAfterNanoseconds ? "stale" : "fresh";
-    }
+    /// <summary>
+    /// Delegates to <see cref="SourceHealthClassifier"/>, which the daily digest reads too.
+    /// Kept as a member here so the endpoint's own call site and its tests stay unchanged.
+    /// </summary>
+    public static string Classify(SourceSyncState state, Instant now) => SourceHealthClassifier.Classify(state, now);
 
     private static async Task<IResult> GetSourceStatusAsync(
         AiObservatoryDbContext db,

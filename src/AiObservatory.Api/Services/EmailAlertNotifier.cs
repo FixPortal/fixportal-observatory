@@ -1,13 +1,11 @@
 using System.Globalization;
 using AiObservatory.Data.Repositories;
-using MailKit.Net.Smtp;
-using MailKit.Security;
 using MimeKit;
 
 namespace AiObservatory.Api.Services;
 
 public sealed class EmailAlertNotifier(
-    ISmtpClient smtpClient,
+    SmtpMailSender mailSender,
     IConfiguration config,
     IUsageRepository repository,
     ILogger<EmailAlertNotifier> logger
@@ -22,10 +20,7 @@ public sealed class EmailAlertNotifier(
             return AlertDeliveryResult.NoRecipientConfigured;
         }
 
-        var host = config["BUDGET_ALERT_SMTP_HOST"] ?? "smtp.office365.com";
-        var port = int.TryParse(config["BUDGET_ALERT_SMTP_PORT"], out var p) ? p : 587;
-        var user = config["BUDGET_ALERT_SMTP_USER"] ?? string.Empty;
-        var pass = config["BUDGET_ALERT_SMTP_PASS"] ?? string.Empty;
+        var user = mailSender.ReadSettings().User;
         // Blank-but-set falls through to the SMTP user: `??` only sees null, so an empty
         // BUDGET_ALERT_EMAIL_FROM would shadow a valid user and disable the channel outright
         // (the empty From fails the parse below). Same shape as ResolveMessageIdDomain.
@@ -55,44 +50,28 @@ public sealed class EmailAlertNotifier(
             return AlertDeliveryResult.NoRecipientConfigured;
         }
 
-        try
+        using var message = new MimeMessage();
+        message.From.Add(fromAddress);
+        message.To.Add(toAddress);
+        message.MessageId = payload.MessageId;
+        message.Subject = string.Create(
+            CultureInfo.InvariantCulture,
+            $"Budget alert: {payload.Provider} {payload.Period} billed spend exceeded £{payload.ThresholdGbp:F2}"
+        );
+        message.Body = new TextPart("plain")
         {
-            await smtpClient.ConnectAsync(host, port, SecureSocketOptions.StartTls, ct);
-            if (!string.IsNullOrEmpty(user))
-            {
-                await smtpClient.AuthenticateAsync(user, pass, ct);
-            }
+            Text =
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Total {payload.Period.ToLowerInvariant()} billed spend for {payload.Provider} reached £{payload.ActualSpendGbp:F2}, "
+                )
+                + string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"exceeding your £{payload.ThresholdGbp:F2} threshold.\n\nTriggered at: {payload.TriggeredAt:u}"
+                ),
+        };
 
-            using var message = new MimeMessage();
-            message.From.Add(fromAddress);
-            message.To.Add(toAddress);
-            message.MessageId = payload.MessageId;
-            message.Subject = string.Create(
-                CultureInfo.InvariantCulture,
-                $"Budget alert: {payload.Provider} {payload.Period} billed spend exceeded £{payload.ThresholdGbp:F2}"
-            );
-            message.Body = new TextPart("plain")
-            {
-                Text =
-                    string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"Total {payload.Period.ToLowerInvariant()} billed spend for {payload.Provider} reached £{payload.ActualSpendGbp:F2}, "
-                    )
-                    + string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"exceeding your £{payload.ThresholdGbp:F2} threshold.\n\nTriggered at: {payload.TriggeredAt:u}"
-                    ),
-            };
-
-            await smtpClient.SendAsync(message, ct);
-        }
-        finally
-        {
-            if (smtpClient.IsConnected)
-            {
-                await smtpClient.DisconnectAsync(true, ct);
-            }
-        }
+        await mailSender.SendAsync(message, ct);
 
         return AlertDeliveryResult.Sent;
     }

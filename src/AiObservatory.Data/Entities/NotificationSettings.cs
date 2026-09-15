@@ -23,5 +23,18 @@ public sealed class NotificationSettings
     // SLACK_WEBHOOK_PROTECTION_KEY env var is set (Security/SlackWebhookProtector); without the
     // key it passes through as plaintext so pre-existing deployments keep working.
     public string? SlackWebhookUrl { get; set; }
+
+    /// <summary>
+    /// UTC date the source-health digest was last sent, and the digest's whole dedup
+    /// mechanism: the sender claims the day with a single conditional UPDATE and only sends
+    /// when that UPDATE reports one row. It lives here rather than in its own claim table
+    /// because a digest is one-per-day-global, unlike <c>BudgetAlertClaim</c> which is
+    /// per-rule-per-period and needs durable per-claim delivery state.
+    /// <para>
+    /// The column is load-bearing because the worker re-runs its arms on every startup, not
+    /// only at the daily park — four restarts in an afternoon would otherwise be four digests.
+    /// </para>
+    /// </summary>
+    public LocalDate? LastSourceHealthDigestOn { get; set; }
     public Instant UpdatedAt { get; set; }
 }

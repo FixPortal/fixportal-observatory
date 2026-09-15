@@ -32,6 +32,9 @@ public class IntelligenceWorkerService(
             await RunAnalysisCatchupAsync(stoppingToken);
             await RunBudgetCheckAsync(stoppingToken);
             await RunGitHubBillingSyncAsync(stoppingToken);
+            // Last: it reports on the state the arms above have just refreshed, so running it
+            // here means the digest describes this cycle rather than the previous one.
+            await RunSourceHealthDigestAsync(stoppingToken);
 
             var now = clock.GetCurrentInstant();
             var nextRun = now.InUtc().Date.PlusDays(1).AtMidnight().InUtc().ToInstant();
@@ -139,9 +142,32 @@ public class IntelligenceWorkerService(
 
         logger.LogInformation(
             "Intelligence worker arms — analysis catchup: enabled, budget check: enabled, "
-                + "GitHub billing sync: {GitHubBillingState}",
+                + "source health digest: enabled, GitHub billing sync: {GitHubBillingState}",
             gitHubBilling ? "enabled" : "NOT CONFIGURED (no entries will be written)"
         );
+    }
+
+    /// <summary>
+    /// Mails a once-a-day summary of degraded ingest sources. Failures are logged and
+    /// swallowed: a digest that cannot be delivered must never take down the arms that
+    /// produce the data it reports on.
+    /// </summary>
+    private async Task RunSourceHealthDigestAsync(CancellationToken ct)
+    {
+        try
+        {
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var digest = scope.ServiceProvider.GetRequiredService<SourceHealthDigestService>();
+            await digest.SendIfDueAsync(ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Intelligence worker source health digest failed");
+        }
     }
 
     /// <summary>
