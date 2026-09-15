@@ -70,11 +70,11 @@ public sealed class IntelligenceWorkerArmLoggingTests : IDisposable
     }
 
     [Fact]
-    public void SaysSoWhenTheGitHubBillingArmIsRegistered()
+    public async Task SaysSoWhenTheGitHubBillingArmIsRegistered()
     {
         var (worker, log) = Create(registerGitHubBilling: true);
 
-        worker.LogEnabledArms();
+        await worker.LogEnabledArmsAsync(TestContext.Current.CancellationToken);
 
         log.Messages.Should().ContainSingle().Which.Should().Contain("GitHub billing sync: enabled");
     }
@@ -85,11 +85,11 @@ public sealed class IntelligenceWorkerArmLoggingTests : IDisposable
     /// an absence.
     /// </summary>
     [Fact]
-    public void SaysSoLoudlyWhenTheGitHubBillingArmIsNotConfigured()
+    public async Task SaysSoLoudlyWhenTheGitHubBillingArmIsNotConfigured()
     {
         var (worker, log) = Create(registerGitHubBilling: false);
 
-        worker.LogEnabledArms();
+        await worker.LogEnabledArmsAsync(TestContext.Current.CancellationToken);
 
         var message = log.Messages.Should().ContainSingle().Subject;
         message.Should().Contain("GitHub billing sync: NOT CONFIGURED");
@@ -102,22 +102,44 @@ public sealed class IntelligenceWorkerArmLoggingTests : IDisposable
     }
 
     [Fact]
-    public void NamesTheArmsThatAreAlwaysOnSoASilentCycleCanBeRuledOut()
+    public async Task NamesTheArmsThatAreAlwaysOnSoASilentCycleCanBeRuledOut()
     {
         var (worker, log) = Create(registerGitHubBilling: true);
 
-        worker.LogEnabledArms();
+        await worker.LogEnabledArmsAsync(TestContext.Current.CancellationToken);
 
         var message = log.Messages.Should().ContainSingle().Subject;
         message.Should().Contain("analysis catchup").And.Contain("budget check");
     }
 
+    /// <summary>
+    /// The digest arm is always registered, so registration alone says nothing about whether
+    /// it can send. Claiming "enabled" with no recipient configured would reproduce, in the
+    /// startup line itself, the exact failure the digest exists to prevent.
+    /// </summary>
     [Fact]
-    public void LogsAtInformationSoItSurvivesTheDefaultProductionFilter()
+    public async Task SaysSoWhenTheDigestArmHasNoRecipientConfigured()
     {
         var (worker, log) = Create(registerGitHubBilling: true);
 
-        worker.LogEnabledArms();
+        await worker.LogEnabledArmsAsync(TestContext.Current.CancellationToken);
+
+        var message = log.Messages.Should().ContainSingle().Subject;
+        message.Should().Contain("source health digest: NO RECIPIENT CONFIGURED");
+        message
+            .Should()
+            .Contain(
+                "nothing will be sent",
+                "the line has to say what the consequence is, or it reads as a harmless notice"
+            );
+    }
+
+    [Fact]
+    public async Task LogsAtInformationSoItSurvivesTheDefaultProductionFilter()
+    {
+        var (worker, log) = Create(registerGitHubBilling: true);
+
+        await worker.LogEnabledArmsAsync(TestContext.Current.CancellationToken);
 
         log.Levels.Should().AllSatisfy(level => level.Should().Be(LogLevel.Information));
     }
