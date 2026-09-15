@@ -83,7 +83,7 @@ qualification; do not claim full historical correction coverage with this scan f
 | --- | --- | --- | --- | --- |
 | `demo-seed` | Synthetic local demonstration data | Development seed endpoint | On submission; only when the relevant tables are empty | No sample data; never treated as provider billing |
 | `github-activity-api` | Repository activity acquisition | `GITHUB_TOKEN` plus `Ingest__GitHubRepoAllowlist`; token needs `contents:read`, `pull-requests:read`, and `actions:read` | Startup/immediate loop, then default 60m | Not configured; separate from Copilot metrics |
-| `github-billing-api` | GitHub billed-ledger observations | `GITHUB_TOKEN` plus `GITHUB_BILLING_ORG`; fine-grained `Plan` read or classic `admin:org` billing access | API-worker startup, then daily UTC | Not configured; not a token source |
+| `github-billing-api` | GitHub billed-ledger observations | `GITHUB_TOKEN` plus `GITHUB_BILLING_ORG`; fine-grained `Administration` **organization** read (not `Plan`, which is user-scoped, and not the repository-level `Administration` of the same name) or classic `admin:org` billing access | API-worker startup, then daily UTC | Not configured; not a token source |
 | `legacy-api` | Historical usage migrated without trusted provenance | None | Existing rows retained; no polling; new provenance-free writes rejected | Retained as legacy/unknown rather than guessed |
 | `legacy-spend` | Older spend records without trusted provenance | None | Retained; no polling | Retained as legacy/unknown rather than guessed |
 | `manual-ledger` | User-entered spend ledger evidence | Dashboard/API authorization | On submission | Manual billed record only when entered |
