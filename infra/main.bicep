@@ -16,6 +16,9 @@ param aadClientId string = 'f3a9736e-1ba6-43b6-89f7-e799a9f93e9a'
 // to disable the corresponding ingestion lane.
 param anthropicBillingSecretName string = 'anthropic-billing-key'
 param copilotOrgSecretName string = 'copilot-org'
+// Organisation whose repositories GitHub Activity discovers when github-repo-allowlist is
+// empty. Defaults to its secret name for the same reason as the two above.
+param githubActivityOrgSecretName string = 'github-activity-org'
 
 module kv 'modules/keyvault.bicep' = {
   name: 'keyvault'
@@ -68,5 +71,6 @@ module ingest 'modules/ingest.bicep' = {
     aiConnectionString: appinsights.outputs.connectionString
     anthropicBillingSecretName: anthropicBillingSecretName
     copilotOrgSecretName: copilotOrgSecretName
+    githubActivityOrgSecretName: githubActivityOrgSecretName
   }
 }

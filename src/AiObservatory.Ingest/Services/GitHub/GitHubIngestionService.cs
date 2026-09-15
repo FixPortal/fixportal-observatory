@@ -25,7 +25,8 @@ public class GitHubIngestionService(
     )
     {
         _ = through;
-        var result = await IngestCoreAsync(from, cancellationToken);
+        var repositories = await ResolveRepositoriesAsync(cancellationToken);
+        var result = await IngestCoreAsync(from, repositories, cancellationToken);
         if (result.RateLimited)
         {
             throw new SourceUnavailableException("GitHub API rate limit exhausted");
@@ -36,10 +37,10 @@ public class GitHubIngestionService(
         // as a healthy cycle whose advancing watermark would strand the failed lane's window.
         // For a one-repo allowlist the gate is intentionally a no-op: partial vs total failure
         // is the same thing there, so behaviour diverges by fleet size by design.
-        if (result.FailedRepoCount > 0 && result.FailedRepoCount == options.Value.GitHubRepoAllowlist.Length)
+        if (result.FailedRepoCount > 0 && result.FailedRepoCount == repositories.Count)
         {
             throw new InvalidOperationException(
-                $"{result.FailedRepoCount} of {options.Value.GitHubRepoAllowlist.Length} configured GitHub repos failed to ingest this cycle"
+                $"{result.FailedRepoCount} of {repositories.Count} configured GitHub repos failed to ingest this cycle"
             );
         }
         // A partial failure rides on the result so the worker records a degraded cycle: thrown
@@ -47,13 +48,64 @@ public class GitHubIngestionService(
         return new SourceIngestionResult(result.LatestObservationAt, result.FailedRepoCount);
     }
 
+    /// <summary>
+    /// The repositories this cycle polls: the configured allowlist when set, otherwise every
+    /// non-archived repo in the configured org.
+    /// <para>
+    /// A failed enumeration throws rather than returning empty. An empty list would run a
+    /// cycle that polls nothing, fails nothing, and reports success — leaving the source
+    /// "fresh" while observing no repositories at all. That is the precise shape of the
+    /// twelve-day outage this ingest already suffered, so it must surface as unavailable.
+    /// </para>
+    /// </summary>
+    private async Task<IReadOnlyList<string>> ResolveRepositoriesAsync(CancellationToken ct)
+    {
+        var configured = options.Value.GitHubRepoAllowlist;
+        if (configured.Length > 0)
+        {
+            return configured;
+        }
+
+        var org = options.Value.GitHubActivityOrg;
+        if (string.IsNullOrWhiteSpace(org))
+        {
+            throw new SourceUnavailableException(
+                "No GitHub repo allowlist is configured and no activity organisation is set"
+            );
+        }
+
+        IReadOnlyList<string> discovered;
+        try
+        {
+            discovered = await client.ListOrganizationRepositoriesAsync(org, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The message carries the cause because SourceUnavailableException has no inner
+            // exception, and this string is what lands in SourceSyncState.LastError.
+            throw new SourceUnavailableException($"Could not enumerate repositories for {org}: {ex.Message}");
+        }
+
+        if (discovered.Count == 0)
+        {
+            throw new SourceUnavailableException($"{org} returned no non-archived repositories");
+        }
+
+        logger.LogInformation("GitHub: polling {Count} repositories discovered in {Org}", discovered.Count, org);
+        return discovered;
+    }
+
 #pragma warning disable S3776 // One linear per-repository orchestration flow keeps failure policy visible.
-    private async Task<GitHubIngestionResult> IngestCoreAsync(LocalDate date, CancellationToken cancellationToken)
+    private async Task<GitHubIngestionResult> IngestCoreAsync(
+        LocalDate date,
+        IReadOnlyList<string> repositories,
+        CancellationToken cancellationToken
+    )
     {
         var now = clock.GetCurrentInstant();
         var failedRepoCount = 0;
         Instant? latest = null;
-        foreach (var configuredRepo in options.Value.GitHubRepoAllowlist)
+        foreach (var configuredRepo in repositories)
         {
             var repo = configuredRepo.ToLowerInvariant();
             try

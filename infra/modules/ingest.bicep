@@ -5,17 +5,23 @@ param kvName string
 param aiConnectionString string
 param anthropicBillingSecretName string = ''
 param copilotOrgSecretName string = ''
+param githubActivityOrgSecretName string = ''
 
 var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 
 var requiredAppSettings = [
   { name: 'DB_CONNECTION', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=db-connection)' }
   { name: 'GITHUB_TOKEN', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=github-token)' }
-  // Comma-delimited owner/repo list for GitHub Activity ingestion. Held in Key Vault
-  // rather than appsettings.json because most of the repos are private and this repo
-  // is public. Absent secret => the reference stays unresolved (the literal
-  // '@Microsoft.KeyVault(...)' string), which the app's IsConfigured guard rejects =>
-  // GitHub Activity stays disabled.
+  // Comma-delimited owner/repo list for GitHub Activity ingestion, and an OVERRIDE rather
+  // than the source of truth: leave the secret empty and set githubActivityOrgSecretName
+  // instead, and the ingest discovers every non-archived repo in that organisation each
+  // cycle, so a new repo needs no deploy-time change. Set it to pin an explicit subset, or
+  // to reach repos outside the organisation, which discovery cannot.
+  //
+  // Held in Key Vault rather than appsettings.json because most of the repos are private and
+  // this repo is public. Absent secret => the reference stays unresolved (the literal
+  // '@Microsoft.KeyVault(...)' string), which the app's guard rejects => the allowlist reads
+  // as empty, and discovery takes over if an organisation is configured.
   { name: 'Ingest__GitHubRepoAllowlist', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=github-repo-allowlist)' }
   { name: 'GOOGLE_BILLING_ACCOUNT_ID', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=google-billing-account-id)' }
   { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: aiConnectionString }
@@ -27,6 +33,12 @@ var optionalAppSettings = concat(
   ],
   empty(copilotOrgSecretName) ? [] : [
     { name: 'COPILOT_ORG', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=${copilotOrgSecretName})' }
+  ],
+  // Organisation whose repositories GitHub Activity discovers when the allowlist above is
+  // empty. Optional and its own setting rather than reusing the billing org, so turning the
+  // billing arm off cannot silently stop activity ingest.
+  empty(githubActivityOrgSecretName) ? [] : [
+    { name: 'GITHUB_ACTIVITY_ORG', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=${githubActivityOrgSecretName})' }
   ]
 )
 

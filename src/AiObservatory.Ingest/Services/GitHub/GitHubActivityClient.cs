@@ -27,6 +27,44 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
     };
 
+    public async Task<IReadOnlyList<string>> ListOrganizationRepositoriesAsync(
+        string org,
+        CancellationToken ct = default
+    )
+    {
+        var results = new List<string>();
+        var page = 1;
+        while (true)
+        {
+            using var response = await http.GetAsync(
+                $"/orgs/{Uri.EscapeDataString(org)}/repos?type=all&sort=full_name&per_page={PerPage}&page={page}",
+                ct
+            );
+            CheckRateLimit(response);
+            response.EnsureSuccessStatusCode();
+            var batch = await response.Content.ReadFromJsonAsync<List<OrgRepositoryDto>>(JsonOptions, ct) ?? [];
+
+            // Archived repos are excluded: they cannot produce new activity, so polling them
+            // spends a full PR + commit + workflow-run pass per cycle to fetch nothing, for
+            // as long as they exist.
+            results.AddRange(
+                batch
+                    .Where(repo => !repo.Archived && !string.IsNullOrWhiteSpace(repo.FullName))
+                    .Select(repo => repo.FullName!)
+            );
+
+            if (batch.Count < PerPage)
+            {
+                break;
+            }
+            page++;
+        }
+
+        return results;
+    }
+
+    private sealed record OrgRepositoryDto(string? FullName, bool Archived);
+
     public async Task<IReadOnlyList<GitHubPullRequestRecord>> GetPullRequestsAsync(
         string repo,
         LocalDate since,

@@ -24,6 +24,14 @@ public class IngestOptions
     // see ResolveGitHubRepoAllowlist below and infra/modules/ingest.bicep.
     public string[] GitHubRepoAllowlist { get; set; } = [];
 
+    /// <summary>
+    /// Organisation whose repositories are polled when <see cref="GitHubRepoAllowlist"/> is
+    /// empty, so a repo added to the org is observed without a deploy-time config change.
+    /// The allowlist remains an override: set it to pin an explicit subset, or to watch repos
+    /// outside this org, which org enumeration cannot reach.
+    /// </summary>
+    public string? GitHubActivityOrg { get; set; }
+
     public string? GoogleCloudCatalogApiKey { get; set; }
     public string? GoogleCloudCatalogServiceId { get; set; }
 
@@ -55,6 +63,32 @@ public class IngestOptions
             ? []
             : Clean(asScalar.Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries));
     }
+
+    /// <summary>
+    /// The activity org, falling back to the billing org when unset so a deployment that
+    /// already names one org does not have to name it twice. Kept as its own setting so that
+    /// turning the billing arm off cannot silently stop activity ingest.
+    /// <para>
+    /// An unresolved Key Vault reference is treated as unset, for the same reason the
+    /// allowlist discards one: App Service leaves the literal "@Microsoft.KeyVault(...)"
+    /// string in place when the secret is absent, and that is non-empty.
+    /// </para>
+    /// </summary>
+    public static string? ResolveGitHubActivityOrg(IConfiguration cfg)
+    {
+        ArgumentNullException.ThrowIfNull(cfg);
+        var value = cfg["GITHUB_ACTIVITY_ORG"];
+        if (!IsUsable(value))
+        {
+            value = cfg["GITHUB_BILLING_ORG"];
+        }
+
+        return IsUsable(value) ? value!.Trim() : null;
+    }
+
+    private static bool IsUsable(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && !value.StartsWith("@Microsoft.KeyVault(", StringComparison.OrdinalIgnoreCase);
 
     // Keeps only well-formed "owner/repo" entries. The exactly-two-segments rule is also
     // what discards an unresolved "@Microsoft.KeyVault(...)" reference, which App Service
