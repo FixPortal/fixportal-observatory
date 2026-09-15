@@ -73,6 +73,63 @@ public sealed class GitHubActivityClientTests : IDisposable
     }
 
     [Fact]
+    public async Task ListOrganizationRepositoriesAsync_ExcludesArchivedAndRequestsTheOrgEndpoint()
+    {
+        var handler = new StubHandler(_ =>
+            JsonResponse(
+                """
+                [{"full_name":"FixPortal/live","archived":false},
+                 {"full_name":"FixPortal/retired","archived":true},
+                 {"full_name":"FixPortal/also-live","archived":false}]
+                """
+            )
+        );
+        var sut = CreateSut(handler);
+
+        var result = await sut.ListOrganizationRepositoriesAsync("FixPortal", TestContext.Current.CancellationToken);
+
+        result.Should().Equal("FixPortal/live", "FixPortal/also-live");
+        handler.RequestedUrls.Single().Should().Contain("/orgs/FixPortal/repos").And.Contain("per_page=100");
+    }
+
+    [Fact]
+    public async Task ListOrganizationRepositoriesAsync_PaginatesUntilShortPage()
+    {
+        // A full page means "there may be more"; a short one ends the walk. Getting this
+        // wrong silently truncates the fleet, which polls a subset while reporting success.
+        var firstPage = string.Join(
+            ",",
+            Enumerable.Range(0, 100).Select(i => $$"""{"full_name":"FixPortal/repo{{i}}","archived":false}""")
+        );
+        // EndsWith, not Contains: "per_page=100" contains the substring "page=1", so a
+        // Contains check matches every request and the walk never reaches the short page.
+        var handler = new StubHandler(req =>
+            req.RequestUri!.ToString().EndsWith("&page=1", StringComparison.Ordinal)
+                ? JsonResponse($"[{firstPage}]")
+                : JsonResponse("""[{"full_name":"FixPortal/last","archived":false}]""")
+        );
+        var sut = CreateSut(handler);
+
+        var result = await sut.ListOrganizationRepositoriesAsync("FixPortal", TestContext.Current.CancellationToken);
+
+        result.Should().HaveCount(101);
+        result.Should().EndWith("FixPortal/last");
+        handler.RequestedUrls.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task ListOrganizationRepositoriesAsync_StopsWhenTheRateLimitFloorIsReached()
+    {
+        var handler = new StubHandler(_ => JsonResponse("[]", rateLimitRemaining: 10));
+        var sut = CreateSut(handler);
+
+        var act = async () =>
+            await sut.ListOrganizationRepositoriesAsync("FixPortal", TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<GitHubRateLimitExceededException>();
+    }
+
+    [Fact]
     public async Task GetPullRequestsAsync_ParsesFieldsAndFetchesReviewCount()
     {
         var handler = new StubHandler(req =>

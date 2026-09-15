@@ -153,7 +153,10 @@ test('documentation describes the source-aware setup contract', async () => {
   }
 
   assert.match(providerSetup, /`organization-28-day\/latest`/, 'Copilot setup needs the current report descriptor')
-  assert.match(providerSetup, /`GITHUB_TOKEN` plus `Ingest__GitHubRepoAllowlist`[\s\S]*contents:read.*pull-requests:read.*actions:read/i, 'GitHub activity setup needs its token and repository permissions')
+  const githubActivityRow = providerSetup.split(/\r?\n/).find(line => line.includes('`github-activity-api`')) ?? ''
+  assert.match(githubActivityRow, /`GITHUB_TOKEN`/, 'GitHub activity setup needs its token')
+  assert.match(githubActivityRow, /`GITHUB_ACTIVITY_ORG`[\s\S]*`Ingest__GitHubRepoAllowlist`.*override/i, 'GitHub activity setup must document org discovery with the allowlist as an override')
+  assert.match(githubActivityRow, /contents:read.*pull-requests:read.*actions:read/i, 'GitHub activity setup needs its repository permissions')
   assert.match(providerSetup, /`GITHUB_BILLING_ORG`[\s\S]*Plan.*admin:org/i, 'GitHub billing setup needs its organization and token permissions')
   assert.match(providerSetup, /`google-cloud-billing-export`[\s\S]*?API \/ billed/, 'Google billing export must be API/billed')
   const googleCatalogRow = providerSetup.split(/\r?\n/).find(line => line.includes('`google-cloud-catalog`')) ?? ''
