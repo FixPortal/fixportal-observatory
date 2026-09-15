@@ -8,11 +8,15 @@ import { queryClient } from './api/queryClient'
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthGate>
-        <EmbeddedContext>
+      {/* EmbeddedContext sits ABOVE AuthGate deliberately: it posts partner.ready to the
+          IDE host. Nested inside the gate, an embed that has not signed in never posts,
+          so the IDE cannot tell "waiting for sign-in" from "partner broken" and sits on
+          Connecting until it times out. */}
+      <EmbeddedContext>
+        <AuthGate>
           <Dashboard />
-        </EmbeddedContext>
-      </AuthGate>
+        </AuthGate>
+      </EmbeddedContext>
     </QueryClientProvider>
   )
 }
