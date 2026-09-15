@@ -1,7 +1,9 @@
 using System.Text.RegularExpressions;
 using AiObservatory.Api.Services.GitHub;
+using AiObservatory.Data;
 using AiObservatory.Data.Entities;
 using AiObservatory.Data.Repositories;
+using Microsoft.EntityFrameworkCore;
 using NodaTime;
 
 namespace AiObservatory.Api.Services.Intelligence;
@@ -25,7 +27,7 @@ public class IntelligenceWorkerService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        LogEnabledArms();
+        await LogEnabledArmsAsync(stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -125,13 +127,28 @@ public class IntelligenceWorkerService(
     /// configuration, so this must never stop the worker starting.
     /// </para>
     /// </summary>
-    internal void LogEnabledArms()
+    internal async Task LogEnabledArmsAsync(CancellationToken ct = default)
     {
         bool gitHubBilling;
+        bool digestHasRecipient;
         try
         {
-            using var scope = scopeFactory.CreateScope();
+            await using var scope = scopeFactory.CreateAsyncScope();
             gitHubBilling = scope.ServiceProvider.GetService<GitHubBillingSyncService>() is not null;
+
+            // The digest arm is always registered, but it can only ever SEND once a recipient
+            // is configured. Reporting it as "enabled" on registration alone would reproduce,
+            // in this very line, the failure the arm exists to prevent: something that reads
+            // as live while it can never fire.
+            var db = scope.ServiceProvider.GetService<AiObservatoryDbContext>();
+            digestHasRecipient =
+                db is not null
+                && await db
+                    .NotificationSettings.AsNoTracking()
+                    .AnyAsync(
+                        s => s.Id == NotificationSettings.SingletonId && s.AlertEmailTo != null && s.AlertEmailTo != "",
+                        ct
+                    );
         }
         catch (Exception ex)
         {
@@ -142,7 +159,8 @@ public class IntelligenceWorkerService(
 
         logger.LogInformation(
             "Intelligence worker arms — analysis catchup: enabled, budget check: enabled, "
-                + "source health digest: enabled, GitHub billing sync: {GitHubBillingState}",
+                + "source health digest: {DigestState}, GitHub billing sync: {GitHubBillingState}",
+            digestHasRecipient ? "enabled" : "NO RECIPIENT CONFIGURED (nothing will be sent)",
             gitHubBilling ? "enabled" : "NOT CONFIGURED (no entries will be written)"
         );
     }
