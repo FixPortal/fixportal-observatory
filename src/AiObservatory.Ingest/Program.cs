@@ -47,6 +47,11 @@ var host = Host.CreateDefaultBuilder(args)
             var githubRepoAllowlist = IngestOptions.ResolveGitHubRepoAllowlist(cfg);
             services.PostConfigure<IngestOptions>(o => o.GitHubRepoAllowlist = githubRepoAllowlist);
 
+            // With no allowlist, repositories are discovered from this org each cycle, so a
+            // repo added to the org is observed without a deploy-time configuration change.
+            var githubActivityOrg = IngestOptions.ResolveGitHubActivityOrg(cfg);
+            services.PostConfigure<IngestOptions>(o => o.GitHubActivityOrg = githubActivityOrg);
+
             var anthropicConfigured = RegisterAnthropicSources(services, cfg, expectedRefreshInterval);
 
             // Copilot — enabled when GITHUB_TOKEN and COPILOT_ORG are both set.
@@ -117,10 +122,14 @@ var host = Host.CreateDefaultBuilder(args)
                 services.AddScoped<BillingObservationWriter>();
             }
 
-            // GitHub Activity — enabled when GITHUB_TOKEN is set AND at least one repo is
-            // allowlisted. Reuses the same GITHUB_TOKEN as Copilot reports; this PAT also
-            // needs contents:read, pull-requests:read, and actions:read for activity.
-            var githubConfigured = IsConfigured(githubToken) && githubRepoAllowlist.Length > 0;
+            // GitHub Activity — enabled when GITHUB_TOKEN is set AND there is something to
+            // poll: either an explicit allowlist, or an organisation to discover repositories
+            // from. Reuses the same GITHUB_TOKEN as Copilot reports; this PAT also needs
+            // contents:read, pull-requests:read and actions:read for activity, plus metadata
+            // read to enumerate the organisation.
+            var githubConfigured =
+                IsConfigured(githubToken)
+                && (githubRepoAllowlist.Length > 0 || !string.IsNullOrWhiteSpace(githubActivityOrg));
             services.AddSingleton(
                 new SourceDefinition(UsageSourceIds.GitHubActivityApi, githubConfigured, expectedRefreshInterval)
             );

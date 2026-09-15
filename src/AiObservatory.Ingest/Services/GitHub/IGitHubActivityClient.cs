@@ -5,6 +5,13 @@ namespace AiObservatory.Ingest.Services.GitHub;
 
 public interface IGitHubActivityClient
 {
+    /// <summary>
+    /// Every non-archived repository in <paramref name="org"/>, as "owner/name". Used when no
+    /// explicit allowlist is configured, so a repo added to the org becomes observed without a
+    /// deploy-time configuration change.
+    /// </summary>
+    Task<IReadOnlyList<string>> ListOrganizationRepositoriesAsync(string org, CancellationToken ct = default);
+
     Task<IReadOnlyList<GitHubPullRequestRecord>> GetPullRequestsAsync(
         string repo,
         LocalDate since,
