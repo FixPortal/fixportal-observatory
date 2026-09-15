@@ -10,9 +10,13 @@ public static class GitHubBillingRegistration
     /// <see cref="Intelligence.IntelligenceWorkerService"/> resolves the sync service
     /// optionally and skips the step when it is absent.
     /// <para>
-    /// The token needs billing read ("Plan" read on a fine-grained PAT, or
-    /// <c>admin:org</c> on a classic one) — a broader scope than the ingest worker's
-    /// activity token, even though both read the same secret.
+    /// The token needs billing read — "Administration" ORGANIZATION read on a fine-grained
+    /// PAT, or <c>admin:org</c> on a classic one. Not "Plan": that is the USER-scoped billing
+    /// permission, and the org endpoint answers it with 401/403, so a token carrying only
+    /// "Plan" looks correctly configured and fails every call. Nor the repository-level
+    /// "Administration" permission, which the fine-grained UI lists under a separate heading
+    /// with the same name. A broader scope than the ingest worker's activity token, even
+    /// though both read the same secret.
     /// </para>
     /// </summary>
     public static void AddGitHubBilling(this IServiceCollection services, IConfiguration configuration)
