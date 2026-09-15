@@ -22,6 +22,11 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
     // truncated result then carries the cursor so the next cycle resumes (see the method).
     private const int MaxWindowsPerCall = 5;
 
+    // Bounds the org repository listing at 2,000 repos. Defence in depth rather than a real
+    // ceiling: the largest org this polls has 32. Hitting it throws rather than truncating,
+    // because a silently partial fleet would poll a subset forever and still report success.
+    private const int OrgRepositoryPageCap = 20;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
@@ -33,8 +38,7 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
     )
     {
         var results = new List<string>();
-        var page = 1;
-        while (true)
+        for (var page = 1; page <= OrgRepositoryPageCap; page++)
         {
             using var response = await http.GetAsync(
                 $"/orgs/{Uri.EscapeDataString(org)}/repos?type=all&sort=full_name&per_page={PerPage}&page={page}",
@@ -55,12 +59,16 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
 
             if (batch.Count < PerPage)
             {
-                break;
+                return results;
             }
-            page++;
         }
 
-        return results;
+        // Cap reached with a full final page, so the organisation has more repositories than
+        // this walk can list. Truncating silently would poll a subset forever while reporting
+        // a healthy cycle, so it is louder to refuse: raise the cap deliberately instead.
+        throw new InvalidOperationException(
+            $"{org} has more than {OrgRepositoryPageCap * PerPage} repositories; raise {nameof(OrgRepositoryPageCap)} or configure an explicit allowlist"
+        );
     }
 
     private sealed record OrgRepositoryDto(string? FullName, bool Archived);
