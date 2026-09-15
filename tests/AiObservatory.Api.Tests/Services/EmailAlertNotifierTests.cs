@@ -34,7 +34,12 @@ public class EmailAlertNotifierTests
         var repo = Substitute.For<IUsageRepository>();
         repo.GetNotificationSettingsAsync(Arg.Any<CancellationToken>()).Returns((NotificationSettings?)null);
 
-        var sut = new EmailAlertNotifier(smtp, config, repo, NullLogger<EmailAlertNotifier>.Instance);
+        var sut = new EmailAlertNotifier(
+            new SmtpMailSender(smtp, config),
+            config,
+            repo,
+            NullLogger<EmailAlertNotifier>.Instance
+        );
         var result = await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
         result.Should().Be(AlertDeliveryResult.NoRecipientConfigured);
@@ -56,7 +61,12 @@ public class EmailAlertNotifierTests
         repo.GetNotificationSettingsAsync(Arg.Any<CancellationToken>())
             .Returns(new NotificationSettings { AlertEmailTo = null, UpdatedAt = Instant.FromUtc(2026, 8, 30, 0, 0) });
 
-        var sut = new EmailAlertNotifier(smtp, config, repo, NullLogger<EmailAlertNotifier>.Instance);
+        var sut = new EmailAlertNotifier(
+            new SmtpMailSender(smtp, config),
+            config,
+            repo,
+            NullLogger<EmailAlertNotifier>.Instance
+        );
         var result = await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
         result.Should().Be(AlertDeliveryResult.NoRecipientConfigured);
@@ -99,7 +109,12 @@ public class EmailAlertNotifierTests
                 }
             );
 
-        var sut = new EmailAlertNotifier(smtp, config, repo, NullLogger<EmailAlertNotifier>.Instance);
+        var sut = new EmailAlertNotifier(
+            new SmtpMailSender(smtp, config),
+            config,
+            repo,
+            NullLogger<EmailAlertNotifier>.Instance
+        );
         var result = await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
         result.Should().Be(AlertDeliveryResult.Sent);
@@ -135,7 +150,12 @@ public class EmailAlertNotifierTests
                 }
             );
 
-        var sut = new EmailAlertNotifier(smtp, config, repo, NullLogger<EmailAlertNotifier>.Instance);
+        var sut = new EmailAlertNotifier(
+            new SmtpMailSender(smtp, config),
+            config,
+            repo,
+            NullLogger<EmailAlertNotifier>.Instance
+        );
         var result = await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
         result.Should().Be(AlertDeliveryResult.NoRecipientConfigured);
@@ -179,7 +199,12 @@ public class EmailAlertNotifierTests
                 }
             );
 
-        var sut = new EmailAlertNotifier(smtp, config, repo, NullLogger<EmailAlertNotifier>.Instance);
+        var sut = new EmailAlertNotifier(
+            new SmtpMailSender(smtp, config),
+            config,
+            repo,
+            NullLogger<EmailAlertNotifier>.Instance
+        );
         var result = await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
         result.Should().Be(AlertDeliveryResult.Sent);
@@ -203,7 +228,12 @@ public class EmailAlertNotifierTests
                 }
             );
 
-        var sut = new EmailAlertNotifier(smtp, config, repo, NullLogger<EmailAlertNotifier>.Instance);
+        var sut = new EmailAlertNotifier(
+            new SmtpMailSender(smtp, config),
+            config,
+            repo,
+            NullLogger<EmailAlertNotifier>.Instance
+        );
         var result = await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
         result.Should().Be(AlertDeliveryResult.NoRecipientConfigured);
