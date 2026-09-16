@@ -477,7 +477,13 @@ public class IngestHostTests
         sources
             .Select(source => source.SourceId)
             .Should()
-            .BeEquivalentTo(PricingSourceIds.OpenAi, PricingSourceIds.Claude, PricingSourceIds.Kimi);
+            .BeEquivalentTo(
+                PricingSourceIds.OpenAi,
+                PricingSourceIds.Claude,
+                PricingSourceIds.Kimi,
+                PricingSourceIds.Xai,
+                PricingSourceIds.MetaOpenRouter
+            );
         sources.Select(source => source.SourceId).Should().OnlyHaveUniqueItems();
         definitions
             .Select(definition => definition.SourceId)
@@ -486,6 +492,8 @@ public class IngestHostTests
                 PricingSourceIds.OpenAi,
                 PricingSourceIds.Claude,
                 PricingSourceIds.Kimi,
+                PricingSourceIds.Xai,
+                PricingSourceIds.MetaOpenRouter,
                 PricingSourceIds.GoogleCloudCatalog
             );
         definitions.Select(definition => definition.SourceId).Should().OnlyHaveUniqueItems();

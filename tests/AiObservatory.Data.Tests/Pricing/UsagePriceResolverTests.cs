@@ -639,6 +639,114 @@ public sealed class UsagePriceResolverTests : IAsyncLifetime
         logger.Warnings.Single().Length.Should().BeLessThan(512);
     }
 
+    [Theory]
+    [InlineData(false, 8.5, 1.5)]
+    [InlineData(true, 17, 3)]
+    public void XaiCalculatorPricesTheLaneTheRequestDeclaresAndCreditsCacheSavingsAgainstIt(
+        bool longContext,
+        double expectedCost,
+        double expectedSavings
+    )
+    {
+        var usage = Event(
+            Provider.Xai,
+            "grok-4.6",
+            $$"""{"long_context":{{longContext.ToString().ToLowerInvariant()}}}""",
+            cacheRead: 1_000_000
+        );
+        var quote = new XaiPriceCalculator().Calculate(usage, Json(XaiCatalog()));
+        quote.Should().Be(new UsagePriceQuote((decimal)expectedCost, (decimal)expectedSavings));
+    }
+
+    /// <summary>
+    /// The two lanes differ by 2x, and only the source that saw the request knows which one it
+    /// took, so a measured event that does not say stays unpriced rather than being guessed.
+    /// </summary>
+    [Fact]
+    public void XaiCalculatorReturnsNullWhenAMeasuredEventDoesNotDeclareItsLane()
+    {
+        new XaiPriceCalculator().Calculate(Event(Provider.Xai, "grok-4.6", "{}"), Json(XaiCatalog())).Should().BeNull();
+    }
+
+    /// <summary>
+    /// A notional row is a session aggregate of many requests and can never carry the flag, so
+    /// it takes the standard lane — the same treatment Kimi's notional subscription rows get.
+    /// </summary>
+    [Fact]
+    public void XaiCalculatorPricesNotionalAggregatesOnTheStandardLane()
+    {
+        var usage = Event(Provider.Xai, "grok-4.6", "{}", cacheRead: 1_000_000, costBasis: CostBasis.Notional);
+        var quote = new XaiPriceCalculator().Calculate(usage, Json(XaiCatalog()));
+        quote!.CostUsd.Should().Be(8.5m);
+    }
+
+    /// <summary>
+    /// `grok-4.6-build` is what the Grok CLI reports for most of its work and the published
+    /// table does not price it. Prefix matching would silently charge it at 4.6's rates.
+    /// </summary>
+    [Fact]
+    public void XaiCalculatorReturnsNullForAModelThePublishedTableDoesNotPrice()
+    {
+        new XaiPriceCalculator()
+            .Calculate(Event(Provider.Xai, "grok-4.6-build", """{"long_context":false}"""), Json(XaiCatalog()))
+            .Should()
+            .BeNull();
+    }
+
+    /// <summary>
+    /// xAI bills reasoning as completion tokens and the Grok CLI already counts them inside its
+    /// output total, so a source reporting them separately must not be charged for them twice.
+    /// </summary>
+    [Fact]
+    public void XaiCalculatorDoesNotBillReasoningTokensOnTopOfOutput()
+    {
+        var withReasoning = Event(Provider.Xai, "grok-4.6", """{"long_context":false}""", thought: 500_000);
+        var withoutReasoning = Event(Provider.Xai, "grok-4.6", """{"long_context":false}""");
+        var quote = new XaiPriceCalculator().Calculate(withReasoning, Json(XaiCatalog()));
+        quote.Should().Be(new XaiPriceCalculator().Calculate(withoutReasoning, Json(XaiCatalog())));
+    }
+
+    [Theory]
+    [InlineData("meta/muse-spark-1.3", 5.65, 1.10)]
+    [InlineData("meta/muse-spark-1.3-contributor", 0.302, 0.098)]
+    public void MetaCalculatorKeepsTheContributorLaneDistinctFromTheStandardOne(
+        string model,
+        double expectedCost,
+        double expectedSavings
+    )
+    {
+        var usage = Event(Provider.Meta, model, "{}", cacheRead: 1_000_000);
+        var quote = new MetaPriceCalculator().Calculate(usage, Json(MetaCatalog()));
+        quote.Should().Be(new UsagePriceQuote((decimal)expectedCost, (decimal)expectedSavings));
+    }
+
+    [Theory]
+    [InlineData("meta/muse-spark-1.3-preview")]
+    [InlineData("muse-spark-1.3")]
+    public void MetaCalculatorReturnsNullForAModelOpenRouterDoesNotList(string model)
+    {
+        new MetaPriceCalculator().Calculate(Event(Provider.Meta, model, "{}"), Json(MetaCatalog())).Should().BeNull();
+    }
+
+    /// <summary>
+    /// An endpoint with no published cache-read rate cannot price cached tokens. Charging them
+    /// as input overstates and charging zero understates, so the row stays unpriced.
+    /// </summary>
+    [Fact]
+    public void MetaCalculatorReturnsNullWhenCachedTokensHaveNoPublishedRate()
+    {
+        var usage = Event(Provider.Meta, "meta/muse-glimmer-30b", "{}", cacheRead: 1_000);
+        new MetaPriceCalculator().Calculate(usage, Json(MetaCatalog())).Should().BeNull();
+    }
+
+    [Fact]
+    public void MetaCalculatorPricesAnEndpointWithoutACacheRateWhenNothingWasCached()
+    {
+        var usage = Event(Provider.Meta, "meta/muse-glimmer-30b", "{}");
+        var quote = new MetaPriceCalculator().Calculate(usage, Json(MetaCatalog()));
+        quote!.CostUsd.Should().Be(1.85m);
+    }
+
     private UsagePriceResolver Resolver(ILogger<UsagePriceResolver>? logger = null) =>
         new(
             _store,
@@ -647,6 +755,8 @@ public sealed class UsagePriceResolverTests : IAsyncLifetime
                 new AnthropicPriceCalculator(),
                 new KimiPriceCalculator(),
                 new GooglePriceCalculator(),
+                new XaiPriceCalculator(),
+                new MetaPriceCalculator(),
             ],
             logger ?? new CapturingLogger<UsagePriceResolver>()
         );
@@ -678,6 +788,27 @@ public sealed class UsagePriceResolverTests : IAsyncLifetime
             RawPayload = raw,
             CostBasis = costBasis,
         };
+
+    private static XaiPriceCatalog XaiCatalog() =>
+        new(
+            "USD",
+            "https://docs.x.ai/developers/pricing.md",
+            RetrievedAt,
+            200_000,
+            [new XaiPriceEntry("grok-4.6", [], EffectiveFrom, false, 2m, 0.5m, 6m, 4m, 1m, 12m)]
+        );
+
+    private static MetaPriceCatalog MetaCatalog() =>
+        new(
+            "USD",
+            "https://openrouter.ai/api/v1/models",
+            RetrievedAt,
+            [
+                new MetaPriceEntry("meta/muse-spark-1.3", EffectiveFrom, false, 1.25m, 4.25m, 0.15m),
+                new MetaPriceEntry("meta/muse-spark-1.3-contributor", EffectiveFrom, false, 0.10m, 0.20m, 0.002m),
+                new MetaPriceEntry("meta/muse-glimmer-30b", EffectiveFrom, false, 0.35m, 1.50m, null),
+            ]
+        );
 
     private static OpenAiPriceCatalog OpenAiCatalog(OpenAiPriceEntry? entry = null) =>
         new(

@@ -1,6 +1,6 @@
 # Local usage producers
 
-> Machine-local Codex, Copilot, Claude, Kimi, Gemini review, and Antigravity telemetry guide as of 2026-08-26.
+> Machine-local Codex, Copilot, Claude, Kimi, Gemini review, Antigravity, Grok, and PI telemetry guide as of 2026-09-16.
 
 `observatory-sweep.mjs` reads installed CLI logs and posts cumulative daily/model snapshots to `POST /api/events`. It has no dependencies beyond Node 24+.
 
@@ -39,6 +39,8 @@ Each posted snapshot carries explicit provenance so the API preserves its subscr
 | Kimi | `~/.kimi-code/sessions/**/wire.jsonl`; `usage.record` only | `kimi-local` / subscription / notional; mirrored `step.end` rows do not count; turn and session scopes count |
 | Gemini review | `~/.gemini/tmp/gem-review-*/chats/session-*.jsonl`; response usage | `gemini-review-local` / API / list-price estimate; only the review wrapper's API-key-isolated sessions are included |
 | Antigravity | `~/.gemini/antigravity-cli/conversations/*.db` plus matching transcript | `antigravity-local` / subscription / notional; SQLite step totals are attributed to the transcript's selected model |
+| Grok | `~/.grok/sessions/**/usage.json`; per-turn `modelUsage` | `grok-local` / subscription / provider-estimated; the session block mirrors the turns and is ignored |
+| PI | `~/.pi/agent/sessions/**/*.jsonl`; assistant `usage` on `meta/` models | `pi-local` / subscription / provider-estimated; PI's other vendors arrive through their own lanes |
 
 Stable source-scoped keys make resubmission safe. Source ids carry a per-machine suffix (`codex-local@<host>`, from `OBSERVATORY_MACHINE` or the OS hostname) so sweeps on different machines never share a namespace and can never tombstone each other's history. Before posting, the sweeper reads server inventory for the enabled sources only, and emits zero corrections for removed snapshots of a source only when that source's own current snapshots all posted successfully or its clean scan verified an empty local history under a populated discovery root — a subset run (`OBSERVATORY_LOCAL_SOURCES=codex`), a failed replacement, or a missing or entry-less home (unmounted, or a mistyped `*_HOME` override) leaves every other key untouched. Its state file holds the parse cache and the legacy-migration marker; losing it causes a safe full rescan and one repeated (idempotent) legacy migration, not a loss of server truth. Until the rescan completes, a source with an unreadable file withholds its corrections and tombstones.
 
@@ -47,6 +49,25 @@ Stable source-scoped keys make resubmission safe. Source ids carry a per-machine
 
 > [!WARNING]
 > Set `OBSERVATORY_LOCAL_SOURCES` without `claude` when `claude-code-usage-api` covers the same account/activity. The two lanes do not cross-deduplicate.
+
+## Measured cost, and the Grok tick scale
+
+Grok and PI are the only producers that post a cost. Both CLIs record what their vendor
+charged, so those rows carry `costBasis: providerEstimated` and the Observatory stores the
+figure instead of estimating one from a catalog; every other producer posts `costUsd: null`
+against a notional basis.
+
+PI reports the cost in USD directly. The Grok CLI reports `costUsdTicks`, an integer whose
+scale it does not document. It was derived rather than assumed: on the one session turn
+attributable to a model whose API rate x.ai publishes (`grok-4.6`), those published input,
+cached-input and output rates reproduce the recorded tick count to seven significant figures
+at exactly `1e10` ticks per USD. The rates themselves are not repeated here — they live in
+the refreshed `xai-pricing` catalog, which is the only place they are maintained. The same fit establishes the two token conventions `parseGrok`
+converts — that `inputTokens` includes `cachedReadTokens`, and that `outputTokens` already
+includes `reasoningTokens`.
+
+**Refuted if** a turn priced from published rates disagrees with `ticks / 1e10` by more than
+rounding. If that happens, stop posting Grok costs and drop the lane back to notional.
 
 ## Run
 

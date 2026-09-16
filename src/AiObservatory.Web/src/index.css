@@ -50,6 +50,10 @@
      from the provider identity colours above; semantic success green never
      appears as a chart fill, so role and identity cannot be confused at a swatch. */
   --provider-moonshot: #65a30d;
+  /* xAI slate and Meta indigo keep both readable against the five above without
+     reaching for another warm hue, which openai and judge already hold. */
+  --provider-xai: #4b5563;
+  --provider-meta: #4338ca;
   --provider-other: #64748b;
   --provider-judge: #d97706;
 
@@ -72,6 +76,8 @@
   --provider-copilot: #f472b6;
   --provider-openai: #fb923c;
   --provider-moonshot: #a3e635;
+  --provider-xai: #cbd5e1;
+  --provider-meta: #a5b4fc;
   --provider-other: #94a3b8;
   --provider-judge: #fbbf24;
   --project-1: #c4b5fd;

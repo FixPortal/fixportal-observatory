@@ -26,4 +26,18 @@ public enum Provider
     OpenAI,
 
     Moonshot,
+
+    /// <remarks>
+    /// xAI reaches this estate through the Grok CLI only: the models page publishes API
+    /// prices, but the API channel needs an <c>XAI_API_KEY</c> this machine does not hold.
+    /// The provider therefore carries a pricing snapshot and CLI telemetry, not API usage.
+    /// </remarks>
+    Xai,
+
+    /// <remarks>
+    /// Meta is the model vendor; OpenRouter is the route that actually bills. Filing the
+    /// provider under the vendor matches Moonshot (vendor) being fed by <c>kimi-local</c>
+    /// (route), and keeps the route visible where it belongs — in the source id.
+    /// </remarks>
+    Meta,
 }

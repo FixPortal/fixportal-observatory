@@ -59,7 +59,7 @@ test('maps all statuses, shows failure evidence, and uses native time/details/li
   }
   const panelButton = screen.getByRole('button', { name: /Data sources/ })
   expect(panelButton).toHaveAttribute('aria-expanded', 'false')
-  expect(screen.getByText('1 reporting · 12 not connected · 3 need attention')).toBeInTheDocument()
+  expect(screen.getByText('1 reporting · 16 not connected · 3 need attention')).toBeInTheDocument()
   expect(screen.getByText(/Collection health for optional APIs and local telemetry/i)).toBeInTheDocument()
   fireEvent.click(panelButton)
   const failingRow = screen.getByText('Claude local').closest('li')!
@@ -100,10 +100,10 @@ test('keeps the registry rows in place while source status is loading', () => {
 
   const panel = screen.getByRole('region', { name: 'Source freshness' })
   expect(panel).toHaveAttribute('aria-busy', 'true')
-  expect(within(panel).getAllByRole('listitem')).toHaveLength(17)
+  expect(within(panel).getAllByRole('listitem')).toHaveLength(21)
   expect(within(panel).getByText('Repository activity')).toBeInTheDocument()
   expect(within(panel).getByText('GitHub billing')).toBeInTheDocument()
-  expect(within(panel).getAllByText('Loading')).toHaveLength(17)
+  expect(within(panel).getAllByText('Loading')).toHaveLength(21)
   expect(within(panel).queryByRole('link')).not.toBeInTheDocument()
 })
 

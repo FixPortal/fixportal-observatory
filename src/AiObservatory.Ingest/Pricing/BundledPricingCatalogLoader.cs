@@ -66,6 +66,22 @@ public sealed class BundledPricingCatalogLoader
             static catalog => catalog.RetrievedAt,
             cancellationToken
         );
+        await LoadAsync<XaiPriceCatalog>(
+            Provider.Xai,
+            PricingSourceIds.Xai,
+            "xai.json",
+            static catalog => catalog.SourceUrl,
+            static catalog => catalog.RetrievedAt,
+            cancellationToken
+        );
+        await LoadAsync<MetaPriceCatalog>(
+            Provider.Meta,
+            PricingSourceIds.MetaOpenRouter,
+            "meta.json",
+            static catalog => catalog.SourceUrl,
+            static catalog => catalog.RetrievedAt,
+            cancellationToken
+        );
         await LoadAsync<GeminiDeveloperPriceCatalog>(
             Provider.Google,
             PricingSourceIds.GeminiDeveloperApi,
