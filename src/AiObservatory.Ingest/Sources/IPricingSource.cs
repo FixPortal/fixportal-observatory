@@ -56,6 +56,12 @@ internal static class PricingCandidate
             case GeminiDeveloperPriceCatalog gemini:
                 gemini.Validate();
                 break;
+            case XaiPriceCatalog xai:
+                xai.Validate();
+                break;
+            case MetaPriceCatalog meta:
+                meta.Validate();
+                break;
             default:
                 throw new ArgumentException("Unknown pricing catalog type.", nameof(catalog));
         }

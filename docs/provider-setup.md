@@ -35,11 +35,29 @@ Provider polling sources start in the immediate loop and then run every 60 minut
 | `openai-pricing` — OpenAI pricing | Refreshed public catalog | No credential | API catalog / list-price estimate input | Startup when due, then daily | [OpenAI pricing](https://developers.openai.com/api/docs/pricing.md) | Bundled/last-known-good catalog remains |
 | `kimi-local` — Kimi local | Session token snapshots | Local files plus local producer settings | Subscription / notional | User-scheduled; recommend every 15m | [Local producers](../clients/README.md) | Not configured on that machine |
 | `kimi-pricing` — Kimi pricing | Refreshed public catalog | No credential | API catalog / list-price estimate input | Startup when due, then daily | [Kimi documentation](https://platform.kimi.ai/docs/llms.txt) | Bundled/last-known-good catalog remains |
+| `grok-local` — Grok local | Session token and cost snapshots | Local files plus local producer settings | Subscription / provider-estimated | User-scheduled; recommend every 15m | [Local producers](../clients/README.md) | Not configured on that machine |
+| `xai-pricing` — xAI pricing | Refreshed public catalog | No credential | API catalog / list-price estimate input | Startup when due, then daily | [xAI pricing](https://docs.x.ai/developers/pricing.md) | Bundled/last-known-good catalog remains |
+| `pi-local` — PI local | Meta turn usage and charged cost | Local files plus local producer settings | Subscription / provider-estimated | User-scheduled; recommend every 15m | [Local producers](../clients/README.md) | Not configured on that machine |
+| `meta-openrouter-pricing` — OpenRouter pricing | Refreshed public catalog | No credential | API catalog / list-price estimate input | Startup when due, then daily | [OpenRouter models](https://openrouter.ai/api/v1/models) | Bundled/last-known-good catalog remains |
 
 `OPENAI_ADMIN_KEY` enables both OpenAI acquisition lanes. OpenAI documents different Usage and Costs reconciliation semantics; Costs is the financial source. Claude Admin API key choices are documented in [Anthropic analytics guidance](https://platform.claude.com/docs/en/manage-claude/analytics-api).
 
 > [!IMPORTANT]
 > `anthropic-usage-api`, `anthropic-cost-report`, and `claude-code-usage-api` are shipped adapters for Claude Platform organization Admin APIs and use `ANTHROPIC_BILLING_KEY`. Claude Enterprise Analytics uses a different API/key and is not supported by these adapters.
+
+### xAI and Meta have no usage API lane
+
+Neither provider is reachable here as an API. xAI publishes API rates, but the API channel
+needs an `XAI_API_KEY` this estate does not hold, so usage arrives only from the Grok CLI.
+Meta's own API is likewise unreachable; its models are served through OpenRouter by the PI
+harness, which is why the model ids carry OpenRouter's `meta/` prefix and the pricing source
+reads OpenRouter's catalogue rather than Meta's docs — OpenRouter is what actually bills.
+
+Both CLIs record the cost their vendor charged, so their rows post a measured cost rather
+than a notional one and are not re-estimated from the catalogs. The catalogs still gate what
+can be priced from tokens alone: `grok-4.6-build`, the model the Grok CLI reports for most of
+its work, appears on no published xAI price table, so a token-only event naming it stays
+unpriced instead of being charged at `grok-4.6`'s rates.
 
 ### Optional Key Vault references
 
@@ -98,5 +116,7 @@ BenchLM is discovery/cross-check evidence only: it is never a runtime source, au
 | Copilot | `~/.copilot/session-state/**/events.jsonl`; final `session.shutdown` per-model totals | Final cumulative totals win |
 | Claude | `~/.claude/projects/**/*.jsonl`; assistant usage | Global `message.id` deduplication retains the richest copy |
 | Kimi | `~/.kimi-code/sessions/**/wire.jsonl`; `usage.record` rows only | Mirrored `step.end` rows are ignored; turn and session scopes both count |
+| Grok | `~/.grok/sessions/**/usage.json`; per-turn `modelUsage` | The session block mirrors the turns and is ignored; input is converted to exclude cached reads, and reasoning already sits inside output |
+| PI | `~/.pi/agent/sessions/**/*.jsonl`; assistant `usage` on `meta/` models | Other vendors PI drives arrive through their own lanes and are skipped here |
 
 The sweeper uses source-scoped keys, server inventory, and zero corrections for removed/disabled snapshots. Its local state is a parse cache, not the system of record. See [clients/README.md](../clients/README.md) for home overrides and scheduling.

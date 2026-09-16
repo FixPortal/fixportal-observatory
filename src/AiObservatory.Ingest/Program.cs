@@ -312,9 +312,13 @@ static void RegisterPricingSources(IServiceCollection services, IConfiguration c
     services.AddSingleton(new PricingSourceDefinition(PricingSourceIds.OpenAi, true, refreshInterval));
     services.AddSingleton(new PricingSourceDefinition(PricingSourceIds.Claude, true, refreshInterval));
     services.AddSingleton(new PricingSourceDefinition(PricingSourceIds.Kimi, true, refreshInterval));
+    services.AddSingleton(new PricingSourceDefinition(PricingSourceIds.Xai, true, refreshInterval));
+    services.AddSingleton(new PricingSourceDefinition(PricingSourceIds.MetaOpenRouter, true, refreshInterval));
     services.TryAddEnumerable(ServiceDescriptor.Scoped<IPricingSource, OpenAiPricingSource>());
     services.TryAddEnumerable(ServiceDescriptor.Scoped<IPricingSource, ClaudePricingSource>());
     services.TryAddEnumerable(ServiceDescriptor.Scoped<IPricingSource, KimiPricingSource>());
+    services.TryAddEnumerable(ServiceDescriptor.Scoped<IPricingSource, XaiPricingSource>());
+    services.TryAddEnumerable(ServiceDescriptor.Scoped<IPricingSource, MetaPricingSource>());
 
     var googleConfigured =
         IsConfigured(configuration["GOOGLE_CLOUD_CATALOG_API_KEY"])

@@ -14,7 +14,7 @@ Observatory is a .NET 10 and React 19 dashboard with a PostgreSQL store. Provide
 - [Provider setup](docs/provider-setup.md) — every source, access requirement, and known unavailable capability.
 - [Truth and pricing](docs/truth-and-pricing.md) — source/scope/basis meanings and safe catalog refresh.
 - [Adding a provider](docs/adding-a-provider.md) — the compile-time adapter seam.
-- [Local producers](clients/README.md) — Codex, Copilot, Claude, Kimi, Gemini review, and Antigravity sweeper setup.
+- [Local producers](clients/README.md) — Codex, Copilot, Claude, Kimi, Gemini review, Antigravity, Grok, and PI sweeper setup.
 - [Postman collection](docs/observatory.postman_collection.json) — representative authenticated API requests.
 - [OSS qualification](docs/oss-qualification.md) — validation evidence and remaining limitations.
 
@@ -101,7 +101,7 @@ The Overview above runs on the Compose demo seed. Note that provider estimate re
 - Missing money or tokens read `Not reported`, never zero.
 - Source status shows configuration, freshness, failure, and unavailability separately from process liveness.
 
-Supported acquisition includes OpenAI usage/costs, Anthropic usage/cost reports and optional Claude Code analytics, GitHub Copilot organization engagement, Google Cloud Billing BigQuery export, GitHub activity/billing, and six local transcript collectors. The [provider matrix](docs/provider-setup.md) is the authoritative capability list.
+Supported acquisition includes OpenAI usage/costs, Anthropic usage/cost reports and optional Claude Code analytics, GitHub Copilot organization engagement, Google Cloud Billing BigQuery export, GitHub activity/billing, and eight local transcript collectors. The [provider matrix](docs/provider-setup.md) is the authoritative capability list.
 
 ## API
 

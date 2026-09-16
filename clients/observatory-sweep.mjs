@@ -14,7 +14,7 @@ import { homedir, hostname } from 'node:os'
 import { join, dirname, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const ALL_LOCAL_SOURCES = ['codex', 'copilot', 'claude', 'kimi', 'gemini', 'antigravity']
+const ALL_LOCAL_SOURCES = ['codex', 'copilot', 'claude', 'kimi', 'gemini', 'antigravity', 'grok', 'pi']
 const LOCAL_SOURCE_IDS = {
   codex: 'codex-local',
   copilot: 'copilot-local',
@@ -22,19 +22,36 @@ const LOCAL_SOURCE_IDS = {
   kimi: 'kimi-local',
   gemini: 'gemini-review-local',
   antigravity: 'antigravity-local',
+  grok: 'grok-local',
+  pi: 'pi-local',
 }
 // Bump whenever a parser change invalidates cached records; the wipe re-parses
 // every file. Never bump alone: after the wipe an unreadable file has no cached
 // records, so scanRecords flags its source incomplete and main withholds that
 // source's corrections and tombstones until a complete scan succeeds.
-const PARSE_CACHE_VERSION = 3
+const PARSE_CACHE_VERSION = 4
 // Gemini Developer API standard-tier pricing changes above this documented prompt-token threshold.
 const GEMINI_LONG_CONTEXT_THRESHOLD = 200_000
+// The Grok CLI records each turn's cost as an integer tick count rather than a decimal. The
+// scale is undocumented, so it was derived: on the one session turn attributable to a model
+// whose API rate x.ai publishes (grok-4.6, $2.00 / $0.50 / $6.00 per 1M), those rates
+// reproduce the recorded tick count to seven significant figures at exactly 1e10 ticks per
+// USD. The same fit establishes the token convention parseGrok converts below.
+// Refuted if a turn priced from published rates disagrees with ticks / 1e10 by more than
+// rounding. If that happens, stop posting Grok costs and drop the lane back to notional.
+const GROK_COST_TICKS_PER_USD = 1e10
 
 // --- Pure helpers -----------------------------------------------------------
 
 function token(value) {
   return Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0)
+}
+
+// Costs are summed as floats, so a day's total carries binary-representation noise that would
+// otherwise be posted as spurious sub-attodollar precision. Ten places is finer than the
+// smallest rate either CLI reports and coarse enough to erase the noise.
+function roundCost(value) {
+  return Number.isFinite(value) ? Number(value.toFixed(10)) : 0
 }
 
 function isoTimestamp(value) {
@@ -233,6 +250,82 @@ export function parseKimi(content) {
   return records
 }
 
+/**
+ * Parse a Grok CLI per-session usage.json into one record per turn and model.
+ *
+ * Turns are per-turn, not running totals - the session block is exactly their sum - so the
+ * turns are summed and the session block ignored, which also avoids counting both.
+ *
+ * Two conventions differ from the Observatory's and are converted here, both established by
+ * the cost derivation documented at GROK_COST_TICKS_PER_USD: `inputTokens` INCLUDES
+ * `cachedReadTokens`, where an Observatory event's input excludes them; and `outputTokens`
+ * already contains `reasoningTokens`, so reasoning is reported for visibility and must never
+ * be added to output again.
+ */
+export function parseGrok(content) {
+  let file
+  try { file = JSON.parse(content) } catch { return [] }
+  if (!file || typeof file !== 'object' || !Array.isArray(file.turns)) { return [] }
+  const records = []
+  for (const turn of file.turns) {
+    const occurredAtUtc = isoTimestamp(turn?.endedAt)
+    if (!occurredAtUtc || !turn.modelUsage || typeof turn.modelUsage !== 'object') { continue }
+    for (const [model, usage] of Object.entries(turn.modelUsage)) {
+      if (!usage || typeof usage !== 'object') { continue }
+      const cacheReadTokens = token(usage.cachedReadTokens)
+      records.push({
+        tool: 'grok',
+        date: occurredAtUtc.slice(0, 10),
+        model,
+        occurredAtUtc,
+        inputTokens: Math.max(0, token(usage.inputTokens) - cacheReadTokens),
+        outputTokens: token(usage.outputTokens),
+        cacheReadTokens,
+        cacheWriteTokens: token(usage.cacheCreationTokens),
+        thoughtTokens: token(usage.reasoningTokens),
+        costUsd: token(usage.costUsdTicks) / GROK_COST_TICKS_PER_USD,
+      })
+    }
+  }
+  return records
+}
+
+/**
+ * Parse Meta usage out of a PI session transcript.
+ *
+ * Scope is deliberately the `meta/` ids. PI also drives Anthropic, OpenAI and Google models,
+ * and those already arrive through their own vendors' lanes - a second filing under
+ * OpenRouter slugs would double-count them. PI records the cost OpenRouter charged, and its
+ * `input` already excludes `cacheRead`, so both map straight across.
+ */
+export function parsePi(content) {
+  const records = []
+  for (const line of content.split('\n')) {
+    if (!line || !line.includes('meta/')) { continue }
+    let row
+    try { row = JSON.parse(line) } catch { continue }
+    const message = row?.message
+    if (row?.type !== 'message' || message?.role !== 'assistant' || !message.usage) { continue }
+    const model = message.model
+    if (typeof model !== 'string' || !model.startsWith('meta/')) { continue }
+    const occurredAtUtc = isoTimestamp(row.timestamp)
+    if (!occurredAtUtc) { continue }
+    records.push({
+      tool: 'pi',
+      date: occurredAtUtc.slice(0, 10),
+      model,
+      occurredAtUtc,
+      inputTokens: token(message.usage.input),
+      outputTokens: token(message.usage.output),
+      cacheReadTokens: token(message.usage.cacheRead),
+      cacheWriteTokens: token(message.usage.cacheWrite),
+      thoughtTokens: token(message.usage.reasoning),
+      costUsd: token(message.usage.cost?.total),
+    })
+  }
+  return records
+}
+
 /** Parse PAYG Gemini review transcripts written by gemini-review.ps1. */
 export function parseGeminiReview(content) {
   const records = []
@@ -426,6 +519,17 @@ function sourceMetadata(tool, model, machine) {
       usageScope: 'api', costBasis: 'listPriceEstimate',
     }
     case 'antigravity': return { provider: 'Google', sourceId: localSourceId('antigravity', machine), runtime: 'antigravity' }
+    // Both CLIs record the cost their own vendor charged, so these rows carry a measured cost
+    // and are not re-estimated from a catalog. Meta files under the vendor rather than
+    // OpenRouter: the route it was billed through is what the source id already says.
+    case 'grok': return {
+      provider: 'Xai', sourceId: localSourceId('grok', machine), runtime: 'grok',
+      costBasis: 'providerEstimated',
+    }
+    case 'pi': return {
+      provider: 'Meta', sourceId: localSourceId('pi', machine), runtime: 'pi',
+      costBasis: 'providerEstimated',
+    }
     default: return null
   }
 }
@@ -505,6 +609,7 @@ export function buildDailySnapshots(records, machine) {
         cacheWrite1h: 0,
         cacheWrite5m: 0,
         thought: 0,
+        costUsd: 0,
         cacheDurationsObserved: true,
         occurredAtUtc: `${record.date}T00:00:00.000Z`,
       }
@@ -522,6 +627,7 @@ export function buildDailySnapshots(records, machine) {
       group.cacheDurationsObserved = false
     }
     group.thought += usage.thought
+    group.costUsd += token(record.costUsd)
     const occurredAtUtc = isoTimestamp(record.occurredAtUtc)
     if (occurredAtUtc && occurredAtUtc > group.occurredAtUtc) { group.occurredAtUtc = occurredAtUtc }
   }
@@ -539,7 +645,7 @@ export function buildDailySnapshots(records, machine) {
         cacheWriteTokens: group.cacheWrite,
         cacheWrite1hTokens: group.cacheWrite1h,
         thoughtTokens: group.thought,
-        costUsd: null,
+        costUsd: group.costBasis === 'providerEstimated' ? roundCost(group.costUsd) : null,
         eventKey: group.eventKey,
         occurredAtUtc: group.occurredAtUtc,
         sourceId: group.sourceId,
@@ -804,6 +910,8 @@ export const listJsonl = (dir, out = [], io = { readdir, stat }, topLevel = true
 
 const listDatabases = dir => listMatching(dir, name => name.endsWith('.db'))
 
+const listUsageJson = dir => listMatching(dir, name => name === 'usage.json')
+
 // A discovery root that is missing or holds no entries at all proves nothing
 // about the source's history: the home may be unmounted (an empty mount point
 // lists exactly like this) or a *_HOME override may be mistyped. Only a
@@ -933,6 +1041,24 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
     for (const record of result.records) { records.push(record) }
   }
 
+  if (enabled.has('grok')) {
+    const root = join(cfg.grokHome, 'sessions')
+    const files = await listUsageJson(root)
+    const result = await updateFileCache(files, state.files.grok, content => parseGrok(content))
+    state.files.grok = result.cache
+    await noteScan('grok', root, result)
+    for (const record of result.records) { records.push(record) }
+  }
+
+  if (enabled.has('pi')) {
+    const root = join(cfg.piHome, 'sessions')
+    const files = await discover(root)
+    const result = await updateFileCache(files, state.files.pi, content => parsePi(content))
+    state.files.pi = result.cache
+    await noteScan('pi', root, result)
+    for (const record of result.records) { records.push(record) }
+  }
+
   return { records, incompleteSources, emptySources }
 }
 
@@ -948,6 +1074,8 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     claudeHome: process.env.CLAUDE_HOME ?? join(homedir(), '.claude'),
     kimiHome: process.env.KIMI_HOME ?? join(homedir(), '.kimi-code'),
     geminiHome: process.env.GEMINI_HOME ?? join(homedir(), '.gemini'),
+    grokHome: process.env.GROK_HOME ?? join(homedir(), '.grok'),
+    piHome: process.env.PI_HOME ?? join(homedir(), '.pi', 'agent'),
   }
   const statePath = process.env.OBSERVATORY_STATE ?? join(homedir(), '.ai-observatory', 'sweep-state.json')
   const state = await loadState(statePath)

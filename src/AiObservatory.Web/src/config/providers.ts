@@ -1,7 +1,7 @@
 // Single source of truth for all provider metadata.
 // Add new providers here — consuming modules derive from this list automatically.
 
-export const PROVIDER_KEYS = ['anthropic', 'copilot', 'google', 'openai', 'moonshot'] as const
+export const PROVIDER_KEYS = ['anthropic', 'copilot', 'google', 'openai', 'moonshot', 'xai', 'meta'] as const
 export type ProviderKey = typeof PROVIDER_KEYS[number]
 
 export interface ProviderSource {
@@ -74,6 +74,26 @@ export const PROVIDERS = [
     sources: [
       { id: 'kimi-local', displayName: 'Kimi local', setupHref: SETUP_HREF },
       { id: 'kimi-pricing', displayName: 'Kimi pricing', setupHref: SETUP_HREF },
+    ],
+  },
+  {
+    key: 'xai',
+    displayName: 'xAI',
+    colorVar: 'var(--provider-xai)',
+    badgeStyle: { color: 'var(--provider-xai)', background: 'color-mix(in srgb, var(--provider-xai) 12%, transparent)' },
+    sources: [
+      { id: 'grok-local', displayName: 'Grok local', setupHref: SETUP_HREF },
+      { id: 'xai-pricing', displayName: 'xAI pricing', setupHref: SETUP_HREF },
+    ],
+  },
+  {
+    key: 'meta',
+    displayName: 'Meta',
+    colorVar: 'var(--provider-meta)',
+    badgeStyle: { color: 'var(--provider-meta)', background: 'color-mix(in srgb, var(--provider-meta) 12%, transparent)' },
+    sources: [
+      { id: 'pi-local', displayName: 'PI local', setupHref: SETUP_HREF },
+      { id: 'meta-openrouter-pricing', displayName: 'OpenRouter pricing', setupHref: SETUP_HREF },
     ],
   },
 ] satisfies ProviderConfig[]

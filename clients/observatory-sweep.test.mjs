@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import * as sweep from './observatory-sweep.mjs'
 import {
-  parseCodex, parseCopilot, parseClaude, parseKimi,
+  parseCodex, parseCopilot, parseClaude, parseKimi, parseGrok, parsePi,
   buildDailySnapshots, updateFileCache, parseLocalSources, listJsonl,
   planSnapshotSubmissions, scanRecords, observatoryUrl, observatoryFetch,
   machineLabel,
@@ -521,7 +521,7 @@ test('scanRecords rebuilds an unversioned matching-mtime cache instead of reusin
     const { records } = await scanRecords(cfg, state, new Set(['codex']))
 
     assert.deepEqual(records, [])
-    assert.equal(state.parseCacheVersion, 3)
+    assert.equal(state.parseCacheVersion, 4)
     assert.deepEqual(state.files.codex[path].records, [])
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -582,7 +582,7 @@ test('scanRecords handles transcript histories larger than the engine argument l
   }
   const files = Array.from({ length: 200 }, (_, index) => ({ path: `claude-${index}.jsonl`, mtimeMs: 1 }))
   const state = {
-    parseCacheVersion: 3,
+    parseCacheVersion: 4,
     files: {
       claude: Object.fromEntries(files.map(file => [file.path, {
         mtimeMs: file.mtimeMs,
@@ -774,7 +774,7 @@ test('replacement plans active snapshots before tombstones in both lexical key d
 })
 
 test('parseLocalSources defaults to every collector and honors an explicit allowlist', () => {
-  assert.deepEqual([...parseLocalSources()].sort(), ['antigravity', 'claude', 'codex', 'copilot', 'gemini', 'kimi'])
+  assert.deepEqual([...parseLocalSources()].sort(), ['antigravity', 'claude', 'codex', 'copilot', 'gemini', 'grok', 'kimi', 'pi'])
   assert.deepEqual([...parseLocalSources('codex,kimi')].sort(), ['codex', 'kimi'])
 })
 
@@ -790,6 +790,157 @@ test('parseGeminiReview tolerates whitespace-formatted JSON rows', () => {
 
   assert.equal(record.tool, 'gemini-review')
   assert.equal(record.inputTokens, 90)
+})
+
+
+const GROK_USAGE = JSON.stringify({
+  sessionId: 'session-id',
+  session: {
+    // The session block is the sum of the turns. Reading it as well as the turns would
+    // double every Grok total, so the parser must ignore it.
+    inputTokens: 300_000, outputTokens: 2_000, cachedReadTokens: 200_000,
+    cacheCreationTokens: 0, reasoningTokens: 800, costUsdTicks: 8_248_640_000,
+  },
+  turns: [
+    {
+      turnNumber: 1,
+      endedAt: '2026-09-16T09:41:26.402839700+00:00',
+      modelUsage: {
+        'grok-4.6': {
+          inputTokens: 200_000, outputTokens: 1_500, cachedReadTokens: 150_000,
+          cacheCreationTokens: 0, reasoningTokens: 500, costUsdTicks: 5_000_000_000,
+        },
+      },
+    },
+    {
+      turnNumber: 2,
+      endedAt: '2026-09-16T10:05:28.288156+00:00',
+      modelUsage: {
+        'grok-4.6': {
+          inputTokens: 60_000, outputTokens: 400, cachedReadTokens: 40_000,
+          cacheCreationTokens: 0, reasoningTokens: 200, costUsdTicks: 3_000_000_000,
+        },
+        'grok-4.6-build': {
+          inputTokens: 40_000, outputTokens: 100, cachedReadTokens: 10_000,
+          cacheCreationTokens: 0, reasoningTokens: 100, costUsdTicks: 248_640_000,
+        },
+      },
+    },
+    { turnNumber: 3, endedAt: '2026-09-16T10:07:58.437472500+00:00', inputTokens: 0, outputTokens: 0 },
+  ],
+})
+
+const PI_TRANSCRIPT = [
+  JSON.stringify({ type: 'session', id: 'session-id', timestamp: '2026-09-16T08:00:00.000Z' }),
+  JSON.stringify({ type: 'model_change', timestamp: '2026-09-16T08:00:01.000Z', provider: 'openrouter', modelId: 'meta/muse-spark-1.3-contributor' }),
+  JSON.stringify({
+    type: 'message', timestamp: '2026-09-16T08:00:02.000Z',
+    message: {
+      role: 'assistant', provider: 'openrouter', model: 'meta/muse-spark-1.3-contributor',
+      usage: {
+        input: 12_966, output: 320, cacheRead: 113, cacheWrite: 0, reasoning: 182,
+        totalTokens: 13_399, cost: { input: 0.0012966, output: 0.000064, cacheRead: 2.26e-7, cacheWrite: 0, total: 0.001360826 },
+      },
+    },
+  }),
+  // A model PI routed to Anthropic. Its usage already reaches the Observatory through the
+  // claude-local lane, so filing it again under an OpenRouter slug would double-count it.
+  JSON.stringify({
+    type: 'message', timestamp: '2026-09-16T08:00:03.000Z',
+    message: {
+      role: 'assistant', provider: 'anthropic', model: 'claude-sonnet-5',
+      usage: { input: 900, output: 90, cacheRead: 0, cacheWrite: 0, totalTokens: 990, cost: { total: 0.5 } },
+    },
+  }),
+  // A 403 from OpenRouter: recorded as a real turn with all-zero usage.
+  JSON.stringify({
+    type: 'message', timestamp: '2026-09-16T08:00:04.000Z',
+    message: {
+      role: 'assistant', provider: 'openrouter', model: 'meta/muse-spark-1.3-contributor',
+      stopReason: 'error', errorMessage: '403: age confirmation required',
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { total: 0 } },
+    },
+  }),
+  JSON.stringify({ type: 'message', timestamp: '2026-09-16T08:00:05.000Z', message: { role: 'user', content: [] } }),
+].join('\n')
+
+test('parseGrok sums per-turn model usage and ignores the session block that mirrors it', () => {
+  const records = parseGrok(GROK_USAGE)
+
+  assert.equal(records.length, 3)
+  const snapshots = buildDailySnapshots(records, TEST_MACHINE)
+  const flagship = snapshots.find(snapshot => snapshot.model === 'grok-4.6')
+  // Turn totals only: 260k input of which 190k cached, 1 900 output.
+  assert.equal(flagship.inputTokens, 70_000)
+  assert.equal(flagship.cacheReadTokens, 190_000)
+  assert.equal(flagship.outputTokens, 1_900)
+})
+
+test('parseGrok converts input to exclude cached reads, which the CLI folds in', () => {
+  const [first] = parseGrok(GROK_USAGE)
+
+  assert.equal(first.inputTokens, 50_000)
+  assert.equal(first.cacheReadTokens, 150_000)
+  assert.equal(first.thoughtTokens, 500)
+})
+
+test('parseGrok converts cost ticks to USD and posts it as a measured cost', () => {
+  const snapshots = buildDailySnapshots(parseGrok(GROK_USAGE), TEST_MACHINE)
+
+  const flagship = snapshots.find(snapshot => snapshot.model === 'grok-4.6')
+  assert.equal(flagship.provider, 'Xai')
+  assert.equal(flagship.costBasis, 'providerEstimated')
+  assert.equal(flagship.costUsd, 0.8)
+  assert.equal(flagship.sourceId, `grok-local@${TEST_MACHINE}`)
+})
+
+test('parseGrok returns nothing for a malformed or turnless usage file', () => {
+  assert.deepEqual(parseGrok('not json'), [])
+  assert.deepEqual(parseGrok(JSON.stringify({ sessionId: 'x' })), [])
+  assert.deepEqual(parseGrok(JSON.stringify({ turns: [{ endedAt: 'nonsense', modelUsage: { 'grok-4.6': {} } }] })), [])
+})
+
+test('parsePi keeps Meta turns and leaves other vendors to their own lanes', () => {
+  const records = parsePi(PI_TRANSCRIPT)
+
+  assert.equal(records.length, 2)
+  assert.ok(records.every(record => record.model.startsWith('meta/')))
+})
+
+test('parsePi carries the cost OpenRouter charged through to the snapshot', () => {
+  const [snapshot] = buildDailySnapshots(parsePi(PI_TRANSCRIPT), TEST_MACHINE)
+
+  assert.equal(snapshot.provider, 'Meta')
+  assert.equal(snapshot.model, 'meta/muse-spark-1.3-contributor')
+  assert.equal(snapshot.inputTokens, 12_966)
+  assert.equal(snapshot.cacheReadTokens, 113)
+  assert.equal(snapshot.costBasis, 'providerEstimated')
+  assert.equal(snapshot.costUsd, 0.001360826)
+  assert.equal(snapshot.sourceId, `pi-local@${TEST_MACHINE}`)
+})
+
+test('scanRecords discovers Grok usage files and PI transcripts', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'observatory-xai-meta-scan-'))
+  const grokSession = join(root, 'grok', 'sessions', 'C%3A%5CUsers%5Cchris', 'session-id')
+  const piSession = join(root, 'pi', 'sessions', '--D--repo--')
+  await mkdir(grokSession, { recursive: true })
+  await mkdir(piSession, { recursive: true })
+  await writeFile(join(grokSession, 'usage.json'), GROK_USAGE)
+  // A sibling the Grok matcher must not pick up: chat history is not usage.
+  await writeFile(join(grokSession, 'chat_history.jsonl'), '{"role":"user"}')
+  await writeFile(join(piSession, '2026-09-16T08-00-00-000Z_session.jsonl'), PI_TRANSCRIPT)
+  const cfg = { grokHome: join(root, 'grok'), piHome: join(root, 'pi') }
+
+  try {
+    const { records, incompleteSources, emptySources } = await scanRecords(cfg, {}, new Set(['grok', 'pi']))
+
+    assert.deepEqual([...incompleteSources], [])
+    assert.deepEqual([...emptySources], [])
+    assert.equal(records.filter(record => record.tool === 'grok').length, 3)
+    assert.equal(records.filter(record => record.tool === 'pi').length, 2)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })
 
 test('Antigravity model detection ignores prose that merely mentions a model', async () => {
@@ -883,7 +1034,7 @@ test('scanRecords reparses a version-2 cache instead of reusing its stale record
 
     assert.deepEqual(records, [])
     assert.deepEqual([...incompleteSources], [])
-    assert.equal(state.parseCacheVersion, 3)
+    assert.equal(state.parseCacheVersion, 4)
     assert.deepEqual(state.files.codex[path].records, [])
   } finally {
     await rm(root, { recursive: true, force: true })

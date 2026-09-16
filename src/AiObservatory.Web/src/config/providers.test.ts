@@ -14,7 +14,7 @@ import { providerColor } from '../theme/providerColors'
 // persist must be renderable here — Moonshot shipped in the enum and in the adversarial
 // review grouping but was missing from PROVIDERS, so its usage rows would have rendered
 // as unnamed grey "other". Keep this list in step with the enum.
-const BACKEND_PROVIDERS = ['anthropic', 'copilot', 'google', 'openai', 'moonshot']
+const BACKEND_PROVIDERS = ['anthropic', 'copilot', 'google', 'openai', 'moonshot', 'xai', 'meta']
 
 test('every backend provider has a frontend config entry', () => {
   expect([...PROVIDER_ORDER].sort()).toEqual([...BACKEND_PROVIDERS].sort())
@@ -57,13 +57,17 @@ test('declares every current acquisition and pricing source with public setup gu
     ['openai', 'openai-pricing', 'OpenAI pricing', setupHref],
     ['moonshot', 'kimi-local', 'Kimi local', setupHref],
     ['moonshot', 'kimi-pricing', 'Kimi pricing', setupHref],
+    ['xai', 'grok-local', 'Grok local', setupHref],
+    ['xai', 'xai-pricing', 'xAI pricing', setupHref],
+    ['meta', 'pi-local', 'PI local', setupHref],
+    ['meta', 'meta-openrouter-pricing', 'OpenRouter pricing', setupHref],
   ])
   expect(getSource('openai-usage-api')?.displayName).toBe('Usage API')
   expect(getSource('missing-source')).toBeUndefined()
 })
 
 test('keeps known ordering closed while arbitrary provider and source slugs stay readable', () => {
-  expect(PROVIDER_KEYS).toEqual(['anthropic', 'copilot', 'google', 'openai', 'moonshot'])
+  expect(PROVIDER_KEYS).toEqual(['anthropic', 'copilot', 'google', 'openai', 'moonshot', 'xai', 'meta'])
   expect(getProvider('new-oss-provider')).toBeUndefined()
   expect(providerDisplayName('new-oss-provider')).toBe('New oss provider')
   expect(sourceDisplayName('new-source-feed')).toBe('New source feed')

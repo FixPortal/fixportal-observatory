@@ -82,6 +82,8 @@ public static class PricingSourceIds
     public const string Kimi = "kimi-pricing";
     public const string GoogleCloudCatalog = "google-cloud-catalog";
     public const string GeminiDeveloperApi = "gemini-developer-api-pricing";
+    public const string Xai = "xai-pricing";
+    public const string MetaOpenRouter = "meta-openrouter-pricing";
 }
 
 public enum PricingActivationResult

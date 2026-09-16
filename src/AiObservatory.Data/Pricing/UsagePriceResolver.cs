@@ -172,6 +172,13 @@ public sealed class UsagePriceResolver
                 case Provider.Google:
                     RequireGoogleDimensions(root, missing);
                     break;
+                case Provider.Xai:
+                    RequireBoolean(root, "long_context", missing);
+                    break;
+                case Provider.Meta:
+                    // OpenRouter's rate is fixed by the model id alone, so there is no dimension
+                    // to be missing — an unpriced Meta row is always a catalog gap.
+                    break;
             }
         }
         catch (JsonException)
