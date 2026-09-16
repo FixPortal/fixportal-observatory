@@ -23,6 +23,15 @@ public sealed class XaiPriceCalculator : IProviderPriceCalculator
         // rather than guessed — the two lanes differ by 2x, so guessing is a 2x error either way.
         // A notional event is an aggregate of many requests and can never carry the flag; it
         // takes the standard lane, which is the same shape as Kimi's notional handling.
+        //
+        // This refusal does NOT strand the grok-local lane, which carries no flag either. That
+        // lane posts CostBasis.ProviderEstimated with the cost the CLI itself recorded, and
+        // provider-estimated events never reach a calculator: the API routes only
+        // ListPriceEstimate and Notional through RecordEstimatedEventAsync, and
+        // PricingRepricingService loads only those two bases as repricing candidates. What this
+        // guards is a future measured lane — an xAI API usage source, which would see each
+        // request's prompt and so can state the lane. Defaulting such an event to the standard
+        // lane instead would halve the cost of every long-context request, silently.
         if (!isNotional && !hasLongContext)
         {
             return null;
