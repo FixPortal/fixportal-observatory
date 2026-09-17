@@ -141,22 +141,9 @@ test('keeps unknown aggregate provenance strings and every source-aware field fr
   await expect(getAggregates()).resolves.toEqual(response)
 })
 
-describe('authHeaders precedence: Entra > URL viewer key > self-host key > none', () => {
-  test('uses the Entra bearer token when available, even if a viewer/self-host key is also set', async () => {
+describe('authHeaders precedence: URL viewer key > Entra > self-host key > none', () => {
+  test('sends the viewer key, not the bearer token, when this tab opened a share link', async () => {
     msalMock.getAccessToken.mockResolvedValue('entra-token')
-    msalMock.urlApiKey = 'viewer-key'
-    msalMock.apiKey = 'self-host-key'
-    const fetchMock = mockFetchOnce(200)
-
-    await getAggregates()
-
-    const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>
-    expect(headers.Authorization).toBe('Bearer entra-token')
-    expect(headers['X-Observatory-Key']).toBeUndefined()
-  })
-
-  test('falls back to the URL viewer key when there is no Entra token', async () => {
-    msalMock.getAccessToken.mockResolvedValue(null)
     msalMock.urlApiKey = 'viewer-key'
     msalMock.apiKey = 'self-host-key'
     const fetchMock = mockFetchOnce(200)
@@ -166,6 +153,29 @@ describe('authHeaders precedence: Entra > URL viewer key > self-host key > none'
     const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>
     expect(headers['X-Observatory-Key']).toBe('viewer-key')
     expect(headers.Authorization).toBeUndefined()
+  })
+
+  test('does not even attempt token acquisition on a viewer-key session', async () => {
+    msalMock.getAccessToken.mockResolvedValue('entra-token')
+    msalMock.urlApiKey = 'viewer-key'
+    mockFetchOnce(200)
+
+    await getAggregates()
+
+    expect(msalMock.getAccessToken).not.toHaveBeenCalled()
+  })
+
+  test('uses the Entra bearer token when no share link was opened in this tab', async () => {
+    msalMock.getAccessToken.mockResolvedValue('entra-token')
+    msalMock.urlApiKey = ''
+    msalMock.apiKey = 'self-host-key'
+    const fetchMock = mockFetchOnce(200)
+
+    await getAggregates()
+
+    const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>
+    expect(headers.Authorization).toBe('Bearer entra-token')
+    expect(headers['X-Observatory-Key']).toBeUndefined()
   })
 
   test('falls back to the self-host VITE_API_KEY when there is no Entra token and no viewer key', async () => {
