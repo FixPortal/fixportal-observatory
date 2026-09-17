@@ -13,13 +13,21 @@ export class ApiError extends Error {
   }
 }
 
-// Auth priority: Entra JWT > URL viewer key > VITE_API_KEY > none (dev).
-// Entra: production default for signed-in humans. URL key: read-only share link
-// (?key=...) for colleagues without Entra access. VITE_API_KEY: self-host.
+// Auth priority: URL viewer key > Entra JWT > VITE_API_KEY > none (dev).
+// URL key: read-only share link (?key=...) for colleagues without Entra access.
+// Entra: production default for signed-in humans. VITE_API_KEY: self-host.
+//
+// The viewer key deliberately outranks the token. It is only set when this tab
+// opened a ?key= share link, and isReadonly already treats that as viewer mode --
+// so preferring the token here made the headers contradict the UI. It also broke
+// the share link outright for anyone holding an MSAL account for this origin
+// (someone who signed in once, or tried and was refused): every request went out
+// as a bearer token that 401s, the key was never sent, and the dashboard showed
+// "session expired or not authorised" on a link that works in a clean profile.
 async function authHeaders(): Promise<Record<string, string>> {
+  if (urlApiKey) return { 'X-Observatory-Key': urlApiKey }
   const token = await getAccessToken()
   if (token) return { Authorization: `Bearer ${token}` }
-  if (urlApiKey) return { 'X-Observatory-Key': urlApiKey }
   if (apiKey) return { 'X-Observatory-Key': apiKey }
   return {}
 }
