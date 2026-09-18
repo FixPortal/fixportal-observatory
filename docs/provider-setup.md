@@ -57,7 +57,11 @@ Both CLIs record the cost their vendor charged, so their rows post a measured co
 than a notional one and are not re-estimated from the catalogs. The catalogs still gate what
 can be priced from tokens alone: `grok-4.6-build`, the model the Grok CLI reports for most of
 its work, appears on no published xAI price table, so a token-only event naming it stays
-unpriced instead of being charged at `grok-4.6`'s rates.
+unpriced instead of being charged at `grok-4.6`'s rates. Measured on 2026-09-18, that
+guard is load-bearing rather than cautious: applying `grok-4.6`'s published rates to a day of
+recorded `grok-4.6-build` tokens overstates the cost the CLI actually recorded by about
+three-quarters again, and solving three such days for a single rate triple returns negative
+rates, so no substitute rate is recoverable from the local evidence either.
 
 ### Optional Key Vault references
 
