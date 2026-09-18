@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Observatory local usage sweeper (drop-in).
 //
-// Rebuilds cumulative daily/model snapshots from six local CLI stores, then
+// Rebuilds cumulative daily/model snapshots from eight local CLI stores, then
 // POSTs them to `/api/events`. Source ids carry a per-machine suffix
 // (`codex-local@<host>`) so machines never share a namespace or tombstone each
 // other's history. The state file caches parsed files by path + mtime; server

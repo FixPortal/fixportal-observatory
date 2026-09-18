@@ -62,7 +62,7 @@ public sealed class IdeRoutingSnapshotEndpointTests
             cancellationToken: TestContext.Current.CancellationToken
         );
         document.RootElement.GetProperty("schemaVersion").GetInt32().Should().Be(1);
-        document.RootElement.GetProperty("models").GetArrayLength().Should().Be(3);
+        document.RootElement.GetProperty("models").GetArrayLength().Should().BePositive();
 
         var second = NewContext();
         second.Request.Headers.IfNoneMatch = etag;

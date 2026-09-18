@@ -23,6 +23,25 @@ public sealed class RoutingCatalogTests
         second.GeneratedAt.Should().Be(first.GeneratedAt);
     }
 
+    [Fact]
+    public void ShipsGrokInTheLiveCorpusAlongsideTheIdTheGrokCliReports()
+    {
+        var catalog = RoutingCatalogService.Load(
+            Path.Combine(AppContext.BaseDirectory, "Routing", "routing-catalog.json")
+        );
+
+        // Read at a real "now" rather than a literal instant. Membership is a claim about what
+        // the IDE can route to today, so pinning it to a date would couple this assertion to the
+        // newest entry's effective window and re-break every time one ships.
+        var models = catalog.GetSnapshot(SystemClock.Instance.GetCurrentInstant()).Models;
+
+        var grok = models.Single(model => model.ModelId == "grok-4.6");
+        grok.Vendor.Should().Be("xai");
+        // The CLI declares grok-4.6-build for almost all of its work, so a routing decision
+        // naming that id has to resolve to this entry.
+        grok.Aliases.Should().Contain("grok-4.6-build");
+    }
+
     [Theory]
     [MemberData(nameof(InvalidCatalogs))]
     public void RejectsAnInvalidProjectionInsteadOfServingPartialEvidence(string json)
