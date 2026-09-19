@@ -171,10 +171,13 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
         const string batchSuffix = " (Batch)";
         var rows = ParsePage(document, "# BatchJob Pricing", "## Product Pricing");
 
-        // Which models Moonshot offers on Batch is their product decision, so it is derived
-        // from the page rather than pinned here. What still has to hold is that every batch
-        // row names a model this catalog already priced, names it once, and matches the
-        // declared 60% multiplier -- that is the property worth failing over.
+        // Which models Moonshot offers on Batch is their product decision, so the roster is
+        // derived from the page rather than pinned here. Three properties still have to hold,
+        // and they are what this loop enforces: every batch row names a model this catalog
+        // already priced, names it once, and matches the declared 60% multiplier. There is
+        // deliberately no coverage check on top of that -- the page carries no batch row for
+        // kimi-k3, so requiring one per required model would reject the live document, and
+        // ParsePage has already rejected an empty table before this point.
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in rows)
         {
@@ -199,11 +202,6 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
             }
 
             entries[model] = entry with { BatchMultiplier = 0.6m };
-        }
-
-        if (seen.Count == 0)
-        {
-            throw new InvalidDataException("Kimi Batch pricing is partial.");
         }
     }
 
