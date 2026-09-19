@@ -72,16 +72,17 @@ public class SlackAlertNotifierTests
 
     private static readonly Guid ClaimId = Guid.Parse("10000000-0000-0000-0000-000000000001");
 
-    private static BudgetAlertPayload MakePayload() =>
+    private static AlertMessage MakePayload() =>
         new(
-            "Anthropic",
-            "Daily",
-            10m,
-            15m,
-            DateTimeOffset.UtcNow,
+            "Budget alert: Anthropic Daily billed spend exceeded £10.00",
+            "Total daily billed spend for Anthropic reached £15.00, exceeding your £10.00 threshold.",
             "budget-alert-10000000000000000000000000000001@observatory.fixportal.com",
             ClaimId
         );
+
+    /// <summary>An alert that fences itself, as the source-health digest does.</summary>
+    private static AlertMessage MakeUnfencedPayload() =>
+        new("Observatory: 2 ingest sources degraded", "claude-pricing — failing\nkimi-pricing — failing");
 
     [Fact]
     public async Task NotifyAsync_is_noop_when_webhook_not_configured()
@@ -156,6 +157,42 @@ public class SlackAlertNotifierTests
         var body = await request.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         var json = JsonSerializer.Deserialize<JsonElement>(body);
         json.GetProperty("text").GetString().Should().Contain("Anthropic").And.Contain("£10.00");
+    }
+
+    [Fact]
+    public async Task NotifyAsync_posts_an_unfenced_alert_without_touching_budget_claim_state()
+    {
+        // The source-health digest fences itself on a per-day claim, so it carries no
+        // SlackFenceClaimId. Reading or writing BudgetAlertClaim.SlackSentAt for it would be
+        // consulting another feature's delivery state -- and there is no claim row to consult.
+        var handler = new CapturingHandler(HttpStatusCode.OK);
+        using var http = new HttpClient(handler);
+        var repo = Substitute.For<IUsageRepository>();
+        repo.GetNotificationSettingsAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                new NotificationSettings
+                {
+                    SlackWebhookUrl = "https://hooks.slack.com/services/T0/B0/xyz",
+                    UpdatedAt = Instant.FromUtc(2026, 8, 30, 0, 0),
+                }
+            );
+        var clock = new FakeClock(Instant.FromUtc(2026, 8, 30, 0, 0));
+
+        var sut = new SlackAlertNotifier(http, repo, clock, NullLogger<SlackAlertNotifier>.Instance);
+        var result = await sut.NotifyAsync(MakeUnfencedPayload(), TestContext.Current.CancellationToken);
+
+        result.Should().Be(AlertDeliveryResult.Sent);
+        handler.Requests.Should().ContainSingle();
+        var body = await handler.Requests[0].Content!.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        JsonSerializer
+            .Deserialize<JsonElement>(body)
+            .GetProperty("text")
+            .GetString()
+            .Should()
+            .StartWith("*Observatory: 2 ingest sources degraded*");
+        await repo.DidNotReceive().GetBudgetAlertSlackSentAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await repo.DidNotReceive()
+            .MarkBudgetAlertSlackSentAsync(Arg.Any<Guid>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

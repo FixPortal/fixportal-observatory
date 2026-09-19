@@ -15,13 +15,10 @@ namespace AiObservatory.Api.Tests.Services;
 
 public class EmailAlertNotifierTests
 {
-    private static BudgetAlertPayload MakePayload(string provider = "Anthropic") =>
+    private static AlertMessage MakePayload(string provider = "Anthropic") =>
         new(
-            provider,
-            "Daily",
-            10m,
-            15m,
-            DateTimeOffset.UtcNow,
+            $"Budget alert: {provider} Daily billed spend exceeded £10.00",
+            $"Total daily billed spend for {provider} reached £15.00, exceeding your £10.00 threshold.",
             "budget-alert-10000000000000000000000000000001@observatory.fixportal.com",
             Guid.NewGuid()
         );
@@ -210,6 +207,48 @@ public class EmailAlertNotifierTests
         result.Should().Be(AlertDeliveryResult.Sent);
         sent.Should().NotBeNull();
         sent.From.ToString().Should().Contain("obs@example.com");
+    }
+
+    [Fact]
+    public async Task NotifyAsync_lets_mimekit_generate_a_message_id_when_the_caller_supplies_none()
+    {
+        // The source-health digest passes none: it is never retried under its own identity, so
+        // a stable id would only invite the receiving server to collapse tomorrow's digest into
+        // today's. Assigning an empty string instead of leaving it unset emits a malformed header.
+        var smtp = Substitute.For<ISmtpClient>();
+        smtp.IsConnected.Returns(true);
+        MimeMessage? sent = null;
+        smtp.When(x => x.SendAsync(Arg.Any<MimeMessage>(), Arg.Any<CancellationToken>(), Arg.Any<ITransferProgress>()))
+            .Do(x => sent = x.Arg<MimeMessage>());
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["BUDGET_ALERT_SMTP_USER"] = "obs@example.com" })
+            .Build();
+        var repo = Substitute.For<IUsageRepository>();
+        repo.GetNotificationSettingsAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                new NotificationSettings
+                {
+                    AlertEmailTo = "alerts@example.com",
+                    UpdatedAt = Instant.FromUtc(2026, 8, 30, 0, 0),
+                }
+            );
+
+        var sut = new EmailAlertNotifier(
+            new SmtpMailSender(smtp, config),
+            config,
+            repo,
+            NullLogger<EmailAlertNotifier>.Instance
+        );
+        var result = await sut.NotifyAsync(
+            new AlertMessage("Observatory: 2 ingest sources degraded", "body"),
+            TestContext.Current.CancellationToken
+        );
+
+        result.Should().Be(AlertDeliveryResult.Sent);
+        sent.Should().NotBeNull();
+        sent.MessageId.Should().NotBeNullOrWhiteSpace();
+        sent.Subject.Should().Be("Observatory: 2 ingest sources degraded");
     }
 
     [Fact]

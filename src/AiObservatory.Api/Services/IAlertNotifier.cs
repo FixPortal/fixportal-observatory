@@ -1,18 +1,32 @@
 namespace AiObservatory.Api.Services;
 
 /// <summary>
-/// Durable budget-alert deliveries have at-least-once attempt semantics. Retries preserve
-/// <see cref="BudgetAlertPayload.MessageId"/>, but SMTP can accept a message before the sender
-/// observes failure, so recipients may still see a duplicate. No exactly-once claim is made.
+/// One rendered notification, ready for any transport. The caller renders; the notifiers only
+/// deliver. That split is what lets a second kind of alert — the daily source-health digest —
+/// reach every configured channel without each transport growing a second message template.
+/// <para>
+/// Durable deliveries have at-least-once attempt semantics. Retries preserve
+/// <see cref="MessageId"/>, but SMTP can accept a message before the sender observes failure,
+/// so recipients may still see a duplicate. No exactly-once claim is made.
+/// </para>
 /// </summary>
-public record BudgetAlertPayload(
-    string Provider,
-    string Period,
-    decimal ThresholdGbp,
-    decimal ActualSpendGbp,
-    DateTimeOffset TriggeredAt,
-    string MessageId,
-    Guid ClaimId
+/// <param name="Subject">Email subject, and the bolded first line of a Slack post.</param>
+/// <param name="Body">Plain text. Rendered as-is by both channels.</param>
+/// <param name="MessageId">
+/// RFC 5322 Message-Id for retry collapsing at the receiving server, or null to let MimeKit
+/// generate one. Null suits a fire-and-forget alert that is never retried under its own
+/// identity: a stable id there would only invite a receiving server to hide a later send.
+/// </param>
+/// <param name="SlackFenceClaimId">
+/// The budget-alert claim whose <c>SlackSentAt</c> fences Slack delivery to once per claim,
+/// or null when the caller fences itself. The digest does the latter — it holds a per-day
+/// claim — so it must not be fenced a second time against a claim row it does not own.
+/// </param>
+public sealed record AlertMessage(
+    string Subject,
+    string Body,
+    string? MessageId = null,
+    Guid? SlackFenceClaimId = null
 );
 
 /// <summary>
@@ -39,5 +53,5 @@ public enum AlertDeliveryResult
 
 public interface IAlertNotifier
 {
-    Task<AlertDeliveryResult> NotifyAsync(BudgetAlertPayload payload, CancellationToken ct = default);
+    Task<AlertDeliveryResult> NotifyAsync(AlertMessage alert, CancellationToken ct = default);
 }

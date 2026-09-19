@@ -288,6 +288,34 @@ public class BudgetAlertService(
         );
     }
 
+    /// <summary>
+    /// Renders the alert text once, here, rather than once per transport. Both notifiers used
+    /// to carry their own near-identical copy of these sentences, which is how the Slack post
+    /// and the email came to disagree about whether the trigger time was worth stating.
+    /// </summary>
+    private AlertMessage RenderAlert(BudgetAlertEmail email)
+    {
+        var provider = email.Provider?.ToString() ?? "all";
+        var period = email.Period.ToString();
+
+        var subject = string.Create(
+            CultureInfo.InvariantCulture,
+            $"Budget alert: {provider} {period} billed spend exceeded £{email.ThresholdGbp:F2}"
+        );
+
+        var body =
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Total {period.ToLowerInvariant()} billed spend for {provider} reached £{email.ActualSpendGbp:F2}, "
+            )
+            + string.Create(
+                CultureInfo.InvariantCulture,
+                $"exceeding your £{email.ThresholdGbp:F2} threshold.\n\nTriggered at: {email.CreatedAt.ToDateTimeOffset():u}"
+            );
+
+        return new AlertMessage(subject, body, $"budget-alert-{email.ClaimId:N}@{MessageIdDomain()}", email.ClaimId);
+    }
+
     private async Task DeliverEmailAsync(BudgetAlertEmail email, CancellationToken ct)
     {
         var acquiredAt = clock.GetCurrentInstant();
@@ -305,15 +333,7 @@ public class BudgetAlertService(
             return;
         }
 
-        var payload = new BudgetAlertPayload(
-            email.Provider?.ToString() ?? "all",
-            email.Period.ToString(),
-            email.ThresholdGbp,
-            email.ActualSpendGbp,
-            email.CreatedAt.ToDateTimeOffset(),
-            $"budget-alert-{email.ClaimId:N}@{MessageIdDomain()}",
-            email.ClaimId
-        );
+        var alert = RenderAlert(email);
 
         try
         {
@@ -323,7 +343,7 @@ public class BudgetAlertService(
             // process makes but not across a restart that also changes mail configuration.
             // SMTP success followed by a lost acknowledgement can duplicate delivery anyway;
             // the protocol cannot make that outcome exactly once.
-            var result = await notifier.NotifyAsync(payload, ct);
+            var result = await notifier.NotifyAsync(alert, ct);
             if (result == AlertDeliveryResult.Sent)
             {
                 await repository.MarkBudgetAlertEmailSentAsync(email.ClaimId, leaseId, clock.GetCurrentInstant(), ct);
