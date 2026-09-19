@@ -12,10 +12,12 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
 {
 #pragma warning disable S1075 // These URLs are the fixed trust boundary required by the pricing design.
     private const string IndexUrl = "https://platform.kimi.ai/docs/llms.txt";
-    private static readonly Uri K3Uri = new("https://platform.kimi.ai/docs/pricing/chat-k3.md");
-    private static readonly Uri K27Uri = new("https://platform.kimi.ai/docs/pricing/chat-k27-code.md");
-    private static readonly Uri K26Uri = new("https://platform.kimi.ai/docs/pricing/chat-k26.md");
-    private static readonly Uri K25Uri = new("https://platform.kimi.ai/docs/pricing/chat-k25.md");
+
+    // Moonshot consolidated four per-model pages -- chat-k3.md, chat-k27-code.md,
+    // chat-k26.md and chat-k25.md -- into a single chat.md on or before 2026-08-30. The old
+    // URLs return nothing and are absent from llms.txt, so ValidateIndex threw on every pass
+    // for 61 consecutive days while the dashboard served the last good catalog.
+    private static readonly Uri ChatUri = new("https://platform.kimi.ai/docs/pricing/chat.md");
     private static readonly Uri BatchUri = new("https://platform.kimi.ai/docs/pricing/batch.md");
 #pragma warning restore S1075
     private static readonly Regex QuotedCell = new(
@@ -32,6 +34,15 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
         "Output Price",
         "Context Window",
     ];
+
+    // The catalog used to pin an exact five-variant model set, which meant Moonshot retiring
+    // kimi-k2.5 would have broken ingest even after the URL consolidation was handled. The
+    // structural guarantees below -- columns, units, row shape, the batch multiplier -- are
+    // what make this source an authority; the exact roster is not, and pinning it turns any
+    // upstream product decision into an outage. Require only the models actually relied on,
+    // and let the roster move. (kimi-k2.5 is retired upstream as of 2026-09-19; no usage of
+    // it was ever recorded in this Observatory.)
+    private static readonly string[] RequiredModels = ["kimi-k3", "kimi-k2.7-code"];
     private readonly IClock _clock;
     private readonly FirstPartyDocumentFetcher _indexFetcher;
     private readonly IReadOnlyList<(Uri Uri, FirstPartyDocumentFetcher Fetcher)> _pageFetchers;
@@ -43,10 +54,7 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
         _indexFetcher = Fetcher(httpClientFactory, new Uri(IndexUrl));
         _pageFetchers =
         [
-            (K3Uri, Fetcher(httpClientFactory, K3Uri)),
-            (K27Uri, Fetcher(httpClientFactory, K27Uri)),
-            (K26Uri, Fetcher(httpClientFactory, K26Uri)),
-            (K25Uri, Fetcher(httpClientFactory, K25Uri)),
+            (ChatUri, Fetcher(httpClientFactory, ChatUri)),
             (BatchUri, Fetcher(httpClientFactory, BatchUri)),
         ];
     }
@@ -55,14 +63,7 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
     {
         _clock = clock;
         _indexFetcher = Fetcher(new Uri(IndexUrl), handler);
-        _pageFetchers =
-        [
-            (K3Uri, Fetcher(K3Uri, handler)),
-            (K27Uri, Fetcher(K27Uri, handler)),
-            (K26Uri, Fetcher(K26Uri, handler)),
-            (K25Uri, Fetcher(K25Uri, handler)),
-            (BatchUri, Fetcher(BatchUri, handler)),
-        ];
+        _pageFetchers = [(ChatUri, Fetcher(ChatUri, handler)), (BatchUri, Fetcher(BatchUri, handler))];
     }
 
     public string SourceId => PricingSourceIds.Kimi;
@@ -96,7 +97,7 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
             retrievedAt,
             IndexUrl,
             rawEvidence,
-            Parse(pages[1].Content, pages[2].Content, pages[3].Content, pages[4].Content, pages[5].Content, retrievedAt)
+            Parse(pages[1].Content, pages[2].Content, retrievedAt)
         );
         if (_lastCandidate?.ContentHash == candidate.ContentHash)
         {
@@ -106,23 +107,10 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
         return _lastCandidate = candidate;
     }
 
-    public static KimiPriceCatalog Parse(
-        string k3,
-        string k27,
-        string k26,
-        string k25,
-        string batch,
-        Instant retrievedAt
-    )
+    public static KimiPriceCatalog Parse(string chat, string batch, Instant retrievedAt)
     {
         var observedOn = retrievedAt.InUtc().Date;
-        var rows = new List<KimiRow>();
-        rows.AddRange(ParsePage(k3, "# Flagship Model Kimi K3 Pricing", ["kimi-k3"]));
-        rows.AddRange(
-            ParsePage(k27, "# Coding Model Kimi K2.7 Code Pricing", ["kimi-k2.7-code", "kimi-k2.7-code-highspeed"])
-        );
-        rows.AddRange(ParsePage(k26, "# Kimi K2.6 Model Pricing", ["kimi-k2.6"]));
-        rows.AddRange(ParsePage(k25, "# Multi-modal Model Kimi K2.5 Pricing", ["kimi-k2.5"]));
+        var rows = ParsePage(chat, "# Model Inference Pricing Explanation", "## Model Pricing").ToList();
 
         var entries = new Dictionary<string, KimiPriceEntry>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in rows)
@@ -150,9 +138,9 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
         }
 
         ApplyBatch(entries, batch);
-        if (entries.Count != 5)
+        if (RequiredModels.Any(model => !entries.ContainsKey(model)))
         {
-            throw new InvalidDataException("Kimi pricing must contain exactly five model variants.");
+            throw new InvalidDataException("Kimi pricing is missing a required model.");
         }
 
         var catalog = new KimiPriceCatalog(
@@ -180,19 +168,23 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
             throw new InvalidDataException("Kimi Batch multiplier changed or is missing.");
         }
 
-        var rows = ParsePage(
-            document,
-            "# BatchJob Pricing",
-            ["kimi-k2.7-code (Batch)", "kimi-k2.6 (Batch)", "kimi-k2.5 (Batch)"]
-        );
-        var eligible = new HashSet<string>(
-            ["kimi-k2.7-code", "kimi-k2.6", "kimi-k2.5"],
-            StringComparer.OrdinalIgnoreCase
-        );
+        const string batchSuffix = " (Batch)";
+        var rows = ParsePage(document, "# BatchJob Pricing", "## Product Pricing");
+
+        // Which models Moonshot offers on Batch is their product decision, so it is derived
+        // from the page rather than pinned here. What still has to hold is that every batch
+        // row names a model this catalog already priced, names it once, and matches the
+        // declared 60% multiplier -- that is the property worth failing over.
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in rows)
         {
-            var model = row.Model[..^" (Batch)".Length];
-            if (!eligible.Remove(model) || !entries.TryGetValue(model, out var entry))
+            if (!row.Model.EndsWith(batchSuffix, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("Kimi Batch pricing row is not a Batch variant.");
+            }
+
+            var model = row.Model[..^batchSuffix.Length];
+            if (!seen.Add(model) || !entries.TryGetValue(model, out var entry))
             {
                 throw new InvalidDataException("Kimi Batch pricing contains an unknown or duplicate model.");
             }
@@ -209,7 +201,7 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
             entries[model] = entry with { BatchMultiplier = 0.6m };
         }
 
-        if (eligible.Count != 0)
+        if (seen.Count == 0)
         {
             throw new InvalidDataException("Kimi Batch pricing is partial.");
         }
@@ -221,16 +213,12 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
         return Math.Round(expected, scale, MidpointRounding.AwayFromZero) == published;
     }
 
-    private static IReadOnlyList<KimiRow> ParsePage(
-        string document,
-        string title,
-        IReadOnlyCollection<string> expectedModels
-    )
+    private static IReadOnlyList<KimiRow> ParsePage(string document, string title, string sectionHeading)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(document);
         var lines = Lines(document);
         _ = SingleLine(lines, title);
-        _ = SingleLine(lines, "## Product Pricing");
+        _ = SingleLine(lines, sectionHeading);
         var columnsStart = SingleLine(lines, "columns={[");
         var columns = new List<string>();
         var index = columnsStart + 1;
@@ -272,8 +260,8 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
 
         if (
             index == lines.Length
-            || rows.Count != expectedModels.Count
-            || !rows.Select(row => row.Model).ToHashSet(StringComparer.Ordinal).SetEquals(expectedModels)
+            || rows.Count == 0
+            || rows.Select(row => row.Model).ToHashSet(StringComparer.Ordinal).Count != rows.Count
         )
         {
             throw new InvalidDataException("Kimi pricing model rows are partial, duplicate, or changed.");
@@ -326,7 +314,7 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
 
     private static void ValidateIndex(string index)
     {
-        if (new[] { K3Uri, K27Uri, K26Uri, K25Uri, BatchUri }.Any(uri => Count(index, uri.AbsoluteUri) != 1))
+        if (new[] { ChatUri, BatchUri }.Any(uri => Count(index, uri.AbsoluteUri) != 1))
         {
             throw new InvalidDataException("The Kimi documentation index is partial or ambiguous.");
         }

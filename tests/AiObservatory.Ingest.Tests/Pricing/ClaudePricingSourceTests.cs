@@ -220,7 +220,65 @@ public sealed class ClaudePricingSourceTests
         };
     }
 
+    // The document Anthropic actually served on 2026-09-19, captured verbatim.
+    //
+    // Every other test in this class runs against claude-pricing.md, a snapshot taken when
+    // the parser was written. That made upstream drift undetectable: this suite stayed green
+    // from 2026-09-01 to 2026-09-19 while the live source failed 56 times in a row, because
+    // the only document CI ever parsed was one that could not change. Two presentation edits
+    // were enough to break it -- Title Case headings became sentence case with "&" spelled
+    // "and", and two of the four tables gained markdown alignment colons in their separator
+    // rows. No column, order or rate changed.
+    //
+    // So this fixture is not a duplicate of the other one. It pins the parser to a document
+    // that was really observed rather than one chosen to suit it.
+    [Fact]
+    public void ParserAcceptsTheLiveDocumentStylingObservedOn20260919()
+    {
+        var catalog = ClaudePricingSource.Parse(LiveFixture(), RetrievedAt);
+
+        var opus = catalog.Resolve("claude-opus-5-20260801", ObservedOn);
+
+        opus.Should().NotBeNull();
+        opus.Input.Should().Be(5m);
+        opus.Output.Should().Be(25m);
+        opus.CacheRead.Should().Be(0.50m);
+        opus.CacheWrite5m.Should().Be(6.25m);
+        opus.CacheWrite1h.Should().Be(10m);
+    }
+
+    // Tolerating presentation must not decay into tolerating anything. A column that is
+    // dropped, reordered or replaced still has to fail loudly -- otherwise the fix above
+    // trades a noisy break for a silent misread, which is strictly worse than the outage it
+    // resolves.
+    [Theory]
+    [InlineData("| Model | Base input tokens | 5m cache writes | 1h cache writes | Cache hits and refreshes |")]
+    [InlineData(
+        "| Model | 5m cache writes | Base input tokens | 1h cache writes | Cache hits and refreshes | Output tokens |"
+    )]
+    [InlineData(
+        "| Model | Base input tokens | 5m cache writes | 1h cache writes | Cache hits and refreshes | Thinking tokens |"
+    )]
+    public void ParserStillRejectsAStructuralHeaderChange(string replacementHeader)
+    {
+        var original = LiveFixture();
+        var header = original
+            .Split('\n')
+            .Single(line =>
+                line.TrimStart().StartsWith("| Model", StringComparison.Ordinal)
+                && line.Contains("Base input tokens", StringComparison.Ordinal)
+            );
+        var document = original.Replace(header, replacementHeader, StringComparison.Ordinal);
+        document.Should().NotBe(original, "the header row must actually have been replaced");
+
+        var act = () => ClaudePricingSource.Parse(document, RetrievedAt);
+
+        act.Should().Throw<InvalidDataException>();
+    }
+
     private static string Fixture() => ReadFixture("claude-pricing.md");
+
+    private static string LiveFixture() => ReadFixture("claude-pricing-live-2026-09-19.md");
 
     private static string ReadFixture(string name) =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Pricing", "Fixtures", name));
