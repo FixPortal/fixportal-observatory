@@ -46,7 +46,10 @@ public class BudgetAlertServiceTests
         await _notifier
             .Received(1)
             .NotifyAsync(
-                Arg.Is<BudgetAlertPayload>(p => p.ThresholdGbp == rule.ThresholdGbp && p.ActualSpendGbp == 10.01m),
+                // The figures now reach the channels as rendered text rather than as fields, so
+                // the assertion moves with them: the threshold and the actual spend must both
+                // still appear, which is what a reader of the alert actually needs.
+                Arg.Is<AlertMessage>(m => m.Subject.Contains($"£{rule.ThresholdGbp:F2}") && m.Body.Contains("£10.01")),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -74,7 +77,7 @@ public class BudgetAlertServiceTests
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
-        await _notifier.DidNotReceive().NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>());
+        await _notifier.DidNotReceive().NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>());
         await _repo.DidNotReceive().AddInsightAsync(Arg.Any<Insight>(), Arg.Any<CancellationToken>());
     }
 
@@ -131,7 +134,7 @@ public class BudgetAlertServiceTests
                 Arg.Any<Instant>(),
                 Arg.Any<CancellationToken>()
             );
-        await _notifier.Received(1).NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>());
+        await _notifier.Received(1).NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -247,7 +250,7 @@ public class BudgetAlertServiceTests
             )
             .Returns(true);
         _notifier
-            .NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>())
+            .NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>())
             .Returns(
                 Task.FromException<AlertDeliveryResult>(new InvalidOperationException("SMTP unreachable")),
                 Task.FromResult(AlertDeliveryResult.Sent)
@@ -260,7 +263,7 @@ public class BudgetAlertServiceTests
         await _notifier
             .Received(2)
             .NotifyAsync(
-                Arg.Is<BudgetAlertPayload>(payload => payload.MessageId == expectedMessageId),
+                Arg.Is<AlertMessage>(message => message.MessageId == expectedMessageId),
                 Arg.Any<CancellationToken>()
             );
         await _repo
@@ -329,9 +332,7 @@ public class BudgetAlertServiceTests
                 Arg.Any<CancellationToken>()
             )
             .Returns(true);
-        _notifier
-            .NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>())
-            .Returns(AlertDeliveryResult.Sent);
+        _notifier.NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>()).Returns(AlertDeliveryResult.Sent);
 
         var settings = new Dictionary<string, string?>();
         if (explicitDomain is not null)
@@ -354,9 +355,7 @@ public class BudgetAlertServiceTests
         await _notifier
             .Received(1)
             .NotifyAsync(
-                Arg.Is<BudgetAlertPayload>(payload =>
-                    payload.MessageId == $"budget-alert-{claimId:N}@{expectedDomain}"
-                ),
+                Arg.Is<AlertMessage>(message => message.MessageId == $"budget-alert-{claimId:N}@{expectedDomain}"),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -392,7 +391,7 @@ public class BudgetAlertServiceTests
             )
             .Returns(true);
         _notifier
-            .NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>())
+            .NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(AlertDeliveryResult.Sent));
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
@@ -400,11 +399,11 @@ public class BudgetAlertServiceTests
         await _notifier
             .Received(1)
             .NotifyAsync(
-                Arg.Is<BudgetAlertPayload>(payload =>
-                    payload.Provider == "Anthropic"
-                    && payload.Period == "Weekly"
-                    && payload.ThresholdGbp == 10m
-                    && payload.ActualSpendGbp == 15m
+                Arg.Is<AlertMessage>(message =>
+                    message.Subject.Contains("Anthropic")
+                    && message.Subject.Contains("Weekly")
+                    && message.Subject.Contains("£10.00")
+                    && message.Body.Contains("£15.00")
                 ),
                 Arg.Any<CancellationToken>()
             );
@@ -470,7 +469,7 @@ public class BudgetAlertServiceTests
             });
         var delivery = 0;
         _notifier
-            .NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>())
+            .NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 if (delivery++ == 0)
@@ -570,10 +569,10 @@ public class BudgetAlertServiceTests
             )
             .Returns(call => !sent.Contains(call.ArgAt<Guid>(0)));
         _notifier
-            .NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>())
+            .NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
-                var messageId = call.ArgAt<BudgetAlertPayload>(0).MessageId;
+                var messageId = call.ArgAt<AlertMessage>(0).MessageId!;
                 var encodedClaimId = messageId["budget-alert-".Length..^$"@{MessageIdDomain}".Length];
                 attempts.Add(Guid.ParseExact(encodedClaimId, "N"));
                 return Task.FromResult(AlertDeliveryResult.Sent);
@@ -609,10 +608,10 @@ public class BudgetAlertServiceTests
         StubBilledSpend(failing, 15m);
         StubBilledSpend(healthy, 15m);
         _notifier
-            .NotifyAsync(Arg.Is<BudgetAlertPayload>(p => p.Provider == "all"), Arg.Any<CancellationToken>())
+            .NotifyAsync(Arg.Is<AlertMessage>(m => m.Subject.Contains(": all ")), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<AlertDeliveryResult>(new InvalidOperationException("SMTP unreachable")));
         _notifier
-            .NotifyAsync(Arg.Is<BudgetAlertPayload>(p => p.Provider != "all"), Arg.Any<CancellationToken>())
+            .NotifyAsync(Arg.Is<AlertMessage>(m => !m.Subject.Contains(": all ")), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(AlertDeliveryResult.Sent));
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
@@ -643,7 +642,7 @@ public class BudgetAlertServiceTests
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
-        await _notifier.DidNotReceive().NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>());
+        await _notifier.DidNotReceive().NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>());
     }
 
     [Theory]
@@ -693,7 +692,7 @@ public class BudgetAlertServiceTests
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
-        await _notifier.DidNotReceive().NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>());
+        await _notifier.DidNotReceive().NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -706,7 +705,7 @@ public class BudgetAlertServiceTests
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
-        await _notifier.Received(1).NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>());
+        await _notifier.Received(1).NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -717,7 +716,7 @@ public class BudgetAlertServiceTests
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
-        await _notifier.DidNotReceive().NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>());
+        await _notifier.DidNotReceive().NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -730,7 +729,7 @@ public class BudgetAlertServiceTests
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
-        await _notifier.Received(1).NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>());
+        await _notifier.Received(1).NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>());
     }
 
     [Theory]
@@ -769,9 +768,7 @@ public class BudgetAlertServiceTests
                 Arg.Any<CancellationToken>()
             )
             .Returns(true);
-        _notifier
-            .NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(outcome));
+        _notifier.NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(outcome));
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
@@ -820,7 +817,7 @@ public class BudgetAlertServiceTests
             )
             .Returns(true);
         _notifier
-            .NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>())
+            .NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(AlertDeliveryResult.Sent));
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
@@ -847,7 +844,7 @@ public class BudgetAlertServiceTests
         StubSuccessfulDelivery(rule);
         var deliveryFailure = new InvalidOperationException("SMTP unreachable");
         _notifier
-            .NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>())
+            .NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<AlertDeliveryResult>(deliveryFailure));
         var cleanupFailure = new IOException("Lease release failed");
         _repo
@@ -973,7 +970,7 @@ public class BudgetAlertServiceTests
             )
             .Returns(true);
         _notifier
-            .NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>())
+            .NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(AlertDeliveryResult.Sent));
     }
 }

@@ -8,13 +8,10 @@ namespace AiObservatory.Api.Tests.Services;
 
 public class CompositeAlertNotifierTests
 {
-    private static BudgetAlertPayload MakePayload() =>
+    private static AlertMessage MakePayload() =>
         new(
-            "Anthropic",
-            "Daily",
-            10m,
-            15m,
-            DateTimeOffset.UtcNow,
+            "Budget alert: Anthropic Daily billed spend exceeded £10.00",
+            "Total daily billed spend for Anthropic reached £15.00, exceeding your £10.00 threshold.",
             "budget-alert-10000000000000000000000000000001@observatory.fixportal.com",
             Guid.NewGuid()
         );
@@ -28,8 +25,8 @@ public class CompositeAlertNotifierTests
 
         await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
-        await email.Received(1).NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>());
-        await slack.Received(1).NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>());
+        await email.Received(1).NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>());
+        await slack.Received(1).NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -38,14 +35,14 @@ public class CompositeAlertNotifierTests
         var email = Substitute.For<IAlertNotifier>();
         var slack = Substitute.For<IAlertNotifier>();
         slack
-            .NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>())
+            .NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new HttpRequestException("boom"));
         var sut = new CompositeAlertNotifier(email, slack, NullLogger<CompositeAlertNotifier>.Instance);
 
         var act = async () => await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
         await act.Should().NotThrowAsync();
-        await email.Received(1).NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>());
+        await email.Received(1).NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>());
     }
 
     [Theory]
@@ -84,8 +81,8 @@ public class CompositeAlertNotifierTests
     {
         var email = Substitute.For<IAlertNotifier>();
         var slack = Substitute.For<IAlertNotifier>();
-        slack.NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>()).Returns(slackResult);
-        email.NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>()).Returns(emailResult);
+        slack.NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>()).Returns(slackResult);
+        email.NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>()).Returns(emailResult);
         var sut = new CompositeAlertNotifier(email, slack, NullLogger<CompositeAlertNotifier>.Instance);
 
         var result = await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
@@ -99,7 +96,7 @@ public class CompositeAlertNotifierTests
         var email = Substitute.For<IAlertNotifier>();
         var slack = Substitute.For<IAlertNotifier>();
         email
-            .NotifyAsync(Arg.Any<BudgetAlertPayload>(), Arg.Any<CancellationToken>())
+            .NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("smtp down"));
         var sut = new CompositeAlertNotifier(email, slack, NullLogger<CompositeAlertNotifier>.Instance);
 

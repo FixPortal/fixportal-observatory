@@ -1,7 +1,7 @@
 namespace AiObservatory.Api.Services;
 
 /// <summary>
-/// Fans a budget alert out to both delivery channels. Email keeps its existing at-least-once
+/// Fans an alert out to both delivery channels. Email keeps its existing at-least-once
 /// retry semantics from before this class existed: its failure propagates unchanged, so
 /// <c>BudgetAlertService</c>'s lease is released and the whole delivery retries. Slack is a
 /// best-effort secondary channel fenced by <c>BudgetAlertClaim.SlackSentAt</c> (see
@@ -19,12 +19,12 @@ public sealed class CompositeAlertNotifier(
     ILogger<CompositeAlertNotifier> logger
 ) : IAlertNotifier
 {
-    public async Task<AlertDeliveryResult> NotifyAsync(BudgetAlertPayload payload, CancellationToken ct = default)
+    public async Task<AlertDeliveryResult> NotifyAsync(AlertMessage alert, CancellationToken ct = default)
     {
         var slackResult = AlertDeliveryResult.Failed;
         try
         {
-            slackResult = await slack.NotifyAsync(payload, ct);
+            slackResult = await slack.NotifyAsync(alert, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -32,10 +32,10 @@ public sealed class CompositeAlertNotifier(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Slack alert delivery failed for budget alert {MessageId}", payload.MessageId);
+            logger.LogError(ex, "Slack alert delivery failed for alert {Subject}", alert.Subject);
         }
 
-        var emailResult = await email.NotifyAsync(payload, ct);
+        var emailResult = await email.NotifyAsync(alert, ct);
         if (slackResult == AlertDeliveryResult.Sent || emailResult == AlertDeliveryResult.Sent)
         {
             return AlertDeliveryResult.Sent;

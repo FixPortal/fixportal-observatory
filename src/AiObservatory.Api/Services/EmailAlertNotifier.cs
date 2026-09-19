@@ -1,4 +1,3 @@
-using System.Globalization;
 using AiObservatory.Data.Repositories;
 using MimeKit;
 
@@ -11,7 +10,7 @@ public sealed class EmailAlertNotifier(
     ILogger<EmailAlertNotifier> logger
 ) : IAlertNotifier
 {
-    public async Task<AlertDeliveryResult> NotifyAsync(BudgetAlertPayload payload, CancellationToken ct = default)
+    public async Task<AlertDeliveryResult> NotifyAsync(AlertMessage alert, CancellationToken ct = default)
     {
         var settings = await repository.GetNotificationSettingsAsync(ct);
         var to = settings?.AlertEmailTo;
@@ -37,15 +36,19 @@ public sealed class EmailAlertNotifier(
         if (!MailboxAddress.TryParse(to, out var toAddress))
         {
             logger.LogWarning(
-                "Budget alert email recipient is not a valid mailbox address; treating the channel as unconfigured"
+                "Alert email recipient is not a valid mailbox address; treating the channel as unconfigured"
             );
             return AlertDeliveryResult.NoRecipientConfigured;
         }
 
+        // An unset BUDGET_ALERT_SMTP_USER lands here as an empty string. Measured 2026-09-19:
+        // that was production's state — no BUDGET_ALERT_SMTP_* setting existed on the app — so
+        // every alert died here while two ingest sources had been failing for 18 and 20 days.
+        // Reported as "not configured" rather than as a failure, because that is what it is.
         if (!MailboxAddress.TryParse(from, out var fromAddress))
         {
             logger.LogWarning(
-                "Budget alert sender (BUDGET_ALERT_EMAIL_FROM / BUDGET_ALERT_SMTP_USER) is not a valid mailbox address; treating the channel as unconfigured"
+                "Alert sender (BUDGET_ALERT_EMAIL_FROM / BUDGET_ALERT_SMTP_USER) is not a valid mailbox address; treating the channel as unconfigured"
             );
             return AlertDeliveryResult.NoRecipientConfigured;
         }
@@ -53,23 +56,14 @@ public sealed class EmailAlertNotifier(
         using var message = new MimeMessage();
         message.From.Add(fromAddress);
         message.To.Add(toAddress);
-        message.MessageId = payload.MessageId;
-        message.Subject = string.Create(
-            CultureInfo.InvariantCulture,
-            $"Budget alert: {payload.Provider} {payload.Period} billed spend exceeded £{payload.ThresholdGbp:F2}"
-        );
-        message.Body = new TextPart("plain")
+        // Left unset when the caller supplies none, so MimeKit generates one. Assigning an
+        // empty string instead would emit a malformed header.
+        if (!string.IsNullOrWhiteSpace(alert.MessageId))
         {
-            Text =
-                string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"Total {payload.Period.ToLowerInvariant()} billed spend for {payload.Provider} reached £{payload.ActualSpendGbp:F2}, "
-                )
-                + string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"exceeding your £{payload.ThresholdGbp:F2} threshold.\n\nTriggered at: {payload.TriggeredAt:u}"
-                ),
-        };
+            message.MessageId = alert.MessageId;
+        }
+        message.Subject = alert.Subject;
+        message.Body = new TextPart("plain") { Text = alert.Body };
 
         await mailSender.SendAsync(message, ct);
 

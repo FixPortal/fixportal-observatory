@@ -3,6 +3,7 @@ using AiObservatory.Api.Services.GitHub;
 using AiObservatory.Data;
 using AiObservatory.Data.Entities;
 using AiObservatory.Data.Repositories;
+using AiObservatory.Data.Security;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
 
@@ -130,25 +131,49 @@ public class IntelligenceWorkerService(
     internal async Task LogEnabledArmsAsync(CancellationToken ct = default)
     {
         bool gitHubBilling;
-        bool digestHasRecipient;
+        string channels;
         try
         {
             await using var scope = scopeFactory.CreateAsyncScope();
             gitHubBilling = scope.ServiceProvider.GetService<GitHubBillingSyncService>() is not null;
 
-            // The digest arm is always registered, but it can only ever SEND once a recipient
-            // is configured. Reporting it as "enabled" on registration alone would reproduce,
-            // in this very line, the failure the arm exists to prevent: something that reads
-            // as live while it can never fire.
+            // The alerting arms are always registered, but they can only ever SEND once a
+            // channel can actually deliver. Reporting them as "enabled" on registration alone
+            // would reproduce, in this very line, the failure they exist to prevent: something
+            // that reads as live while it can never fire.
+            //
+            // A recipient is NOT a channel. Measured 2026-09-19, production had a configured
+            // AlertEmailTo and no BUDGET_ALERT_SMTP_* setting whatsoever, so this line said
+            // "enabled" while every send died on an empty sender — which is why the email arm
+            // is now reported against the transport as well as the recipient.
             var db = scope.ServiceProvider.GetService<AiObservatoryDbContext>();
-            digestHasRecipient =
-                db is not null
-                && await db
+            var settings = db is null
+                ? null
+                : await db
                     .NotificationSettings.AsNoTracking()
-                    .AnyAsync(
-                        s => s.Id == NotificationSettings.SingletonId && s.AlertEmailTo != null && s.AlertEmailTo != "",
-                        ct
-                    );
+                    .FirstOrDefaultAsync(s => s.Id == NotificationSettings.SingletonId, ct);
+
+            // Optional rather than required: a diagnostic line must not be the thing that
+            // throws in a host composed without configuration.
+            var config = scope.ServiceProvider.GetService<IConfiguration>();
+            var hasSender =
+                !string.IsNullOrWhiteSpace(config?["BUDGET_ALERT_EMAIL_FROM"])
+                || !string.IsNullOrWhiteSpace(config?["BUDGET_ALERT_SMTP_USER"]);
+            var emailDeliverable = !string.IsNullOrWhiteSpace(settings?.AlertEmailTo) && hasSender;
+
+            // A webhook the read path could not decrypt is stored as a sentinel, which is
+            // non-empty and would otherwise read as a live channel.
+            var slackDeliverable =
+                !string.IsNullOrWhiteSpace(settings?.SlackWebhookUrl)
+                && !SlackWebhookProtector.IsUndecryptable(settings.SlackWebhookUrl);
+
+            channels = (emailDeliverable, slackDeliverable) switch
+            {
+                (true, true) => "email + Slack",
+                (true, false) => "email",
+                (false, true) => "Slack",
+                _ => "NO DELIVERABLE CHANNEL (nothing will be sent)",
+            };
         }
         catch (Exception ex)
         {
@@ -159,8 +184,8 @@ public class IntelligenceWorkerService(
 
         logger.LogInformation(
             "Intelligence worker arms — analysis catchup: enabled, budget check: enabled, "
-                + "source health digest: {DigestState}, GitHub billing sync: {GitHubBillingState}",
-            digestHasRecipient ? "enabled" : "NO RECIPIENT CONFIGURED (nothing will be sent)",
+                + "alert channels: {AlertChannels}, GitHub billing sync: {GitHubBillingState}",
+            channels,
             gitHubBilling ? "enabled" : "NOT CONFIGURED (no entries will be written)"
         );
     }

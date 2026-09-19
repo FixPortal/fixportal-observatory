@@ -1,7 +1,6 @@
 using AiObservatory.Data;
 using AiObservatory.Data.Entities;
 using Microsoft.EntityFrameworkCore;
-using MimeKit;
 using NodaTime;
 
 namespace AiObservatory.Api.Services;
@@ -14,11 +13,18 @@ namespace AiObservatory.Api.Services;
 /// went unnoticed for twelve days, because nothing reads that endpoint unprompted. The state was
 /// never the gap; the notification was.
 /// </para>
+/// <para>
+/// Delivers through <see cref="IAlertNotifier"/> rather than straight to SMTP, so it reaches
+/// every configured channel instead of only the one it was written against. That matters more
+/// than it reads: measured 2026-09-19, production had no SMTP settings at all, so the digest's
+/// direct mail path could never fire — and the failure it exists to announce went unannounced
+/// for eighteen days, the second time this feature was defeated by delivery rather than by
+/// detection.
+/// </para>
 /// </summary>
 public sealed class SourceHealthDigestService(
     AiObservatoryDbContext db,
-    SmtpMailSender mailSender,
-    IConfiguration config,
+    IAlertNotifier notifier,
     IClock clock,
     ILogger<SourceHealthDigestService> logger
 )
@@ -37,37 +43,15 @@ public sealed class SourceHealthDigestService(
             return false;
         }
 
-        var settings = await db
+        // Recipient and sender validation now lives in the notifiers, which is why this method
+        // no longer refuses before claiming: whether any channel can deliver is only known once
+        // one has been asked. The NoRecipientConfigured arm below restores the claim for that
+        // case, so "nothing configured" still costs nothing.
+        var previousDigestOn = await db
             .NotificationSettings.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Id == NotificationSettings.SingletonId, ct);
-        if (string.IsNullOrWhiteSpace(settings?.AlertEmailTo))
-        {
-            logger.LogInformation(
-                "Source health digest: {Count} source(s) degraded but no alert recipient is configured",
-                digest.DegradedCount
-            );
-            return false;
-        }
-
-        if (!MailboxAddress.TryParse(settings.AlertEmailTo, out var toAddress))
-        {
-            // Same reasoning as EmailAlertNotifier: a stored value must never be able to
-            // throw us into a retry loop, so an unparseable address is "not configured".
-            logger.LogWarning("Source health digest: alert recipient is not a valid mailbox address");
-            return false;
-        }
-
-        var from = config["BUDGET_ALERT_EMAIL_FROM"];
-        if (string.IsNullOrWhiteSpace(from))
-        {
-            from = mailSender.ReadSettings().User;
-        }
-
-        if (!MailboxAddress.TryParse(from, out var fromAddress))
-        {
-            logger.LogWarning("Source health digest: sender is not a valid mailbox address");
-            return false;
-        }
+            .Where(s => s.Id == NotificationSettings.SingletonId)
+            .Select(s => s.LastSourceHealthDigestOn)
+            .FirstOrDefaultAsync(ct);
 
         // Claim the day BEFORE sending, and never release it on failure. A digest is
         // fire-and-forget by design: losing one to an SMTP outage costs a day's notice and
@@ -87,19 +71,20 @@ public sealed class SourceHealthDigestService(
 
         if (claimed == 0)
         {
-            logger.LogDebug("Source health digest: already sent for {Date}", today);
+            // Either today's digest has already gone out, or no settings row exists at all —
+            // the row is created by the notification-settings endpoint on first write.
+            logger.LogDebug("Source health digest: already sent for {Date}, or no settings row exists", today);
             return false;
         }
 
-        using var message = new MimeMessage();
-        message.From.Add(fromAddress);
-        message.To.Add(toAddress);
-        message.Subject = digest.Subject;
-        message.Body = new TextPart("plain") { Text = digest.Body };
+        // No Message-Id: the digest is never retried under its own identity, so a stable id
+        // would only let a receiving server collapse tomorrow's digest into today's.
+        var alert = new AlertMessage(digest.Subject, digest.Body);
 
+        AlertDeliveryResult result;
         try
         {
-            await mailSender.SendAsync(message, ct);
+            result = await notifier.NotifyAsync(alert, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -111,11 +96,41 @@ public sealed class SourceHealthDigestService(
             return false;
         }
 
-        logger.LogInformation(
-            "Source health digest: sent for {Date} covering {Count} degraded source(s)",
+        if (result == AlertDeliveryResult.Sent)
+        {
+            logger.LogInformation(
+                "Source health digest: sent for {Date} covering {Count} degraded source(s)",
+                today,
+                digest.DegradedCount
+            );
+            return true;
+        }
+
+        if (result == AlertDeliveryResult.NoRecipientConfigured)
+        {
+            // Nothing left this process, so restoring the claim cannot duplicate a delivery —
+            // and it means an operator who configures a channel later today still gets today's
+            // digest rather than waiting for tomorrow's. Deliberately NOT done for Failed or
+            // PermanentlyRejected: there the send may have partially happened, and re-claiming
+            // would re-attempt on every worker pass for the rest of the day.
+            await db
+                .NotificationSettings.Where(s =>
+                    s.Id == NotificationSettings.SingletonId && s.LastSourceHealthDigestOn == today
+                )
+                .ExecuteUpdateAsync(set => set.SetProperty(s => s.LastSourceHealthDigestOn, previousDigestOn), ct);
+
+            logger.LogInformation(
+                "Source health digest: {Count} source(s) degraded but no channel is configured; today's claim was restored",
+                digest.DegradedCount
+            );
+            return false;
+        }
+
+        logger.LogError(
+            "Source health digest: no channel delivered for {Date} ({Outcome}); today's digest is lost and will not be retried",
             today,
-            digest.DegradedCount
+            result
         );
-        return true;
+        return false;
     }
 }

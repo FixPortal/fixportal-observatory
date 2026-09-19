@@ -124,3 +124,14 @@ BenchLM is discovery/cross-check evidence only: it is never a runtime source, au
 | PI | `~/.pi/agent/sessions/**/*.jsonl`; assistant `usage` on `meta/` models | Other vendors PI drives arrive through their own lanes and are skipped here |
 
 The sweeper uses source-scoped keys, server inventory, and zero corrections for removed/disabled snapshots. Its local state is a parse cache, not the system of record. See [clients/README.md](../clients/README.md) for home overrides and scheduling.
+
+## Alert channels
+
+Budget alerts and the daily source-health digest both deliver through the same two channels. Neither is configured by default, and **a stored recipient is not a channel** — a deployment carrying only `alertEmailTo` sends nothing, because there is no transport to send it through. The worker states which channels can actually deliver in its startup line (`alert channels: ...`); `NO DELIVERABLE CHANNEL` there means every alert this instance raises will be recorded and never seen.
+
+| Channel | Recipient | Transport | Notes |
+| --- | --- | --- | --- |
+| Email | `alertEmailTo` via `PUT /api/notification-settings` | `BUDGET_ALERT_SMTP_HOST` (default `smtp.office365.com`), `BUDGET_ALERT_SMTP_PORT` (default 587), `BUDGET_ALERT_SMTP_USER`, `BUDGET_ALERT_SMTP_PASS` | `BUDGET_ALERT_EMAIL_FROM` overrides the sender, which otherwise defaults to the SMTP user. An unset user disables the channel: the empty sender fails to parse and the channel reports itself unconfigured |
+| Slack | `slackWebhookUrl` via `PUT /api/notification-settings`; must start with `https://hooks.slack.com/` | None beyond the webhook | Set `SLACK_WEBHOOK_PROTECTION_KEY` **before** storing the URL so it is encrypted at rest; without it the webhook is stored as plaintext. Losing the key costs only a re-entry of the webhook |
+
+Either channel alone is enough. Where both are configured, one success is enough to close a budget-alert claim, and Slack delivery is fenced to once per claim regardless of how often email retries.
