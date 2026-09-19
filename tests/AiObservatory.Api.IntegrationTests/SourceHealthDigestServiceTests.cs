@@ -177,6 +177,42 @@ public sealed class SourceHealthDigestServiceTests : IAsyncLifetime
         (await ClaimedOnAsync()).Should().Be(yesterday);
     }
 
+    [Fact]
+    public async Task Does_not_overwrite_a_competing_writer_that_moved_the_claim_mid_delivery()
+    {
+        // The restore reads previousDigestOn before taking the claim, so on paper it could
+        // write a stale value back. It cannot, because the restore is conditional on the
+        // column still holding THIS instance's claim — and no other writer can set it to
+        // today without having taken the claim itself. Proven rather than argued: the
+        // notifier callback runs between the claim and the restore, which is the only window
+        // where an interleaved write is possible at all.
+        var yesterday = Today.PlusDays(-1);
+        await SeedAsync(lastDigestOn: yesterday);
+        var intruderDate = Today.PlusDays(3);
+
+        var notifier = Substitute.For<IAlertNotifier>();
+        notifier
+            .NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                await using var competing = new AiObservatoryDbContext(
+                    new DbContextOptionsBuilder<AiObservatoryDbContext>()
+                        .UseNpgsql(_connectionString, options => options.UseNodaTime())
+                        .Options
+                );
+                await competing
+                    .NotificationSettings.Where(s => s.Id == NotificationSettings.SingletonId)
+                    .ExecuteUpdateAsync(set => set.SetProperty(s => s.LastSourceHealthDigestOn, intruderDate));
+                return AlertDeliveryResult.NoRecipientConfigured;
+            });
+
+        await Service(notifier).SendIfDueAsync(TestContext.Current.CancellationToken);
+
+        (await ClaimedOnAsync())
+            .Should()
+            .Be(intruderDate, "the restore must leave a value it did not write, not stamp yesterday over it");
+    }
+
     private static IAlertNotifier Notifier(AlertDeliveryResult result)
     {
         var notifier = Substitute.For<IAlertNotifier>();
