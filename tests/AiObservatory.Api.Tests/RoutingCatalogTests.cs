@@ -1,6 +1,8 @@
+using System.Text.Json;
 using AiObservatory.Api.Routing;
 using AwesomeAssertions;
 using NodaTime;
+using NodaTime.Text;
 
 namespace AiObservatory.Api.Tests;
 
@@ -26,20 +28,30 @@ public sealed class RoutingCatalogTests
     [Fact]
     public void ShipsGrokInTheLiveCorpusAlongsideTheIdTheGrokCliReports()
     {
-        var catalog = RoutingCatalogService.Load(
-            Path.Combine(AppContext.BaseDirectory, "Routing", "routing-catalog.json")
-        );
+        var path = Path.Combine(AppContext.BaseDirectory, "Routing", "routing-catalog.json");
+        var catalog = RoutingCatalogService.Load(path);
 
-        // Read at a real "now" rather than a literal instant. Membership is a claim about what
-        // the IDE can route to today, so pinning it to a date would couple this assertion to the
-        // newest entry's effective window and re-break every time one ships.
-        var models = catalog.GetSnapshot(SystemClock.Instance.GetCurrentInstant()).Models;
+        // The instant comes from the catalog itself - the moment its newest entry opens - so this
+        // reads the corpus at its current front with neither a wall clock nor a literal date to
+        // maintain. A literal would couple the assertion to the newest effective window and
+        // re-break every time one ships; a clock read would make the test non-deterministic.
+        var models = catalog.GetSnapshot(NewestEffectiveFrom(path)).Models;
 
         var grok = models.Single(model => model.ModelId == "grok-4.6");
         grok.Vendor.Should().Be("xai");
         // The CLI declares grok-4.6-build for almost all of its work, so a routing decision
         // naming that id has to resolve to this entry.
         grok.Aliases.Should().Contain("grok-4.6-build");
+    }
+
+    private static Instant NewestEffectiveFrom(string path)
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(path));
+        return document
+            .RootElement.GetProperty("models")
+            .EnumerateArray()
+            .Select(model => InstantPattern.ExtendedIso.Parse(model.GetProperty("effectiveFrom").GetString()!).Value)
+            .Max();
     }
 
     [Theory]
