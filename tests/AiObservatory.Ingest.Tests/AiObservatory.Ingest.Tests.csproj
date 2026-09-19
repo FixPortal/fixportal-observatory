@@ -26,6 +26,11 @@
     <Content Include="Pricing\Fixtures\*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- Kimi's documentation index is published as llms.txt, so the fixture keeps that
+         extension rather than being renamed to suit the glob. -->
+    <Content Include="Pricing\Fixtures\*.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

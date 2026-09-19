@@ -192,11 +192,27 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
         };
         if (
             rows.Count != expected.Count
-            || rows.Any(row => !expected.TryGetValue(row[0], out var multiplier) || multiplier != row[1])
+            || rows.Any(row =>
+                !expected.TryGetValue(row[0], out var multiplier) || multiplier != HeadlineMultiplier(row[1])
+            )
         )
         {
             throw new InvalidDataException("Claude prompt-cache pricing shape changed.");
         }
+    }
+
+    // Unlike the header and separator tolerances, this one absorbs a REAL pricing change, so
+    // it is deliberately narrow. On 2026-09-19 the cache-read row reads "0.1x base input
+    // price (0.025x on Claude Fable 5.1 and Claude Mythos 5.1)" -- a per-model exception, not
+    // a restyle. It does not change what this parser stores: every per-model cache-read rate
+    // is taken from the explicit column of the model table above, and this table is only a
+    // cross-check that the headline multiplier still holds. Comparing the headline and
+    // allowing a trailing parenthesised qualifier keeps that cross-check meaningful, because
+    // a change to the headline multiplier itself -- 0.1x becoming 0.15x -- still throws.
+    private static string HeadlineMultiplier(string value)
+    {
+        var qualifier = value.IndexOf(" (", StringComparison.Ordinal);
+        return (qualifier < 0 ? value : value[..qualifier]).Trim();
     }
 
     private static void ValidateGeography(string document)
@@ -226,9 +242,25 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
         return major > 4 || major == 4 && minor >= 6;
     }
 
-    private static decimal ParseRate(string value)
+    // A trailing footnote marker is presentation as well: the live table renders a rate that
+    // carries a caveat below the table as "$0.25 / MTok<sup>1</sup>". Strip one marker so the
+    // rate parses; anything else trailing the unit still fails.
+    private static string StripTrailingFootnote(string value)
+    {
+        const string close = "</sup>";
+        if (!value.EndsWith(close, StringComparison.Ordinal))
+        {
+            return value;
+        }
+
+        var open = value.LastIndexOf("<sup>", StringComparison.Ordinal);
+        return open < 0 ? value : value[..open].TrimEnd();
+    }
+
+    private static decimal ParseRate(string rawValue)
     {
         const string suffix = " / MTok";
+        var value = StripTrailingFootnote(rawValue);
         if (
             !value.StartsWith('$')
             || !value.EndsWith(suffix, StringComparison.Ordinal)
@@ -282,7 +314,12 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
             }
         }
 
-        if (headerIndex < 0 || !Cells(lines[headerIndex]).SequenceEqual(expectedColumns, StringComparer.Ordinal))
+        if (
+            headerIndex < 0
+            || !Cells(lines[headerIndex])
+                .Select(NormalizeColumn)
+                .SequenceEqual(expectedColumns.Select(NormalizeColumn), StringComparer.Ordinal)
+        )
         {
             throw new InvalidDataException($"Claude '{heading}' pricing columns changed.");
         }
@@ -336,13 +373,47 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
         return trimmed.Split('|')[1..^1].Select(cell => cell.Trim()).ToArray();
     }
 
+    // A column heading is presentation, not structure. Anthropic restyled these on
+    // 2026-09-01 -- Title Case became sentence case and "&" was spelled "and" -- which
+    // changed no column, no order and no rate, yet hard-failed the parser 56 times in a row
+    // while the dashboard kept serving the last good catalog. Comparing the normalized form
+    // keeps the real contract, which is the SET and ORDER of columns: a renamed, dropped or
+    // reordered column still throws.
+    private static string NormalizeColumn(string value) =>
+        string.Join(
+                ' ',
+                value
+                    .Replace("&", "and", StringComparison.Ordinal)
+                    .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+            )
+            .ToLowerInvariant();
+
     private static void ValidateSeparator(string line, int columns)
     {
         var cells = Cells(line);
-        if (cells.Length != columns || cells.Any(cell => cell.Length < 3 || cell.Any(character => character != '-')))
+        if (cells.Length != columns || cells.Any(cell => !IsSeparatorCell(cell)))
         {
             throw new InvalidDataException("Claude pricing table separator changed.");
         }
+    }
+
+    // Markdown alignment colons are presentation for the same reason: the same 2026-09-01
+    // edit gave two of the four tables ":---" separators. The structural requirement is a
+    // dash run, optionally alignment-marked at either end.
+    private static bool IsSeparatorCell(string cell)
+    {
+        var span = cell.AsSpan();
+        if (span.Length > 0 && span[0] == ':')
+        {
+            span = span[1..];
+        }
+
+        if (span.Length > 0 && span[^1] == ':')
+        {
+            span = span[..^1];
+        }
+
+        return span.Length >= 3 && span.IndexOfAnyExcept('-') < 0;
     }
 
     private static string[] Lines(string document) =>

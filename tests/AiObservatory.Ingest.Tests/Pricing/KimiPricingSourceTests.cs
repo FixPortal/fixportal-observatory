@@ -15,13 +15,15 @@ public sealed class KimiPricingSourceTests
     private static readonly Instant RetrievedAt = Instant.FromUtc(2026, 8, 24, 12, 0);
     private static readonly LocalDate ObservedOn = new(2026, 8, 24);
 
+    // Rates as published on 2026-09-19. kimi-k2.5 is deliberately absent: Moonshot retired it
+    // when it consolidated four per-model pages into chat.md, and this source no longer pins
+    // an exact roster. No kimi-k2.5 usage was ever recorded in this Observatory.
     [Theory]
     [InlineData("kimi-k3", false, 0.30, 3.00, 15.00, null)]
     [InlineData("kimi-k2.7-code", false, 0.19, 0.95, 4.00, 0.60)]
     [InlineData("kimi-k2.7-code-highspeed", true, 0.38, 1.90, 8.00, null)]
     [InlineData("kimi-k2.6", false, 0.16, 0.95, 4.00, 0.60)]
-    [InlineData("kimi-k2.5", false, 0.10, 0.60, 3.00, 0.60)]
-    public void ParserKeepsExactlyTheFiveOfficialVariantsAndEligibleBatchMultiplier(
+    public void ParserReadsEveryPublishedVariantAndTheEligibleBatchMultiplier(
         string model,
         bool highSpeed,
         double cacheHit,
@@ -34,7 +36,7 @@ public sealed class KimiPricingSourceTests
 
         var entry = catalog.Resolve(model, highSpeed, ObservedOn);
 
-        catalog.Entries.Should().HaveCount(5);
+        catalog.Entries.Should().HaveCount(4);
         entry.Should().NotBeNull();
         entry.CacheHit.Should().Be((decimal)cacheHit);
         entry.CacheMiss.Should().Be((decimal)cacheMiss);
@@ -43,15 +45,32 @@ public sealed class KimiPricingSourceTests
         entry.EffectiveDateIsProviderDeclared.Should().BeFalse();
     }
 
+    // The consolidation is the regression this source failed on for 61 consecutive days: the
+    // index stopped naming chat-k3.md, chat-k27-code.md, chat-k26.md and chat-k25.md, and
+    // ValidateIndex required each of them exactly once. The fixture here is the real
+    // llms.txt, so the test fails again if the parser is ever re-pinned to pages that the
+    // published index does not list.
+    [Fact]
+    public void IndexFixtureNamesOnlyTheConsolidatedPagesTheParserRequires()
+    {
+        var index = Fixture("kimi-llms.txt");
+
+        index.Should().Contain("https://platform.kimi.ai/docs/pricing/chat.md");
+        index.Should().Contain("https://platform.kimi.ai/docs/pricing/batch.md");
+        index.Should().NotContain("https://platform.kimi.ai/docs/pricing/chat-k3.md");
+        index.Should().NotContain("https://platform.kimi.ai/docs/pricing/chat-k25.md");
+    }
+
     [Theory]
     [InlineData("missing-heading")]
     [InlineData("duplicate-key")]
-    [InlineData("overlap")]
-    [InlineData("partial-batch")]
+    [InlineData("batch-unknown-model")]
     [InlineData("non-usd")]
     [InlineData("zero-rate")]
     [InlineData("negative-rate")]
     [InlineData("unknown-column")]
+    [InlineData("batch-multiplier-broken")]
+    [InlineData("required-model-missing")]
     public void ParserRejectsMalformedOrAmbiguousCatalogs(string mutation)
     {
         var fixtures = Mutate(Fixtures(), mutation);
@@ -67,11 +86,8 @@ public sealed class KimiPricingSourceTests
         var fixtures = Fixtures();
         var pages = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["https://platform.kimi.ai/docs/llms.txt"] = Index(),
-            ["https://platform.kimi.ai/docs/pricing/chat-k3.md"] = fixtures.K3,
-            ["https://platform.kimi.ai/docs/pricing/chat-k27-code.md"] = fixtures.K27,
-            ["https://platform.kimi.ai/docs/pricing/chat-k26.md"] = fixtures.K26,
-            ["https://platform.kimi.ai/docs/pricing/chat-k25.md"] = fixtures.K25,
+            ["https://platform.kimi.ai/docs/llms.txt"] = Fixture("kimi-llms.txt"),
+            ["https://platform.kimi.ai/docs/pricing/chat.md"] = fixtures.Chat,
             ["https://platform.kimi.ai/docs/pricing/batch.md"] = fixtures.Batch,
         };
         var handler = new FirstPartyDocumentFetcherTests.RecordingHandler(
@@ -88,7 +104,7 @@ public sealed class KimiPricingSourceTests
         candidate!.Provider.Should().Be(Provider.Moonshot);
         candidate.SourceId.Should().Be(PricingSourceIds.Kimi);
         candidate.SourceUrl.Should().Be("https://platform.kimi.ai/docs/llms.txt");
-        handler.Requests.Should().HaveCount(6);
+        handler.Requests.Should().HaveCount(3);
         var catalog = PricingCatalogJson.Deserialize<KimiPriceCatalog>(candidate.NormalizedCatalog);
         ((Action)catalog.Validate).Should().NotThrow();
     }
@@ -112,9 +128,10 @@ public sealed class KimiPricingSourceTests
     {
         // A page that renders its last row without the trailing comma the other rows carry
         // must not fail the whole source.
-        const string k3Row =
-            "[\"kimi-k3\", \"1M tokens\", <>{\"$\"}0.30</>, <>{\"$\"}3.00</>, <>{\"$\"}15.00</>, \"1,048,576 tokens\"],";
-        var fixtures = Fixtures() with { K3 = Fixtures().K3.Replace(k3Row, k3Row[..^1], StringComparison.Ordinal) };
+        var fixtures = Fixtures() with
+        {
+            Chat = Fixtures().Chat.Replace(K3Row, K3Row[..^1], StringComparison.Ordinal),
+        };
 
         var catalog = Parse(fixtures);
 
@@ -122,7 +139,7 @@ public sealed class KimiPricingSourceTests
     }
 
     [Fact]
-    public void BundledCatalogContainsOnlyTheVerifiedFiveVariants()
+    public void BundledCatalogMatchesThePublishedVariants()
     {
         var catalog = PricingCatalogJson.Deserialize<KimiPriceCatalog>(Bundle("kimi.json"));
 
@@ -130,86 +147,74 @@ public sealed class KimiPricingSourceTests
         catalog.Should().BeEquivalentTo(Parse(Fixtures()), options => options.WithStrictOrdering());
         catalog.SourceUrl.Should().Be("https://platform.kimi.ai/docs/llms.txt");
         catalog.RetrievedAt.Should().Be(RetrievedAt);
-        catalog.Entries.Should().HaveCount(5);
+        catalog.Entries.Should().HaveCount(4);
         catalog.Resolve("kimi-k2.6", false, ObservedOn)!.CacheHit.Should().Be(0.16m);
-        catalog.Resolve("kimi-k2.5", false, ObservedOn)!.CacheHit.Should().Be(0.10m);
+        catalog.Resolve("kimi-k3", false, ObservedOn)!.CacheHit.Should().Be(0.30m);
     }
 
-    private static KimiPriceCatalog Parse(KimiFixtures fixtures) =>
-        KimiPricingSource.Parse(fixtures.K3, fixtures.K27, fixtures.K26, fixtures.K25, fixtures.Batch, RetrievedAt);
+    private const string K3Row =
+        "[\"kimi-k3\", \"1M tokens\", <>{\"$\"}0.30</>, <>{\"$\"}3.00</>, <>{\"$\"}15.00</>, \"1,048,576 tokens\"],";
 
-    private static KimiFixtures Mutate(KimiFixtures fixtures, string mutation)
-    {
-        const string k3Row =
-            "[\"kimi-k3\", \"1M tokens\", <>{\"$\"}0.30</>, <>{\"$\"}3.00</>, <>{\"$\"}15.00</>, \"1,048,576 tokens\"],";
-        return mutation switch
+    private static KimiPriceCatalog Parse(KimiFixtures fixtures) =>
+        KimiPricingSource.Parse(fixtures.Chat, fixtures.Batch, RetrievedAt);
+
+    private static KimiFixtures Mutate(KimiFixtures fixtures, string mutation) =>
+        mutation switch
         {
             "missing-heading" => fixtures with
             {
-                K3 = fixtures.K3.Replace("## Product Pricing", "## Rates", StringComparison.Ordinal),
+                Chat = fixtures.Chat.Replace("## Model Pricing", "## Rates", StringComparison.Ordinal),
             },
             "duplicate-key" => fixtures with
             {
-                K3 = fixtures.K3.Replace(k3Row, $"{k3Row}\n{k3Row}", StringComparison.Ordinal),
+                Chat = fixtures.Chat.Replace(K3Row, $"{K3Row}\n{K3Row}", StringComparison.Ordinal),
             },
-            "overlap" => fixtures with
-            {
-                K27 = fixtures.K27.Replace(
-                    "[\"kimi-k2.7-code\",",
-                    $"{k3Row}\n[\"kimi-k2.7-code\",",
-                    StringComparison.Ordinal
-                ),
-            },
-            "partial-batch" => fixtures with
+            // Moonshot withdrawing Batch for a model is a product decision and no longer an
+            // error, but a Batch row naming a model the chat table never priced means the two
+            // pages disagree, and that must still fail.
+            "batch-unknown-model" => fixtures with
             {
                 Batch = fixtures.Batch.Replace(
-                    "[\"kimi-k2.6 (Batch)\", \"1M tokens\", \"$0.10\", \"$0.57\", \"$2.40\", \"262,144 tokens\"],",
-                    "",
+                    "\"kimi-k2.6 (Batch)\"",
+                    "\"kimi-k9.9 (Batch)\"",
                     StringComparison.Ordinal
                 ),
             },
             "non-usd" => fixtures with
             {
-                K3 = fixtures.K3.Replace("<>{\"$\"}0.30</>", "<>{\"€\"}0.30</>", StringComparison.Ordinal),
+                Chat = fixtures.Chat.Replace("<>{\"$\"}0.30</>", "<>{\"€\"}0.30</>", StringComparison.Ordinal),
             },
             "zero-rate" => fixtures with
             {
-                K3 = fixtures.K3.Replace("<>{\"$\"}15.00</>", "<>{\"$\"}0.00</>", StringComparison.Ordinal),
+                Chat = fixtures.Chat.Replace("<>{\"$\"}15.00</>", "<>{\"$\"}0.00</>", StringComparison.Ordinal),
             },
             "negative-rate" => fixtures with
             {
-                K3 = fixtures.K3.Replace("<>{\"$\"}15.00</>", "<>{\"$\"}-15.00</>", StringComparison.Ordinal),
+                Chat = fixtures.Chat.Replace("<>{\"$\"}15.00</>", "<>{\"$\"}-15.00</>", StringComparison.Ordinal),
             },
             "unknown-column" => fixtures with
             {
-                K3 = fixtures.K3.Replace(
+                Chat = fixtures.Chat.Replace(
                     "{ title: \"Unit\", width: \"12%\" },",
                     "{ title: \"Currency\", width: \"12%\" },\n{ title: \"Unit\", width: \"12%\" },",
                     StringComparison.Ordinal
                 ),
             },
+            // Deriving the batch roster from the page must not weaken the 60% cross-check.
+            "batch-multiplier-broken" => fixtures with
+            {
+                Batch = fixtures.Batch.Replace("\"$0.114\"", "\"$0.99\"", StringComparison.Ordinal),
+            },
+            // Dropping a model this estate actually routes work to is still an outage, even
+            // though an unfamiliar new model is not.
+            "required-model-missing" => fixtures with
+            {
+                Chat = fixtures.Chat.Replace(K3Row, "", StringComparison.Ordinal),
+            },
             _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
         };
-    }
 
-    private static KimiFixtures Fixtures() =>
-        new(
-            Fixture("kimi-k3.md"),
-            Fixture("kimi-k27-code.md"),
-            Fixture("kimi-k26.md"),
-            Fixture("kimi-k25.md"),
-            Fixture("kimi-batch.md")
-        );
-
-    private static string Index() =>
-        """
-            # Kimi API Platform
-            - [Flagship Model Kimi K3 Pricing](https://platform.kimi.ai/docs/pricing/chat-k3.md)
-            - [Coding Model Kimi K2.7 Code Pricing](https://platform.kimi.ai/docs/pricing/chat-k27-code.md)
-            - [Kimi K2.6 Model Pricing](https://platform.kimi.ai/docs/pricing/chat-k26.md)
-            - [Multi-modal Model Kimi K2.5 Pricing](https://platform.kimi.ai/docs/pricing/chat-k25.md)
-            - [BatchJob Pricing](https://platform.kimi.ai/docs/pricing/batch.md)
-            """;
+    private static KimiFixtures Fixtures() => new(Fixture("kimi-chat.md"), Fixture("kimi-batch.md"));
 
     private static string Fixture(string name) =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Pricing", "Fixtures", name));
@@ -217,5 +222,5 @@ public sealed class KimiPricingSourceTests
     private static string Bundle(string name) =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Pricing", "Bundled", name));
 
-    private sealed record KimiFixtures(string K3, string K27, string K26, string K25, string Batch);
+    private sealed record KimiFixtures(string Chat, string Batch);
 }
