@@ -25,7 +25,7 @@ public class GitHubBillingClientTests
             {"usageItems":[
               {"date":"2026-07-01T00:00:00Z","product":"code_quality","sku":"Code Quality AI Credits",
                "quantity":1201.41527,"grossAmount":15.0,"discountAmount":2.9858473,"netAmount":12.0141527,
-               "repositoryName":"fixportal-service-centerprise","unitType":"AICredits","pricePerUnit":0.01}
+               "repositoryName":"example-service","unitType":"AICredits","pricePerUnit":0.01}
             ]}
             """
         );

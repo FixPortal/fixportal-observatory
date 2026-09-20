@@ -55,7 +55,7 @@ jobs:
         # PINNED BY DIGEST, not by the `:16` tag. A service image runs code in the
         # runner's context exactly as an action does, and a mutable tag can change after
         # review -- the 2026-09-02 estate audit raised this alongside the equivalent
-        # mssql pin in fixportal-service-centerprise.
+        # mssql pin in another repository in the estate.
         #
         # Refresh deliberately: Dependabot does NOT update service-container images in
         # workflows, so unlike a Dockerfile FROM nothing will nudge this. Get a token from
