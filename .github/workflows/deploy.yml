@@ -198,8 +198,19 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      # Retried because deploy-api stopped ingest, so a failure here leaves production
+      # ingest down. On 2026-09-22 ARM answered a single start with a transient
+      # "(BadGatewayConnection) The network connectivity issue encountered for
+      # 'Microsoft.Web'" and ingest stayed stopped until the job was rerun by hand.
       - name: Start ingest after deployment
-        run: az webapp start --resource-group fpaiobs-rg --name fpaiobs-ingest
+        run: |
+          for attempt in 1 2 3; do
+            az webapp start --resource-group fpaiobs-rg --name fpaiobs-ingest && exit 0
+            echo "::warning::az webapp start failed (attempt $attempt of 3)"
+            [ "$attempt" -lt 3 ] && sleep $(( attempt * 20 ))
+          done
+          echo "::error::Could not start ingest after 3 attempts; production ingest is stopped."
+          exit 1
 
       # This runs even when either deployment fails. A failed deployment therefore leaves
       # a red workflow and a verified running worker, rather than a silently stopped one.
