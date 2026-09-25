@@ -1142,6 +1142,55 @@ public class UsageRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task PurgeProvider_rolls_back_the_event_delete_when_the_aggregate_delete_fails()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _repo.RecordEventAsync(NewEvent(cost: 1m, eventKey: "purge-fail-a"), ct);
+        await _repo.RecordEventAsync(NewEvent(cost: 2m, eventKey: "purge-fail-b", model: "gpt-other"), ct);
+        var google = new UsageEvent
+        {
+            Provider = Provider.Google,
+            OccurredAt = Instant.FromUtc(2026, 6, 3, 9, 0),
+            IngestedAt = Instant.FromUtc(2026, 6, 3, 9, 0),
+            ObservedAt = Instant.FromUtc(2026, 6, 3, 9, 1),
+            Model = "gemini-3.5-flash",
+            InputTokens = 100,
+            OutputTokens = 50,
+            CostUsd = 0.01m,
+            RawPayload = "{}",
+            EventKey = "purge-google-fail",
+        };
+        await _repo.RecordEventAsync(google, ct);
+
+        // Force the aggregate delete to fail after the event delete has already executed in
+        // the same transaction, so only a real rollback keeps both providers' rows intact.
+        await _ctx.Database.ExecuteSqlRawAsync(
+            """
+            CREATE FUNCTION purge_rollback_test_fail() RETURNS trigger AS $$
+            BEGIN
+              RAISE EXCEPTION 'forced failure for purge rollback test';
+            END;
+            $$ LANGUAGE plpgsql;
+
+            CREATE TRIGGER purge_rollback_test_fail_trigger
+            BEFORE DELETE ON "DailyAggregates"
+            FOR EACH ROW EXECUTE FUNCTION purge_rollback_test_fail();
+            """,
+            ct
+        );
+
+        var act = () => _repo.PurgeProviderAsync(Provider.OpenAI, ct);
+
+        await act.Should().ThrowAsync<PostgresException>();
+        (await _ctx.UsageEvents.AsNoTracking().CountAsync(e => e.Provider == Provider.OpenAI, ct))
+            .Should()
+            .Be(2, "the aggregate-delete failure must roll back the already-executed event delete");
+        (await _ctx.DailyAggregates.AsNoTracking().CountAsync(a => a.Provider == Provider.OpenAI, ct)).Should().Be(2);
+        (await _ctx.UsageEvents.AsNoTracking().CountAsync(e => e.Provider == Provider.Google, ct)).Should().Be(1);
+        (await _ctx.DailyAggregates.AsNoTracking().CountAsync(a => a.Provider == Provider.Google, ct)).Should().Be(1);
+    }
+
+    [Fact]
     public async Task PurgeProvider_with_nothing_to_delete_returns_zero_counts()
     {
         var ct = TestContext.Current.CancellationToken;
