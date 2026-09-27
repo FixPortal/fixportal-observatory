@@ -33,14 +33,14 @@ docker compose up --build
 
 This starts PostgreSQL, the API, provider/pricing ingest, and the frontend at [http://localhost:4173](http://localhost:4173). The compose seed populates synthetic sample data; it is labelled `demo-seed` and is not a representation of provider billing. Optional GitHub billing uses `GITHUB_TOKEN` plus `GITHUB_BILLING_ORG`; the token needs the broader access listed in [provider setup](docs/provider-setup.md#compatibility-github-and-manual-sources).
 
-For a manual run, install .NET SDK 10, Node `^22.22.2`, `^24.15.0`, or `>=26.0.0`, and PostgreSQL 16. The sweeper client needs Node 24 or later; see [Local producers](clients/README.md). The commands below reuse the Compose database and its local development credentials:
+For a manual run, install .NET SDK 10, Node `^22.22.2`, `^24.15.0`, or `>=26.0.0`, and PostgreSQL 16. The sweeper client needs Node 24 or later; see [Local producers](clients/README.md). The commands below reuse the Compose database and its local development credentials. Use `127.0.0.1`, not `localhost`: Compose publishes the port on IPv4 only, and on Windows `localhost` tries `::1` first, adding about 2 seconds to every new connection. The same applies to a `TEST_DB_CONNECTION` pointed at this database.
 
 ```powershell
 docker compose up -d --wait db
 ```
 
 ```powershell
-$env:DB_CONNECTION = 'Host=localhost;Port=5433;Database=aiobservatory;Username=aiobs;Password=aiobs'
+$env:DB_CONNECTION = 'Host=127.0.0.1;Port=5433;Database=aiobservatory;Username=aiobs;Password=aiobs'
 ```
 
 ```powershell
@@ -72,7 +72,7 @@ npm --prefix src/AiObservatory.Web run dev
 For a manual run, start the ingest worker in another shell; it only activates sources whose required settings are present:
 
 ```powershell
-$env:DB_CONNECTION = 'Host=localhost;Port=5433;Database=aiobservatory;Username=aiobs;Password=aiobs'
+$env:DB_CONNECTION = 'Host=127.0.0.1;Port=5433;Database=aiobservatory;Username=aiobs;Password=aiobs'
 ```
 
 ```powershell
