@@ -30,7 +30,9 @@ reviews:
     # reads a persistently absent check as "not installed" and stops gating on it —
     # which would let a HIGH PR through unreviewed.
     enabled: false
-    labels: ["review-high"]
+    # `review-high-manual` is a durable manual override for an otherwise NORMAL PR and is
+    # never removed; review-tier.yml no longer re-applies `review-high` for it.
+    labels: ["review-high", "review-high-manual"]
     drafts: false
     # Pause automatic incremental reviews after 2 reviewed commits (default 5).
     # Still load-bearing with label triggering: once a PR carries the label, each
