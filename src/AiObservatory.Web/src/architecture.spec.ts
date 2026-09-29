@@ -2,9 +2,6 @@
  * ArchUnitTS architecture spec (https://github.com/LukasNiessen/ArchUnitTS).
  *
  * File/folder-level architecture rules. Scope: layer isolation and cycle freedom.
- * (Naming and size-metric rules were trialled and dropped: naming overlaps lint,
- * and ArchUnitTS's metrics are class-oriented, of little use in a function-
- * component codebase.)
  *
  * Layer diagram (low -> high):
  *
