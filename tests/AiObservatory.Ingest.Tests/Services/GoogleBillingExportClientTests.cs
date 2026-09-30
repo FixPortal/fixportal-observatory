@@ -433,11 +433,6 @@ public sealed class GoogleBillingExportClientTests
         row["observed_at"] = useOffsetTimestamp
             ? (object)new DateTimeOffset(2026, 8, 5, 0, 0, 0, TimeSpan.FromHours(1))
             : new DateTime(2026, 8, 5, 0, 0, 0, DateTimeKind.Unspecified);
-        if (!useOffsetTimestamp)
-        {
-            row["observed_at"].Should().BeOfType<DateTime>();
-        }
-
         var act = () => GoogleBillingExportClient.MapRowsAsync(Rows(row), TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidDataException>();
