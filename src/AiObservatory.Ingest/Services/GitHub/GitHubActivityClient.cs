@@ -46,7 +46,9 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
             );
             CheckRateLimit(response);
             response.EnsureSuccessStatusCode();
-            var batch = await response.Content.ReadFromJsonAsync<List<OrgRepositoryDto>>(JsonOptions, ct) ?? [];
+            var batch =
+                await response.Content.ReadFromJsonAsync<List<OrgRepositoryDto>>(JsonOptions, ct)
+                ?? throw new InvalidDataException("GitHub repositories response omitted a page.");
 
             // Archived repos are excluded: they cannot produce new activity, so polling them
             // spends a full PR + commit + workflow-run pass per cycle to fetch nothing, for
