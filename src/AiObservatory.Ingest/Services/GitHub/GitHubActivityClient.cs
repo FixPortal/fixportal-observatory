@@ -98,7 +98,9 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
             );
             CheckRateLimit(response);
             response.EnsureSuccessStatusCode();
-            var prs = await response.Content.ReadFromJsonAsync<List<PullRequestDto>>(JsonOptions, ct) ?? [];
+            var prs =
+                await response.Content.ReadFromJsonAsync<List<PullRequestDto>>(JsonOptions, ct)
+                ?? throw new InvalidDataException("GitHub pull requests response omitted a page.");
 
             var reachedOlderThanSince = false;
             foreach (var pr in prs)

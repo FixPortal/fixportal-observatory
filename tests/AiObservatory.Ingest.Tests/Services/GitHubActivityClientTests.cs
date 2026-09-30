@@ -203,6 +203,21 @@ public sealed class GitHubActivityClientTests : IDisposable
     }
 
     [Fact]
+    public async Task GetPullRequestsAsync_RejectsANullPage()
+    {
+        var sut = CreateSut(new StubHandler(_ => JsonResponse("null")));
+
+        var act = () =>
+            sut.GetPullRequestsAsync(
+                "fix-portal/example",
+                new LocalDate(2026, 7, 1),
+                TestContext.Current.CancellationToken
+            );
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+    }
+
+    [Fact]
     public async Task GetPullRequestsAsync_RejectsANullReviewPage()
     {
         var handler = new StubHandler(req =>
