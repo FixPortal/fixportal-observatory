@@ -8,6 +8,7 @@ namespace AiObservatory.Api.Services;
 
 public class BudgetAlertService(
     IUsageRepository repository,
+    IBudgetAlertRepository budgetAlerts,
     IClock clock,
     IAlertNotifier notifier,
     ILogger<BudgetAlertService> logger,
@@ -105,7 +106,7 @@ public class BudgetAlertService(
 
         var deliveryStartedAt = clock.GetCurrentInstant();
         foreach (
-            var pending in await repository.GetDeliverableBudgetAlertEmailsAsync(
+            var pending in await budgetAlerts.GetDeliverableBudgetAlertEmailsAsync(
                 deliveryStartedAt.Minus(BudgetAlertEmailLease.Duration),
                 deliveryStartedAt.Minus(MaxDeliveryAge),
                 ct
@@ -276,7 +277,7 @@ public class BudgetAlertService(
             ),
         };
 
-        await repository.GetOrCreateBudgetAlertAsync(
+        await budgetAlerts.GetOrCreateBudgetAlertAsync(
             rule.Id,
             from,
             to,
@@ -321,7 +322,7 @@ public class BudgetAlertService(
         var acquiredAt = clock.GetCurrentInstant();
         var leaseId = Guid.NewGuid();
         if (
-            !await repository.TryAcquireBudgetAlertEmailLeaseAsync(
+            !await budgetAlerts.TryAcquireBudgetAlertEmailLeaseAsync(
                 email.ClaimId,
                 leaseId,
                 acquiredAt,
@@ -346,7 +347,7 @@ public class BudgetAlertService(
             var result = await notifier.NotifyAsync(alert, ct);
             if (result == AlertDeliveryResult.Sent)
             {
-                await repository.MarkBudgetAlertEmailSentAsync(email.ClaimId, leaseId, clock.GetCurrentInstant(), ct);
+                await budgetAlerts.MarkBudgetAlertEmailSentAsync(email.ClaimId, leaseId, clock.GetCurrentInstant(), ct);
                 return;
             }
 
@@ -356,7 +357,7 @@ public class BudgetAlertService(
             // selecting it. The outcome distinguishes why: NoRecipientConfigured (nothing set
             // up), PermanentlyRejected (a channel terminally refused, e.g. a rotated Slack
             // webhook's 4xx), or Failed (transient — 5xx/timeouts, the only kind retry can fix).
-            await repository.ReleaseBudgetAlertEmailLeaseAsync(email.ClaimId, leaseId, ct);
+            await budgetAlerts.ReleaseBudgetAlertEmailLeaseAsync(email.ClaimId, leaseId, ct);
             logger.LogWarning(
                 "Budget alert email for rule {RuleId} was not delivered on any channel ({Outcome}); its lease was released so the claim stays pending and retries",
                 email.RuleId,
@@ -380,7 +381,7 @@ public class BudgetAlertService(
                 "Budget alert email for rule {RuleId} failed; releasing its lease for retry with the same Message-Id. Delivery may be duplicated if SMTP accepted it",
                 email.RuleId
             );
-            await repository.ReleaseBudgetAlertEmailLeaseAsync(email.ClaimId, leaseId, ct);
+            await budgetAlerts.ReleaseBudgetAlertEmailLeaseAsync(email.ClaimId, leaseId, ct);
         }
     }
 }

@@ -15,6 +15,8 @@ namespace AiObservatory.Api.Tests.Services;
 
 public class SlackAlertNotifierTests
 {
+    private readonly IBudgetAlertRepository _budgetAlerts = Substitute.For<IBudgetAlertRepository>();
+
     // ponytail: StubHttpMessageHandler (shared with FxRateProviderTests/GitHubBillingClientTests)
     // takes a fixed (status, body) pair and only records request URIs, not bodies or
     // per-call responses -- doesn't fit needing both a captured JSON body and dynamic status
@@ -93,7 +95,7 @@ public class SlackAlertNotifierTests
         repo.GetNotificationSettingsAsync(Arg.Any<CancellationToken>()).Returns((NotificationSettings?)null);
         var clock = new FakeClock(Instant.FromUtc(2026, 8, 30, 0, 0));
 
-        var sut = new SlackAlertNotifier(http, repo, clock, NullLogger<SlackAlertNotifier>.Instance);
+        var sut = new SlackAlertNotifier(http, repo, _budgetAlerts, clock, NullLogger<SlackAlertNotifier>.Instance);
         var result = await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
         result.Should().Be(AlertDeliveryResult.NoRecipientConfigured);
@@ -121,12 +123,13 @@ public class SlackAlertNotifierTests
             );
         var clock = new FakeClock(Instant.FromUtc(2026, 8, 30, 0, 0));
 
-        var sut = new SlackAlertNotifier(http, repo, clock, NullLogger<SlackAlertNotifier>.Instance);
+        var sut = new SlackAlertNotifier(http, repo, _budgetAlerts, clock, NullLogger<SlackAlertNotifier>.Instance);
         var act = () => sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*SLACK_WEBHOOK_PROTECTION_KEY*");
         handler.Requests.Should().BeEmpty();
-        await repo.DidNotReceive()
+        await _budgetAlerts
+            .DidNotReceive()
             .MarkBudgetAlertSlackSentAsync(Arg.Any<Guid>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>());
     }
 
@@ -144,10 +147,10 @@ public class SlackAlertNotifierTests
                     UpdatedAt = Instant.FromUtc(2026, 8, 30, 0, 0),
                 }
             );
-        repo.GetBudgetAlertSlackSentAsync(ClaimId, Arg.Any<CancellationToken>()).Returns(false);
+        _budgetAlerts.GetBudgetAlertSlackSentAsync(ClaimId, Arg.Any<CancellationToken>()).Returns(false);
         var clock = new FakeClock(Instant.FromUtc(2026, 8, 30, 0, 0));
 
-        var sut = new SlackAlertNotifier(http, repo, clock, NullLogger<SlackAlertNotifier>.Instance);
+        var sut = new SlackAlertNotifier(http, repo, _budgetAlerts, clock, NullLogger<SlackAlertNotifier>.Instance);
         await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
         handler.Requests.Should().ContainSingle();
@@ -178,7 +181,7 @@ public class SlackAlertNotifierTests
             );
         var clock = new FakeClock(Instant.FromUtc(2026, 8, 30, 0, 0));
 
-        var sut = new SlackAlertNotifier(http, repo, clock, NullLogger<SlackAlertNotifier>.Instance);
+        var sut = new SlackAlertNotifier(http, repo, _budgetAlerts, clock, NullLogger<SlackAlertNotifier>.Instance);
         var result = await sut.NotifyAsync(MakeUnfencedPayload(), TestContext.Current.CancellationToken);
 
         result.Should().Be(AlertDeliveryResult.Sent);
@@ -190,8 +193,9 @@ public class SlackAlertNotifierTests
             .GetString()
             .Should()
             .StartWith("*Observatory: 2 ingest sources degraded*");
-        await repo.DidNotReceive().GetBudgetAlertSlackSentAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
-        await repo.DidNotReceive()
+        await _budgetAlerts.DidNotReceive().GetBudgetAlertSlackSentAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await _budgetAlerts
+            .DidNotReceive()
             .MarkBudgetAlertSlackSentAsync(Arg.Any<Guid>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>());
     }
 
@@ -209,14 +213,15 @@ public class SlackAlertNotifierTests
                     UpdatedAt = Instant.FromUtc(2026, 8, 30, 0, 0),
                 }
             );
-        repo.GetBudgetAlertSlackSentAsync(ClaimId, Arg.Any<CancellationToken>()).Returns(false);
+        _budgetAlerts.GetBudgetAlertSlackSentAsync(ClaimId, Arg.Any<CancellationToken>()).Returns(false);
         var clock = new FakeClock(Instant.FromUtc(2026, 8, 30, 0, 0));
 
-        var sut = new SlackAlertNotifier(http, repo, clock, NullLogger<SlackAlertNotifier>.Instance);
+        var sut = new SlackAlertNotifier(http, repo, _budgetAlerts, clock, NullLogger<SlackAlertNotifier>.Instance);
         var result = await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
         result.Should().Be(AlertDeliveryResult.Failed);
-        await repo.DidNotReceive()
+        await _budgetAlerts
+            .DidNotReceive()
             .MarkBudgetAlertSlackSentAsync(Arg.Any<Guid>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>());
     }
 
@@ -234,10 +239,10 @@ public class SlackAlertNotifierTests
                     UpdatedAt = Instant.FromUtc(2026, 8, 30, 0, 0),
                 }
             );
-        repo.GetBudgetAlertSlackSentAsync(ClaimId, Arg.Any<CancellationToken>()).Returns(true);
+        _budgetAlerts.GetBudgetAlertSlackSentAsync(ClaimId, Arg.Any<CancellationToken>()).Returns(true);
         var clock = new FakeClock(Instant.FromUtc(2026, 8, 30, 0, 0));
 
-        var sut = new SlackAlertNotifier(http, repo, clock, NullLogger<SlackAlertNotifier>.Instance);
+        var sut = new SlackAlertNotifier(http, repo, _budgetAlerts, clock, NullLogger<SlackAlertNotifier>.Instance);
         var result = await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
         // Fenced by an earlier pass: the alert already reached Slack, so this channel reports
@@ -262,11 +267,11 @@ public class SlackAlertNotifierTests
                     UpdatedAt = Instant.FromUtc(2026, 8, 30, 0, 0),
                 }
             );
-        repo.GetBudgetAlertSlackSentAsync(ClaimId, Arg.Any<CancellationToken>()).Returns(false);
+        _budgetAlerts.GetBudgetAlertSlackSentAsync(ClaimId, Arg.Any<CancellationToken>()).Returns(false);
         var clock = new FakeClock(Instant.FromUtc(2026, 8, 30, 0, 0));
         var logger = new CapturingLogger();
 
-        var sut = new SlackAlertNotifier(http, repo, clock, logger);
+        var sut = new SlackAlertNotifier(http, repo, _budgetAlerts, clock, logger);
         var result = await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
         result.Should().Be(AlertDeliveryResult.PermanentlyRejected);
@@ -302,14 +307,15 @@ public class SlackAlertNotifierTests
                     UpdatedAt = Instant.FromUtc(2026, 8, 30, 0, 0),
                 }
             );
-        repo.GetBudgetAlertSlackSentAsync(ClaimId, Arg.Any<CancellationToken>()).Returns(false);
+        _budgetAlerts.GetBudgetAlertSlackSentAsync(ClaimId, Arg.Any<CancellationToken>()).Returns(false);
         var clock = new FakeClock(Instant.FromUtc(2026, 8, 30, 0, 0));
 
-        var sut = new SlackAlertNotifier(http, repo, clock, NullLogger<SlackAlertNotifier>.Instance);
+        var sut = new SlackAlertNotifier(http, repo, _budgetAlerts, clock, NullLogger<SlackAlertNotifier>.Instance);
         var result = await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
         result.Should().Be(expected);
-        await repo.DidNotReceive()
+        await _budgetAlerts
+            .DidNotReceive()
             .MarkBudgetAlertSlackSentAsync(Arg.Any<Guid>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>());
     }
 
@@ -327,13 +333,13 @@ public class SlackAlertNotifierTests
                     UpdatedAt = Instant.FromUtc(2026, 8, 30, 0, 0),
                 }
             );
-        repo.GetBudgetAlertSlackSentAsync(ClaimId, Arg.Any<CancellationToken>()).Returns(false);
+        _budgetAlerts.GetBudgetAlertSlackSentAsync(ClaimId, Arg.Any<CancellationToken>()).Returns(false);
         var now = Instant.FromUtc(2026, 8, 30, 0, 0);
         var clock = new FakeClock(now);
 
-        var sut = new SlackAlertNotifier(http, repo, clock, NullLogger<SlackAlertNotifier>.Instance);
+        var sut = new SlackAlertNotifier(http, repo, _budgetAlerts, clock, NullLogger<SlackAlertNotifier>.Instance);
         await sut.NotifyAsync(MakePayload(), TestContext.Current.CancellationToken);
 
-        await repo.Received(1).MarkBudgetAlertSlackSentAsync(ClaimId, now, Arg.Any<CancellationToken>());
+        await _budgetAlerts.Received(1).MarkBudgetAlertSlackSentAsync(ClaimId, now, Arg.Any<CancellationToken>());
     }
 }

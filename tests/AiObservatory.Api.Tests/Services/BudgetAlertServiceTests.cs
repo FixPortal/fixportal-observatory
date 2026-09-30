@@ -14,6 +14,7 @@ namespace AiObservatory.Api.Tests.Services;
 public class BudgetAlertServiceTests
 {
     private readonly IUsageRepository _repo = Substitute.For<IUsageRepository>();
+    private readonly IBudgetAlertRepository _budgetAlerts = Substitute.For<IBudgetAlertRepository>();
     private readonly IAlertNotifier _notifier = Substitute.For<IAlertNotifier>();
     private readonly FakeClock _clock = new(Instant.FromUtc(2026, 6, 2, 10, 0));
 
@@ -27,7 +28,7 @@ public class BudgetAlertServiceTests
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
-        await _repo
+        await _budgetAlerts
             .Received(1)
             .GetOrCreateBudgetAlertAsync(
                 rule.Id,
@@ -122,7 +123,7 @@ public class BudgetAlertServiceTests
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
-        await _repo
+        await _budgetAlerts
             .Received(1)
             .GetOrCreateBudgetAlertAsync(
                 rule.Id,
@@ -178,7 +179,7 @@ public class BudgetAlertServiceTests
         // every pass forever (M17): the FakeClock never advances, so both bounds derive from
         // the same fixed "now".
         var now = _clock.GetCurrentInstant();
-        await _repo
+        await _budgetAlerts
             .Received(1)
             .GetDeliverableBudgetAlertEmailsAsync(
                 now.Minus(Duration.FromMinutes(15)),
@@ -207,7 +208,7 @@ public class BudgetAlertServiceTests
                 Arg.Any<Provider?>(),
                 Arg.Any<CancellationToken>()
             );
-        await _repo
+        await _budgetAlerts
             .DidNotReceive()
             .GetOrCreateBudgetAlertAsync(
                 Arg.Any<Guid>(),
@@ -237,10 +238,10 @@ public class BudgetAlertServiceTests
             15m,
             Instant.FromUtc(2026, 6, 2, 0, 1)
         );
-        _repo
+        _budgetAlerts
             .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
             .Returns([email]);
-        _repo
+        _budgetAlerts
             .TryAcquireBudgetAlertEmailLeaseAsync(
                 claimId,
                 Arg.Any<Guid>(),
@@ -266,10 +267,10 @@ public class BudgetAlertServiceTests
                 Arg.Is<AlertMessage>(message => message.MessageId == expectedMessageId),
                 Arg.Any<CancellationToken>()
             );
-        await _repo
+        await _budgetAlerts
             .Received(1)
             .ReleaseBudgetAlertEmailLeaseAsync(claimId, Arg.Any<Guid>(), Arg.Any<CancellationToken>());
-        await _repo
+        await _budgetAlerts
             .Received(1)
             .MarkBudgetAlertEmailSentAsync(claimId, Arg.Any<Guid>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>());
     }
@@ -320,10 +321,10 @@ public class BudgetAlertServiceTests
             15m,
             Instant.FromUtc(2026, 6, 2, 0, 1)
         );
-        _repo
+        _budgetAlerts
             .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
             .Returns([email]);
-        _repo
+        _budgetAlerts
             .TryAcquireBudgetAlertEmailLeaseAsync(
                 claimId,
                 Arg.Any<Guid>(),
@@ -348,7 +349,14 @@ public class BudgetAlertServiceTests
             settings["BUDGET_ALERT_SMTP_USER"] = smtpUser;
         }
         var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
-        var sut = new BudgetAlertService(_repo, _clock, _notifier, NullLogger<BudgetAlertService>.Instance, config);
+        var sut = new BudgetAlertService(
+            _repo,
+            _budgetAlerts,
+            _clock,
+            _notifier,
+            NullLogger<BudgetAlertService>.Instance,
+            config
+        );
 
         await sut.CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
@@ -366,7 +374,7 @@ public class BudgetAlertServiceTests
         var claimId = Guid.NewGuid();
         var rule = Rule(BillingPeriod.Weekly, lastTriggeredAt: Instant.FromUtc(2026, 6, 1, 8, 0));
         StubRules(rule);
-        _repo
+        _budgetAlerts
             .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
             .Returns([
                 new BudgetAlertEmail(
@@ -381,7 +389,7 @@ public class BudgetAlertServiceTests
                     Instant.FromUtc(2026, 6, 2, 0, 1)
                 ),
             ]);
-        _repo
+        _budgetAlerts
             .TryAcquireBudgetAlertEmailLeaseAsync(
                 claimId,
                 Arg.Any<Guid>(),
@@ -437,11 +445,11 @@ public class BudgetAlertServiceTests
                 startedAt
             );
 
-        _repo
+        _budgetAlerts
             .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
             .Returns([Email(firstClaimId), Email(secondClaimId)]);
         var acquisitions = new List<(Guid ClaimId, Instant AcquiredAt, Instant LeaseExpiredBefore)>();
-        _repo
+        _budgetAlerts
             .TryAcquireBudgetAlertEmailLeaseAsync(
                 Arg.Any<Guid>(),
                 Arg.Any<Guid>(),
@@ -455,7 +463,7 @@ public class BudgetAlertServiceTests
                 return true;
             });
         var completions = new List<(Guid ClaimId, Instant SentAt)>();
-        _repo
+        _budgetAlerts
             .MarkBudgetAlertEmailSentAsync(
                 Arg.Any<Guid>(),
                 Arg.Any<Guid>(),
@@ -512,7 +520,7 @@ public class BudgetAlertServiceTests
 
         StubRules(rules.Reverse().ToArray());
         StubBilledSpend(rules[0], 15m);
-        _repo
+        _budgetAlerts
             .GetOrCreateBudgetAlertAsync(
                 Arg.Any<Guid>(),
                 Arg.Any<LocalDate>(),
@@ -549,7 +557,7 @@ public class BudgetAlertServiceTests
                     call.ArgAt<Instant>(6)
                 );
             });
-        _repo
+        _budgetAlerts
             .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
                 pending
@@ -559,7 +567,7 @@ public class BudgetAlertServiceTests
                     .Take(50)
                     .ToArray()
             );
-        _repo
+        _budgetAlerts
             .TryAcquireBudgetAlertEmailLeaseAsync(
                 Arg.Any<Guid>(),
                 Arg.Any<Guid>(),
@@ -577,7 +585,7 @@ public class BudgetAlertServiceTests
                 attempts.Add(Guid.ParseExact(encodedClaimId, "N"));
                 return Task.FromResult(AlertDeliveryResult.Sent);
             });
-        _repo
+        _budgetAlerts
             .MarkBudgetAlertEmailSentAsync(
                 Arg.Any<Guid>(),
                 Arg.Any<Guid>(),
@@ -616,7 +624,7 @@ public class BudgetAlertServiceTests
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
-        await _repo
+        await _budgetAlerts
             .Received(1)
             .GetOrCreateBudgetAlertAsync(
                 healthy.Id,
@@ -744,7 +752,7 @@ public class BudgetAlertServiceTests
         var rule = Rule(BillingPeriod.Daily);
         StubRules(rule);
         StubBilledSpend(rule, 0m);
-        _repo
+        _budgetAlerts
             .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
             .Returns([
                 new BudgetAlertEmail(
@@ -759,7 +767,7 @@ public class BudgetAlertServiceTests
                     Instant.FromUtc(2026, 6, 2, 0, 1)
                 ),
             ]);
-        _repo
+        _budgetAlerts
             .TryAcquireBudgetAlertEmailLeaseAsync(
                 claimId,
                 Arg.Any<Guid>(),
@@ -772,7 +780,7 @@ public class BudgetAlertServiceTests
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
-        await _repo
+        await _budgetAlerts
             .DidNotReceive()
             .MarkBudgetAlertEmailSentAsync(
                 Arg.Any<Guid>(),
@@ -780,7 +788,7 @@ public class BudgetAlertServiceTests
                 Arg.Any<Instant>(),
                 Arg.Any<CancellationToken>()
             );
-        await _repo
+        await _budgetAlerts
             .Received(1)
             .ReleaseBudgetAlertEmailLeaseAsync(claimId, Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
@@ -792,7 +800,7 @@ public class BudgetAlertServiceTests
         var rule = Rule(BillingPeriod.Daily);
         StubRules(rule);
         StubBilledSpend(rule, 0m);
-        _repo
+        _budgetAlerts
             .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
             .Returns([
                 new BudgetAlertEmail(
@@ -807,7 +815,7 @@ public class BudgetAlertServiceTests
                     Instant.FromUtc(2026, 6, 2, 0, 1)
                 ),
             ]);
-        _repo
+        _budgetAlerts
             .TryAcquireBudgetAlertEmailLeaseAsync(
                 claimId,
                 Arg.Any<Guid>(),
@@ -822,10 +830,10 @@ public class BudgetAlertServiceTests
 
         await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
-        await _repo
+        await _budgetAlerts
             .Received(1)
             .MarkBudgetAlertEmailSentAsync(claimId, Arg.Any<Guid>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>());
-        await _repo
+        await _budgetAlerts
             .DidNotReceive()
             .ReleaseBudgetAlertEmailLeaseAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
@@ -847,11 +855,11 @@ public class BudgetAlertServiceTests
             .NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<AlertDeliveryResult>(deliveryFailure));
         var cleanupFailure = new IOException("Lease release failed");
-        _repo
+        _budgetAlerts
             .ReleaseBudgetAlertEmailLeaseAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(releaseFails ? Task.FromException(cleanupFailure) : Task.CompletedTask);
         var logger = Substitute.For<ILogger<BudgetAlertService>>();
-        var sut = new BudgetAlertService(_repo, _clock, _notifier, logger, EmptyConfig);
+        var sut = new BudgetAlertService(_repo, _budgetAlerts, _clock, _notifier, logger, EmptyConfig);
 
         Func<Task> act = () => sut.CheckAndAlertAsync(TestContext.Current.CancellationToken);
 
@@ -875,7 +883,7 @@ public class BudgetAlertServiceTests
     private static readonly IConfiguration EmptyConfig = new ConfigurationBuilder().Build();
 
     private BudgetAlertService Sut() =>
-        new(_repo, _clock, _notifier, NullLogger<BudgetAlertService>.Instance, EmptyConfig);
+        new(_repo, _budgetAlerts, _clock, _notifier, NullLogger<BudgetAlertService>.Instance, EmptyConfig);
 
     private static BudgetRule Rule(
         BillingPeriod period,
@@ -924,7 +932,7 @@ public class BudgetAlertServiceTests
     private void StubSuccessfulDelivery(BudgetRule rule)
     {
         BudgetAlertEmail? pending = null;
-        _repo
+        _budgetAlerts
             .GetOrCreateBudgetAlertAsync(
                 Arg.Any<Guid>(),
                 Arg.Any<LocalDate>(),
@@ -957,10 +965,10 @@ public class BudgetAlertServiceTests
                     call.ArgAt<Instant>(6)
                 );
             });
-        _repo
+        _budgetAlerts
             .GetDeliverableBudgetAlertEmailsAsync(Arg.Any<Instant>(), Arg.Any<Instant>(), Arg.Any<CancellationToken>())
             .Returns(_ => pending is null ? [] : [pending]);
-        _repo
+        _budgetAlerts
             .TryAcquireBudgetAlertEmailLeaseAsync(
                 Arg.Any<Guid>(),
                 Arg.Any<Guid>(),

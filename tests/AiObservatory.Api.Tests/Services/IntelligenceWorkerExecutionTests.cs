@@ -175,6 +175,7 @@ public class IntelligenceWorkerExecutionTests
     {
         var budget = Substitute.For<BudgetAlertService>(
             repository,
+            Substitute.For<IBudgetAlertRepository>(),
             clock,
             Substitute.For<IAlertNotifier>(),
             NullLogger<BudgetAlertService>.Instance,

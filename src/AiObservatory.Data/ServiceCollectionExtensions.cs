@@ -17,6 +17,7 @@ public static class ServiceCollectionExtensions
             options.UseNpgsql(connectionString, npgsql => npgsql.UseNodaTime())
         );
         services.AddScoped<IUsageRepository, UsageRepository>();
+        services.AddScoped<IBudgetAlertRepository, BudgetAlertRepository>();
         services.AddScoped<IAdversarialReviewRepository, AdversarialReviewRepository>();
         services.AddScoped<IGitHubActivityRepository, GitHubActivityRepository>();
         services.AddScoped<SourceSyncStateStore>();
