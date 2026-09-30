@@ -443,6 +443,7 @@ td.budget-rules__actions { display: table-cell; padding: 6px 0 6px 8px; text-ali
   color: var(--text-muted);
 }
 .auth-gate__button {
+  min-height: 44px;
   padding: var(--space-2) var(--space-4);
   background: var(--app-bg);
   border: 1px solid var(--border-strong);
