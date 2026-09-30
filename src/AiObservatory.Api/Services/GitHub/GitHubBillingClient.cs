@@ -80,7 +80,8 @@ public class GitHubBillingClient(HttpClient http, string org, ILogger<GitHubBill
         response.EnsureSuccessStatusCode();
 
         var payload = await response.Content.ReadFromJsonAsync<GitHubBillingUsageResponse>(ct);
-        return payload?.UsageItems ?? [];
+        return payload?.UsageItems
+            ?? throw new InvalidDataException("GitHub billing usage response omitted usageItems.");
     }
 
     private sealed record GitHubBillingUsageResponse(List<GitHubBillingUsageItem>? UsageItems);
