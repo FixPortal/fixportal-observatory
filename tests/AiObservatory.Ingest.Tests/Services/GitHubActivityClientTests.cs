@@ -193,6 +193,34 @@ public sealed class GitHubActivityClientTests : IDisposable
     }
 
     [Fact]
+    public async Task GetPullRequestsAsync_RejectsANullReviewPage()
+    {
+        var handler = new StubHandler(req =>
+        {
+            if (req.RequestUri!.ToString().Contains("/reviews"))
+            {
+                return JsonResponse("null");
+            }
+            return JsonResponse(
+                """
+                [{"number":1,"title":"WIP","user":{"login":"chris"},"state":"open",
+                  "created_at":"2026-07-01T09:00:00Z","updated_at":"2026-07-01T09:00:00Z","merged_at":null,"closed_at":null}]
+                """
+            );
+        });
+        var sut = CreateSut(handler);
+
+        var act = () =>
+            sut.GetPullRequestsAsync(
+                "fix-portal/example",
+                new LocalDate(2026, 7, 1),
+                TestContext.Current.CancellationToken
+            );
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+    }
+
+    [Fact]
     public async Task GetPullRequestsAsync_WhenReviewIsPending_ExcludesItFromFirstReviewAtButCountsIt()
     {
         var handler = new StubHandler(req =>
