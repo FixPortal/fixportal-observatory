@@ -29,7 +29,7 @@ public sealed class SourceHealthDigestService(
     ILogger<SourceHealthDigestService> logger
 )
 {
-    /// <summary>Returns true only when a digest was actually handed to SMTP.</summary>
+    /// <summary>Returns true only when at least one notification channel reports delivery.</summary>
     public async Task<bool> SendIfDueAsync(CancellationToken ct = default)
     {
         var now = clock.GetCurrentInstant();
