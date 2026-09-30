@@ -218,21 +218,22 @@ export function useBilledReporting(from: Date, to: Date, vendorId?: string, cate
 // scoped to the panels that own them (SpendPage/ReportingPage gates, SourceStatusPanel
 // renders nothing), so one optional endpoint failing must not light a global banner
 // (worst case: a 403 from /spend/reporting telling a healthy session to sign in again).
-export function useDashboardStatus(): { isError: boolean; isLoading: boolean; error: unknown } {
+export function useDashboardStatus(): { isError: boolean; isLoading: boolean; isRetrying: boolean; error: unknown; retry: () => Promise<void> } {
   const range = useMemo(() => dashboardDateRange(), [])
   const from = localDate(range.from)
   const to = localDate(range.to)
-  const { isError: aIsError, isPending: aIsPending, error: aError } = useQuery({ queryKey: ['aggregates', from, to], queryFn: () => getAggregates(from, to) })
-  const { isError: iIsError, isPending: iIsPending, error: iError } = useQuery({ queryKey: ['insights'], queryFn: getInsights })
-  const { isError: sIsError, isPending: sIsPending, error: sError } = useQuery({ queryKey: ['subscriptions'], queryFn: getSubscriptions })
-  const states = [
-    { isError: aIsError, isPending: aIsPending, error: aError },
-    { isError: iIsError, isPending: iIsPending, error: iError },
-    { isError: sIsError, isPending: sIsPending, error: sError },
+  const queries = [
+    useQuery({ queryKey: ['aggregates', from, to], queryFn: () => getAggregates(from, to) }),
+    useQuery({ queryKey: ['insights'], queryFn: getInsights }),
+    useQuery({ queryKey: ['subscriptions'], queryFn: getSubscriptions }),
   ]
+  const isUnavailable = queries.some(query => query.isError || query.failureCount > 0)
+  const failure = queries.find(query => query.error != null || query.failureReason != null)
   return {
-    isError: states.some(state => state.isError),
-    isLoading: states.some(state => state.isPending),
-    error: states.find(state => state.error != null)?.error,
+    isError: isUnavailable,
+    isLoading: !isUnavailable && queries.some(query => query.isPending),
+    isRetrying: queries.some(query => query.isFetching),
+    error: failure?.error ?? failure?.failureReason,
+    retry: async () => { await Promise.all(queries.map(query => query.refetch())) },
   }
 }

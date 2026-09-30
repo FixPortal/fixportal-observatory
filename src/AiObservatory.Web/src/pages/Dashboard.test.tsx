@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import Dashboard from './Dashboard'
 
-const dashboardStatus = vi.hoisted(() => ({ isError: false, isLoading: false, error: null as unknown }))
+const dashboardStatus = vi.hoisted(() => ({ isError: false, isLoading: false, isRetrying: false, error: null as unknown, retry: vi.fn() }))
 const authMock = vi.hoisted(() => ({
   TokenAcquisitionTimeoutError: class extends Error {},
   signIn: vi.fn(),
@@ -23,7 +23,9 @@ vi.mock('../components/ProviderSplit', () => ({ default: () => null }))
 beforeEach(() => {
   dashboardStatus.isError = false
   dashboardStatus.isLoading = false
+  dashboardStatus.isRetrying = false
   dashboardStatus.error = null
+  dashboardStatus.retry.mockClear()
   authMock.signIn.mockClear()
 })
 
@@ -35,6 +37,27 @@ test('offers sign-in recovery when token acquisition stalls', () => {
 
   expect(screen.getByText(/session has expired or you’re not authorised/i)).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Sign in again' })).toBeInTheDocument()
+})
+
+test('offers a manual retry when the API is unavailable', () => {
+  dashboardStatus.isError = true
+  dashboardStatus.error = new Error('API unavailable')
+
+  render(<Dashboard />)
+
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  screen.getByRole('button', { name: 'Retry' }).click()
+  expect(dashboardStatus.retry).toHaveBeenCalledOnce()
+})
+
+test('shows automatic retry progress and disables another request', () => {
+  dashboardStatus.isError = true
+  dashboardStatus.isRetrying = true
+
+  render(<Dashboard />)
+
+  expect(screen.getByText(/retrying automatically/i)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Retrying…' })).toBeDisabled()
 })
 
 test('keeps source freshness out of the focal overview and communicates usage-only chart truth', async () => {
