@@ -93,6 +93,16 @@ public sealed class GitHubActivityClientTests : IDisposable
     }
 
     [Fact]
+    public async Task ListOrganizationRepositoriesAsync_RejectsANullPage()
+    {
+        var sut = CreateSut(new StubHandler(_ => JsonResponse("null")));
+
+        var act = () => sut.ListOrganizationRepositoriesAsync("FixPortal", TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+    }
+
+    [Fact]
     public async Task ListOrganizationRepositoriesAsync_PaginatesUntilShortPage()
     {
         // A full page means "there may be more"; a short one ends the walk. Getting this
