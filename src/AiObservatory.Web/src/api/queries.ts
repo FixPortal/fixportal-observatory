@@ -218,7 +218,7 @@ export function useBilledReporting(from: Date, to: Date, vendorId?: string, cate
 // scoped to the panels that own them (SpendPage/ReportingPage gates, SourceStatusPanel
 // renders nothing), so one optional endpoint failing must not light a global banner
 // (worst case: a 403 from /spend/reporting telling a healthy session to sign in again).
-export function useDashboardStatus(): { isError: boolean; isLoading: boolean; isRetrying: boolean; error: unknown; retry: () => Promise<void> } {
+export function useDashboardStatus(): { isError: boolean; isLoading: boolean; isRetrying: boolean; isAutomaticallyRetrying: boolean; error: unknown; retry: () => Promise<void> } {
   const range = useMemo(() => dashboardDateRange(), [])
   const from = localDate(range.from)
   const to = localDate(range.to)
@@ -233,6 +233,7 @@ export function useDashboardStatus(): { isError: boolean; isLoading: boolean; is
     isError: isUnavailable,
     isLoading: !isUnavailable && queries.some(query => query.isPending),
     isRetrying: queries.some(query => query.isFetching),
+    isAutomaticallyRetrying: queries.some(query => query.isFetching && query.failureCount > 0),
     error: failure?.error ?? failure?.failureReason,
     retry: async () => { await Promise.all(queries.map(query => query.refetch())) },
   }
