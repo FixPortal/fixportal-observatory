@@ -167,7 +167,9 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
             );
             CheckRateLimit(response);
             response.EnsureSuccessStatusCode();
-            var pageReviews = await response.Content.ReadFromJsonAsync<List<ReviewDto>>(JsonOptions, ct) ?? [];
+            var pageReviews =
+                await response.Content.ReadFromJsonAsync<List<ReviewDto>>(JsonOptions, ct)
+                ?? throw new InvalidDataException("GitHub reviews response omitted a page.");
             reviews.AddRange(pageReviews);
             if (pageReviews.Count < PerPage)
             {
