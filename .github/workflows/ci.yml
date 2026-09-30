@@ -46,23 +46,20 @@ jobs:
       contents: read
     services:
       postgres:
-        # Pull from the AWS ECR Public mirror of the Docker official image, not
-        # Docker Hub directly. The service-container pull is run by the runner
-        # (we can't add our own retries to it), and Docker Hub periodically
-        # times out / throttles GitHub runners ("registry-1.docker.io: context
-        # deadline exceeded"), failing CI before Build/Test ever run. The ECR
-        # Public mirror is the same image with anonymous, un-throttled pulls.
+        # Pull from Google's pull-through cache for the Docker official image,
+        # not Docker Hub or ECR Public. The service-container pull is run by the
+        # runner, so workflow steps cannot retry it. Docker Hub can time out and
+        # ECR Public can hard-throttle GitHub runner egress IPs. The GCR cache
+        # reduces those failures but is not an SLA-backed registry.
         # PINNED BY DIGEST, not by the `:16` tag. A service image runs code in the
         # runner's context exactly as an action does, and a mutable tag can change after
         # review -- the 2026-09-02 estate audit raised this alongside the equivalent
         # mssql pin in another repository in the estate.
         #
-        # Refresh deliberately: Dependabot does NOT update service-container images in
-        # workflows, so unlike a Dockerfile FROM nothing will nudge this. Get a token from
-        # public.ecr.aws/token/?scope=repository:docker/library/postgres:pull, HEAD
-        # /v2/docker/library/postgres/manifests/16 with an OCI/Docker manifest-list Accept
-        # header, and read Docker-Content-Digest. Resolved from `:16` on 2026-09-02.
-        image: public.ecr.aws/docker/library/postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
+        # Dependabot does NOT update service-container images in workflows.
+        # Verify the mirror serves this digest before changing it; resolved from
+        # Docker Official Image postgres:16 on 2026-09-02.
+        image: mirror.gcr.io/library/postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
         env:
           POSTGRES_DB: aiobs_test
           POSTGRES_USER: postgres
