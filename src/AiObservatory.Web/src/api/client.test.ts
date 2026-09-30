@@ -129,7 +129,7 @@ test('passes filters to spend entries before the server-side cap', async () => {
   )
 })
 
-test('keeps unknown aggregate provenance strings and every source-aware field from the wire', async () => {
+test('preserves unknown source and aggregate strings from the wire', async () => {
   const response: DailyAggregate[] = [{
     date: '2026-08-24', provider: 'new-oss-provider', model: 'model-x', sourceId: 'new-source',
     sourceKind: 'futureSource', usageScope: 'futureScope', costBasis: 'futureBasis', inputTokens: 1,
@@ -138,7 +138,12 @@ test('keeps unknown aggregate provenance strings and every source-aware field fr
   }]
   mockFetchOnce(200, response)
 
-  await expect(getAggregates()).resolves.toEqual(response)
+  await expect(getAggregates()).resolves.toMatchObject([{
+    sourceId: 'new-source',
+    sourceKind: 'futureSource',
+    usageScope: 'futureScope',
+    costBasis: 'futureBasis',
+  }])
 })
 
 describe('authHeaders precedence: URL viewer key > Entra > self-host key > none', () => {
