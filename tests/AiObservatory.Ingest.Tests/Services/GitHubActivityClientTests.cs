@@ -610,6 +610,17 @@ public sealed class GitHubActivityClientTests : IDisposable
     }
 
     [Fact]
+    public async Task GetCommitsAsync_RejectsANullCommitPage()
+    {
+        var sut = CreateSut(new StubHandler(_ => JsonResponse("null")));
+
+        var act = () =>
+            sut.GetCommitsAsync("fix-portal/example", new LocalDate(2026, 7, 1), TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+    }
+
+    [Fact]
     public async Task GetCommitsAsync_TruncatesExternalStringsToDatabaseLimits()
     {
         var longAuthor = new string('a', 250);
