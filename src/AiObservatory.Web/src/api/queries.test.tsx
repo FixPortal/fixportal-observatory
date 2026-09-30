@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ReactNode } from 'react'
 
@@ -54,6 +54,46 @@ describe('dashboard queries', () => {
     const { result } = renderHook(() => useDashboardStatus(), { wrapper })
     await waitFor(() => expect(result.current.isError).toBe(true))
     expect(result.current.error).toBe(aggregatesError)
+  })
+
+  test('surfaces the first API failure while automatic retries are pending', async () => {
+    const failure = new Error('API unavailable')
+    let calls = 0
+    client.getAggregates.mockImplementation(() => {
+      calls += 1
+      return calls === 1 ? Promise.reject(failure) : new Promise(() => {})
+    })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 3, retryDelay: 60_000 } } })
+    const retryingWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+
+    try {
+      const { result } = renderHook(() => useDashboardStatus(), { wrapper: retryingWrapper })
+      await waitFor(() => expect(result.current.isError).toBe(true))
+
+      expect(result.current.isLoading).toBe(false)
+      expect(result.current.isRetrying).toBe(true)
+      expect(result.current.error).toBe(failure)
+      expect(calls).toBe(1)
+    } finally {
+      queryClient.clear()
+    }
+  })
+
+  test('manual dashboard retry refetches its required queries', async () => {
+    client.getAggregates.mockRejectedValueOnce(new Error('API unavailable'))
+    const { result } = renderHook(() => useDashboardStatus(), { wrapper })
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    await act(async () => {
+      await result.current.retry()
+    })
+
+    expect(client.getAggregates).toHaveBeenCalledTimes(2)
+    expect(client.getInsights).toHaveBeenCalledTimes(2)
+    expect(client.getSubscriptions).toHaveBeenCalledTimes(2)
+    expect(result.current.isRetrying).toBe(false)
   })
 
   test('uses the shared aggregate rolling range unchanged for billed reporting', async () => {

@@ -34,7 +34,7 @@ const TABS: { id: DashboardTab; label: string; readonlyHidden?: boolean }[] = [
 const SpendChart = lazy(() => import('../components/SpendChart'))
 const ProviderSplit = lazy(() => import('../components/ProviderSplit'))
 
-function ErrorBanner({ error }: { error: unknown }) {
+function ErrorBanner({ error, isRetrying, onRetry }: { error: unknown; isRetrying: boolean; onRetry: () => Promise<void> }) {
   const isAuthError = error instanceof TokenAcquisitionTimeoutError
     || (error instanceof ApiError && (error.status === 401 || error.status === 403))
   if (isAuthError) {
@@ -51,13 +51,16 @@ function ErrorBanner({ error }: { error: unknown }) {
   }
   return (
     <div className="error-banner" role="alert">
-      Couldn’t reach the API — data may be unavailable. Check the API service and try refreshing.
+      {isRetrying ? 'Couldn’t reach the API — retrying automatically.' : 'Couldn’t reach the API — data may be unavailable.'}{' '}
+      <button type="button" className="error-banner__action" disabled={isRetrying} onClick={() => { void onRetry() }}>
+        {isRetrying ? 'Retrying…' : 'Retry'}
+      </button>
     </div>
   )
 }
 
 export default function Dashboard() {
-  const { isError, isLoading, error } = useDashboardStatus()
+  const { isError, isLoading, isRetrying, error, retry } = useDashboardStatus()
   const { mode, setMode } = useTheme()
   const [tab, setTab] = useState<DashboardTab>('overview')
   const visibleTabs = TABS.filter(t => !(t.readonlyHidden && isReadonly))
@@ -105,7 +108,7 @@ export default function Dashboard() {
       </div>
       <main className="dashboard__main">
       <div id="dashboard-tabpanel" className="dashboard__tabpanel" role="tabpanel" aria-labelledby={`dashboard-tab-${tab}`}>
-        {isError && <ErrorBanner error={error} />}
+        {isError && <ErrorBanner error={error} isRetrying={isRetrying} onRetry={retry} />}
         {!isError && isLoading && (
           <output className="loading-banner" aria-live="polite">
             <span className="loading-banner__spinner" aria-hidden="true" />
