@@ -49,6 +49,17 @@ public class GitHubBillingClientTests
             .And.Contain("year=2026");
     }
 
+    [Fact]
+    public async Task RejectsANullUsageResponse()
+    {
+        var handler = new StubHttpMessageHandler(HttpStatusCode.OK, "null");
+        using var http = ClientFor(handler);
+
+        var act = () => Create(http).GetUsageAsync(2026, TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+    }
+
     /// <summary>
     /// The REST reference documents a date-only value; the live endpoint currently returns a
     /// full timestamp. Binding to either alone would break the day GitHub moved to the other,
