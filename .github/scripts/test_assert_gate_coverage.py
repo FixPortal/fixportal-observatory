@@ -29,14 +29,15 @@ jobs:
         {continue_on_error}
         run: |
           echo "Upstream results"
-          exit 1
+          {command}
 """
 
 
-def write_workflow(tmp_path, condition, continue_on_error=None):
+def write_workflow(tmp_path, condition, continue_on_error=None, command="exit 1"):
     body = WORKFLOW.format(
         condition=condition,
         continue_on_error=continue_on_error or "",
+        command=command,
     )
     path = tmp_path / "ci.yml"
     path.write_text(textwrap.dedent(body), encoding="utf-8")
@@ -187,8 +188,7 @@ def test_non_failing_forms_stay_rejected(body):
     assert not gate.ends_non_zero(body)
 
 
-# Failure recognition moved to ACCEPTED_FAILING_FORMS; the old constants and the
-# docstrings describing their design invited patches to dead expressions.
-def test_dead_constants_are_gone():
-    assert not hasattr(gate, "NONZERO_EXIT")
-    assert not hasattr(gate, "COMMAND_BOUNDARY")
+def test_gate_with_swallowed_failure_is_refused(tmp_path):
+    condition = "contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')"
+    with pytest.raises(SystemExit, match="not a recognised failing form"):
+        check(write_workflow(tmp_path, condition, command="exit 1 || true"))
