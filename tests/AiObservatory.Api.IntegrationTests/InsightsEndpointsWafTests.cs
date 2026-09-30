@@ -151,7 +151,7 @@ public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClass
             using var leaseScope = factory.Services.CreateScope();
             var leaseDb = leaseScope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
             await using var leaseTx = await leaseDb.Database.BeginTransactionAsync(ct);
-            var repository = new UsageRepository(leaseDb);
+            var repository = new BudgetAlertRepository(leaseDb);
             var acquired = await repository.TryAcquireBudgetAlertEmailLeaseAsync(
                 claim.Id,
                 Guid.NewGuid(),
@@ -236,7 +236,7 @@ public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClass
 
             using var acquisitionScope = factory.Services.CreateScope();
             var acquisitionDb = acquisitionScope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
-            var repository = new UsageRepository(acquisitionDb);
+            var repository = new BudgetAlertRepository(acquisitionDb);
             var acquisitionTask = repository.TryAcquireBudgetAlertEmailLeaseAsync(
                 claim.Id,
                 Guid.NewGuid(),

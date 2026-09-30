@@ -17,6 +17,7 @@ public class UsageRepositoryTests : IAsyncLifetime
     private string _connStr = null!;
     private AiObservatoryDbContext _ctx = null!;
     private IUsageRepository _repo = null!;
+    private IBudgetAlertRepository _budgetAlerts = null!;
 
     public async ValueTask InitializeAsync()
     {
@@ -33,6 +34,7 @@ public class UsageRepositoryTests : IAsyncLifetime
         _ctx = new AiObservatoryDbContext(options);
         await _ctx.Database.MigrateAsync();
         _repo = new UsageRepository(_ctx);
+        _budgetAlerts = new BudgetAlertRepository(_ctx);
     }
 
     public async ValueTask DisposeAsync()
@@ -1368,8 +1370,8 @@ public class UsageRepositoryTests : IAsyncLifetime
             .Options;
         await using var firstContext = new AiObservatoryDbContext(options);
         await using var secondContext = new AiObservatoryDbContext(options);
-        var firstRepository = new UsageRepository(firstContext);
-        var secondRepository = new UsageRepository(secondContext);
+        var firstRepository = new BudgetAlertRepository(firstContext);
+        var secondRepository = new BudgetAlertRepository(secondContext);
         var period = new LocalDate(2026, 8, 1);
         var triggeredAt = Instant.FromUtc(2026, 8, 2, 0, 5);
 
@@ -1538,7 +1540,7 @@ public class UsageRepositoryTests : IAsyncLifetime
 
         var period = new LocalDate(2026, 8, 1);
         var triggeredAt = Instant.FromUtc(2026, 8, 2, 0, 5);
-        var claimResult = await _repo.GetOrCreateBudgetAlertAsync(
+        var claimResult = await _budgetAlerts.GetOrCreateBudgetAlertAsync(
             rule.Id,
             period,
             period,
@@ -1549,12 +1551,12 @@ public class UsageRepositoryTests : IAsyncLifetime
             ct
         );
 
-        (await _repo.GetBudgetAlertSlackSentAsync(claimResult.ClaimId, ct)).Should().BeFalse();
+        (await _budgetAlerts.GetBudgetAlertSlackSentAsync(claimResult.ClaimId, ct)).Should().BeFalse();
 
         var sentAt = triggeredAt.Plus(Duration.FromMinutes(1));
-        await _repo.MarkBudgetAlertSlackSentAsync(claimResult.ClaimId, sentAt, ct);
+        await _budgetAlerts.MarkBudgetAlertSlackSentAsync(claimResult.ClaimId, sentAt, ct);
 
-        (await _repo.GetBudgetAlertSlackSentAsync(claimResult.ClaimId, ct)).Should().BeTrue();
+        (await _budgetAlerts.GetBudgetAlertSlackSentAsync(claimResult.ClaimId, ct)).Should().BeTrue();
         (await _ctx.BudgetAlertClaims.AsNoTracking().SingleAsync(c => c.Id == claimResult.ClaimId, ct))
             .SlackSentAt.Should()
             .Be(sentAt);
@@ -1644,7 +1646,7 @@ public class UsageRepositoryTests : IAsyncLifetime
         );
         await _ctx.SaveChangesAsync(ct);
 
-        var result = await _repo.GetDeliverableBudgetAlertEmailsAsync(
+        var result = await _budgetAlerts.GetDeliverableBudgetAlertEmailsAsync(
             baseTime.Plus(Duration.FromDays(1)),
             baseTime.Minus(Duration.FromDays(3)),
             ct

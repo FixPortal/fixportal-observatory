@@ -28,6 +28,7 @@ namespace AiObservatory.Api.Services;
 public sealed class SlackAlertNotifier(
     HttpClient http,
     IUsageRepository repository,
+    IBudgetAlertRepository budgetAlerts,
     IClock clock,
     ILogger<SlackAlertNotifier> logger
 ) : IAlertNotifier
@@ -55,7 +56,7 @@ public sealed class SlackAlertNotifier(
             );
         }
 
-        if (alert.SlackFenceClaimId is { } claimId && await repository.GetBudgetAlertSlackSentAsync(claimId, ct))
+        if (alert.SlackFenceClaimId is { } claimId && await budgetAlerts.GetBudgetAlertSlackSentAsync(claimId, ct))
         {
             // Fenced by a previous pass: the alert already reached Slack, so this channel
             // genuinely delivered even though this call itself posts nothing.
@@ -91,7 +92,7 @@ public sealed class SlackAlertNotifier(
 
         if (alert.SlackFenceClaimId is { } sentClaimId)
         {
-            await repository.MarkBudgetAlertSlackSentAsync(sentClaimId, clock.GetCurrentInstant(), ct);
+            await budgetAlerts.MarkBudgetAlertSlackSentAsync(sentClaimId, clock.GetCurrentInstant(), ct);
         }
 
         return AlertDeliveryResult.Sent;

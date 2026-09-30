@@ -61,6 +61,7 @@ public class SlackNotifierDiCompositionTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(Substitute.For<IUsageRepository>());
+        services.AddSingleton(Substitute.For<IBudgetAlertRepository>());
         services.AddSingleton<IClock>(SystemClock.Instance);
         services
             .AddHttpClient<SlackAlertNotifier>()
