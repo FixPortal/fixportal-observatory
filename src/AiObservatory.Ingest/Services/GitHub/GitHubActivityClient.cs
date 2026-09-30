@@ -240,7 +240,9 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
             );
             CheckRateLimit(response);
             response.EnsureSuccessStatusCode();
-            var commits = await response.Content.ReadFromJsonAsync<List<CommitListDto>>(JsonOptions, ct) ?? [];
+            var commits =
+                await response.Content.ReadFromJsonAsync<List<CommitListDto>>(JsonOptions, ct)
+                ?? throw new InvalidDataException("GitHub commits response omitted a page.");
 
             foreach (var c in commits)
             {
