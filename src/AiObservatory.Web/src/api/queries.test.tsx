@@ -74,6 +74,7 @@ describe('dashboard queries', () => {
 
       expect(result.current.isLoading).toBe(false)
       expect(result.current.isRetrying).toBe(true)
+      expect(result.current.isAutomaticallyRetrying).toBe(true)
       expect(result.current.error).toBe(failure)
       expect(calls).toBe(1)
     } finally {
@@ -94,6 +95,19 @@ describe('dashboard queries', () => {
     expect(client.getInsights).toHaveBeenCalledTimes(2)
     expect(client.getSubscriptions).toHaveBeenCalledTimes(2)
     expect(result.current.isRetrying).toBe(false)
+  })
+
+  test('manual dashboard retry is not reported as an automatic retry', async () => {
+    client.getAggregates.mockRejectedValueOnce(new Error('API unavailable'))
+    let finishRetry!: (value: never[]) => void
+    client.getAggregates.mockImplementationOnce(() => new Promise(resolve => { finishRetry = resolve }))
+    const { result } = renderHook(() => useDashboardStatus(), { wrapper })
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    act(() => { void result.current.retry() })
+    await waitFor(() => expect(result.current.isRetrying).toBe(true))
+    expect(result.current.isAutomaticallyRetrying).toBe(false)
+    await act(async () => { finishRetry([]) })
   })
 
   test('uses the shared aggregate rolling range unchanged for billed reporting', async () => {

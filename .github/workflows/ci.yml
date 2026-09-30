@@ -50,7 +50,10 @@ jobs:
         # not Docker Hub or ECR Public. The service-container pull is run by the
         # runner, so workflow steps cannot retry it. Docker Hub can time out and
         # ECR Public can hard-throttle GitHub runner egress IPs. The GCR cache
-        # reduces those failures but is not an SLA-backed registry.
+        # reduces those failures but is not an SLA-backed registry. Google documents
+        # cache misses falling back to canonical Docker Hub, so misses still inherit
+        # Hub availability and limits; use an owned ACR cache if stronger assurance
+        # is needed.
         # PINNED BY DIGEST, not by the `:16` tag. A service image runs code in the
         # runner's context exactly as an action does, and a mutable tag can change after
         # review -- the 2026-09-02 estate audit raised this alongside the equivalent

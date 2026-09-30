@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import Dashboard from './Dashboard'
 
-const dashboardStatus = vi.hoisted(() => ({ isError: false, isLoading: false, isRetrying: false, error: null as unknown, retry: vi.fn() }))
+const dashboardStatus = vi.hoisted(() => ({ isError: false, isLoading: false, isRetrying: false, isAutomaticallyRetrying: false, error: null as unknown, retry: vi.fn() }))
 const authMock = vi.hoisted(() => ({
   TokenAcquisitionTimeoutError: class extends Error {},
   signIn: vi.fn(),
@@ -24,6 +24,7 @@ beforeEach(() => {
   dashboardStatus.isError = false
   dashboardStatus.isLoading = false
   dashboardStatus.isRetrying = false
+  dashboardStatus.isAutomaticallyRetrying = false
   dashboardStatus.error = null
   dashboardStatus.retry.mockClear()
   authMock.signIn.mockClear()
@@ -53,10 +54,23 @@ test('offers a manual retry when the API is unavailable', () => {
 test('shows automatic retry progress and disables another request', () => {
   dashboardStatus.isError = true
   dashboardStatus.isRetrying = true
+  dashboardStatus.isAutomaticallyRetrying = true
 
   render(<Dashboard />)
 
   expect(screen.getByText(/retrying automatically/i)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Retrying…' })).toBeDisabled()
+  expect(screen.getByRole('alert')).toHaveTextContent(/data may be unavailable/i)
+  expect(screen.getByRole('status')).toHaveTextContent(/retrying automatically/i)
+})
+
+test('manual retry does not announce that an automatic retry is underway', () => {
+  dashboardStatus.isError = true
+  dashboardStatus.isRetrying = true
+
+  render(<Dashboard />)
+
+  expect(screen.queryByRole('status')).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Retrying…' })).toBeDisabled()
 })
 
