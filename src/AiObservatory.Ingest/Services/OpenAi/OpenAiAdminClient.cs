@@ -419,18 +419,8 @@ public sealed class OpenAiAdminClient(HttpClient http) : IOpenAiAdminClient
     private static string RequireNonBlankString(JsonElement element, string propertyName) =>
         AdminResponseJson.RequireNonBlankString(element, propertyName, "OpenAI");
 
-    private static string? OptionalNonBlankString(JsonElement element, string propertyName)
-    {
-        if (!element.TryGetProperty(propertyName, out var value) || value.ValueKind == JsonValueKind.Null)
-        {
-            return null;
-        }
-        if (value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()))
-        {
-            throw new InvalidDataException($"OpenAI {propertyName} must be a non-empty string or null.");
-        }
-        return value.GetString();
-    }
+    private static string? OptionalNonBlankString(JsonElement element, string propertyName) =>
+        AdminResponseJson.OptionalNonBlankString(element, propertyName, "OpenAI");
 
     private static long? OptionalNonNegativeInt64(JsonElement element, string propertyName)
     {
