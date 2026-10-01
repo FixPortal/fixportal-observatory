@@ -540,39 +540,11 @@ public sealed class AnthropicAdminClient(HttpClient http) : IAnthropicAdminClien
         return value.GetBoolean();
     }
 
-    private static string? RequireCursor(JsonElement root, bool hasMore)
-    {
-        if (!root.TryGetProperty("next_page", out var value))
-        {
-            throw new InvalidDataException("Anthropic response is missing next_page.");
-        }
-        if (!hasMore)
-        {
-            if (value.ValueKind != JsonValueKind.Null)
-            {
-                throw new InvalidDataException("Anthropic final page has an unexpected cursor.");
-            }
-            return null;
-        }
-        if (value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()))
-        {
-            throw new InvalidDataException("Anthropic response requires a non-empty next_page cursor.");
-        }
-        return value.GetString();
-    }
+    private static string? RequireCursor(JsonElement root, bool hasMore) =>
+        AdminResponseJson.RequireCursor(root, hasMore, "Anthropic");
 
-    private static string RequireNonBlankString(JsonElement element, string propertyName)
-    {
-        if (
-            !element.TryGetProperty(propertyName, out var value)
-            || value.ValueKind != JsonValueKind.String
-            || string.IsNullOrWhiteSpace(value.GetString())
-        )
-        {
-            throw new InvalidDataException($"Anthropic response is missing {propertyName}.");
-        }
-        return value.GetString()!;
-    }
+    private static string RequireNonBlankString(JsonElement element, string propertyName) =>
+        AdminResponseJson.RequireNonBlankString(element, propertyName, "Anthropic");
 
     private static string? OptionalNonBlankString(JsonElement element, string propertyName)
     {
