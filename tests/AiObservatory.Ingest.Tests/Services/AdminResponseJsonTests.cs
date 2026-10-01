@@ -76,4 +76,38 @@ public sealed class AdminResponseJsonTests
         using var document = JsonDocument.Parse("{\"currency\":\" USD \"}");
         AdminResponseJson.RequireNonBlankString(document.RootElement, "currency", "OpenAI").Should().Be(" USD ");
     }
+
+    [Theory]
+    [InlineData("{}", null, false)]
+    [InlineData("{\"model\":null}", null, false)]
+    [InlineData("{\"model\":\" value \"}", " value ", false)]
+    [InlineData("{\"model\":0}", null, true)]
+    [InlineData("{\"model\":true}", null, true)]
+    [InlineData("{\"model\":{}}", null, true)]
+    [InlineData("{\"model\":[]}", null, true)]
+    [InlineData("{\"model\":\"\"}", null, true)]
+    [InlineData("{\"model\":\" \\t\\n\"}", null, true)]
+    public void OptionalNonBlankString_PreservesValuesAndProviderDiagnostics(
+        string json,
+        string? expected,
+        bool invalid
+    )
+    {
+        using var document = JsonDocument.Parse(json);
+        foreach (var provider in new[] { "Anthropic", "OpenAI" })
+        {
+            var act = () => AdminResponseJson.OptionalNonBlankString(document.RootElement, "model", provider);
+            if (invalid)
+            {
+                act.Should()
+                    .Throw<InvalidDataException>()
+                    .Which.Message.Should()
+                    .Be($"{provider} model must be a non-empty string or null.");
+            }
+            else
+            {
+                act().Should().Be(expected);
+            }
+        }
+    }
 }

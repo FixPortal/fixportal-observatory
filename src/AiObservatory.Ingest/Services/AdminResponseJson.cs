@@ -37,4 +37,17 @@ internal static class AdminResponseJson
         }
         return value.GetString()!;
     }
+
+    public static string? OptionalNonBlankString(JsonElement element, string propertyName, string provider)
+    {
+        if (!element.TryGetProperty(propertyName, out var value) || value.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+        if (value.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(value.GetString()))
+        {
+            throw new InvalidDataException($"{provider} {propertyName} must be a non-empty string or null.");
+        }
+        return value.GetString();
+    }
 }
