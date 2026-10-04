@@ -10,8 +10,12 @@ Observatory is evidence-first: values carry source, scope, basis, freshness, and
 
 Keep loading and API-recovery announcements at the viewport bottom so their appearance
 and removal do not move evidence. Loading notices must allow pointer interaction with
-the content beneath them; recovery actions remain interactive. Reserve summary-card
-space for missing-value labels and cache provenance before their independent queries
+the content beneath them; recovery actions remain interactive.
+Compose notice tint over the opaque card surface in both themes. Bound notices to
+8 rem with internal overflow, and retain that height plus bottom and separation
+spacing after the footer so its controls can scroll clear of a persistent notice.
+Keep this clearance after recovery rather than moving the footer on success.
+Reserve summary-card space for missing-value labels and cache provenance before their independent queries
 resolve. Card content can grow beyond that minimum; never truncate financial evidence
 to enforce a fixed height. The overview reservation does not apply to other pages.
 
