@@ -144,7 +144,7 @@ export default function SummaryCards() {
   const unread = insights.filter(insight => !insight.acknowledged).length
 
   return (
-    <div className="summary-cards">
+    <div className="summary-cards summary-cards--overview">
       <BilledSpendCard loading={billedLoading} error={billedError} billedGbp={billedGbp} />
       <MoneyEstimateCard
         label="List-price estimate"
