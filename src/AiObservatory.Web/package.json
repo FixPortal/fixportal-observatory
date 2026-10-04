@@ -49,6 +49,12 @@
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.1",
     "vite": "8.3.1",
-    "vitest": "5.0.1"
+    "vitest": "5.0.1",
+    "fast-glob": "file:tools/plantuml-glob"
+  },
+  "overrides": {
+    "plantuml-parser": {
+      "fast-glob": "$fast-glob"
+    }
   }
 }
