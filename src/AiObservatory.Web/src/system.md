@@ -8,6 +8,13 @@ Observatory is evidence-first: values carry source, scope, basis, freshness, and
 
 ## Overview hierarchy
 
+Keep loading and API-recovery announcements at the viewport bottom so their appearance
+and removal do not move evidence. Loading notices must allow pointer interaction with
+the content beneath them; recovery actions remain interactive. Reserve summary-card
+space for missing-value labels and cache provenance before their independent queries
+resolve. Card content can grow beyond that minimum; never truncate financial evidence
+to enforce a fixed height. The overview reservation does not apply to other pages.
+
 Keep headline usage and valuation followed by analytical evidence as the primary flow. Put operational collection mechanics at the bottom in a quiet, collapsed `Data sources` panel; do not create a settings area for a single panel. Its summary counts reporting and not-connected sources, plus attention only when non-zero. Use `Not connected`, never `Not configured`. Explain that collection health covers optional APIs and local telemetry and does not indicate missing subscription usage.
 
 Collapsed disclosures containing controls use native `inert` alongside `aria-hidden` so hidden controls are not keyboard-focusable. Reuse the existing `CollapsiblePanel`, canonical tokens, border-only depth, and 4 px spacing.

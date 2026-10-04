@@ -106,6 +106,7 @@ body {
 .dashboard { min-height: 100%; display: flex; flex-direction: column; }
 .dashboard__main { flex: 1; width: 100%; }
 .dashboard__tabpanel {
+  display: flow-root;
   position: relative;
   width: 100%;
   max-width: 1200px;
@@ -127,6 +128,9 @@ body {
   gap: var(--space-4);
 }
 .summary-cards__unclassified { grid-column: 1 / -1; }
+/* Reserve the evidence cards' settled space while their independent queries load.
+   Values, missing-value labels and cache provenance must not move adjacent cards. */
+.summary-cards--overview > .fpds-card { min-height: 12rem; }
 .card-label {
   font-size: 12px;
   letter-spacing: 0.06em;
@@ -378,6 +382,15 @@ td.budget-rules__actions { display: table-cell; padding: 6px 0 6px 8px; text-ali
 .source-status__error p { margin: var(--space-2) 0 0; color: var(--bad-text); overflow-wrap: anywhere; }
 
 /* Page-level API-failure banner (bad/error family — tokens shared with insights). */
+.dashboard__tabpanel > .error-banner,
+.loading-banner {
+  position: fixed;
+  inset-inline: var(--space-4);
+  bottom: var(--space-4);
+  width: auto;
+  margin: 0;
+  z-index: 20;
+}
 .error-banner {
   width: 100%;
   margin: var(--space-4) auto 0;
@@ -402,7 +415,7 @@ td.budget-rules__actions { display: table-cell; padding: 6px 0 6px 8px; text-ali
 /* Initial-load banner — App Service cold start makes the first request slow, so
    give the user a signal instead of an empty dashboard of zeros. */
 .loading-banner {
-  width: 100%;
+  pointer-events: none;
   margin: 0;
   padding: var(--space-3) var(--space-4);
   display: flex;
@@ -670,6 +683,7 @@ td.budget-rules__actions { display: table-cell; padding: 6px 0 6px 8px; text-ali
   .fpds-theme-toggle__btn { padding-inline: var(--space-2); }
   .page-nav { padding-inline: var(--space-3); }
   .summary-cards { grid-template-columns: repeat(2, 1fr); }
+  .summary-cards--overview > .fpds-card:nth-child(5) { min-height: 17rem; }
   :is(.info-popover--summary, .sub-panel .info-popover) {
     position: fixed;
     inset: auto var(--space-3) var(--space-3);
