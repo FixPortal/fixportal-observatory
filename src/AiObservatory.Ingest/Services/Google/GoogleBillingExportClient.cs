@@ -6,9 +6,14 @@ using NodaTime;
 
 namespace AiObservatory.Ingest.Services.Google;
 
-public sealed class GoogleBillingExportClient(Lazy<BigQueryClient> client, string table)
-    : IGoogleBillingExportClient,
-        IDisposable
+// maximumBytesBilled is a hard per-job cap: BigQuery fails a job that would bill beyond it
+// without charging. location pins the job region; null leaves it to the client default.
+public sealed class GoogleBillingExportClient(
+    Lazy<BigQueryClient> client,
+    string table,
+    long maximumBytesBilled,
+    string? location = null
+) : IGoogleBillingExportClient, IDisposable
 {
     private const string QueryTemplate = """
         WITH affected_keys AS (
@@ -70,7 +75,19 @@ public sealed class GoogleBillingExportClient(Lazy<BigQueryClient> client, strin
         WHERE usage_date < DATE_SUB(DATE(@changes_since), INTERVAL 31 DAY)
         """;
 
+    public const long DefaultMaximumBytesBilled = 1L << 30;
+
     private readonly string _table = ValidateExportTable(table);
+    private readonly long _maximumBytesBilled =
+        maximumBytesBilled > 0 ? maximumBytesBilled : throw new ArgumentOutOfRangeException(nameof(maximumBytesBilled));
+
+    private QueryOptions Options() =>
+        new()
+        {
+            UseLegacySql = false,
+            MaximumBytesBilled = _maximumBytesBilled,
+            JobLocation = location,
+        };
 
     public void Dispose()
     {
@@ -111,7 +128,7 @@ public sealed class GoogleBillingExportClient(Lazy<BigQueryClient> client, strin
         var results = await client.Value.ExecuteQueryAsync(
             query.Sql,
             query.Parameters,
-            new QueryOptions { UseLegacySql = false },
+            Options(),
             cancellationToken: cancellationToken
         );
         var records = new List<GoogleBillingRecord>();
@@ -134,7 +151,7 @@ public sealed class GoogleBillingExportClient(Lazy<BigQueryClient> client, strin
         var results = await client.Value.ExecuteQueryAsync(
             query.Sql,
             query.Parameters,
-            new QueryOptions { UseLegacySql = false },
+            Options(),
             cancellationToken: cancellationToken
         );
         // COUNT(*) always yields exactly one row; zero rows is treated as zero rather than an

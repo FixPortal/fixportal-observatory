@@ -1,5 +1,6 @@
 // Explicit: the Worker SDK's implicit usings do not include ASP.NET Core's, which arrive
 // here via a FrameworkReference rather than the Web SDK (see the csproj for why).
+using System.Globalization;
 using AiObservatory.Data;
 using AiObservatory.Data.Entities;
 using AiObservatory.Data.Pricing;
@@ -298,12 +299,31 @@ static bool RegisterGoogleBillingExport(
     }
 
     GoogleBillingExportClient.ValidateExportTable(table!);
+    // Every poll runs two billed BigQuery jobs; without a cap each falls back to the project
+    // default, which is unlimited unless an administrator set a custom quota.
+    var maximumBytesBilled = GoogleBillingMaximumBytesBilled(configuration["GOOGLE_BILLING_EXPORT_MAX_BYTES_BILLED"]);
+    var location = configuration["GOOGLE_BILLING_EXPORT_LOCATION"];
     services.AddSingleton<IGoogleBillingExportClient>(_ => new GoogleBillingExportClient(
         new Lazy<BigQueryClient>(() => BigQueryClient.Create(projectId!)),
-        table!
+        table!,
+        maximumBytesBilled,
+        IsConfigured(location) ? location : null
     ));
     services.TryAddEnumerable(ServiceDescriptor.Scoped<IUsageSource, GoogleBillingExportSource>());
     return true;
+}
+
+static long GoogleBillingMaximumBytesBilled(string? setting)
+{
+    if (!IsConfigured(setting))
+    {
+        return GoogleBillingExportClient.DefaultMaximumBytesBilled;
+    }
+    return long.TryParse(setting, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
+        ? parsed
+        : throw new InvalidOperationException(
+            "GOOGLE_BILLING_EXPORT_MAX_BYTES_BILLED must be a positive whole number of bytes."
+        );
 }
 
 static void RegisterPricingSources(IServiceCollection services, IConfiguration configuration)
