@@ -49,7 +49,7 @@ def check(path):
 
 
 def test_correct_gate_passes(tmp_path):
-    condition = "contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')"
+    condition = "always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))"
     assert check(write_workflow(tmp_path, condition)) is True
 
 
@@ -57,7 +57,7 @@ def test_correct_gate_passes(tmp_path):
 # required check reports green over a dependency that did not pass.
 def test_failure_only_condition_is_refused(tmp_path):
     with pytest.raises(SystemExit, match="build:cancelled"):
-        check(write_workflow(tmp_path, "contains(needs.*.result, 'failure')"))
+        check(write_workflow(tmp_path, "always() && contains(needs.*.result, 'failure')"))
 
 
 # The converse of M33: a cancelled-only condition is false when an upstream job
@@ -65,7 +65,7 @@ def test_failure_only_condition_is_refused(tmp_path):
 # failed dependency.
 def test_cancelled_only_condition_is_refused(tmp_path):
     with pytest.raises(SystemExit, match="build:failure"):
-        check(write_workflow(tmp_path, "contains(needs.*.result, 'cancelled')"))
+        check(write_workflow(tmp_path, "always() && contains(needs.*.result, 'cancelled')"))
 
 
 # An outcome token that is not bound to a needs result reacts to nothing upstream:
@@ -76,7 +76,7 @@ def test_unbound_outcome_token_is_refused(tmp_path):
         check(
             write_workflow(
                 tmp_path,
-                "contains(needs.*.result, 'failure') || github.event.action == 'cancelled'",
+                "always() && (contains(needs.*.result, 'failure') || github.event.action == 'cancelled')",
             )
         )
 
@@ -92,13 +92,13 @@ def test_unbound_outcome_token_is_refused(tmp_path):
     ],
 )
 def test_cancelled_aware_spellings_pass(tmp_path, condition):
-    assert check(write_workflow(tmp_path, condition)) is True
+    assert check(write_workflow(tmp_path, f"always() && ({condition})")) is True
 
 
 def test_bracket_only_gate_is_not_read_as_unreferenced(tmp_path):
     # Before NEEDS_RESULT learnt the index spelling this exited with "has no step
     # whose `if:` references a needs.<job>.result" -- a false RED on a correct gate.
-    condition = "needs['build'].result == 'failure' || needs['build'].result == 'cancelled'"
+    condition = "always() && (needs['build'].result == 'failure' || needs['build'].result == 'cancelled')"
     assert check(write_workflow(tmp_path, condition)) is True
 
 
@@ -107,27 +107,27 @@ def test_bracket_only_gate_is_not_read_as_unreferenced(tmp_path):
 # step as not tolerant -- fail-open on a neutered gate.
 def test_split_continue_on_error_is_still_tolerant(tmp_path):
     with pytest.raises(SystemExit, match="continue-on-error"):
-        condition = "contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')"
+        condition = "always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))"
         check(write_workflow(tmp_path, condition, "continue-on-error:\n          true"))
 
 
 def test_block_scalar_continue_on_error_is_still_tolerant(tmp_path):
     with pytest.raises(SystemExit, match="continue-on-error"):
-        condition = "contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')"
+        condition = "always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))"
         check(write_workflow(tmp_path, condition, "continue-on-error: >\n          true"))
 
 
 def test_block_scalar_false_continue_on_error_passes(tmp_path):
     # The header-only read compared the literal `>` against ("false", "") and refused
     # even a false value -- a false RED on a step that genuinely can fail its job.
-    condition = "contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')"
+    condition = "always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))"
     assert check(write_workflow(tmp_path, condition, "continue-on-error: >\n          false")) is True
 
 
 # Capitalised False is the same YAML 1.1 boolean as false; reading it as truthy was
 # a false RED on a correct gate.
 def test_capitalised_false_continue_on_error_passes(tmp_path):
-    condition = "contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')"
+    condition = "always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))"
     assert check(write_workflow(tmp_path, condition, "continue-on-error: False")) is True
 
 
@@ -189,6 +189,14 @@ def test_non_failing_forms_stay_rejected(body):
 
 
 def test_gate_with_swallowed_failure_is_refused(tmp_path):
-    condition = "contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')"
+    condition = "always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))"
     with pytest.raises(SystemExit, match="not a recognised failing form"):
         check(write_workflow(tmp_path, condition, command="exit 1 || true"))
+
+
+def test_missing_explicit_status_override_is_refused(tmp_path):
+    # Upstream outcomes and the aggregate job's current status are independent.
+    # The house contract requires an override for current-job cancellation.
+    condition = "contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')"
+    with pytest.raises(SystemExit, match="explicit status override"):
+        check(write_workflow(tmp_path, condition))
