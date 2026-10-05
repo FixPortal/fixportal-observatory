@@ -133,6 +133,24 @@ public class IngestHostTests
         ExceptionChainContains(thrown, "GOOGLE_CLOUD_PROJECT_ID and GOOGLE_BILLING_EXPORT_TABLE").Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("1GiB")]
+    [InlineData("1.5")]
+    public async Task GoogleBillingExport_rejects_an_invalid_bytes_billed_cap(string value)
+    {
+        await using var factory = new IngestFactory();
+        factory.Settings["GOOGLE_CLOUD_PROJECT_ID"] = "configured-project";
+        factory.Settings["GOOGLE_BILLING_EXPORT_TABLE"] = "configured_project.billing_export.gcp_billing_export_v1";
+        factory.Settings["GOOGLE_BILLING_EXPORT_MAX_BYTES_BILLED"] = value;
+
+        var thrown = CaptureServicesException(factory);
+
+        thrown.Should().NotBeNull();
+        ExceptionChainContains(thrown, "GOOGLE_BILLING_EXPORT_MAX_BYTES_BILLED").Should().BeTrue();
+    }
+
     [Fact]
     public async Task GoogleBillingExport_registers_lazily_with_shared_billing_services_when_project_and_table_are_valid()
     {
@@ -595,6 +613,8 @@ public class IngestHostTests
             "GOOGLE_CLOUD_PROJECT_ID",
             "GOOGLE_BILLING_EXPORT_TABLE",
             "GOOGLE_BILLING_ACCOUNT_ID",
+            "GOOGLE_BILLING_EXPORT_MAX_BYTES_BILLED",
+            "GOOGLE_BILLING_EXPORT_LOCATION",
             "OPENAI_ADMIN_KEY",
             "APPLICATIONINSIGHTS_CONNECTION_STRING",
             "GOOGLE_CLOUD_CATALOG_API_KEY",

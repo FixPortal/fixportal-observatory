@@ -152,6 +152,64 @@ public sealed class GoogleBillingExportClientTests
         queryCancellation.Should().Be(cancellation.Token);
     }
 
+    [Theory]
+    [InlineData(1_073_741_824L, null)]
+    [InlineData(104_857_600L, "EU")]
+    public async Task GetBillingRecordsAsync_caps_bytes_billed_and_pins_location_on_both_query_jobs(
+        long maximumBytesBilled,
+        string? location
+    )
+    {
+        var sdk = Substitute.For<BigQueryClient>();
+        var options = new List<QueryOptions>();
+        sdk.ExecuteQueryAsync(
+                Arg.Any<string>(),
+                Arg.Any<IEnumerable<BigQueryParameter>>(),
+                Arg.Do<QueryOptions>(options.Add),
+                null,
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Results(sdk));
+
+        await new GoogleBillingExportClient(
+            new Lazy<BigQueryClient>(() => sdk),
+            "project.dataset.table",
+            maximumBytesBilled,
+            location
+        ).GetBillingRecordsAsync(
+            Instant.FromUtc(2026, 8, 1, 0, 0),
+            Instant.FromUtc(2026, 8, 2, 0, 0),
+            Instant.FromUtc(2026, 8, 1, 0, 0),
+            TestContext.Current.CancellationToken
+        );
+
+        // Both the companion count and the main query are billed jobs; an uncapped one would
+        // scan the whole export table at the project default limit.
+        options.Should().HaveCount(2);
+        options
+            .Should()
+            .OnlyContain(option =>
+                option.UseLegacySql == false
+                && option.MaximumBytesBilled == maximumBytesBilled
+                && option.JobLocation == location
+            );
+    }
+
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(-1L)]
+    public void Constructor_rejects_a_non_positive_bytes_billed_cap(long maximumBytesBilled)
+    {
+        var act = () =>
+            new GoogleBillingExportClient(
+                new Lazy<BigQueryClient>(() => Substitute.For<BigQueryClient>()),
+                "project.dataset.table",
+                maximumBytesBilled
+            );
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
     [Fact]
     public async Task GetBillingRecordsAsync_throws_without_returning_a_prefix_when_query_fails()
     {
@@ -472,7 +530,7 @@ public sealed class GoogleBillingExportClientTests
     }
 
     private static GoogleBillingExportClient Client(BigQueryClient sdk) =>
-        new(new Lazy<BigQueryClient>(() => sdk), "project.dataset.table");
+        new(new Lazy<BigQueryClient>(() => sdk), "project.dataset.table", 1_073_741_824L);
 
     private static Task<GoogleBillingExportResult> FetchAsync(
         GoogleBillingExportClient client,
