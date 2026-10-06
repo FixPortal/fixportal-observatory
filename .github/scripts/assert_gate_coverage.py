@@ -468,6 +468,35 @@ def read_gate_contract(lines, gate_job):
             )
         jobs[_first_group(match)] = i
 
+    # A flow mapping on a later line keeps the job header parseable, but its
+    # fields are not block keys. Refuse it before scans can miss a job-level if.
+    starts = sorted(jobs.values())
+    for job_id, start in jobs.items():
+        end = min((i for i in starts if i > start), default=jobs_end)
+        for line in lines[start + 1 : end]:
+            value = strip_comment(line).strip()
+            if not value:
+                continue
+            # YAML node properties can precede the value on this or their own
+            # line. They must not hide a flow map from this block-only scanner.
+            while value.startswith(("&", "!")):
+                property_token = re.match(
+                    r"^(?:&[^\s{}\[\],]+|!<[^>\r\n]+>|![^\s{}\[\],]*)(?:\s+|$)",
+                    value,
+                )
+                if property_token is None:
+                    sys.exit(f"unsupported YAML node property for job '{job_id}'")
+                value = value[property_token.end() :].strip()
+            if not value:
+                continue
+            if value.startswith("{"):
+                sys.exit(
+                    f"unsupported flow mapping value for job '{job_id}'\n"
+                    "This gate refuses to report coverage it cannot verify. "
+                    "Use a block mapping for the job."
+                )
+            break
+
     if gate_job not in jobs:
         return jobs, [], set()
 
@@ -978,10 +1007,20 @@ def status_reachable_atoms(condition, outcome):
                 status, lambda match: str(values[match.group(1).lower()]).lower(),
                 tokens[index], flags=re.IGNORECASE,
             )
-        matches = failure_atoms(simplify("".join(tokens)))
+        simplified = simplify("".join(tokens))
+        truth = static_truth(simplified)
+        if truth is True:
+            # An unconditional status projection cannot restrict dependency coverage.
+            continue
+        if truth is False:
+            return None
+        matches = failure_atoms(simplified)
         if matches is None:
             return None
         projections.append(matches)
+    # Require dependency-sensitive evidence; an always-true step aggregates nothing.
+    if not projections:
+        return None
     common = set(match.groups() for match in projections[0])
     for matches in projections[1:]:
         common.intersection_update(match.groups() for match in matches)
