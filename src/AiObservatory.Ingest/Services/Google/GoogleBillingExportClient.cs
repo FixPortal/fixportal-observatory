@@ -20,7 +20,8 @@ public sealed class GoogleBillingExportClient(
           SELECT DISTINCT DATE(usage_start_time) AS usage_date, invoice.month AS billing_period, service.id AS service_id,
             sku.id AS sku_id, currency
           FROM `%TABLE%`
-          WHERE (usage_start_time >= @from AND usage_start_time < @through_exclusive) OR export_time > @changes_since
+          WHERE ((usage_start_time >= @from AND usage_start_time < @through_exclusive) OR export_time > @changes_since)
+            AND _PARTITIONDATE >= DATE_SUB(LEAST(DATE(@from), DATE(@changes_since)), INTERVAL 1 DAY)
         ), line_items AS (
           SELECT DATE(source.usage_start_time) AS usage_date, source.invoice.month AS billing_period, source.service.id AS service_id,
             source.service.description AS service_description, source.sku.id AS sku_id, source.sku.description AS sku_description,
@@ -31,13 +32,14 @@ public sealed class GoogleBillingExportClient(
           INNER JOIN affected_keys AS affected ON DATE(source.usage_start_time) IS NOT DISTINCT FROM affected.usage_date
             AND source.invoice.month IS NOT DISTINCT FROM affected.billing_period AND source.service.id IS NOT DISTINCT FROM affected.service_id
             AND source.sku.id IS NOT DISTINCT FROM affected.sku_id AND source.currency IS NOT DISTINCT FROM affected.currency
-          -- Coarse predicate so BigQuery can prune partitions on the source scan: neither the
-          -- five-column IS NOT DISTINCT FROM join nor the OR'd export_time filter in
-          -- affected_keys lets it. The bound is at the affected key's day granularity: a raw
-          -- timestamp bound splits the boundary day at the time-of-day of a mid-day
-          -- @changes_since, and the partial re-aggregation would overwrite the stored total
-          -- wholesale. Slack covers late-exported rows for recent corrections.
+          -- The usage-date predicate is the aggregation window, not an ingestion-partition
+          -- prune. A raw timestamp bound would split the boundary day and overwrite a stored
+          -- total. The observed export is ingestion-time partitioned, and Google prunes that
+          -- table only when _PARTITIONDATE or _PARTITIONTIME is isolated in a filter. Load
+          -- date is on or after the usage date, so one extra day below the 31-day window
+          -- keeps every row that window can aggregate, including a later correction of it.
           WHERE DATE(source.usage_start_time) >= DATE_SUB(DATE(@changes_since), INTERVAL 31 DAY)
+            AND source._PARTITIONDATE >= DATE_SUB(DATE(@changes_since), INTERVAL 32 DAY)
         )
         SELECT usage_date, billing_period, service_id,
           ARRAY_AGG(service_description ORDER BY export_time DESC, service_description DESC LIMIT 1)[OFFSET(0)] AS service_description,
@@ -68,7 +70,8 @@ public sealed class GoogleBillingExportClient(
           SELECT DISTINCT DATE(usage_start_time) AS usage_date, invoice.month AS billing_period, service.id AS service_id,
             sku.id AS sku_id, currency
           FROM `%TABLE%`
-          WHERE (usage_start_time >= @from AND usage_start_time < @through_exclusive) OR export_time > @changes_since
+          WHERE ((usage_start_time >= @from AND usage_start_time < @through_exclusive) OR export_time > @changes_since)
+            AND _PARTITIONDATE >= DATE_SUB(LEAST(DATE(@from), DATE(@changes_since)), INTERVAL 1 DAY)
         )
         SELECT COUNT(*) AS out_of_range_keys
         FROM affected_keys
