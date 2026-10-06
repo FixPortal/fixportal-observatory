@@ -47,11 +47,17 @@ public sealed class GoogleBillingExportClientTests
 
         query.Sql.Should().Contain("@from").And.Contain("@through_exclusive").And.Contain("@changes_since");
         query.Sql.Should().Contain("export_time > @changes_since");
-        // Partition pruning: the source scan needs its own date predicate — neither the
-        // IS NOT DISTINCT FROM join nor the OR'd export_time filter lets BigQuery prune.
+        // The usage-date predicate is the aggregation window. Ingestion-time pruning is a
+        // separate _PARTITIONDATE comparison, ANDed outside the export_time OR so both arms
+        // stay inside the pruned partitions.
         query
             .Sql.Should()
             .Contain("WHERE DATE(source.usage_start_time) >= DATE_SUB(DATE(@changes_since), INTERVAL 31 DAY)");
+        query.Sql.Should().Contain("AND source._PARTITIONDATE >= DATE_SUB(DATE(@changes_since), INTERVAL 32 DAY)");
+        query
+            .Sql.Should()
+            .Contain("AND _PARTITIONDATE >= DATE_SUB(LEAST(DATE(@from), DATE(@changes_since)), INTERVAL 1 DAY)");
+        query.Sql.Should().NotContain("OR export_time > @changes_since AND _PARTITIONDATE");
         query.Sql.Should().Contain("FROM `project.dataset.table` AS source");
         query.Sql.Should().Contain("UNNEST(source.credits)");
         query.Sql.Should().Contain("CAST(source.cost * 1000000 AS INT64)");
@@ -325,6 +331,11 @@ public sealed class GoogleBillingExportClientTests
         query.Sql.Should().Contain("export_time > @changes_since");
         query.Sql.Should().Contain("SELECT COUNT(*) AS out_of_range_keys");
         query.Sql.Should().Contain("WHERE usage_date < DATE_SUB(DATE(@changes_since), INTERVAL 31 DAY)");
+        query
+            .Sql.Should()
+            .Contain("AND _PARTITIONDATE >= DATE_SUB(LEAST(DATE(@from), DATE(@changes_since)), INTERVAL 1 DAY)");
+        query.Sql.Should().NotContain("OR export_time > @changes_since AND _PARTITIONDATE");
+        query.Sql.Should().NotContain("INTERVAL 32 DAY");
         query.Sql.Should().Contain("FROM `project.dataset.table`");
         query.Sql.Should().NotContain("line_items");
         query
