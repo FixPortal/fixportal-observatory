@@ -965,7 +965,7 @@ def static_truth(condition, _nested=False):
     return _UNKNOWN
 
 
-def status_reachable_atoms(condition, outcome):
+def status_reachable_atoms(condition):
     """Adverse needs coverage independent of the current gate job's status.
 
     Step status functions read current job status, not upstream needs results.
@@ -1010,7 +1010,11 @@ def status_reachable_atoms(condition, outcome):
         simplified = simplify("".join(tokens))
         truth = static_truth(simplified)
         if truth is True:
-            # An unconditional status projection cannot restrict dependency coverage.
+            # success() is the healthy-run state: a step unconditional there fires on
+            # every green run and aggregates nothing. failure()/cancelled() projections
+            # are unreachable on a healthy run, so they cannot restrict coverage.
+            if current_status == "success":
+                return None
             continue
         if truth is False:
             return None
@@ -1636,10 +1640,10 @@ def assert_gate_semantics(workflow_path, lines, jobs, gate_job, needs):
         if static_truth(condition) is False:
             continue
         coverage = []
+        matches = status_reachable_atoms(condition)
+        if matches is None:
+            continue
         for adverse in ("failure", "cancelled"):
-            matches = status_reachable_atoms(condition, adverse)
-            if matches is None:
-                continue
             for match in matches:
                 job_id = match.group(1) or match.group(3)
                 outcome = match.group(2) or match.group(4)
