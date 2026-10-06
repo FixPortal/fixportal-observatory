@@ -474,7 +474,7 @@ def read_gate_contract(lines, gate_job):
     for job_id, start in jobs.items():
         end = min((i for i in starts if i > start), default=jobs_end)
         for line in lines[start + 1 : end]:
-            value = strip_comment(line).strip()
+            value = strip_inline_comment(line.strip()).strip()
             if not value:
                 continue
             # YAML node properties can precede the value on this or their own
