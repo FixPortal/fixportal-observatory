@@ -138,6 +138,41 @@ public class StartupGuardsTests
             .BeTrue($"the exception chain should mention DB_CONNECTION; got: {thrown}");
     }
 
+    [Fact]
+    public async Task Startup_WhenDemoModeAndDatabaseHostIsNotADemoHost_Throws()
+    {
+        await using var factory = new AiObservatoryApiFactory
+        {
+            Environment = Environments.Production,
+            DemoMode = true,
+        };
+        factory.SetDbConnection("Host=fpaiobs-db.postgres.database.azure.com;Database=a;Username=u;Password=p");
+
+        var thrown = CaptureServicesException(factory);
+
+        thrown.Should().NotBeNull();
+        ExceptionChainContains(thrown, "OBSERVATORY_DEMO_MODE")
+            .Should()
+            .BeTrue($"the exception chain should name the demo-mode guard; got: {thrown}");
+    }
+
+    [Fact]
+    public async Task Startup_WhenDemoModeIsOffAndDatabaseHostIsNotADemoHost_DoesNotApplyTheDemoGuard()
+    {
+        // Production uses a non-demo host and must start exactly as it does today. The host is
+        // deliberately NOT localhost: with the default host the guard would pass either way.
+        await using var factory = new AiObservatoryApiFactory { Environment = Environments.Production };
+        factory.SetDbConnection(
+            "Host=fpaiobs-db.postgres.database.azure.com;Database=a;Username=u;Password=p;Timeout=1"
+        );
+
+        var thrown = CaptureServicesException(factory);
+
+        (thrown is null || !ExceptionChainContains(thrown, "OBSERVATORY_DEMO_MODE"))
+            .Should()
+            .BeTrue($"the demo-mode guard must not apply when the setting is off; got: {thrown}");
+    }
+
     /// <summary>Walks Exception/InnerException (and AggregateException.InnerExceptions) looking
     /// for any message containing <paramref name="fragment"/> — the exact wrapper type
     /// HostFactoryResolver uses to surface a Program.cs startup throw isn't a stable contract

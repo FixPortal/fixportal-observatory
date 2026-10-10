@@ -38,6 +38,12 @@ var dbConnection =
     ?? throw new InvalidOperationException("DB_CONNECTION configuration is missing.");
 builder.Services.AddDataLayer(dbConnection);
 
+var demoMode = DemoMode.IsEnabled(builder.Configuration);
+if (demoMode)
+{
+    DemoMode.EnsureSafeDatabase(dbConnection);
+}
+
 Program.ValidateApiKeys(builder);
 builder.Services.AddSingleton<IClock>(SystemClock.Instance);
 
