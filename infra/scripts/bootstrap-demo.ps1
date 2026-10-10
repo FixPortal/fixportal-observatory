@@ -17,24 +17,44 @@
   create` only accepts as an argument; it is visible in this machine's process list
   for the duration of that call.
 
+.PARAMETER Prefix
+  Resource name prefix. Only `fpaiodemo` is accepted (case-sensitive): the API's
+  startup guard admits only database hosts starting `fpaiodemo-`
+  (DemoMode.DemoHostPrefix). Any fpaiobs* prefix is production and is refused.
+
 .PARAMETER DeployClientId
   Client id of the Entra app registration the demo workflows sign in with (OIDC).
-  Its federated credential subject must be
-  repo:<Repo>:environment:demo and it needs Contributor on the demo resource group.
-  Optional: when omitted AZURE_CLIENT_ID is not set and a reminder is printed.
+  Its federated credential subject must be repo:<Repo>:environment:demo. The script
+  grants it Contributor on the demo resource group itself and sets AZURE_CLIENT_ID.
+  Optional: when omitted neither is done and a reminder is printed.
+
+.PARAMETER SwaCustomDomain
+  Optional bare hostname (no scheme, no slash, lowercase) the demo is served on. The
+  CNAME to the Static Web App default hostname must exist first. When set it is passed
+  to Bicep as swaCustomDomain and the CORS origin becomes https://<host> instead of the
+  default *.azurestaticapps.net origin. Re-running with it rotates every key.
 
 .NOTES
-  Requires: az CLI and gh CLI, both logged in, pwsh 7.2+.
+  Requires: az CLI and gh CLI, both logged in, pwsh 7.2+. The signed-in az user must be
+  able to create role assignments (Owner or User Access Administrator on the
+  subscription or resource group).
   This script creates paid Azure resources. See docs/demo.md.
 #>
 #Requires -Version 7.2
 [CmdletBinding()]
 param(
   [string]$Location = 'westeurope',
-  [ValidatePattern('^[a-z][a-z0-9]{2,13}$')]
+  # The API refuses to start unless the database host starts with `fpaiodemo-`
+  # (DemoMode.DemoHostPrefix in src/AiObservatory.Api/DemoMode.cs). The server is named
+  # "$Prefix-db", so only the exact prefix `fpaiodemo` yields a host the guard admits;
+  # any suffix (fpaiodemox-db) or other name would provision a stack whose API crashes.
+  # Options = 'None' makes the match case-sensitive.
+  [ValidatePattern('^fpaiodemo$', Options = 'None')]
   [string]$Prefix = 'fpaiodemo',
   [string]$Repo = 'FixPortal/fixportal-observatory',
-  [string]$DeployClientId = ''
+  [string]$DeployClientId = '',
+  [ValidatePattern('^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$', Options = 'None')]
+  [string]$SwaCustomDomain = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -113,6 +133,8 @@ if ($LASTEXITCODE -ne 0 -or -not $swaHost) { throw 'Failed to read the Static We
 # swaOrigin is a CORS EXACT-MATCH origin: scheme + host, no trailing slash, no path.
 # A trailing slash does not error; the browser simply never matches and every call fails.
 $swaOrigin = "https://$swaHost"
+# Visitors on the custom domain send that Origin, so it must be the CORS origin instead.
+if ($SwaCustomDomain) { $swaOrigin = "https://$SwaCustomDomain" }
 
 # 6. Bicep deployment. A parameters file avoids all native-argument quoting of the
 #    empty strings and booleans.
@@ -125,7 +147,7 @@ $parameters = [ordered]@{
     demoMode        = @{ value = $true }
     aadTenantId     = @{ value = '' }
     aadClientId     = @{ value = '' }
-    swaCustomDomain = @{ value = '' }
+    swaCustomDomain = @{ value = $SwaCustomDomain }
     swaOrigin       = @{ value = $swaOrigin }
   }
 }
@@ -181,7 +203,7 @@ Set-VaultSecret -Name 'observatory-readonly-api-key' -Value $readonlyKey
 Set-VaultSecret -Name 'observatory-ide-api-key' -Value $ideKey
 
 # 8. Restart so the Key Vault references re-resolve
-az webapp restart --resource-group $rg --name $apiName
+az webapp restart --resource-group $rg --name $apiName --output none
 if ($LASTEXITCODE -ne 0) { throw "Failed to restart $apiName" }
 
 # 9. GitHub environment, restricted to main, then variables and secrets
@@ -229,6 +251,6 @@ Write-Host "API URL      : $apiUrl"
 Write-Host "SWA hostname : $swaHost"
 Write-Host "SWA origin   : $swaOrigin"
 if (-not $DeployClientId) {
-  Write-Host 'AZURE_CLIENT_ID was not set: pass -DeployClientId, or set it on the demo environment by hand.' -ForegroundColor Yellow
+  Write-Host 'No -DeployClientId: AZURE_CLIENT_ID was not set and Contributor was not granted. Re-run with -DeployClientId, or do both by hand.' -ForegroundColor Yellow
 }
 Write-Host 'Next: add the DNS record if wanted, dispatch deploy-demo.yml, then demo-reset.yml. See docs/demo.md.'
