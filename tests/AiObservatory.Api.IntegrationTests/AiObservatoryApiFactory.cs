@@ -33,6 +33,9 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
     public string Environment { get; set; } = Environments.Development;
     public string? ApiKeyOverride { get; set; } = AdminKey;
 
+    /// <summary>Sets OBSERVATORY_DEMO_MODE for the host (Production-style startup, demo routes).</summary>
+    public bool DemoMode { get; set; }
+
     /// <summary>
     /// Owner allowlist for the Activity and GitHub tabs, as the delimited scalar the deployed
     /// app receives. Defaults to the FixPortal deployment's value so the suites asserting that a
@@ -101,6 +104,7 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
         System.Environment.SetEnvironmentVariable("OBSERVATORY_API_KEY", ApiKeyOverride);
         System.Environment.SetEnvironmentVariable("OBSERVATORY_READONLY_API_KEY", ReadOnlyKeyOverride);
         System.Environment.SetEnvironmentVariable("OBSERVATORY_IDE_API_KEY", IdeKeyOverride);
+        System.Environment.SetEnvironmentVariable("OBSERVATORY_DEMO_MODE", DemoMode ? "true" : null);
         System.Environment.SetEnvironmentVariable("SWA_ORIGIN", "https://example.test");
         // The owner allowlist is configuration now, and empty means allow everything. The
         // Activity and GitHub suites assert that a NON-allowlisted owner is excluded, so they
