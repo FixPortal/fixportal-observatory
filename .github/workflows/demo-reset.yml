@@ -1,0 +1,33 @@
+name: Demo reset
+
+# Nightly (and on demand) reset of the DEMO database to its synthetic seed. Uses only
+# the `demo` environment's variable and secret. The environment's branch policy admits
+# main, and scheduled runs use the default branch.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: demo-reset
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  reset:
+    name: Reset demo data
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: demo
+    steps:
+      - name: Reset the demo database
+        env:
+          DEMO_API_URL: ${{ vars.DEMO_API_URL }}
+          DEMO_ADMIN_KEY: ${{ secrets.DEMO_ADMIN_KEY }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 -X POST \
+            -H "X-Observatory-Key: $DEMO_ADMIN_KEY" "$DEMO_API_URL/api/dev/reset-demo") || code=000
+          echo "reset -> HTTP $code"
+          [ "$code" = "200" ] || { echo "::error::Demo reset returned HTTP $code"; exit 1; }
