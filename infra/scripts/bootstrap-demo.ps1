@@ -24,10 +24,10 @@
   Optional: when omitted AZURE_CLIENT_ID is not set and a reminder is printed.
 
 .NOTES
-  Requires: az CLI and gh CLI, both logged in, pwsh 7+.
+  Requires: az CLI and gh CLI, both logged in, pwsh 7.2+.
   This script creates paid Azure resources. See docs/demo.md.
 #>
-#Requires -Version 7.0
+#Requires -Version 7.2
 [CmdletBinding()]
 param(
   [string]$Location = 'westeurope',
@@ -80,7 +80,10 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to create resource group $rg" }
 $adminKey = New-HexKey
 $readonlyKey = New-HexKey
 $ideKey = New-HexKey
-$dbPassword = New-HexKey
+# Azure needs three of four character classes. Hex gives digits + uppercase; the suffix
+# adds a lowercase letter and a non-alphanumeric. No ; = quote space backtick or $, so it
+# is safe inside an Npgsql connection string.
+$dbPassword = "$(New-HexKey)a!"
 
 # 4. PostgreSQL flexible server (create, or reset the password of the existing one)
 $existingDb = az postgres flexible-server show --resource-group $rg --name $dbServer --query name --output tsv 2>$null
@@ -142,6 +145,15 @@ $kvId = az keyvault show --name $kvName --query id --output tsv
 if ($LASTEXITCODE -ne 0 -or -not $kvId) { throw "Failed to find Key Vault $kvName" }
 az role assignment create --assignee-object-id $userOid --assignee-principal-type User --role 'Key Vault Secrets Officer' --scope $kvId --output none
 if ($LASTEXITCODE -ne 0) { throw 'Failed to grant Key Vault Secrets Officer' }
+
+# Let the deploy identity (OIDC app) deploy to the demo stack: Contributor on the demo
+# resource group only. Re-assigning an identical assignment is a no-op.
+if ($DeployClientId) {
+  $rgId = az group show --name $rg --query id --output tsv
+  if ($LASTEXITCODE -ne 0 -or -not $rgId) { throw "Failed to read the id of $rg" }
+  az role assignment create --assignee $DeployClientId --role Contributor --scope $rgId --output none
+  if ($LASTEXITCODE -ne 0) { throw "Failed to grant Contributor on $rg to the deploy identity" }
+}
 
 function Set-VaultSecret {
   param([string]$Name, [string]$Value)
