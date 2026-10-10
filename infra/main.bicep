@@ -20,6 +20,12 @@ param copilotOrgSecretName string = 'copilot-org'
 // empty. Defaults to its secret name for the same reason as the two above.
 param githubActivityOrgSecretName string = 'github-activity-org'
 
+// Second-stack (demo) switches. Defaults reproduce production exactly.
+param deployIngest bool = true
+param demoMode bool = false
+param swaOrigin string = 'https://observatory.fixportal.org'
+param swaCustomDomain string = 'observatory.fixportal.org'
+
 module kv 'modules/keyvault.bicep' = {
   name: 'keyvault'
   params: { location: location, kvName: '${prefix}-kv' }
@@ -31,7 +37,7 @@ module postgresql 'modules/postgresql.bicep' = {
     serverName: '${prefix}-db'
     allowedIps: union(
       split(appservice.outputs.possibleOutboundIpAddresses, ','),
-      split(ingest.outputs.possibleOutboundIpAddresses, ',')
+      deployIngest ? split(ingest!.outputs.possibleOutboundIpAddresses, ',') : []
     )
   }
 }
@@ -45,6 +51,8 @@ module appservice 'modules/appservice.bicep' = {
     aiConnectionString: appinsights.outputs.connectionString
     aadTenantId: aadTenantId
     aadClientId: aadClientId
+    demoMode: demoMode
+    swaOrigin: swaOrigin
   }
 }
 
@@ -55,10 +63,10 @@ module appinsights 'modules/appinsights.bicep' = {
 
 module swa 'modules/swa.bicep' = {
   name: 'swa'
-  params: { swaName: '${prefix}-swa' }
+  params: { swaName: '${prefix}-swa', swaCustomDomain: swaCustomDomain }
 }
 
-module ingest 'modules/ingest.bicep' = {
+module ingest 'modules/ingest.bicep' = if (deployIngest) {
   name: 'ingest'
   // ingest references the App Service plan by name (`existing`), so there is no
   // implicit dependency; sequence it after appservice creates `${prefix}-api-plan`.
