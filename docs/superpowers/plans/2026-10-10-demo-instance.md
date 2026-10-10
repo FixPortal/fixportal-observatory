@@ -971,7 +971,7 @@ One re-runnable operator script. Requirements, in order, each followed by `if ($
 
 1. Parameters: `-Location` (default `westeurope`), `-Prefix` (default `fpaiodemo`), `-Repo` (default `FixPortal/fixportal-observatory`). Refuse to run if `-Prefix` equals `fpaiobs`.
 2. `az group create` for `$Prefix-rg`.
-3. Generate three hex keys with `[Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(24))` (admin, read-only, IDE; 48 characters each) and a hex database password.
+3. Generate three hex keys with `[Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(24))` (admin, read-only, IDE; 48 characters each) and a database password that satisfies Azure's three-of-four character-class policy (hex plus a lowercase letter and `!`, with no `;`, `=`, quote, space, backtick or `$` so it is safe in an Npgsql connection string).
 4. `az postgres flexible-server create` named `$Prefix-db`: Burstable `Standard_B1ms`, version 16, 32 GB, `--public-access None`; then `az postgres flexible-server db create` for `aiobservatory`.
 5. `az staticwebapp create` named `$Prefix-swa`, Free SKU; read its deployment token and default hostname.
 6. `az deployment group create -g $Prefix-rg -f infra/main.bicep` with parameters `prefix=$Prefix deployIngest=false demoMode=true aadTenantId='' aadClientId='' swaCustomDomain='' swaOrigin=https://<swa default hostname>`.

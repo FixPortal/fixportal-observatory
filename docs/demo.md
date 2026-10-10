@@ -14,8 +14,8 @@ A second, separate Azure stack that serves synthetic data read-only, so people c
 
 Order matters.
 
-1. **Deploy identity.** Create an Entra app registration for the demo workflows, add a federated credential with subject `repo:FixPortal/fixportal-observatory:environment:demo`, and note its client id. It needs `Contributor` on the demo resource group (`fpaiodemo-rg`) once the script has created it. This is separate from the production `fpaiobs-deploy` app.
-2. **Run the bootstrap script** as an operator logged in to `az` and `gh`:
+1. **Deploy identity.** Create an Entra app registration for the demo workflows, add a federated credential with subject `repo:FixPortal/fixportal-observatory:environment:demo`, make sure it has a service principal, and note its client id. Do not grant it any role yet: the bootstrap script grants `Contributor` scoped to the demo resource group (`fpaiodemo-rg`) when you pass `-DeployClientId`. If you omit that parameter, grant it by hand after step 2: `az role assignment create --assignee <client-id> --role Contributor --scope <resource group id>`, and set the `AZURE_CLIENT_ID` variable on the `demo` environment. This is separate from the production `fpaiobs-deploy` app.
+2. **Run the bootstrap script** with PowerShell 7.2 or newer, as an operator logged in to `az` and `gh`:
 
    ```powershell
    pwsh -File infra/scripts/bootstrap-demo.ps1 -DeployClientId <client-id>
