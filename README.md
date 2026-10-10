@@ -25,6 +25,8 @@ maintainer. If you have an older checkout, preserve local work and clone again.
 
 ### Quick start
 
+Want to look around without installing anything? See the [public demo](docs/demo.md).
+
 Restore uses public feeds; no GitHub Packages token is required.
 
 ```powershell

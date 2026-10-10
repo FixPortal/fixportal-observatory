@@ -1,0 +1,112 @@
+name: Deploy demo
+
+# Manual deploy of the public read-only DEMO stack (fpaiodemo-*). Never called by
+# ci.yml and never triggered by a push: the demo is deployed on purpose, from main.
+#
+# Every job names the `demo` environment, whose deployment branch policy admits main
+# alone (bootstrap-demo.ps1 sets it). Nothing here reads the `production` environment:
+# the demo has its own Azure OIDC federated credential (subject
+# `repo:FixPortal/fixportal-observatory:environment:demo`), its own Static Web Apps
+# token and its own keys. See docs/demo.md.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-demo
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-api:
+    timeout-minutes: 20
+    name: Deploy demo (api)
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' }}
+    environment: demo
+    permissions:
+      contents: read
+      # Mints the short-lived OIDC token azure/login exchanges for an Azure access token.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.x'
+      - name: Publish
+        run: dotnet publish src/AiObservatory.Api -c Release -o ./publish/api
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3
+        with:
+          app-name: fpaiodemo-api
+          package: ./publish/api
+
+      # Exactly 401 proves the app is serving: every /api route sits behind the API-key
+      # filter, so an unauthenticated probe gets 401 from a healthy app. Anything else
+      # (5xx, 000, 200, 3xx, 404, 403) is a failed deploy. Same loop as deploy.yml.
+      - name: Verify the API is serving
+        env:
+          DEMO_API_URL: ${{ vars.DEMO_API_URL }}
+        run: |
+          # Bounded by a wall-clock DEADLINE, not an attempt count (see deploy.yml).
+          deadline=$(( $(date +%s) + 600 ))
+          while :; do
+            # Assign, then fall back on curl's EXIT STATUS; `$(curl ... || echo 000)`
+            # yields "000000" on a transport failure (see deploy.yml).
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+              "$DEMO_API_URL/api/aggregates") || code=000
+            echo "probe -> HTTP $code"
+            case "$code" in
+              401) echo "API is serving (HTTP $code)"; exit 0 ;;
+              *) : ;;
+            esac
+            [ "$(date +%s)" -lt "$deadline" ] || break
+            sleep 15
+          done
+          echo "::error::Demo API never returned the expected 401 after deploy."
+          exit 1
+
+  deploy-web:
+    timeout-minutes: 20
+    name: Deploy demo (web)
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' }}
+    environment: demo
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm ci
+        working-directory: src/AiObservatory.Web
+      - run: npm run build
+        working-directory: src/AiObservatory.Web
+        env:
+          # Build-time, baked into the public bundle. The read-only key is public by
+          # design: it can only read the synthetic demo data. No VITE_AAD_* here, so
+          # MSAL stays off and the SPA authenticates with the key alone.
+          VITE_API_BASE: ${{ vars.DEMO_API_URL }}
+          VITE_API_KEY: ${{ vars.DEMO_READONLY_KEY }}
+          VITE_DEMO_BANNER: 'true'
+          VITE_ATTRIBUTION_NAME: FixPortal
+          VITE_ATTRIBUTION_URL: https://github.com/FixPortal
+      - uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.DEMO_SWA_DEPLOYMENT_TOKEN }}
+          action: upload
+          app_location: src/AiObservatory.Web/dist
+          output_location: ''
+          skip_app_build: true
