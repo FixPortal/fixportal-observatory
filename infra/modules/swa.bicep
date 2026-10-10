@@ -1,4 +1,5 @@
 param swaName string
+param swaCustomDomain string = 'observatory.fixportal.org'
 
 // Referenced as existing, not managed by the recurring infra deploy. The Static
 // Web App is provisioned at bootstrap; its GitHub linkage, deployment-token auth
@@ -12,9 +13,9 @@ resource swa 'Microsoft.Web/staticSites@2023-01-01' existing = {
 // -> the SWA default hostname; Azure issues a free managed cert). Declared as a
 // child of the existing SWA so the binding is in IaC without managing the rest
 // of the resource.
-resource customDomain 'Microsoft.Web/staticSites/customDomains@2023-01-01' = {
+resource customDomain 'Microsoft.Web/staticSites/customDomains@2023-01-01' = if (!empty(swaCustomDomain)) {
   parent: swa
-  name: 'observatory.fixportal.org'
+  name: swaCustomDomain
 }
 
 output url string = 'https://${swa.properties.defaultHostname}'
