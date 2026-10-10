@@ -1,6 +1,9 @@
 # Public demo instance — design
 
-Date: 2026-10-10. Status: draft for review.
+Date: 2026-10-10. Status: approved; amended by the implementation plan.
+
+Amendments found while reading the code are listed under "Deviations from the spec" in
+`docs/superpowers/plans/2026-10-10-demo-instance.md`. Where the two disagree, the plan wins.
 
 ## Purpose
 
