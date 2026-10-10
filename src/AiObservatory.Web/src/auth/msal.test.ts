@@ -82,6 +82,42 @@ describe('readViewerKey / URL strip', () => {
   })
 })
 
+describe('isReadonly on a demo build', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.unstubAllEnvs()
+    window.sessionStorage.clear()
+    window.history.pushState({}, '', '/')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  test('is true when VITE_DEMO_BANNER is "true" and there is no URL key', async () => {
+    vi.stubEnv('VITE_DEMO_BANNER', 'true')
+
+    const mod = await import('./msal')
+
+    expect(mod.urlApiKey).toBe('')
+    expect(mod.isReadonly).toBe(true)
+  })
+
+  test.each([['false'], ['TRUE'], ['']])('is false when VITE_DEMO_BANNER is %j', async (value) => {
+    vi.stubEnv('VITE_DEMO_BANNER', value)
+
+    const mod = await import('./msal')
+
+    expect(mod.isReadonly).toBe(false)
+  })
+
+  test('is false when VITE_DEMO_BANNER is unset', async () => {
+    const mod = await import('./msal')
+
+    expect(mod.isReadonly).toBe(false)
+  })
+})
+
 function stubWebViewHost() {
   const host = window as Window & { chrome?: { webview?: object } }
   host.chrome = { webview: {} }
