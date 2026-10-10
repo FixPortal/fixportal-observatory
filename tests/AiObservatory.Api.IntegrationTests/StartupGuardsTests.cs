@@ -146,7 +146,8 @@ public class StartupGuardsTests
             Environment = Environments.Production,
             DemoMode = true,
         };
-        factory.SetDbConnection("Host=fpaiobs-db.postgres.database.azure.com;Database=a;Username=u;Password=p");
+        // .invalid never resolves (RFC 2606); the guard checks the host prefix only.
+        factory.SetDbConnection("Host=fpaiobs-db.invalid;Database=a;Username=u;Password=p;Timeout=1");
 
         var thrown = CaptureServicesException(factory);
 
@@ -160,11 +161,10 @@ public class StartupGuardsTests
     public async Task Startup_WhenDemoModeIsOffAndDatabaseHostIsNotADemoHost_DoesNotApplyTheDemoGuard()
     {
         // Production uses a non-demo host and must start exactly as it does today. The host is
-        // deliberately NOT localhost: with the default host the guard would pass either way.
+        // deliberately NOT localhost (with the default host the guard would pass either way), and
+        // it is a non-resolving .invalid name so the test never dials a real database.
         await using var factory = new AiObservatoryApiFactory { Environment = Environments.Production };
-        factory.SetDbConnection(
-            "Host=fpaiobs-db.postgres.database.azure.com;Database=a;Username=u;Password=p;Timeout=1"
-        );
+        factory.SetDbConnection("Host=fpaiobs-db.invalid;Database=a;Username=u;Password=p;Timeout=1");
 
         var thrown = CaptureServicesException(factory);
 
