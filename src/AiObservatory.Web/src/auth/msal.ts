@@ -129,5 +129,7 @@ if ((urlApiKey || isEmbedded) && typeof window.history?.replaceState === 'functi
 // A viewer-key session is read-only — the API rejects every non-GET without the
 // admin key. Used to hide write controls so colleagues on a share link aren't
 // shown buttons that would only 401. (A viewer key is the only credential a
-// ?key= visitor holds; Entra and self-host keys never set urlApiKey.)
-export const isReadonly = urlApiKey.length > 0
+// ?key= visitor holds; Entra and self-host keys never set urlApiKey.) A demo build
+// is also a viewer: it bakes the read-only key via VITE_API_KEY rather than a link,
+// so urlApiKey is empty there and the build flag is the signal.
+export const isReadonly = urlApiKey.length > 0 || import.meta.env.VITE_DEMO_BANNER === 'true'
