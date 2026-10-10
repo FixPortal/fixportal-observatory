@@ -21,13 +21,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: demo
+    # Same ref guard as deploy-demo.yml; the environment's branch policy is the second lock.
+    if: ${{ github.ref == 'refs/heads/main' }}
     steps:
       - name: Reset the demo database
         env:
           DEMO_API_URL: ${{ vars.DEMO_API_URL }}
           DEMO_ADMIN_KEY: ${{ secrets.DEMO_ADMIN_KEY }}
         run: |
-          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 -X POST \
-            -H "X-Observatory-Key: $DEMO_ADMIN_KEY" "$DEMO_API_URL/api/dev/reset-demo") || code=000
-          echo "reset -> HTTP $code"
-          [ "$code" = "200" ] || { echo "::error::Demo reset returned HTTP $code"; exit 1; }
+          # A nightly run can land on a cold or just-restarted App Service (or a transient 502
+          # while a Key Vault reference resolves), so retry a few times before failing the job.
+          # Bounded by a wall-clock deadline well inside the job's timeout.
+          deadline=$(( $(date +%s) + 420 ))
+          while :; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 -X POST \
+              -H "X-Observatory-Key: $DEMO_ADMIN_KEY" "$DEMO_API_URL/api/dev/reset-demo") || code=000
+            echo "reset -> HTTP $code"
+            case "$code" in
+              200) exit 0 ;;
+              # Only a cold or failing server is worth retrying; a 4xx (wrong key, wrong URL) is not.
+              5??|000) : ;;
+              *) break ;;
+            esac
+            [ "$(date +%s)" -lt "$deadline" ] || break
+            sleep 30
+          done
+          echo "::error::Demo reset still returning HTTP $code after retries"
+          exit 1
