@@ -95,7 +95,12 @@ builder.Services.AddScoped<BillingObservationWriter>();
 // token scope that arm needs and why an unresolved Key Vault reference counts as unset.
 builder.Services.AddGitHubBilling(builder.Configuration);
 
-builder.Services.AddHostedService<IntelligenceWorkerService>();
+// Demo mode has no real data to analyse and must not call Anthropic, send alerts or sync
+// GitHub billing.
+if (!demoMode)
+{
+    builder.Services.AddHostedService<IntelligenceWorkerService>();
+}
 
 // Fixed-window rate limit per client IP on the /api group, so an unauthenticated GET or a
 // hot loop can't hammer the B1 plan. Partitioning on the (real, post-UseForwardedHeaders)
@@ -177,6 +182,12 @@ app.UseForwardedHeaders();
 app.UseCors();
 app.UseRateLimiter();
 
+if (demoMode)
+{
+    // After UseCors so a preflight is answered before it reaches the block.
+    app.UseMiddleware<DemoWriteBlockMiddleware>();
+}
+
 if (authEnabled)
 {
     app.UseAuthentication();
@@ -190,6 +201,10 @@ ide.MapIdeEndpoints();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+}
+
+if (app.Environment.IsDevelopment() || demoMode)
+{
     api.MapPost(
         "/dev/seed",
         async (AiObservatoryDbContext db, IClock clock, CancellationToken ct) =>
@@ -204,6 +219,18 @@ if (app.Environment.IsDevelopment())
 
             await DemoSeeder.SeedAsync(db, clock, ct);
             return Results.Ok("Seed successful");
+        }
+    );
+}
+
+if (demoMode)
+{
+    api.MapPost(
+        "/dev/reset-demo",
+        async (AiObservatoryDbContext db, IClock clock, CancellationToken ct) =>
+        {
+            await DemoSeeder.ResetAsync(db, clock, ct);
+            return Results.Ok("Demo reset");
         }
     );
 }
