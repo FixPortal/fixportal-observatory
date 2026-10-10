@@ -36,6 +36,22 @@ public class DemoModeEndpointTests
         (await db.DailyAggregates.AnyAsync(TestContext.Current.CancellationToken)).Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("/api/dev/reset-demo/")]
+    [InlineData("/API/DEV/RESET-DEMO")]
+    public async Task Reset_is_reachable_through_trailing_slash_and_case_variants(string path)
+    {
+        // Routing matches these to the reset endpoint, so the write block must not turn them into
+        // a misleading "read-only" 403 (a DEMO_API_URL variable ending in a slash would do it).
+        await using var factory = DemoFactory();
+        await factory.InitializeAsync();
+        using var client = factory.CreateAdminClient();
+
+        var response = await client.PostAsync(path, content: null, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     [Fact]
     public async Task Reset_with_the_read_only_key_is_rejected()
     {

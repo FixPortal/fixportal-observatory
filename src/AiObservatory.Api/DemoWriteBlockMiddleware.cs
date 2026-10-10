@@ -14,7 +14,9 @@ public sealed class DemoWriteBlockMiddleware(RequestDelegate next)
     {
         var method = context.Request.Method;
         var safe = HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method);
-        if (safe || ExemptPaths.Contains(context.Request.Path.Value ?? string.Empty, StringComparer.OrdinalIgnoreCase))
+        // Routing treats a trailing slash as the same endpoint, so the exempt match must too.
+        var path = (context.Request.Path.Value ?? string.Empty).TrimEnd('/');
+        if (safe || ExemptPaths.Contains(path, StringComparer.OrdinalIgnoreCase))
         {
             return next(context);
         }
