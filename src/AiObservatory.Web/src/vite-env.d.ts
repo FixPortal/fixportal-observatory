@@ -13,6 +13,8 @@ interface ImportMetaEnv {
   readonly VITE_ATTRIBUTION_NAME?: string
   /** Link target for the attribution name. */
   readonly VITE_ATTRIBUTION_URL?: string
+  /** "true" shows the synthetic-data banner on the public demo build. */
+  readonly VITE_DEMO_BANNER?: string
 }
 
 interface ImportMeta {
