@@ -220,9 +220,12 @@ $referenceSettings = [ordered]@{
   OBSERVATORY_READONLY_API_KEY = 'observatory-readonly-api-key'
   OBSERVATORY_IDE_API_KEY      = 'observatory-ide-api-key'
 }
-$referenceValues = [ordered]@{}
+$referenceValues = @()
 foreach ($settingName in $referenceSettings.Keys) {
-  $referenceValues[$settingName] = "@Microsoft.KeyVault(VaultName=$kvName;SecretName=$($referenceSettings[$settingName]))"
+  $referenceValues += @{
+    name  = $settingName
+    value = "@Microsoft.KeyVault(VaultName=$kvName;SecretName=$($referenceSettings[$settingName]))"
+  }
 }
 $referenceFile = Join-Path ([IO.Path]::GetTempPath()) "kv-refs-$([guid]::NewGuid().ToString('N')).json"
 try {
