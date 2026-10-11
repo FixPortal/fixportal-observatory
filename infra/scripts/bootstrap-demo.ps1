@@ -111,20 +111,18 @@ if ($LASTEXITCODE -eq 0 -and $existingDb) {
   Write-Host "Reusing PostgreSQL server $dbServer; resetting its admin password."
   az postgres flexible-server update --resource-group $rg --name $dbServer --admin-password $dbPassword --output none
   if ($LASTEXITCODE -ne 0) { throw "Failed to reset the admin password on $dbServer" }
-  # A server from an earlier run may have been created with public access Disabled.
-  az postgres flexible-server update --resource-group $rg --name $dbServer --public-access Enabled --output none
-  if ($LASTEXITCODE -ne 0) { throw "Failed to enable public access on $dbServer" }
 } else {
   Write-Host "Creating PostgreSQL server $dbServer (Burstable B1ms, v16, 32 GB)."
-  az postgres flexible-server create --resource-group $rg --name $dbServer --location $Location --tier Burstable --sku-name Standard_B1ms --version 16 --storage-size 32 --admin-user $dbAdmin --admin-password $dbPassword --public-access 0.0.0.0 --yes --output none
+  az postgres flexible-server create --resource-group $rg --name $dbServer --location $Location --tier Burstable --sku-name Standard_B1ms --version 16 --storage-size 32 --admin-user $dbAdmin --admin-password $dbPassword --public-access None --yes --output none
   if ($LASTEXITCODE -ne 0) { throw "Failed to create PostgreSQL server $dbServer" }
 }
 # Observed: `--public-access None` leaves publicNetworkAccess Disabled (the CLI help says
-# otherwise), and firewall rules then fail. Create passes 0.0.0.0 so the rule normally
-# exists already; this step is for a reused server. The 0.0.0.0 rule admits Azure-hosted services (the App Service); the data is synthetic. Creating
-# a rule that already exists updates it, so this is safe on re-run.
-az postgres flexible-server firewall-rule create --resource-group $rg --server-name $dbServer --name AllowAzureServices --start-ip-address 0.0.0.0 --end-ip-address 0.0.0.0 --output none
-if ($LASTEXITCODE -ne 0) { throw "Failed to create the Azure-services firewall rule on $dbServer" }
+# otherwise), and no firewall rule can be created on a Disabled server. Enable it here, for a
+# new and a reused server alike. No firewall rule is created by this script: the Bicep
+# postgresql module adds one per App Service outbound IP (allow-app-N), and the demo was
+# observed working with those alone and no 0.0.0.0 (all Azure) rule.
+az postgres flexible-server update --resource-group $rg --name $dbServer --public-access Enabled --output none
+if ($LASTEXITCODE -ne 0) { throw "Failed to enable public access on $dbServer" }
 az postgres flexible-server db create --resource-group $rg --server-name $dbServer --name $dbName --output none
 if ($LASTEXITCODE -ne 0) { throw "Failed to create database $dbName" }
 
