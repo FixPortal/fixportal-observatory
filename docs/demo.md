@@ -16,7 +16,7 @@ Order matters.
 
 Prerequisite: the operator running the script needs more than a logged-in `az` session. They must be able to create role assignments (Owner or User Access Administrator on the subscription or the resource group), because the script grants itself Key Vault Secrets Officer and grants the deploy identity Contributor.
 
-1. **Deploy identity.** Create an Entra app registration for the demo workflows, add a federated credential with subject `repo:FixPortal/fixportal-observatory:environment:demo`, make sure it has a service principal, and note its client id. Do not grant it any role yet: the bootstrap script grants `Contributor` scoped to the demo resource group (`fpaiodemo-rg`) when you pass `-DeployClientId`. If you omit that parameter, grant it by hand after step 2: `az role assignment create --assignee <client-id> --role Contributor --scope <resource group id>`, and set the `AZURE_CLIENT_ID` variable on the `demo` environment. This is separate from the production `fpaiobs-deploy` app.
+1. **Deploy identity.** Create an Entra app registration for the demo workflows, add **two** federated credentials, make sure it has a service principal, and note its client id. The subjects are `repo:FixPortal/fixportal-observatory:environment:demo` and the ID-based form `repo:FixPortal@<owner id>/fixportal-observatory@<repo id>:environment:demo`. This repository has `use_immutable_subject` on (`gh api repos/FixPortal/fixportal-observatory/actions/oidc/customization/sub`), so GitHub presents the ID-based subject and the name-based one alone fails with `AADSTS700213: No matching federated identity record found`. Read the ids from `sub_claim_prefix` in that response. Production carries both forms for the same reason. Do not grant it any role yet: the bootstrap script grants `Contributor` scoped to the demo resource group (`fpaiodemo-rg`) when you pass `-DeployClientId`. If you omit that parameter, grant it by hand after step 2: `az role assignment create --assignee <client-id> --role Contributor --scope <resource group id>`, and set the `AZURE_CLIENT_ID` variable on the `demo` environment. This is separate from the production `fpaiobs-deploy` app.
 2. **Run the bootstrap script** with PowerShell 7.2 or newer, as an operator logged in to `az` and `gh`:
 
    ```powershell
@@ -25,6 +25,14 @@ Prerequisite: the operator running the script needs more than a logged-in `az` s
 
    It creates the resource group, PostgreSQL server and database, Static Web App, the Bicep stack (`deployIngest=false`, `demoMode=true`, no Entra sign-in, no custom domain), the Key Vault secrets, and the GitHub environment `demo` with its variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `DEMO_API_URL`, `DEMO_READONLY_KEY`) and secrets (`DEMO_ADMIN_KEY`, `DEMO_SWA_DEPLOYMENT_TOKEN`). The environment is restricted to `main`. It prints no key. Re-running regenerates every key and the database password and re-applies them everywhere. The only accepted `-Prefix` is `fpaiodemo` (case-sensitive, the default): the API starts only against a database host beginning `fpaiodemo-` (`DemoHostPrefix` in `src/AiObservatory.Api/DemoMode.cs`), and the script refuses any `fpaiobs*` prefix.
 3. **Custom domain (optional).** Add a CNAME from your hostname to the Static Web App default hostname the script printed, then re-run the script with `-SwaCustomDomain <host>` (a bare lowercase hostname: no scheme, no slash). The script passes it to Bicep as `swaCustomDomain` and sets the API's CORS origin (`SWA_ORIGIN`) to `https://<host>`. Do not hand-run `az deployment group create` against the demo resource group: `infra/main.bicep` defaults are the production values (`prefix=fpaiobs`, `demoMode=false`, `deployIngest=true`, the production `aadClientId`). A re-run rotates every key (see below), so dispatch `deploy-demo.yml` afterwards.
+   Before dispatching, check the API's Key Vault references resolved. On the first live run all four stayed `AccessToKeyVaultDenied` after the script finished, although the role assignment was correct, and the API crashed at startup with `Couldn't set @microsoft.keyvault(vaultname` from `DemoMode.EnsureSafeDatabase`. A restart did not clear it; re-saving an app setting with its own value did:
+
+   ```powershell
+   $sub = az account show --query id -o tsv
+   az rest --method get --url "https://management.azure.com/subscriptions/$sub/resourceGroups/fpaiodemo-rg/providers/Microsoft.Web/sites/fpaiodemo-api/config/configreferences/appsettings?api-version=2022-03-01" --query "value[].{name:name,status:properties.status}" -o table
+   ```
+
+   Every row should read `Resolved`. If not, write `{ "DB_CONNECTION": "@Microsoft.KeyVault(VaultName=fpaiodemo-kv;SecretName=db-connection)" }` to a file and run `az webapp config appsettings set -g fpaiodemo-rg -n fpaiodemo-api --settings "@<file>"`. Pass the setting through a file: the `az` wrapper on Windows mis-parses the parentheses and semicolons inline.
 4. **Dispatch `deploy-demo.yml`** from `main`. It publishes the API, probes for the expected `401`, then builds and uploads the SPA.
 5. **Dispatch `demo-reset.yml`** once to seed the database. It then runs nightly at 03:17 UTC.
 6. **Link it from the README.** Once the real demo URL exists, replace the target of the "public demo" line in `README.md` (currently `docs/demo.md`) with it.
@@ -54,8 +62,12 @@ Key Vault purge protection is on, so deleting the demo resource group leaves a s
 
 ## Re-run behaviour not yet observed
 
-- UNVERIFIED: re-running `az postgres flexible-server db create` for an existing database is assumed idempotent. Refuted if a second run throws "Failed to create database aiobservatory".
-- UNVERIFIED: re-running `az role assignment create` for an existing assignment is assumed to succeed. Refuted if a second run throws on the Key Vault Secrets Officer or Contributor grant.
+Observed on the first live runs (2026-10-11, three runs against one server): the reuse path (password reset, enable public access) and `firewall-rule create` on an existing rule exited 0.
+
+- UNVERIFIED: re-running `az postgres flexible-server db create` for an existing database is assumed idempotent. Its first success was the third run; it has not run against an existing database. Refuted if a second full run throws "Failed to create database aiobservatory".
+- UNVERIFIED: re-running `az role assignment create` for an existing assignment is assumed to succeed. The grants first executed on the third run. Refuted if a second full run throws on the Key Vault Secrets Officer or Contributor grant.
+
+`az postgres flexible-server create --public-access None` leaves `publicNetworkAccess` Disabled (the CLI help says otherwise), and firewall rules then fail with "Firewall rule operations are not supported for a server without public access enabled". The script creates the server with `--public-access 0.0.0.0` and re-enables public access on a reused server.
 
 ## Notes for the production operator
 
