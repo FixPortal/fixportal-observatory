@@ -35,7 +35,7 @@ Prerequisite: the operator running the script needs more than a logged-in `az` s
    Every row should read `Resolved`. If not, write `{ "DB_CONNECTION": "@Microsoft.KeyVault(VaultName=fpaiodemo-kv;SecretName=db-connection)" }` to a file and run `az webapp config appsettings set -g fpaiodemo-rg -n fpaiodemo-api --settings "@<file>"`. Pass the setting through a file: the `az` wrapper on Windows mis-parses the parentheses and semicolons inline.
 4. **Dispatch `deploy-demo.yml`** from `main`. It publishes the API, probes for the expected `401`, then builds and uploads the SPA.
 5. **Dispatch `demo-reset.yml`** once to seed the database. It then runs nightly at 03:17 UTC.
-6. **Link it from the README.** Once the real demo URL exists, replace the target of the "public demo" line in `README.md` (currently `docs/demo.md`) with it.
+6. **Link it from the README.** Once the real demo URL exists, point the "public demo" line in `README.md` at it, and set the repository `homepage` field (`gh repo edit --homepage <url>`). Before linking, load the page in a browser and confirm the synthetic-data banner and figures render; a 200 on the root does not prove the API calls work.
 
 `demo-reset.yml` is a scheduled workflow, and GitHub disables scheduled workflows after 60 days without repository activity. On a quiet repository the nightly reset can stop silently; re-enable it from the Actions tab (select the workflow, then Enable workflow), or dispatch it by hand.
 
