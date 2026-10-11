@@ -209,7 +209,29 @@ Set-VaultSecret -Name 'observatory-api-key' -Value $adminKey
 Set-VaultSecret -Name 'observatory-readonly-api-key' -Value $readonlyKey
 Set-VaultSecret -Name 'observatory-ide-api-key' -Value $ideKey
 
-# 8. Restart so the Key Vault references re-resolve
+# 8. Make the app re-resolve its Key Vault references. A restart alone does not: observed on
+#    the demo, references stayed AccessToKeyVaultDenied after the role propagated, and after a
+#    rotation the app kept the old secret versions (28P01 against the new database password)
+#    until an app setting was re-saved. Re-saving a reference setting cleared both. The values go
+#    through a file because the Windows az wrapper mis-parses parentheses and semicolons inline.
+$referenceSettings = [ordered]@{
+  DB_CONNECTION                = 'db-connection'
+  OBSERVATORY_API_KEY          = 'observatory-api-key'
+  OBSERVATORY_READONLY_API_KEY = 'observatory-readonly-api-key'
+  OBSERVATORY_IDE_API_KEY      = 'observatory-ide-api-key'
+}
+$referenceValues = [ordered]@{}
+foreach ($settingName in $referenceSettings.Keys) {
+  $referenceValues[$settingName] = "@Microsoft.KeyVault(VaultName=$kvName;SecretName=$($referenceSettings[$settingName]))"
+}
+$referenceFile = Join-Path ([IO.Path]::GetTempPath()) "kv-refs-$([guid]::NewGuid().ToString('N')).json"
+try {
+  $referenceValues | ConvertTo-Json | Set-Content -Path $referenceFile -Encoding utf8NoBOM
+  az webapp config appsettings set --resource-group $rg --name $apiName --settings "@$referenceFile" --output none
+  if ($LASTEXITCODE -ne 0) { throw "Failed to re-save the Key Vault reference settings on $apiName" }
+} finally {
+  Remove-Item -Path $referenceFile -Force -ErrorAction SilentlyContinue
+}
 az webapp restart --resource-group $rg --name $apiName --output none
 if ($LASTEXITCODE -ne 0) { throw "Failed to restart $apiName" }
 
