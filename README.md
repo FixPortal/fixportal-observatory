@@ -25,7 +25,7 @@ maintainer. If you have an older checkout, preserve local work and clone again.
 
 ### Quick start
 
-Want to look around without installing anything? See the [public demo](docs/demo.md).
+Want to look around without installing anything? Try the [public demo](https://lively-desert-095504b03.5.azurestaticapps.net/): read-only, synthetic data only. How it is built and run is in [docs/demo.md](docs/demo.md).
 
 Restore uses public feeds; no GitHub Packages token is required.
 
