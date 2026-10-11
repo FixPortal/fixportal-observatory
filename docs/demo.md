@@ -67,7 +67,9 @@ Observed on the first live runs (2026-10-11, three runs against one server): the
 - UNVERIFIED: re-running `az postgres flexible-server db create` for an existing database is assumed idempotent. Its first success was the third run; it has not run against an existing database. Refuted if a second full run throws "Failed to create database aiobservatory".
 - UNVERIFIED: re-running `az role assignment create` for an existing assignment is assumed to succeed. The grants first executed on the third run. Refuted if a second full run throws on the Key Vault Secrets Officer or Contributor grant.
 
-`az postgres flexible-server create --public-access None` leaves `publicNetworkAccess` Disabled (the CLI help says otherwise), and firewall rules then fail with "Firewall rule operations are not supported for a server without public access enabled". The script creates the server with `--public-access 0.0.0.0` and re-enables public access on a reused server.
+`az postgres flexible-server create --public-access None` leaves `publicNetworkAccess` Disabled (the CLI help says otherwise), and firewall rules then fail with "Firewall rule operations are not supported for a server without public access enabled". The script creates the server with `--public-access None` and then runs `az postgres flexible-server update --public-access Enabled` for a new and a reused server alike. It creates no firewall rule itself: `infra/modules/postgresql.bicep` adds one per App Service outbound IP (`allow-app-N`). Observed on the live demo: with an extra `0.0.0.0` (all Azure services) rule deleted and the API restarted, `demo-reset.yml` returned 200 and `/api/aggregates` returned 200 with only those per-IP rules. Do not add a `0.0.0.0` rule.
+
+- UNVERIFIED: the per-IP rules are sufficient on a freshly bootstrapped server, not only on the one that once had the `0.0.0.0` rule. Refuted if the first `reset-demo` after a clean bootstrap returns a 5xx or times out.
 
 ## Notes for the production operator
 
