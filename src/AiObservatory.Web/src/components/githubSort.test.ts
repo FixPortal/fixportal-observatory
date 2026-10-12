@@ -19,7 +19,7 @@ describe('filterPrs', () => {
   it('matches on title case-insensitively', () => {
     const result = filterPrs([pr({ title: 'Add Feature' }), pr({ title: 'Fix bug' })], 'feature')
     expect(result).toHaveLength(1)
-    expect(result[0].title).toBe('Add Feature')
+    expect(result[0]!.title).toBe('Add Feature')
   })
 
   it('returns everything when query is blank', () => {
@@ -33,14 +33,14 @@ describe('sortPrs', () => {
     const older = pr({ number: 1, createdAt: '2026-07-01T09:00:00Z' })
     const newer = pr({ number: 2, createdAt: '2026-07-02T09:00:00Z' })
     const result = sortPrs([older, newer], 'createdAt', 'desc')
-    expect(result[0].number).toBe(2)
+    expect(result[0]!.number).toBe(2)
   })
 
   it('sorts by reviewCount ascending', () => {
     const a = pr({ number: 1, reviewCount: 3 })
     const b = pr({ number: 2, reviewCount: 1 })
     const result = sortPrs([a, b], 'reviewCount', 'asc')
-    expect(result[0].number).toBe(2)
+    expect(result[0]!.number).toBe(2)
   })
 
   it('sorts missing turnaround values last in both directions', () => {
@@ -62,7 +62,7 @@ describe('sortCommitSummaries', () => {
     const a: GitHubCommitSummary = { repo: 'a', commitCount: 2, additions: 0, deletions: 0 }
     const b: GitHubCommitSummary = { repo: 'b', commitCount: 5, additions: 0, deletions: 0 }
     const result = sortCommitSummaries([a, b], 'commitCount', 'desc')
-    expect(result[0].repo).toBe('b')
+    expect(result[0]!.repo).toBe('b')
   })
 })
 
@@ -83,6 +83,6 @@ describe('sortCiSummaries', () => {
       successRate: 50,
     }
     const result = sortCiSummaries([a, b], 'successRate', 'asc')
-    expect(result[0].repo).toBe('b')
+    expect(result[0]!.repo).toBe('b')
   })
 })

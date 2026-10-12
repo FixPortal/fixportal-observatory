@@ -96,7 +96,8 @@ export default function Dashboard() {
       next = (index - 1 + visibleTabs.length) % visibleTabs.length
     if (next === null) return
     e.preventDefault()
-    setTab(visibleTabs[next].id)
+    const tab = visibleTabs[next]
+    if (tab !== undefined) setTab(tab.id)
     tabRefs.current[next]?.focus()
   }
 

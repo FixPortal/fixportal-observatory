@@ -120,7 +120,7 @@ test('gets the source-status wire response and preserves unknown source and aggr
   const fetchMock = mockFetchOnce(200, response)
 
   await expect(getSourceStatuses()).resolves.toEqual(response)
-  expect(fetchMock.mock.calls[0][0]).toContain('/sources/status')
+  expect(fetchMock.mock.calls[0]![0]).toContain('/sources/status')
 })
 
 test('gets the authoritative billed-reporting projection for the complete date range', async () => {
@@ -138,7 +138,7 @@ test('gets the authoritative billed-reporting projection for the complete date r
   const fetchMock = mockFetchOnce(200, response)
 
   await expect(getBilledReporting('2026-08-01', '2026-08-02')).resolves.toEqual(response)
-  expect(fetchMock.mock.calls[0][0]).toContain('/spend/reporting?from=2026-08-01&to=2026-08-02')
+  expect(fetchMock.mock.calls[0]![0]).toContain('/spend/reporting?from=2026-08-01&to=2026-08-02')
 })
 
 test('passes filters to spend entries before the server-side cap', async () => {
@@ -146,7 +146,7 @@ test('passes filters to spend entries before the server-side cap', async () => {
 
   await getSpendEntries('2026-08-01', '2026-08-31', 'azure-id', 'cloud-id')
 
-  expect(fetchMock.mock.calls[0][0]).toContain(
+  expect(fetchMock.mock.calls[0]![0]).toContain(
     '/spend/entries?from=2026-08-01&to=2026-08-31&vendorId=azure-id&categoryId=cloud-id',
   )
 })
@@ -194,9 +194,9 @@ describe('authHeaders precedence: URL viewer key > Entra > self-host key > none'
 
     await getAggregates()
 
-    const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>
+    const headers = fetchMock.mock.calls[0]![1].headers as Record<string, string>
     expect(headers['X-Observatory-Key']).toBe('viewer-key')
-    expect(headers.Authorization).toBeUndefined()
+    expect(headers['Authorization']).toBeUndefined()
   })
 
   test('does not even attempt token acquisition on a viewer-key session', async () => {
@@ -217,8 +217,8 @@ describe('authHeaders precedence: URL viewer key > Entra > self-host key > none'
 
     await getAggregates()
 
-    const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>
-    expect(headers.Authorization).toBe('Bearer entra-token')
+    const headers = fetchMock.mock.calls[0]![1].headers as Record<string, string>
+    expect(headers['Authorization']).toBe('Bearer entra-token')
     expect(headers['X-Observatory-Key']).toBeUndefined()
   })
 
@@ -230,7 +230,7 @@ describe('authHeaders precedence: URL viewer key > Entra > self-host key > none'
 
     await getAggregates()
 
-    const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>
+    const headers = fetchMock.mock.calls[0]![1].headers as Record<string, string>
     expect(headers['X-Observatory-Key']).toBe('self-host-key')
   })
 
@@ -239,8 +239,8 @@ describe('authHeaders precedence: URL viewer key > Entra > self-host key > none'
 
     await getAggregates()
 
-    const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>
-    expect(headers.Authorization).toBeUndefined()
+    const headers = fetchMock.mock.calls[0]![1].headers as Record<string, string>
+    expect(headers['Authorization']).toBeUndefined()
     expect(headers['X-Observatory-Key']).toBeUndefined()
   })
 })
@@ -359,7 +359,7 @@ describe('spend catalog writes', () => {
     })
 
     expect(result).toEqual(created)
-    const [, init] = fetchMock.mock.calls[0]
+    const [, init] = fetchMock.mock.calls[0]!
     expect(init.method).toBe('POST')
     expect(JSON.parse(init.body as string)).toEqual({
       key: 'credits',
@@ -383,7 +383,7 @@ describe('spend catalog writes', () => {
     const result = await patchSpendCategory('c1', { archived: true })
 
     expect(result).toEqual(patched)
-    const [path, init] = fetchMock.mock.calls[0]
+    const [path, init] = fetchMock.mock.calls[0]!
     expect(path).toContain('/spend/categories/c1')
     expect(JSON.parse(init.body as string)).toEqual({ archived: true })
   })
@@ -407,7 +407,7 @@ describe('spend catalog writes', () => {
     })
 
     expect(result).toEqual(created)
-    const [, init] = fetchMock.mock.calls[0]
+    const [, init] = fetchMock.mock.calls[0]!
     expect(JSON.parse(init.body as string).provider).toBeNull()
   })
 
@@ -425,7 +425,7 @@ describe('spend catalog writes', () => {
     const result = await patchSpendVendor('v1', { displayName: 'Anthropic Inc' })
 
     expect(result).toEqual(patched)
-    const [path, init] = fetchMock.mock.calls[0]
+    const [path, init] = fetchMock.mock.calls[0]!
     expect(path).toContain('/spend/vendors/v1')
     expect(JSON.parse(init.body as string)).toEqual({ displayName: 'Anthropic Inc' })
   })

@@ -39,10 +39,10 @@ export default function ProjectTreemap({
 
   const renderCell = (node: TreemapNode) => {
     if (node.depth === 0) return <g />
-    const isOther = Boolean(node.isOther)
+    const isOther = Boolean(node['isOther'])
     const project = String(node.name)
-    const activeSeconds = Number(node.activeSeconds)
-    const label = `${project} — ${formatActiveTime(activeSeconds)} (${node.percent}%)`
+    const activeSeconds = Number(node['activeSeconds'])
+    const label = `${project} — ${formatActiveTime(activeSeconds)} (${node['percent']}%)`
     const select = () => {
       if (!isOther) onSelectProject(project === selectedProject ? null : project)
     }
@@ -53,7 +53,7 @@ export default function ProjectTreemap({
         aria-disabled={isOther || undefined}
         tabIndex={isOther ? -1 : 0}
         className={`activity-treemap__cell${project === selectedProject ? ' activity-treemap__cell--selected' : ''}`}
-        style={{ background: String(node.color) }}
+        style={{ background: String(node['color']) }}
         onClick={select}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
@@ -68,7 +68,7 @@ export default function ProjectTreemap({
           y={node.y}
           width={node.width}
           height={node.height}
-          fill={String(node.color)}
+          fill={String(node['color'])}
         />
         {node.width >= 96 && node.height >= 44 && (
           <text x={node.x + 10} y={node.y + 22} className="activity-treemap__label">

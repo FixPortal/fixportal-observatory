@@ -106,6 +106,6 @@ describe('installed PlantUML file parser glob compatibility', () => {
     expect(files.map((file) => file.name)).toEqual([
       relative(process.cwd(), join(absoluteRoot, 'one.puml')),
     ])
-    expect(files[0].diagrams).toHaveLength(1)
+    expect(files[0]!.diagrams).toHaveLength(1)
   })
 })

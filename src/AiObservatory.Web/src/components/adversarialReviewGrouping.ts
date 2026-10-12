@@ -77,9 +77,11 @@ export function groupRuns(runs: AdversarialReviewRun[]): RunGroup[] {
   for (const [runId, participants] of byRun) {
     // Earliest participant timestamp = the run's time. Derive it before sorting
     // so it never depends on participant display order (ISO-8601 sorts lexically).
+    const first = participants[0]
+    if (first === undefined) continue
     const recordedAt = participants.reduce(
       (earliest, p) => (p.recordedAt < earliest ? p.recordedAt : earliest),
-      participants[0].recordedAt,
+      first.recordedAt,
     )
     participants.sort(sortParticipants)
     const reviewerVendors = new Set(

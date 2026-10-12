@@ -1,7 +1,7 @@
 // Prod build calls the API cross-origin (VITE_API_BASE); dev uses the Vite proxy.
 import { getAccessToken, apiKey, urlApiKey } from '../auth/msal'
 
-const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api'
+const BASE = (import.meta.env['VITE_API_BASE'] ?? '') + '/api'
 
 /** Carries the HTTP status so the UI can tell auth failures from outages. */
 export class ApiError extends Error {

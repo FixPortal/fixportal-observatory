@@ -32,7 +32,7 @@ test('groups participants by runId', () => {
     run({ runId: 'R1', reviewer: 'anthropic', role: 'judge', model: 'claude-opus-4-8' }),
   ])
   expect(groups).toHaveLength(1)
-  expect(groups[0].participants).toHaveLength(4)
+  expect(groups[0]!.participants).toHaveLength(4)
 })
 
 test('sums per-column totals across participants', () => {
@@ -54,13 +54,13 @@ test('sums per-column totals across participants', () => {
       reviewDurationMs: 2000,
     }),
   ])
-  expect(groups[0].totals).toEqual({ raised: 9, accepted: 7, costUsd: 0.6, durationMs: 3000 })
+  expect(groups[0]!.totals).toEqual({ raised: 9, accepted: 7, costUsd: 0.6, durationMs: 3000 })
 })
 
 test('flags incomplete when fewer than 4 reviewer vendors', () => {
   const groups = groupRuns([run({ runId: 'R1', reviewer: 'anthropic', role: 'reviewer' })])
-  expect(groups[0].isComplete).toBe(false)
-  expect(groups[0].statusReason).toContain('1 of 4')
+  expect(groups[0]!.isComplete).toBe(false)
+  expect(groups[0]!.statusReason).toContain('1 of 4')
 })
 
 test('a pre-Moonshot 3-vendor run reads as incomplete (3 of 4)', () => {
@@ -71,17 +71,17 @@ test('a pre-Moonshot 3-vendor run reads as incomplete (3 of 4)', () => {
     ...base,
     run({ runId: 'R1', reviewer: 'anthropic', role: 'judge' }),
   ])[0]
-  expect(withJudge.isComplete).toBe(false)
-  expect(withJudge.statusReason).toContain('3 of 4')
+  expect(withJudge!.isComplete).toBe(false)
+  expect(withJudge!.statusReason).toContain('3 of 4')
 })
 
 test('complete needs 4 reviewer vendors and a judge', () => {
   const base = ['anthropic', 'google', 'openai', 'moonshot'].map((v) =>
     run({ runId: 'R1', reviewer: v, role: 'reviewer' }),
   )
-  expect(groupRuns(base)[0].isComplete).toBe(false) // no judge yet
+  expect(groupRuns(base)[0]!.isComplete).toBe(false) // no judge yet
   expect(
-    groupRuns([...base, run({ runId: 'R1', reviewer: 'anthropic', role: 'judge' })])[0].isComplete,
+    groupRuns([...base, run({ runId: 'R1', reviewer: 'anthropic', role: 'judge' })])[0]!.isComplete,
   ).toBe(true)
 })
 
@@ -94,8 +94,8 @@ test('unknown reviewer cannot replace a required vendor', () => {
     run({ runId: 'R1', reviewer: 'anthropic', role: 'judge' }),
   ])[0]
 
-  expect(group.isComplete).toBe(false)
-  expect(group.statusReason).toContain('3 of 4')
+  expect(group!.isComplete).toBe(false)
+  expect(group!.statusReason).toContain('3 of 4')
 })
 
 test('orders participants reviewers-then-judge, newest run first', () => {
@@ -104,8 +104,8 @@ test('orders participants reviewers-then-judge, newest run first', () => {
     run({ runId: 'NEW', recordedAt: '2026-06-27T00:00:00Z', reviewer: 'anthropic', role: 'judge' }),
     run({ runId: 'NEW', recordedAt: '2026-06-27T00:00:00Z', reviewer: 'openai', role: 'reviewer' }),
   ])
-  expect(groups[0].runId).toBe('NEW')
-  expect(groups[0].participants.map((p) => p.role)).toEqual(['reviewer', 'judge'])
+  expect(groups[0]!.runId).toBe('NEW')
+  expect(groups[0]!.participants.map((p) => p.role)).toEqual(['reviewer', 'judge'])
 })
 
 test('group recordedAt is the earliest participant time, independent of sort order', () => {
@@ -121,7 +121,7 @@ test('group recordedAt is the earliest participant time, independent of sort ord
       recordedAt: '2026-06-27T12:00:05Z',
     }),
   ])
-  expect(groups[0].recordedAt).toBe('2026-06-27T12:00:05Z')
+  expect(groups[0]!.recordedAt).toBe('2026-06-27T12:00:05Z')
 })
 
 test('unknown vendor sorts after known reviewers and before the judge', () => {
@@ -131,13 +131,13 @@ test('unknown vendor sorts after known reviewers and before the judge', () => {
     run({ runId: 'R1', reviewer: 'anthropic', role: 'reviewer' }),
     run({ runId: 'R1', reviewer: 'openai', role: 'reviewer' }),
   ])
-  expect(groups[0].participants.map((p) => p.reviewer)).toEqual([
+  expect(groups[0]!.participants.map((p) => p.reviewer)).toEqual([
     'anthropic',
     'openai',
     'mistral',
     'anthropic',
   ])
-  expect(groups[0].participants.map((p) => p.role)).toEqual([
+  expect(groups[0]!.participants.map((p) => p.role)).toEqual([
     'reviewer',
     'reviewer',
     'reviewer',
@@ -150,10 +150,10 @@ test('group summary is taken from any participant carrying one, else null', () =
     run({ runId: 'R1', reviewer: 'anthropic', summary: null }),
     run({ runId: 'R1', reviewer: 'openai', summary: 'Verifying adjusted formatting' }),
   ])
-  expect(named[0].summary).toBe('Verifying adjusted formatting')
+  expect(named[0]!.summary).toBe('Verifying adjusted formatting')
 
   const unnamed = groupRuns([run({ runId: 'R2', reviewer: 'anthropic', summary: null })])
-  expect(unnamed[0].summary).toBeNull()
+  expect(unnamed[0]!.summary).toBeNull()
 })
 
 test('group chunkCount comes from any participant carrying one, else null', () => {
@@ -161,10 +161,10 @@ test('group chunkCount comes from any participant carrying one, else null', () =
     run({ runId: 'R1', reviewer: 'anthropic', chunkCount: 21 }),
     run({ runId: 'R1', reviewer: 'openai', chunkCount: 21 }),
   ])
-  expect(batched[0].chunkCount).toBe(21)
+  expect(batched[0]!.chunkCount).toBe(21)
 
   const single = groupRuns([run({ runId: 'R2', reviewer: 'anthropic' })])
-  expect(single[0].chunkCount).toBeNull()
+  expect(single[0]!.chunkCount).toBeNull()
 })
 
 test('formatSeconds renders whole seconds', () => {
@@ -181,13 +181,13 @@ test('formatMinutes renders minutes to 1dp', () => {
 
 test('isValid is false below MIN_VALID_REVIEWERS, true at or above', () => {
   const solo = groupRuns([run({ runId: 'R1', reviewer: 'anthropic', role: 'reviewer' })])
-  expect(solo[0].isValid).toBe(false)
+  expect(solo[0]!.isValid).toBe(false)
 
   const pair = groupRuns([
     run({ runId: 'R2', reviewer: 'anthropic', role: 'reviewer' }),
     run({ runId: 'R2', reviewer: 'openai', role: 'reviewer' }),
   ])
-  expect(pair[0].isValid).toBe(true)
+  expect(pair[0]!.isValid).toBe(true)
 })
 
 test('bankersRound rounds half to even', () => {

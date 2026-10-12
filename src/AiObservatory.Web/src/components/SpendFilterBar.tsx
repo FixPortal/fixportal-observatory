@@ -4,8 +4,8 @@ import { Button } from '../design/Button'
 interface Props {
   categories: SpendCategory[]
   vendors: SpendVendor[]
-  categoryId?: string
-  vendorId?: string
+  categoryId?: string | undefined
+  vendorId?: string | undefined
   onCategoryChange: (id: string | undefined) => void
   onVendorChange: (id: string | undefined) => void
   onAddEntry: () => void

@@ -69,10 +69,10 @@ describe('buildUsageSeries', () => {
       const result = buildUsageSeries(rows, mode, 0.8)
 
       expect(result.series).toHaveLength(1)
-      expect(result.series[0].basis).toBe(mode)
-      expect(Object.values(result.byDate[0]).filter((value) => typeof value === 'number')).toEqual([
-        { listPriceEstimate: 0.8, providerEstimated: 1.6, notional: 2.4 }[mode],
-      ])
+      expect(result.series[0]!.basis).toBe(mode)
+      expect(Object.values(result.byDate[0]!).filter((value) => typeof value === 'number')).toEqual(
+        [{ listPriceEstimate: 0.8, providerEstimated: 1.6, notional: 2.4 }[mode]],
+      )
     },
   )
 
@@ -97,7 +97,7 @@ describe('buildUsageSeries', () => {
     )
 
     expect(new Set(result.series.map((series) => series.key)).size).toBe(2)
-    expect(result.series[0].label).toBe('New oss provider · New source · Team api · None')
+    expect(result.series[0]!.label).toBe('New oss provider · New source · Team api · None')
   })
 
   test('drops fully unknown estimate rows while retaining qualified mixed rows', () => {
@@ -111,7 +111,7 @@ describe('buildUsageSeries', () => {
     )
 
     expect(result.series.map((series) => series.sourceId)).toEqual(['partly-known'])
-    expect(Object.values(result.byDate[0]).filter((value) => typeof value === 'number')).toEqual([
+    expect(Object.values(result.byDate[0]!).filter((value) => typeof value === 'number')).toEqual([
       1.6,
     ])
   })
@@ -127,7 +127,7 @@ describe('buildUsageSeries', () => {
     )
 
     expect(result.series.map((series) => series.sourceId)).toEqual(['reported'])
-    expect(Object.keys(result.byDate[0])).toHaveLength(2)
+    expect(Object.keys(result.byDate[0]!)).toHaveLength(2)
   })
 
   test('counts cached input in token usage', () => {
@@ -137,7 +137,7 @@ describe('buildUsageSeries', () => {
       1,
     )
 
-    expect(Object.values(result.byDate[0]).filter((value) => typeof value === 'number')).toEqual([
+    expect(Object.values(result.byDate[0]!).filter((value) => typeof value === 'number')).toEqual([
       122,
     ])
   })
@@ -151,7 +151,7 @@ describe('buildUsageSeries', () => {
 
     expect(result.series).toHaveLength(1)
     expect(result.byDate).toHaveLength(1)
-    expect(Object.values(result.byDate[0]).filter((value) => typeof value === 'number')).toEqual([
+    expect(Object.values(result.byDate[0]!).filter((value) => typeof value === 'number')).toEqual([
       0,
     ])
   })

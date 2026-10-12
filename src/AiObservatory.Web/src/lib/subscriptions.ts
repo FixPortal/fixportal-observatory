@@ -55,9 +55,9 @@ export function currentBillingPeriodStart(
   billingMonth: number | null = null,
 ): string {
   const [yearStr, monthStr, dayStr] = today.split('-')
-  const year = parseInt(yearStr, 10)
-  const month = parseInt(monthStr, 10) // 1–12
-  const day = parseInt(dayStr, 10)
+  const year = parseInt(yearStr ?? '', 10)
+  const month = parseInt(monthStr ?? '', 10) // 1–12
+  const day = parseInt(dayStr ?? '', 10)
 
   // Days in month m (1-indexed) of year y.
   // new Date(y, m, 0) uses JS's 0-based month index; day 0 = last day of prior month.

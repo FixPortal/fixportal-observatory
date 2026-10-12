@@ -90,7 +90,7 @@ export function buildUsageSeries(
       Object.fromEntries(Object.entries(date).filter(([key]) => key === 'date' || keys.has(key))),
     )
     .filter((date) => Object.keys(date).length > 1)
-    .toSorted((a, b) => String(a.date).localeCompare(String(b.date)))
+    .toSorted((a, b) => String(a['date']).localeCompare(String(b['date'])))
 
   return { byDate, series }
 }
