@@ -2,7 +2,9 @@ import { test, beforeEach, expect } from 'vitest'
 import { act, render, screen, fireEvent } from '@testing-library/react'
 import { CollapsiblePanel } from './CollapsiblePanel'
 
-beforeEach(() => localStorage.clear())
+beforeEach(() => {
+  localStorage.clear()
+})
 
 test('collapsed by default when no localStorage entry', () => {
   render(

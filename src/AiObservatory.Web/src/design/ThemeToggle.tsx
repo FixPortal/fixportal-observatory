@@ -36,7 +36,7 @@ export function ThemeToggle({ value, onChange, variant = 'default' }: ThemeToggl
     const option = OPTIONS[next]
     if (option !== undefined) onChange(option.value)
     const buttons = e.currentTarget.querySelectorAll('button')
-    ;(buttons[next] as HTMLButtonElement | undefined)?.focus()
+    buttons[next]?.focus()
   }
 
   return (
@@ -55,7 +55,9 @@ export function ThemeToggle({ value, onChange, variant = 'default' }: ThemeToggl
           role="radio"
           aria-checked={value === opt.value}
           tabIndex={value === opt.value ? 0 : -1}
-          onClick={() => onChange(opt.value)}
+          onClick={() => {
+            onChange(opt.value)
+          }}
           className="fpds-theme-toggle__btn"
         >
           {opt.label}

@@ -65,7 +65,9 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
       await invalidateSpendData(qc)
       onClose()
     },
-    onError: (err: Error) => setVerdictError(err.message),
+    onError: (err: Error) => {
+      setVerdictError(err.message)
+    },
   })
 
   function onVendorChange(id: string) {
@@ -159,7 +161,9 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
                   min={minDate}
                   max={maxDate}
                   value={occurredOn}
-                  onChange={(e) => setOccurredOn(e.target.value)}
+                  onChange={(e) => {
+                    setOccurredOn(e.target.value)
+                  }}
                 />
               </div>
               <div>
@@ -170,7 +174,9 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
                   id="spend-entry-vendor"
                   className="sub-form__select"
                   value={vendorId}
-                  onChange={(e) => onVendorChange(e.target.value)}
+                  onChange={(e) => {
+                    onVendorChange(e.target.value)
+                  }}
                 >
                   {vendors.map((v) => (
                     <option key={v.id} value={v.id}>
@@ -187,7 +193,9 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
                   id="spend-entry-category"
                   className="sub-form__select"
                   value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
+                  onChange={(e) => {
+                    setCategoryId(e.target.value)
+                  }}
                 >
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -207,7 +215,9 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
                   step="0.01"
                   min="0"
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  onChange={(e) => {
+                    setAmount(e.target.value)
+                  }}
                   placeholder="0.00"
                 />
               </div>
@@ -220,7 +230,9 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
                       name="spend-entry-direction"
                       value="charge"
                       checked={!isRefund}
-                      onChange={() => setIsRefund(false)}
+                      onChange={() => {
+                        setIsRefund(false)
+                      }}
                     />
                     Charge
                   </label>
@@ -230,7 +242,9 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
                       name="spend-entry-direction"
                       value="refund"
                       checked={isRefund}
-                      onChange={() => setIsRefund(true)}
+                      onChange={() => {
+                        setIsRefund(true)
+                      }}
                     />
                     Refund
                   </label>
@@ -244,7 +258,9 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
                   id="spend-entry-currency"
                   className="sub-form__select"
                   value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
+                  onChange={(e) => {
+                    setCurrency(e.target.value)
+                  }}
                 >
                   <option value="GBP">GBP (£)</option>
                   <option value="USD">USD ($)</option>
@@ -260,7 +276,9 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
                   type="text"
                   maxLength={200}
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => {
+                    setDescription(e.target.value)
+                  }}
                 />
               </div>
             </div>

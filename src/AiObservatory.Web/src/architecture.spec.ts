@@ -30,12 +30,12 @@ const EXCEPT_TESTS = { except: { withName: '*.test.*' } }
 
 // Each row asserts: nothing in `from` may import from `to`.
 // Derived from the actual import hierarchy in src/ as of 2026-06-15.
-const FORBIDDEN_EDGES: ReadonlyArray<{
+const FORBIDDEN_EDGES: readonly {
   from: string
   fromGlob: string
   to: string
   toGlob: string
-}> = [
+}[] = [
   // config is the lowest layer -- must not reach up into anything
   { from: 'config', fromGlob: '**/config/**', to: 'lib', toGlob: '**/lib/**' },
   { from: 'config', fromGlob: '**/config/**', to: 'auth', toGlob: '**/auth/**' },

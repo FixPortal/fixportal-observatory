@@ -106,6 +106,8 @@ export function useDateRange() {
     comparisonTo: comparison.to,
     comparisonMode,
     setComparison,
-    compareWithPrevious: () => setComparisonMode('previous'),
+    compareWithPrevious: () => {
+      setComparisonMode('previous')
+    },
   }
 }

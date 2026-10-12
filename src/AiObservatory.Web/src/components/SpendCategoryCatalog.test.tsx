@@ -69,7 +69,9 @@ describe('SpendCategoryCatalog', () => {
     fireEvent.change(screen.getByLabelText(/display name/i), { target: { value: 'Inference' } })
     fireEvent.click(screen.getByRole('button', { name: /add category/i }))
 
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    await waitFor(() => {
+      expect(create).toHaveBeenCalledTimes(1)
+    })
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ key: 'inference', displayName: 'Inference', colorVar: null }),
     )
@@ -103,7 +105,9 @@ describe('SpendCategoryCatalog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^archive credits$/i }))
 
-    await waitFor(() => expect(patch).toHaveBeenCalledWith('c1', { archived: true }))
+    await waitFor(() => {
+      expect(patch).toHaveBeenCalledWith('c1', { archived: true })
+    })
   })
 
   it('unarchives an archived category', async () => {
@@ -114,7 +118,9 @@ describe('SpendCategoryCatalog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^unarchive subscriptions$/i }))
 
-    await waitFor(() => expect(patch).toHaveBeenCalledWith('c2', { archived: false }))
+    await waitFor(() => {
+      expect(patch).toHaveBeenCalledWith('c2', { archived: false })
+    })
   })
 
   it('renames a category via PATCH DisplayName', async () => {
@@ -128,6 +134,8 @@ describe('SpendCategoryCatalog', () => {
     fireEvent.change(input, { target: { value: 'AI Credits' } })
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
-    await waitFor(() => expect(patch).toHaveBeenCalledWith('c1', { displayName: 'AI Credits' }))
+    await waitFor(() => {
+      expect(patch).toHaveBeenCalledWith('c1', { displayName: 'AI Credits' })
+    })
   })
 })

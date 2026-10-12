@@ -7,6 +7,7 @@ import BudgetRulesPanel from './BudgetRulesPanel'
 const data = vi.hoisted(() => ({
   rules: [] as BudgetRule[],
   insights: [] as Insight[],
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- the assertion widens the null masks so tests can assign strings; tsc fails without it
   settings: {
     emailConfigured: false,
     emailMasked: null,
@@ -104,12 +105,12 @@ describe('BudgetRulesPanel notification settings', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
-    await waitFor(() =>
+    await waitFor(() => {
       expect(updateNotificationSettings).toHaveBeenCalledWith(
         { alertEmailTo: 'chris@fixportal.org' },
         expect.anything(),
-      ),
-    )
+      )
+    })
   })
 
   test('shows an error message instead of silently rendering nothing when the GET fails', () => {
@@ -152,12 +153,12 @@ describe('BudgetRulesPanel notification settings', () => {
     expect(updateNotificationSettings).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
-    await waitFor(() =>
+    await waitFor(() => {
       expect(updateNotificationSettings).toHaveBeenCalledWith(
         { slackWebhookUrl: null },
         expect.anything(),
-      ),
-    )
+      )
+    })
   })
 
   // Must remain the last test in this file -- vi.doMock('../auth/msal', ...) below is never

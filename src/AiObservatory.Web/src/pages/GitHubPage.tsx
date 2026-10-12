@@ -124,7 +124,12 @@ export default function GitHubPage() {
       <div className="filter-row github-filters" role="group" aria-label="GitHub filters">
         <label className="filter-row__field">
           <span>Repo</span>
-          <select value={activeRepo} onChange={(event) => setRepo(event.target.value)}>
+          <select
+            value={activeRepo}
+            onChange={(event) => {
+              setRepo(event.target.value)
+            }}
+          >
             <option value="">All repos</option>
             {repos.map((name) => (
               <option key={name} value={name}>

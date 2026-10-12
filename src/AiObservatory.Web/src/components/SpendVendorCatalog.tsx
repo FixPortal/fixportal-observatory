@@ -71,7 +71,9 @@ export default function SpendVendorCatalog({ vendors, categories }: Props) {
       invalidate()
       setForm(EMPTY_FORM)
     },
-    onError: (err: Error) => setFormError(err.message),
+    onError: (err: Error) => {
+      setFormError(err.message)
+    },
   })
 
   const patch = useMutation({
@@ -82,7 +84,9 @@ export default function SpendVendorCatalog({ vendors, categories }: Props) {
       setRenamingId(null)
       setCategoryDraft(null)
     },
-    onError: (err: Error) => setMutationError(err.message),
+    onError: (err: Error) => {
+      setMutationError(err.message)
+    },
   })
 
   function submitCreate(e: FormEvent) {
@@ -158,13 +162,17 @@ export default function SpendVendorCatalog({ vendors, categories }: Props) {
                   aria-label={`Rename ${v.displayName}`}
                   className="sub-form__input"
                   value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
+                  onChange={(e) => {
+                    setRenameValue(e.target.value)
+                  }}
                 />
                 <span className="sub-list__actions sub-list__actions--fixed">
                   <button
                     type="button"
                     className="sub-list__btn"
-                    onClick={() => saveRename(v.id)}
+                    onClick={() => {
+                      saveRename(v.id)
+                    }}
                     disabled={patch.isPending}
                   >
                     Save
@@ -172,7 +180,9 @@ export default function SpendVendorCatalog({ vendors, categories }: Props) {
                   <button
                     type="button"
                     className="sub-list__btn"
-                    onClick={() => setRenamingId(null)}
+                    onClick={() => {
+                      setRenamingId(null)
+                    }}
                   >
                     Cancel
                   </button>
@@ -199,13 +209,13 @@ export default function SpendVendorCatalog({ vendors, categories }: Props) {
                           : (v.defaultCategoryId ?? '')
                       }
                       disabled={patch.isPending}
-                      onChange={(e) =>
+                      onChange={(e) => {
                         setCategoryDraft(
                           (e.target.value || null) === v.defaultCategoryId
                             ? null
                             : { vendorId: v.id, value: e.target.value },
                         )
-                      }
+                      }}
                     >
                       <option value="">No default category</option>
                       {categoryOptions(v).map((c) => (
@@ -222,7 +232,9 @@ export default function SpendVendorCatalog({ vendors, categories }: Props) {
                     <button
                       type="button"
                       className="sub-list__btn"
-                      onClick={() => saveDefaultCategory(v)}
+                      onClick={() => {
+                        saveDefaultCategory(v)
+                      }}
                       disabled={patch.isPending}
                     >
                       Save
@@ -230,7 +242,9 @@ export default function SpendVendorCatalog({ vendors, categories }: Props) {
                     <button
                       type="button"
                       className="sub-list__btn"
-                      onClick={() => setCategoryDraft(null)}
+                      onClick={() => {
+                        setCategoryDraft(null)
+                      }}
                     >
                       Cancel
                     </button>
@@ -240,7 +254,9 @@ export default function SpendVendorCatalog({ vendors, categories }: Props) {
                     <button
                       type="button"
                       className="sub-list__btn"
-                      onClick={() => startRename(v)}
+                      onClick={() => {
+                        startRename(v)
+                      }}
                       aria-label={`Rename ${v.displayName}`}
                     >
                       Rename
@@ -248,7 +264,9 @@ export default function SpendVendorCatalog({ vendors, categories }: Props) {
                     <button
                       type="button"
                       className="sub-list__btn"
-                      onClick={() => toggleArchive(v)}
+                      onClick={() => {
+                        toggleArchive(v)
+                      }}
                       disabled={patch.isPending}
                       aria-label={`${v.archivedAt === null ? 'Archive' : 'Unarchive'} ${v.displayName}`}
                     >
@@ -276,7 +294,9 @@ export default function SpendVendorCatalog({ vendors, categories }: Props) {
                 id="new-vendor-key"
                 className="sub-form__input"
                 value={form.key}
-                onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, key: e.target.value }))
+                }}
                 maxLength={60}
                 placeholder="e.g. github-actions"
               />
@@ -289,7 +309,9 @@ export default function SpendVendorCatalog({ vendors, categories }: Props) {
                 id="new-vendor-name"
                 className="sub-form__input"
                 value={form.displayName}
-                onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, displayName: e.target.value }))
+                }}
                 maxLength={100}
               />
             </div>
@@ -301,7 +323,9 @@ export default function SpendVendorCatalog({ vendors, categories }: Props) {
                 id="new-vendor-provider"
                 className="sub-form__select"
                 value={form.provider}
-                onChange={(e) => setForm((f) => ({ ...f, provider: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, provider: e.target.value }))
+                }}
               >
                 {/* Explicit, obvious "no provider" -- the normal case for CodeRabbit,
                     Gitar and GitHub Actions, which have no token estimate to meter. */}
@@ -321,7 +345,9 @@ export default function SpendVendorCatalog({ vendors, categories }: Props) {
                 id="new-vendor-category"
                 className="sub-form__select"
                 value={form.defaultCategoryId}
-                onChange={(e) => setForm((f) => ({ ...f, defaultCategoryId: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, defaultCategoryId: e.target.value }))
+                }}
               >
                 <option value="">None</option>
                 {liveCategories.map((c) => (

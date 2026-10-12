@@ -134,7 +134,9 @@ function StatsTable({ stats, isLoading, isError }: StatsTableProps) {
             type="text"
             placeholder="Search reviewer or model..."
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value)
+            }}
             className="breakdown-search"
             aria-label="Search stats by reviewer or model"
           />
@@ -284,14 +286,18 @@ function RunsList({ groups, isLoading, isError }: RunsListProps) {
             type="text"
             placeholder="Search repo or summary..."
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value)
+            }}
             className="breakdown-search"
             aria-label="Search runs by repo or summary"
           />
         </div>
         <select
           value={completeness}
-          onChange={(e) => setCompleteness(e.target.value as CompletenessFilter)}
+          onChange={(e) => {
+            setCompleteness(e.target.value as CompletenessFilter)
+          }}
           className="breakdown-sort__field"
           aria-label="Filter runs by completeness"
         >
@@ -301,7 +307,9 @@ function RunsList({ groups, isLoading, isError }: RunsListProps) {
         </select>
         <select
           value={validity}
-          onChange={(e) => setValidity(e.target.value as ValidityFilter)}
+          onChange={(e) => {
+            setValidity(e.target.value as ValidityFilter)
+          }}
           className="breakdown-sort__field"
           aria-label="Filter runs by validity"
         >
@@ -312,7 +320,9 @@ function RunsList({ groups, isLoading, isError }: RunsListProps) {
         <div className="breakdown-sort">
           <select
             value={sortField}
-            onChange={(e) => setSortField(e.target.value as RunSortField)}
+            onChange={(e) => {
+              setSortField(e.target.value as RunSortField)
+            }}
             className="breakdown-sort__field"
             aria-label="Sort runs by"
           >
@@ -326,7 +336,9 @@ function RunsList({ groups, isLoading, isError }: RunsListProps) {
           <button
             type="button"
             className="breakdown-sort__direction"
-            onClick={() => setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+            onClick={() => {
+              setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+            }}
             aria-label={`Sort direction: ${sortDirection === 'asc' ? 'ascending' : 'descending'}`}
           >
             {sortDirection === 'asc' ? '▲' : '▼'}
@@ -350,17 +362,29 @@ function RunsList({ groups, isLoading, isError }: RunsListProps) {
                     Remove this sweep and every participant's numbers?{' '}
                     <Button
                       variant="danger"
-                      onClick={() => deleteRun.mutate(group.runId)}
+                      onClick={() => {
+                        deleteRun.mutate(group.runId)
+                      }}
                       disabled={deleteRun.isPending}
                     >
                       {deleteRun.isPending ? 'Removing…' : 'Confirm remove'}
                     </Button>{' '}
-                    <Button variant="ghost" onClick={() => setConfirmDeleteRunId(null)}>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setConfirmDeleteRunId(null)
+                      }}
+                    >
                       Cancel
                     </Button>
                   </span>
                 ) : (
-                  <Button variant="ghost" onClick={() => setConfirmDeleteRunId(group.runId)}>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setConfirmDeleteRunId(group.runId)
+                    }}
+                  >
                     Remove sweep
                   </Button>
                 )}

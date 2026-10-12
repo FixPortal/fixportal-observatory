@@ -151,8 +151,8 @@ describe('AdversarialReviewPanel sweep removal', () => {
     expect(deleteAdversarialReviewRun).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm remove' }))
-    await waitFor(() =>
-      expect(deleteAdversarialReviewRun).toHaveBeenCalledWith('R1', expect.anything()),
-    )
+    await waitFor(() => {
+      expect(deleteAdversarialReviewRun).toHaveBeenCalledWith('R1', expect.anything())
+    })
   })
 })

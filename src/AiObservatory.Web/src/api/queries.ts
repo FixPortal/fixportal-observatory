@@ -73,7 +73,7 @@ export function useAggregates(
   // every Overview consumer lands on the SAME ['aggregates', from, to] cache entry
   // rather than a second, independently-refetching bare ['aggregates'] one.
   const hasRange = from != null && to != null
-  const range = hasRange ? { from: from!, to: to! } : dashboardDateRange()
+  const range = hasRange ? { from: from, to: to } : dashboardDateRange()
   const {
     data = [],
     isError,
@@ -97,9 +97,9 @@ export function useActivityDaily(
     isError,
     isLoading,
   } = useQuery({
-    queryKey: hasRange ? ['activity-daily', localDate(from!), localDate(to!)] : ['activity-daily'],
+    queryKey: hasRange ? ['activity-daily', localDate(from), localDate(to)] : ['activity-daily'],
     queryFn: hasRange
-      ? () => getActivityDaily(localDate(from!), localDate(to!))
+      ? () => getActivityDaily(localDate(from), localDate(to))
       : () => getActivityDaily(),
     // Callers without a comparison range must pass enabled: false — no range means
     // "fetch the default window", never "skip the request".
@@ -119,10 +119,10 @@ export function useActivityByProject(
     isPending,
   } = useQuery({
     queryKey: hasRange
-      ? ['activity-by-project', localDate(from!), localDate(to!)]
+      ? ['activity-by-project', localDate(from), localDate(to)]
       : ['activity-by-project'],
     queryFn: hasRange
-      ? () => getActivityByProject(localDate(from!), localDate(to!))
+      ? () => getActivityByProject(localDate(from), localDate(to))
       : () => getActivityByProject(),
   })
   return { projects: data, isError, isLoading: isPending }
@@ -138,8 +138,8 @@ export function useGitHubPrs(
     isError,
     isPending,
   } = useQuery({
-    queryKey: hasRange ? ['github-prs', localDate(from!), localDate(to!)] : ['github-prs'],
-    queryFn: hasRange ? () => getGitHubPrs(localDate(from!), localDate(to!)) : () => getGitHubPrs(),
+    queryKey: hasRange ? ['github-prs', localDate(from), localDate(to)] : ['github-prs'],
+    queryFn: hasRange ? () => getGitHubPrs(localDate(from), localDate(to)) : () => getGitHubPrs(),
   })
   return { prs: data, isError, isLoading: isPending }
 }
@@ -155,10 +155,10 @@ export function useGitHubCommitSummary(
     isPending,
   } = useQuery({
     queryKey: hasRange
-      ? ['github-commits-summary', localDate(from!), localDate(to!)]
+      ? ['github-commits-summary', localDate(from), localDate(to)]
       : ['github-commits-summary'],
     queryFn: hasRange
-      ? () => getGitHubCommitSummary(localDate(from!), localDate(to!))
+      ? () => getGitHubCommitSummary(localDate(from), localDate(to))
       : () => getGitHubCommitSummary(),
   })
   return { summary: data, isError, isLoading: isPending }
@@ -174,8 +174,8 @@ export function useGitHubCi(
     isError,
     isPending,
   } = useQuery({
-    queryKey: hasRange ? ['github-ci', localDate(from!), localDate(to!)] : ['github-ci'],
-    queryFn: hasRange ? () => getGitHubCi(localDate(from!), localDate(to!)) : () => getGitHubCi(),
+    queryKey: hasRange ? ['github-ci', localDate(from), localDate(to)] : ['github-ci'],
+    queryFn: hasRange ? () => getGitHubCi(localDate(from), localDate(to)) : () => getGitHubCi(),
   })
   return { ci: data, isError, isLoading: isPending }
 }
@@ -190,9 +190,9 @@ export function useGitHubReviews(
     isError,
     isPending,
   } = useQuery({
-    queryKey: hasRange ? ['github-reviews', localDate(from!), localDate(to!)] : ['github-reviews'],
+    queryKey: hasRange ? ['github-reviews', localDate(from), localDate(to)] : ['github-reviews'],
     queryFn: hasRange
-      ? () => getGitHubReviews(localDate(from!), localDate(to!))
+      ? () => getGitHubReviews(localDate(from), localDate(to))
       : () => getGitHubReviews(),
   })
   return { reviewers: data, isError, isLoading: isPending }

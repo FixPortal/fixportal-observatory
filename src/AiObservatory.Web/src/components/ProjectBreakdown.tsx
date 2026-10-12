@@ -30,7 +30,13 @@ const SortableHeader = ({
   // tabIndex/onKeyDown-decorated cell, and the <th> keeps its column-header role.
   return (
     <th className="sortable-header" aria-sort={ariaSort}>
-      <button type="button" className="sortable-header__content" onClick={() => onSort(field)}>
+      <button
+        type="button"
+        className="sortable-header__content"
+        onClick={() => {
+          onSort(field)
+        }}
+      >
         {label}
         <span
           className={`sort-indicator ${isActive ? 'sort-indicator--active' : ''}`}
@@ -129,7 +135,9 @@ export default function ProjectBreakdown({
             type="text"
             placeholder="Search projects..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value)
+            }}
             className="breakdown-search"
             aria-label="Search projects"
           />
@@ -140,7 +148,9 @@ export default function ProjectBreakdown({
               type="button"
               className="filter-chip"
               aria-label={`Clear filter: ${selectedProject}`}
-              onClick={() => onSelectProject(null)}
+              onClick={() => {
+                onSelectProject(null)
+              }}
             >
               Filtered: {selectedProject} ✕
             </button>
@@ -196,9 +206,9 @@ export default function ProjectBreakdown({
                       type="button"
                       className="project-table__select"
                       aria-pressed={p.project === selectedProject}
-                      onClick={() =>
+                      onClick={() => {
                         onSelectProject(p.project === selectedProject ? null : p.project)
-                      }
+                      }}
                     >
                       {p.project}
                     </button>

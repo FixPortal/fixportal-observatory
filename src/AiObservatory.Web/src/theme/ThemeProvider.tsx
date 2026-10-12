@@ -43,12 +43,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSystemResolved(mq.matches ? 'dark' : 'light')
-    const onChange = () => setSystemResolved(mq.matches ? 'dark' : 'light')
+    const onChange = () => {
+      setSystemResolved(mq.matches ? 'dark' : 'light')
+    }
     mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
+    return () => {
+      mq.removeEventListener('change', onChange)
+    }
   }, [mode])
 
-  const setMode = useCallback((next: ThemeMode) => setModeState(next), [])
+  const setMode = useCallback((next: ThemeMode) => {
+    setModeState(next)
+  }, [])
 
   const ctxValue = useMemo(() => ({ mode, setMode, resolved }), [mode, setMode, resolved])
   return <ThemeContext.Provider value={ctxValue}>{children}</ThemeContext.Provider>

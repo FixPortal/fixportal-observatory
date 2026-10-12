@@ -111,7 +111,9 @@ export default function ProviderSplit({ from, to }: Props) {
               type="button"
               aria-pressed={mode === option}
               className={`chart-toggle-btn ${mode === option ? 'chart-toggle-btn--active' : ''}`}
-              onClick={() => setMode(option)}
+              onClick={() => {
+                setMode(option)
+              }}
             >
               {option === 'notional' ? 'Notional' : option === 'tokens' ? 'Tokens' : 'Activity'}
             </button>

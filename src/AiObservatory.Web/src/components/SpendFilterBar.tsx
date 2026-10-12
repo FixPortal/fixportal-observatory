@@ -33,7 +33,9 @@ export default function SpendFilterBar({
         <span>Category</span>
         <select
           value={categoryId ?? ''}
-          onChange={(e) => onCategoryChange(e.target.value || undefined)}
+          onChange={(e) => {
+            onCategoryChange(e.target.value || undefined)
+          }}
         >
           <option value="">All categories</option>
           {categories.map((c) => (
@@ -48,7 +50,9 @@ export default function SpendFilterBar({
         <span>Vendor</span>
         <select
           value={vendorId ?? ''}
-          onChange={(e) => onVendorChange(e.target.value || undefined)}
+          onChange={(e) => {
+            onVendorChange(e.target.value || undefined)
+          }}
         >
           <option value="">All vendors</option>
           {vendors.map((v) => (

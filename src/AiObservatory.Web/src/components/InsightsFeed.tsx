@@ -39,13 +39,17 @@ function InsightRow({ insight }: { insight: Insight }) {
 
   const explain = useMutation({
     mutationFn: () => explainInsight(insight.id),
-    onMutate: () => setExplainError(false),
+    onMutate: () => {
+      setExplainError(false)
+    },
     onSuccess: (data) => {
       setExplainError(false)
       setExplanation(data.explanation)
       qc.invalidateQueries({ queryKey: ['insights'] })
     },
-    onError: () => setExplainError(true),
+    onError: () => {
+      setExplainError(true)
+    },
   })
 
   const canExplain = EXPLAINABLE.has(insight.insightType)
@@ -82,7 +86,9 @@ function InsightRow({ insight }: { insight: Insight }) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => explain.mutate()}
+              onClick={() => {
+                explain.mutate()
+              }}
               disabled={explain.isPending}
             >
               {explain.isPending ? 'Loading...' : 'How to implement'}
@@ -91,7 +97,9 @@ function InsightRow({ insight }: { insight: Insight }) {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => ack.mutate(insight.id)}
+            onClick={() => {
+              ack.mutate(insight.id)
+            }}
             disabled={ack.isPending}
           >
             Dismiss

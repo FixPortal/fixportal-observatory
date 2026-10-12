@@ -66,7 +66,9 @@ export default function SpendRangeControls({
             type="button"
             aria-pressed={preset === option.value}
             className={`chart-toggle-btn${preset === option.value ? ' chart-toggle-btn--active' : ''}`}
-            onClick={() => onPreset(option.value)}
+            onClick={() => {
+              onPreset(option.value)
+            }}
           >
             {option.label}
           </button>
@@ -84,9 +86,11 @@ export default function SpendRangeControls({
                 aria-label="Selected from"
                 type="date"
                 value={inputDate(from)}
-                onChange={(event) =>
-                  withInputDate(event.target.value, (date) => onCustom(date, to))
-                }
+                onChange={(event) => {
+                  withInputDate(event.target.value, (date) => {
+                    onCustom(date, to)
+                  })
+                }}
               />
             </label>
             <span aria-hidden="true">→</span>
@@ -96,9 +100,11 @@ export default function SpendRangeControls({
                 aria-label="Selected to"
                 type="date"
                 value={inputDate(to)}
-                onChange={(event) =>
-                  withInputDate(event.target.value, (date) => onCustom(from, date))
-                }
+                onChange={(event) => {
+                  withInputDate(event.target.value, (date) => {
+                    onCustom(from, date)
+                  })
+                }}
               />
             </label>
           </div>
@@ -127,9 +133,11 @@ export default function SpendRangeControls({
                 aria-label="Compare from"
                 type="date"
                 value={inputDate(comparisonFrom)}
-                onChange={(event) =>
-                  withInputDate(event.target.value, (date) => onComparison(date, comparisonTo))
-                }
+                onChange={(event) => {
+                  withInputDate(event.target.value, (date) => {
+                    onComparison(date, comparisonTo)
+                  })
+                }}
               />
             </label>
             <span aria-hidden="true">→</span>
@@ -139,9 +147,11 @@ export default function SpendRangeControls({
                 aria-label="Compare to"
                 type="date"
                 value={inputDate(comparisonTo)}
-                onChange={(event) =>
-                  withInputDate(event.target.value, (date) => onComparison(comparisonFrom, date))
-                }
+                onChange={(event) => {
+                  withInputDate(event.target.value, (date) => {
+                    onComparison(comparisonFrom, date)
+                  })
+                }}
               />
             </label>
           </div>

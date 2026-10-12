@@ -158,7 +158,13 @@ export default function SpendLedgerTable({
                       >
                         {isDeleting ? 'Removing…' : 'Confirm'}
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteId(null)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setConfirmDeleteId(null)
+                        }}
+                      >
                         Cancel
                       </Button>
                     </span>
@@ -166,7 +172,9 @@ export default function SpendLedgerTable({
                     <Button
                       variant="danger"
                       size="sm"
-                      onClick={() => setConfirmDeleteId(e.id)}
+                      onClick={() => {
+                        setConfirmDeleteId(e.id)
+                      }}
                       disabled={isDeleting}
                       aria-label={`Delete entry from ${e.occurredOn}`}
                     >

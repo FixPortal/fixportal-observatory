@@ -92,7 +92,9 @@ function ExtraUsageChip({ sub }: { sub: Subscription }) {
         min="0"
         aria-label="Extra usage cost"
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => {
+          setDraft(e.target.value)
+        }}
         onBlur={() => {
           if (escapedRef.current) {
             escapedRef.current = false
@@ -270,7 +272,13 @@ export default function SubscriptionPanel() {
             </InfoPopover>
           </div>
           {!isReadonly && (
-            <button type="button" className="sub-panel-btn" onClick={() => setModalOpen(true)}>
+            <button
+              type="button"
+              className="sub-panel-btn"
+              onClick={() => {
+                setModalOpen(true)
+              }}
+            >
               Manage subscriptions
             </button>
           )}
@@ -282,7 +290,13 @@ export default function SubscriptionPanel() {
           <div className="sub-empty">
             <p className="sub-empty__text">No subscriptions — add one to start tracking.</p>
             {!isReadonly && (
-              <button type="button" className="sub-panel-btn" onClick={() => setModalOpen(true)}>
+              <button
+                type="button"
+                className="sub-panel-btn"
+                onClick={() => {
+                  setModalOpen(true)
+                }}
+              >
                 Add subscription
               </button>
             )}
@@ -386,7 +400,14 @@ export default function SubscriptionPanel() {
         )}
       </div>
 
-      {modalOpen && <SubscriptionModal open={modalOpen} onClose={() => setModalOpen(false)} />}
+      {modalOpen && (
+        <SubscriptionModal
+          open={modalOpen}
+          onClose={() => {
+            setModalOpen(false)
+          }}
+        />
+      )}
     </div>
   )
 }

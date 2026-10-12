@@ -58,7 +58,9 @@ describe('SpendEntryModal', () => {
     fireEvent.change(screen.getByLabelText(/amount/i), { target: { value: '80' } })
     fireEvent.click(screen.getByRole('button', { name: /save/i }))
 
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+    await waitFor(() => {
+      expect(post).toHaveBeenCalledTimes(1)
+    })
     const [payload] = post.mock.calls[0]!
     expect(payload).toHaveLength(1)
     expect(payload[0]!.source).toBe('manual')
@@ -76,8 +78,10 @@ describe('SpendEntryModal', () => {
     fireEvent.change(screen.getByLabelText(/amount/i), { target: { value: '80' } })
     fireEvent.click(screen.getByRole('button', { name: /save/i }))
 
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
-    expect(post.mock.calls[0]![0]![0]!.amount).toBe(80)
+    await waitFor(() => {
+      expect(post).toHaveBeenCalledTimes(1)
+    })
+    expect(post.mock.calls[0]![0][0]!.amount).toBe(80)
   })
 
   it('negates the amount when Refund is selected', async () => {
@@ -90,9 +94,11 @@ describe('SpendEntryModal', () => {
     fireEvent.click(screen.getByRole('radio', { name: /refund/i }))
     fireEvent.click(screen.getByRole('button', { name: /save/i }))
 
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+    await waitFor(() => {
+      expect(post).toHaveBeenCalledTimes(1)
+    })
     // Signed amount is how a refund nets off the total — see SpendEntry.Amount.
-    expect(post.mock.calls[0]![0]![0]!.amount).toBeCloseTo(-286.16)
+    expect(post.mock.calls[0]![0][0]!.amount).toBeCloseTo(-286.16)
   })
 
   it('refuses a typed negative amount — the toggle is the only way to book a refund', async () => {
@@ -157,7 +163,9 @@ describe('SpendEntryModal', () => {
     fireEvent.change(screen.getByLabelText(/amount/i), { target: { value: '80' } })
     fireEvent.click(screen.getByRole('button', { name: /save/i }))
 
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+    await waitFor(() => {
+      expect(post).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('ignores a vendor default category that is not in the live list (archived)', () => {

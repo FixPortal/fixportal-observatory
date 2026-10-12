@@ -7,6 +7,7 @@ const dashboardStatus = vi.hoisted(() => ({
   isLoading: false,
   isRetrying: false,
   isAutomaticallyRetrying: false,
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- the assertion widens the null so tests can assign an error; tsc fails without it
   error: null as unknown,
   retry: vi.fn(),
 }))

@@ -58,7 +58,9 @@ describe('dashboard queries', () => {
     // nothing on error); it must not light the page-level banner.
     client.getSourceStatuses.mockRejectedValueOnce(new Error('source status unavailable'))
     const { result } = renderHook(() => useDashboardStatus(), { wrapper })
-    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
     expect(result.current.isError).toBe(false)
     expect(client.getSourceStatuses).not.toHaveBeenCalled()
   })
@@ -67,7 +69,9 @@ describe('dashboard queries', () => {
     const aggregatesError = new Error('aggregates unavailable')
     client.getAggregates.mockRejectedValueOnce(aggregatesError)
     const { result } = renderHook(() => useDashboardStatus(), { wrapper })
-    await waitFor(() => expect(result.current.isError).toBe(true))
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true)
+    })
     expect(result.current.error).toBe(aggregatesError)
   })
 
@@ -87,7 +91,9 @@ describe('dashboard queries', () => {
 
     try {
       const { result } = renderHook(() => useDashboardStatus(), { wrapper: retryingWrapper })
-      await waitFor(() => expect(result.current.isError).toBe(true))
+      await waitFor(() => {
+        expect(result.current.isError).toBe(true)
+      })
 
       expect(result.current.isLoading).toBe(false)
       expect(result.current.isRetrying).toBe(true)
@@ -102,7 +108,9 @@ describe('dashboard queries', () => {
   test('manual dashboard retry refetches its required queries', async () => {
     client.getAggregates.mockRejectedValueOnce(new Error('API unavailable'))
     const { result } = renderHook(() => useDashboardStatus(), { wrapper })
-    await waitFor(() => expect(result.current.isError).toBe(true))
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true)
+    })
 
     await act(async () => {
       await result.current.retry()
@@ -124,12 +132,16 @@ describe('dashboard queries', () => {
         }),
     )
     const { result } = renderHook(() => useDashboardStatus(), { wrapper })
-    await waitFor(() => expect(result.current.isError).toBe(true))
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true)
+    })
 
     act(() => {
       void result.current.retry()
     })
-    await waitFor(() => expect(result.current.isRetrying).toBe(true))
+    await waitFor(() => {
+      expect(result.current.isRetrying).toBe(true)
+    })
     expect(result.current.isAutomaticallyRetrying).toBe(false)
     await act(async () => {
       finishRetry([])
@@ -178,7 +190,9 @@ describe('dashboard queries', () => {
       { wrapper },
     )
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
     expect(client.getAggregates).toHaveBeenCalledOnce()
     expect(client.getBilledReporting).toHaveBeenCalledOnce()
     expect(client.getAggregates).toHaveBeenCalledWith(localDate(range.from), localDate(range.to))
@@ -193,7 +207,9 @@ describe('dashboard queries', () => {
     // re-authenticating) is gated by SpendPage/ReportingPage, not the global banner.
     client.getBilledReporting.mockRejectedValueOnce(new Error('ledger unavailable'))
     const { result } = renderHook(() => useDashboardStatus(), { wrapper })
-    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
     expect(result.current.isError).toBe(false)
     expect(client.getBilledReporting).not.toHaveBeenCalled()
   })
@@ -215,7 +231,9 @@ describe('dashboard queries', () => {
       { wrapper },
     )
 
-    await waitFor(() => expect(client.getBilledReporting).toHaveBeenCalled())
+    await waitFor(() => {
+      expect(client.getBilledReporting).toHaveBeenCalled()
+    })
     expect(client.getBilledReporting).toHaveBeenCalledWith(
       '2026-08-01',
       '2026-08-31',
@@ -230,7 +248,9 @@ describe('dashboard queries', () => {
       { wrapper },
     )
 
-    await waitFor(() => expect(client.getSpendEntries).toHaveBeenCalled())
+    await waitFor(() => {
+      expect(client.getSpendEntries).toHaveBeenCalled()
+    })
     expect(client.getSpendEntries).toHaveBeenCalledWith(
       '2026-08-01',
       '2026-08-31',
@@ -243,7 +263,9 @@ describe('dashboard queries', () => {
     // W-10: a missing range means "fetch the default window", not "skip" — a chart
     // given no comparison range must opt out explicitly, not fire a spare request.
     const { result } = renderHook(() => useActivityDaily(undefined, undefined, false), { wrapper })
-    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
     expect(client.getActivityDaily).not.toHaveBeenCalled()
   })
 
