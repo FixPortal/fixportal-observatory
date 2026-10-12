@@ -22,5 +22,9 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Test-only files compile under tsconfig.test.json, not here. architecture.spec.ts and its
+  // architecture.archunit wrapper deep-import `archunit/dist` (a devDependency), which must not
+  // bleed into the app compile boundary.
+  "exclude": ["src/**/*.spec.*", "src/**/*.archunit.*", "src/**/*.test.*", "src/test/**"]
 }
