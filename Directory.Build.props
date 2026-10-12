@@ -9,7 +9,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <GlobalAnalyzerConfigFiles Include="$(MSBuildThisFileDirectory)eng\analysis\CodeStyle.globalconfig" />
-    <PackageReference Include="SonarAnalyzer.CSharp" PrivateAssets="all" />
+    <PackageReference Include="FixPortal.CodeStyle" PrivateAssets="all" />
   </ItemGroup>
 </Project>

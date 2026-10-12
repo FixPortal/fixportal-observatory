@@ -4,7 +4,6 @@ COPY ["src/AiObservatory.Ingest/AiObservatory.Ingest.csproj", "src/AiObservatory
 COPY ["src/AiObservatory.Data/AiObservatory.Data.csproj", "src/AiObservatory.Data/"]
 COPY ["Directory.Build.props", "."]
 COPY ["Directory.Packages.props", "."]
-COPY ["eng/analysis/CodeStyle.globalconfig", "eng/analysis/"]
 COPY ["nuget.config", "."]
 RUN dotnet restore "src/AiObservatory.Ingest/AiObservatory.Ingest.csproj"
 COPY . .
