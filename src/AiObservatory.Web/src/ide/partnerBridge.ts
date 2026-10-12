@@ -1,15 +1,15 @@
-export type HostContext = {
+export interface HostContext {
   missionId: string | null
   repository: string | null
 }
 
-export type WebViewPort = {
+export interface WebViewPort {
   postMessage(message: unknown): void
   addEventListener(kind: 'message', listener: (event: MessageEvent) => void): void
   removeEventListener(kind: 'message', listener: (event: MessageEvent) => void): void
 }
 
-export type EmbeddedBridge = {
+export interface EmbeddedBridge {
   readonly context: HostContext | null
   postReady(): void
   subscribe(listener: (context: HostContext | null) => void): () => void

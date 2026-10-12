@@ -46,7 +46,9 @@ export default function GitHubPrTable({
             type="text"
             placeholder="Search PRs..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value)
+            }}
             className="breakdown-search"
             aria-label="Search pull requests"
           />

@@ -5,7 +5,10 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 
-type ParsedFile = { name: string; diagrams: unknown[] }
+interface ParsedFile {
+  name: string
+  diagrams: unknown[]
+}
 type Patterns = string | string[]
 const require = createRequire(import.meta.url)
 const consumerRequire = createRequire(require.resolve('archunit/package.json'))
@@ -48,7 +51,7 @@ afterAll(() => {
   }
 })
 
-const scenarios: Array<[string, () => Patterns, () => string[]]> = [
+const scenarios: [string, () => Patterns, () => string[]][] = [
   [
     'absolute file (including Windows cross-drive paths)',
     () => slash(join(absoluteRoot, 'one.puml')),
@@ -99,9 +102,9 @@ describe('installed PlantUML file parser glob compatibility', () => {
 
   it('retains its asynchronous callback API', async () => {
     const files = await new Promise<ParsedFile[]>((fulfil, reject) => {
-      parser.parseFile(slash(join(absoluteRoot, 'one.puml')), {}, (error, values) =>
-        error ? reject(error) : fulfil(values),
-      )
+      parser.parseFile(slash(join(absoluteRoot, 'one.puml')), {}, (error, values) => {
+        error ? reject(error) : fulfil(values)
+      })
     })
     expect(files.map((file) => file.name)).toEqual([
       relative(process.cwd(), join(absoluteRoot, 'one.puml')),

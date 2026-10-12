@@ -10,7 +10,7 @@ import Dashboard from './Dashboard'
 const dashboardStatus = vi.hoisted(() => ({
   isError: false,
   isLoading: false,
-  error: null as unknown,
+  error: null,
 }))
 const authMock = vi.hoisted(() => ({
   TokenAcquisitionTimeoutError: class extends Error {},

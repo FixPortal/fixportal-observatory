@@ -31,7 +31,9 @@ describe('SubscriptionModal', () => {
     fireEvent.change(screen.getByLabelText('Active from'), { target: { value: '2026-07-02' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
-    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    await waitFor(() => {
+      expect(create).toHaveBeenCalledOnce()
+    })
     expect(create.mock.calls[0]![0]).toMatchObject({ billingInterval: 'annual', billingMonth: 7 })
   })
 })

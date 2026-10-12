@@ -174,7 +174,9 @@ export default function SpendChart({ from, to }: Props) {
               key={option.mode}
               type="button"
               aria-pressed={mode === option.mode}
-              onClick={() => setMode(option.mode)}
+              onClick={() => {
+                setMode(option.mode)
+              }}
               className={`chart-toggle-btn ${mode === option.mode ? 'chart-toggle-btn--active' : ''}`}
             >
               {option.label}

@@ -124,8 +124,12 @@ export default function Dashboard() {
             aria-controls="dashboard-tabpanel"
             tabIndex={tab === t.id ? 0 : -1}
             className={`page-nav__tab${tab === t.id ? ' page-nav__tab--active' : ''}`}
-            onClick={() => setTab(t.id)}
-            onKeyDown={(e) => onTabKeyDown(e, i)}
+            onClick={() => {
+              setTab(t.id)
+            }}
+            onKeyDown={(e) => {
+              onTabKeyDown(e, i)
+            }}
           >
             {t.label}
           </button>

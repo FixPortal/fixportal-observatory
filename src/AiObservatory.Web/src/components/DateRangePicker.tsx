@@ -87,7 +87,9 @@ export default function DateRangePicker({ from, to, preset, onPreset, onCustom }
         <button
           type="button"
           className={`chart-toggle-btn${preset === 'custom' ? ' chart-toggle-btn--active' : ''}`}
-          onClick={() => setPopoverOpen((v) => !v)}
+          onClick={() => {
+            setPopoverOpen((v) => !v)
+          }}
         >
           Custom
         </button>
@@ -101,7 +103,9 @@ export default function DateRangePicker({ from, to, preset, onPreset, onCustom }
               type="date"
               value={fromStr}
               max={toStr}
-              onChange={(e) => setFromStr(e.target.value)}
+              onChange={(e) => {
+                setFromStr(e.target.value)
+              }}
               className="date-range__input"
             />
           </label>
@@ -111,7 +115,9 @@ export default function DateRangePicker({ from, to, preset, onPreset, onCustom }
               type="date"
               value={toStr}
               min={fromStr}
-              onChange={(e) => setToStr(e.target.value)}
+              onChange={(e) => {
+                setToStr(e.target.value)
+              }}
               className="date-range__input"
             />
           </label>

@@ -29,5 +29,11 @@
   // Test sources belong to THIS project, not tsconfig.app.json -- without it they
   // compile under no project at all and Vitest transpiles them without type-checking,
   // so `tsc -b` and `npm test` both stay green on a type-broken test file.
-  "include": ["src/**/*.test.*", "src/**/*.spec.*", "src/**/*.archunit.*", "src/test"]
+  "include": [
+    "src/**/*.test.*",
+    "src/**/*.spec.*",
+    "src/**/*.archunit.*",
+    "src/test",
+    "src/vite-env.d.ts"
+  ]
 }

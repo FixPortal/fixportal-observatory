@@ -37,7 +37,7 @@ describe('embedded partner bridge', () => {
 
   test('accepts only the bounded host context message', () => {
     const bridge = createEmbeddedBridge(port)
-    const observed: Array<string | null> = []
+    const observed: (string | null)[] = []
     bridge.subscribe((context) => observed.push(context?.repository ?? null))
 
     listener?.(

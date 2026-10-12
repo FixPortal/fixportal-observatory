@@ -110,7 +110,9 @@ function SortableHeader({
       <button
         type="button"
         className="sortable-header__content"
-        onClick={() => onSort(field)}
+        onClick={() => {
+          onSort(field)
+        }}
         title={hint}
         aria-label={`Sort by ${label}, currently ${ariaSort}`}
       >
@@ -204,7 +206,9 @@ export default function ModelBreakdown() {
             type="text"
             placeholder="Search evidence..."
             value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
+            onChange={(event) => {
+              setSearchQuery(event.target.value)
+            }}
             className="breakdown-search"
             aria-label="Search models"
           />
@@ -212,7 +216,9 @@ export default function ModelBreakdown() {
         <div className="breakdown-filters" aria-label="Filter by provider" role="group">
           <button
             type="button"
-            onClick={() => setSelectedProvider('all')}
+            onClick={() => {
+              setSelectedProvider('all')
+            }}
             className="filter-chip"
             aria-pressed={selectedProvider === 'all'}
           >
@@ -222,7 +228,9 @@ export default function ModelBreakdown() {
             <button
               key={provider}
               type="button"
-              onClick={() => setSelectedProvider(provider)}
+              onClick={() => {
+                setSelectedProvider(provider)
+              }}
               className="filter-chip"
               aria-pressed={selectedProvider === provider}
             >

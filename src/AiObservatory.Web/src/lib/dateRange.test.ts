@@ -22,7 +22,9 @@ describe('useDateRange', () => {
 
   it('setPreset(7) sets a 7-day window', () => {
     const { result } = renderHook(() => useDateRange())
-    act(() => result.current.setPreset(7))
+    act(() => {
+      result.current.setPreset(7)
+    })
     expect(result.current.preset).toBe(7)
     const diffDays = Math.round(
       (result.current.to.getTime() - result.current.from.getTime()) / 86400000,
@@ -34,7 +36,9 @@ describe('useDateRange', () => {
     const { result } = renderHook(() => useDateRange())
     const from = new Date('2026-05-01')
     const to = new Date('2026-05-31')
-    act(() => result.current.setCustom(from, to))
+    act(() => {
+      result.current.setCustom(from, to)
+    })
     expect(result.current.preset).toBe('custom')
     expect(result.current.from).toEqual(from)
     expect(result.current.to).toEqual(to)
@@ -43,15 +47,21 @@ describe('useDateRange', () => {
   it('sets calendar month and quarter ranges from the local current date', () => {
     const { result } = renderHook(() => useDateRange())
 
-    act(() => result.current.setPreset('thisMonth' as never))
+    act(() => {
+      result.current.setPreset('thisMonth')
+    })
     expect(result.current.from).toEqual(new Date('2026-06-01T00:00:00'))
     expect(result.current.to).toEqual(new Date('2026-06-21T12:00:00Z'))
 
-    act(() => result.current.setPreset('lastMonth' as never))
+    act(() => {
+      result.current.setPreset('lastMonth')
+    })
     expect(result.current.from).toEqual(new Date('2026-05-01T00:00:00'))
     expect(result.current.to).toEqual(new Date('2026-05-31T00:00:00'))
 
-    act(() => result.current.setPreset('thisQuarter' as never))
+    act(() => {
+      result.current.setPreset('thisQuarter')
+    })
     expect(result.current.from).toEqual(new Date('2026-04-01T00:00:00'))
     expect(result.current.to).toEqual(new Date('2026-06-21T12:00:00Z'))
   })
@@ -62,7 +72,9 @@ describe('useDateRange', () => {
     expect(result.current.comparisonFrom).toEqual(new Date('2026-04-21T12:00:00Z'))
     expect(result.current.comparisonTo).toEqual(new Date('2026-05-21T12:00:00Z'))
 
-    act(() => result.current.setPreset('thisMonth' as never))
+    act(() => {
+      result.current.setPreset('thisMonth')
+    })
     expect(result.current.comparisonFrom).toEqual(new Date('2026-05-01T00:00:00'))
     expect(result.current.comparisonTo).toEqual(new Date('2026-05-31T00:00:00'))
   })
@@ -72,7 +84,9 @@ describe('useDateRange', () => {
     const comparisonFrom = new Date('2026-01-01')
     const comparisonTo = new Date('2026-03-31')
 
-    act(() => result.current.setComparison(comparisonFrom, comparisonTo))
+    act(() => {
+      result.current.setComparison(comparisonFrom, comparisonTo)
+    })
 
     expect(result.current.comparisonMode).toBe('custom')
     expect(result.current.comparisonFrom).toEqual(comparisonFrom)
@@ -82,11 +96,15 @@ describe('useDateRange', () => {
   it('normalises inverted selected and comparison dates', () => {
     const { result } = renderHook(() => useDateRange())
 
-    act(() => result.current.setCustom(new Date('2026-05-31'), new Date('2026-05-01')))
+    act(() => {
+      result.current.setCustom(new Date('2026-05-31'), new Date('2026-05-01'))
+    })
     expect(result.current.from).toEqual(new Date('2026-05-01'))
     expect(result.current.to).toEqual(new Date('2026-05-31'))
 
-    act(() => result.current.setComparison(new Date('2026-03-31'), new Date('2026-01-01')))
+    act(() => {
+      result.current.setComparison(new Date('2026-03-31'), new Date('2026-01-01'))
+    })
     expect(result.current.comparisonFrom).toEqual(new Date('2026-01-01'))
     expect(result.current.comparisonTo).toEqual(new Date('2026-03-31'))
   })

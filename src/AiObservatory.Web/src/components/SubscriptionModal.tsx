@@ -132,8 +132,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
       qc.invalidateQueries({ queryKey: ['subscriptions'] })
       dispatch({ type: 'CLOSE' })
     },
-    onError: () =>
-      dispatch({ type: 'SET_MUTATION_ERROR', error: 'Failed to save — please try again.' }),
+    onError: () => {
+      dispatch({ type: 'SET_MUTATION_ERROR', error: 'Failed to save — please try again.' })
+    },
   })
 
   const editMutation = useMutation({
@@ -143,8 +144,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
       qc.invalidateQueries({ queryKey: ['subscriptions'] })
       dispatch({ type: 'CLOSE' })
     },
-    onError: () =>
-      dispatch({ type: 'SET_MUTATION_ERROR', error: 'Failed to save — please try again.' }),
+    onError: () => {
+      dispatch({ type: 'SET_MUTATION_ERROR', error: 'Failed to save — please try again.' })
+    },
   })
 
   const deleteMutation = useMutation({
@@ -153,8 +155,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
       qc.invalidateQueries({ queryKey: ['subscriptions'] })
       dispatch({ type: 'ON_DELETE', id })
     },
-    onError: () =>
-      dispatch({ type: 'SET_MUTATION_ERROR', error: 'Failed to delete — please try again.' }),
+    onError: () => {
+      dispatch({ type: 'SET_MUTATION_ERROR', error: 'Failed to delete — please try again.' })
+    },
   })
 
   if (!open) return null
@@ -275,7 +278,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
                     <button
                       type="button"
                       className="sub-list__btn sub-list__btn--danger"
-                      onClick={() => deleteMutation.mutate(sub.id)}
+                      onClick={() => {
+                        deleteMutation.mutate(sub.id)
+                      }}
                       disabled={isDeleting}
                     >
                       Yes
@@ -283,7 +288,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
                     <button
                       type="button"
                       className="sub-list__btn"
-                      onClick={() => dispatch({ type: 'SET_CONFIRM_DELETE', id: null })}
+                      onClick={() => {
+                        dispatch({ type: 'SET_CONFIRM_DELETE', id: null })
+                      }}
                     >
                       No
                     </button>
@@ -293,7 +300,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
                     <button
                       type="button"
                       className="sub-list__btn"
-                      onClick={() => openEdit(sub)}
+                      onClick={() => {
+                        openEdit(sub)
+                      }}
                       disabled={isSaving}
                     >
                       Edit
@@ -301,7 +310,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
                     <button
                       type="button"
                       className="sub-list__btn sub-list__btn--danger"
-                      onClick={() => dispatch({ type: 'SET_CONFIRM_DELETE', id: sub.id })}
+                      onClick={() => {
+                        dispatch({ type: 'SET_CONFIRM_DELETE', id: sub.id })
+                      }}
                     >
                       Delete
                     </button>
@@ -342,7 +353,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
                     id="sub-form-provider"
                     className="sub-form__select"
                     value={state.formValues.provider}
-                    onChange={(e) => set('provider', e.target.value)}
+                    onChange={(e) => {
+                      set('provider', e.target.value)
+                    }}
                   >
                     {PROVIDERS.map((p) => (
                       <option key={p.key} value={p.key}>
@@ -360,7 +373,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
                     className="sub-form__input"
                     type="text"
                     value={state.formValues.name}
-                    onChange={(e) => set('name', e.target.value)}
+                    onChange={(e) => {
+                      set('name', e.target.value)
+                    }}
                     placeholder="e.g. Claude Max"
                   />
                 </div>
@@ -375,7 +390,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
                     step="0.01"
                     min="0"
                     value={state.formValues.costAmount}
-                    onChange={(e) => set('costAmount', e.target.value)}
+                    onChange={(e) => {
+                      set('costAmount', e.target.value)
+                    }}
                     placeholder="100.00"
                   />
                 </div>
@@ -387,7 +404,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
                     id="sub-form-billing-interval"
                     className="sub-form__select"
                     value={state.formValues.billingInterval}
-                    onChange={(e) => set('billingInterval', e.target.value)}
+                    onChange={(e) => {
+                      set('billingInterval', e.target.value)
+                    }}
                   >
                     <option value="monthly">Monthly</option>
                     <option value="annual">Annual</option>
@@ -402,7 +421,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
                       id="sub-form-billing-month"
                       className="sub-form__select"
                       value={state.formValues.billingMonth}
-                      onChange={(e) => set('billingMonth', e.target.value)}
+                      onChange={(e) => {
+                        set('billingMonth', e.target.value)
+                      }}
                     >
                       <option value="">Select month</option>
                       {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
@@ -421,7 +442,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
                     id="sub-form-currency"
                     className="sub-form__select"
                     value={state.formValues.currency}
-                    onChange={(e) => set('currency', e.target.value)}
+                    onChange={(e) => {
+                      set('currency', e.target.value)
+                    }}
                   >
                     <option value="GBP">GBP (£)</option>
                     <option value="USD">USD ($)</option>
@@ -438,7 +461,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
                     min="1"
                     max="31"
                     value={state.formValues.billingDay}
-                    onChange={(e) => set('billingDay', e.target.value)}
+                    onChange={(e) => {
+                      set('billingDay', e.target.value)
+                    }}
                     placeholder="15"
                   />
                 </div>
@@ -451,7 +476,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
                     className="sub-form__input"
                     type="date"
                     value={state.formValues.activeFrom}
-                    onChange={(e) => set('activeFrom', e.target.value)}
+                    onChange={(e) => {
+                      set('activeFrom', e.target.value)
+                    }}
                   />
                 </div>
                 <div>
@@ -463,7 +490,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
                     className="sub-form__input"
                     type="date"
                     value={state.formValues.activeTo}
-                    onChange={(e) => set('activeTo', e.target.value)}
+                    onChange={(e) => {
+                      set('activeTo', e.target.value)
+                    }}
                   />
                 </div>
               </div>
@@ -476,7 +505,9 @@ export default function SubscriptionModal({ open, onClose }: Props) {
                 <button
                   type="button"
                   className="sub-form__btn sub-form__btn--secondary"
-                  onClick={() => dispatch({ type: 'CLOSE' })}
+                  onClick={() => {
+                    dispatch({ type: 'CLOSE' })
+                  }}
                   disabled={isSaving}
                 >
                   Cancel

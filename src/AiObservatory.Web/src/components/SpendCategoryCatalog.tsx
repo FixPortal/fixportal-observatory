@@ -45,7 +45,9 @@ export default function SpendCategoryCatalog({ categories }: Props) {
       invalidate()
       setForm(EMPTY_FORM)
     },
-    onError: (err: Error) => setFormError(err.message),
+    onError: (err: Error) => {
+      setFormError(err.message)
+    },
   })
 
   const patch = useMutation({
@@ -55,7 +57,9 @@ export default function SpendCategoryCatalog({ categories }: Props) {
       invalidate()
       setRenamingId(null)
     },
-    onError: (err: Error) => setMutationError(err.message),
+    onError: (err: Error) => {
+      setMutationError(err.message)
+    },
   })
 
   function submitCreate(e: FormEvent) {
@@ -122,13 +126,17 @@ export default function SpendCategoryCatalog({ categories }: Props) {
                   aria-label={`Rename ${c.displayName}`}
                   className="sub-form__input"
                   value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
+                  onChange={(e) => {
+                    setRenameValue(e.target.value)
+                  }}
                 />
                 <span className="sub-list__actions">
                   <button
                     type="button"
                     className="sub-list__btn"
-                    onClick={() => saveRename(c.id)}
+                    onClick={() => {
+                      saveRename(c.id)
+                    }}
                     disabled={patch.isPending}
                   >
                     Save
@@ -136,7 +144,9 @@ export default function SpendCategoryCatalog({ categories }: Props) {
                   <button
                     type="button"
                     className="sub-list__btn"
-                    onClick={() => setRenamingId(null)}
+                    onClick={() => {
+                      setRenamingId(null)
+                    }}
                   >
                     Cancel
                   </button>
@@ -150,7 +160,9 @@ export default function SpendCategoryCatalog({ categories }: Props) {
                   <button
                     type="button"
                     className="sub-list__btn"
-                    onClick={() => startRename(c)}
+                    onClick={() => {
+                      startRename(c)
+                    }}
                     aria-label={`Rename ${c.displayName}`}
                   >
                     Rename
@@ -158,7 +170,9 @@ export default function SpendCategoryCatalog({ categories }: Props) {
                   <button
                     type="button"
                     className="sub-list__btn"
-                    onClick={() => toggleArchive(c)}
+                    onClick={() => {
+                      toggleArchive(c)
+                    }}
                     disabled={patch.isPending}
                     aria-label={`${c.archivedAt === null ? 'Archive' : 'Unarchive'} ${c.displayName}`}
                   >
@@ -186,7 +200,9 @@ export default function SpendCategoryCatalog({ categories }: Props) {
                 id="new-category-key"
                 className="sub-form__input"
                 value={form.key}
-                onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, key: e.target.value }))
+                }}
                 maxLength={60}
                 placeholder="e.g. inference"
               />
@@ -199,7 +215,9 @@ export default function SpendCategoryCatalog({ categories }: Props) {
                 id="new-category-name"
                 className="sub-form__input"
                 value={form.displayName}
-                onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, displayName: e.target.value }))
+                }}
                 maxLength={100}
               />
             </div>
@@ -212,7 +230,9 @@ export default function SpendCategoryCatalog({ categories }: Props) {
                 className="sub-form__input"
                 type="number"
                 value={form.sortOrder}
-                onChange={(e) => setForm((f) => ({ ...f, sortOrder: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, sortOrder: e.target.value }))
+                }}
               />
             </div>
           </div>

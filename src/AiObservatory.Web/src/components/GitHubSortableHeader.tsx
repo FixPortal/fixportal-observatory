@@ -27,7 +27,13 @@ export default function GitHubSortableHeader<T extends string>({
 
   return (
     <th className={`sortable-header ${className ?? ''}`.trim()} aria-sort={ariaSort}>
-      <button type="button" className="sortable-header__content" onClick={() => onSort(field)}>
+      <button
+        type="button"
+        className="sortable-header__content"
+        onClick={() => {
+          onSort(field)
+        }}
+      >
         {label}
         <span
           className={`sort-indicator ${isActive ? 'sort-indicator--active' : ''}`}

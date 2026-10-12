@@ -136,7 +136,9 @@ describe('SpendVendorCatalog', () => {
 
     // Explicit null is the whole point — omitting the key means "leave it alone", which
     // is why the default category was previously set-once and unclearable.
-    await waitFor(() => expect(patch).toHaveBeenCalledWith('v1', { defaultCategoryId: null }))
+    await waitFor(() => {
+      expect(patch).toHaveBeenCalledWith('v1', { defaultCategoryId: null })
+    })
   })
 
   it('cancels a pending default-category change without writing it', () => {
@@ -208,7 +210,9 @@ describe('SpendVendorCatalog', () => {
     fireEvent.change(screen.getByLabelText(/provider/i), { target: { value: 'openai' } })
     fireEvent.click(screen.getByRole('button', { name: /add vendor/i }))
 
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    await waitFor(() => {
+      expect(create).toHaveBeenCalledTimes(1)
+    })
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         key: 'openai-direct',
@@ -233,7 +237,9 @@ describe('SpendVendorCatalog', () => {
     fireEvent.change(screen.getByLabelText(/display name/i), { target: { value: 'CodeRabbit' } })
     fireEvent.click(screen.getByRole('button', { name: /add vendor/i }))
 
-    await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    await waitFor(() => {
+      expect(create).toHaveBeenCalledTimes(1)
+    })
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ provider: null }))
   })
 
@@ -263,7 +269,9 @@ describe('SpendVendorCatalog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^archive anthropic$/i }))
 
-    await waitFor(() => expect(patch).toHaveBeenCalledWith('v1', { archived: true }))
+    await waitFor(() => {
+      expect(patch).toHaveBeenCalledWith('v1', { archived: true })
+    })
   })
 
   it('unarchives an archived vendor', async () => {
@@ -274,7 +282,9 @@ describe('SpendVendorCatalog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^unarchive github actions$/i }))
 
-    await waitFor(() => expect(patch).toHaveBeenCalledWith('v2', { archived: false }))
+    await waitFor(() => {
+      expect(patch).toHaveBeenCalledWith('v2', { archived: false })
+    })
   })
 
   it('renames a vendor via PATCH DisplayName', async () => {
@@ -288,7 +298,9 @@ describe('SpendVendorCatalog', () => {
     fireEvent.change(input, { target: { value: 'Anthropic Inc' } })
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
-    await waitFor(() => expect(patch).toHaveBeenCalledWith('v1', { displayName: 'Anthropic Inc' }))
+    await waitFor(() => {
+      expect(patch).toHaveBeenCalledWith('v1', { displayName: 'Anthropic Inc' })
+    })
   })
 
   it('explains that one vendor can span several spend categories', () => {

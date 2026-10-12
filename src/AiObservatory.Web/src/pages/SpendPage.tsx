@@ -91,7 +91,9 @@ export default function SpendPage() {
       setDeleteError(null)
       invalidateSpendData(qc)
     },
-    onError: (err: Error) => setDeleteError(`Failed to delete entry: ${err.message}`),
+    onError: (err: Error) => {
+      setDeleteError(`Failed to delete entry: ${err.message}`)
+    },
   })
 
   const loadError = [
@@ -184,7 +186,9 @@ export default function SpendPage() {
             entries={entries}
             categories={allCategories}
             vendors={allVendors}
-            onDelete={(id) => remove.mutate(id)}
+            onDelete={(id) => {
+              remove.mutate(id)
+            }}
             canEdit={!isReadonly}
             isDeleting={remove.isPending}
           />
@@ -215,8 +219,12 @@ export default function SpendPage() {
         vendorId={activeVendorId}
         onCategoryChange={setCategoryId}
         onVendorChange={setVendorId}
-        onAddEntry={() => setAdding(true)}
-        onManageCatalog={() => setManagingCatalog(true)}
+        onAddEntry={() => {
+          setAdding(true)
+        }}
+        onManageCatalog={() => {
+          setManagingCatalog(true)
+        }}
         canEdit={!isReadonly}
       />
 
@@ -228,7 +236,9 @@ export default function SpendPage() {
           vendors={vendors}
           from={from}
           to={to}
-          onClose={() => setAdding(false)}
+          onClose={() => {
+            setAdding(false)
+          }}
         />
       )}
 
@@ -236,7 +246,9 @@ export default function SpendPage() {
         <SpendCatalogModal
           categories={allCategories}
           vendors={allVendors}
-          onClose={() => setManagingCatalog(false)}
+          onClose={() => {
+            setManagingCatalog(false)
+          }}
         />
       )}
     </section>

@@ -11,9 +11,9 @@ import {
 } from '@azure/msal-browser'
 import { windowWebViewPort } from '../ide/partnerBridge'
 
-const clientId = import.meta.env['VITE_AAD_CLIENT_ID'] ?? ''
-const tenantId = import.meta.env['VITE_AAD_TENANT_ID'] ?? ''
-const apiScope = import.meta.env['VITE_AAD_API_SCOPE'] ?? ''
+const clientId = import.meta.env.VITE_AAD_CLIENT_ID ?? ''
+const tenantId = import.meta.env.VITE_AAD_TENANT_ID ?? ''
+const apiScope = import.meta.env.VITE_AAD_API_SCOPE ?? ''
 
 export const authEnabled = clientId.length > 0
 
@@ -69,10 +69,9 @@ export async function getAccessToken(): Promise<string | null> {
     const result = await Promise.race([
       instance.acquireTokenSilent({ ...loginRequest, account }),
       new Promise<never>((_, reject) => {
-        timeoutId = window.setTimeout(
-          () => reject(new TokenAcquisitionTimeoutError()),
-          TOKEN_TIMEOUT_MS,
-        )
+        timeoutId = window.setTimeout(() => {
+          reject(new TokenAcquisitionTimeoutError())
+        }, TOKEN_TIMEOUT_MS)
       }),
     ])
     return result.accessToken
@@ -150,4 +149,4 @@ if ((urlApiKey || isEmbedded) && typeof window.history?.replaceState === 'functi
 // ?key= visitor holds; Entra and self-host keys never set urlApiKey.) A demo build
 // is also a viewer: it bakes the read-only key via VITE_API_KEY rather than a link,
 // so urlApiKey is empty there and the build flag is the signal.
-export const isReadonly = urlApiKey.length > 0 || import.meta.env['VITE_DEMO_BANNER'] === 'true'
+export const isReadonly = urlApiKey.length > 0 || import.meta.env.VITE_DEMO_BANNER === 'true'

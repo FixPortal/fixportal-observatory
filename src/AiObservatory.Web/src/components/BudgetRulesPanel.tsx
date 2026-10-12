@@ -57,7 +57,13 @@ function ConfiguredChannelActions({
         >
           Confirm
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => setConfirmingRemove(false)}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setConfirmingRemove(false)
+          }}
+        >
           Cancel
         </Button>
       </>
@@ -73,7 +79,9 @@ function ConfiguredChannelActions({
         variant="danger"
         size="sm"
         aria-label={`Remove ${label.toLowerCase()}`}
-        onClick={() => setConfirmingRemove(true)}
+        onClick={() => {
+          setConfirmingRemove(true)
+        }}
       >
         Remove
       </Button>
@@ -121,7 +129,9 @@ function NotificationChannelRow({
           id={fieldId}
           type="text"
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value)
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault()
@@ -164,7 +174,9 @@ function NotificationChannelRow({
           <ConfiguredChannelActions
             label={label}
             isSaving={isSaving}
-            onEdit={() => setEditing(true)}
+            onEdit={() => {
+              setEditing(true)
+            }}
             onClear={onClear}
           />
         </>
@@ -178,7 +190,9 @@ function NotificationChannelRow({
               variant="ghost"
               size="sm"
               aria-label={`Add ${label.toLowerCase()}`}
-              onClick={() => setEditing(true)}
+              onClick={() => {
+                setEditing(true)
+              }}
             >
               Add
             </Button>
@@ -196,9 +210,13 @@ function NotificationSettingsSection() {
 
   const save = useMutation({
     mutationFn: updateNotificationSettings,
-    onMutate: () => setSaveError(null),
+    onMutate: () => {
+      setSaveError(null)
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notification-settings'] }),
-    onError: (e: Error) => setSaveError(`Couldn’t save notification settings: ${e.message}`),
+    onError: (e: Error) => {
+      setSaveError(`Couldn’t save notification settings: ${e.message}`)
+    },
   })
 
   if (loadError) {
@@ -228,7 +246,9 @@ function NotificationSettingsSection() {
         configured={settings.emailConfigured}
         masked={settings.emailMasked}
         onSave={(value) => save.mutateAsync({ alertEmailTo: value })}
-        onClear={() => save.mutate({ alertEmailTo: null })}
+        onClear={() => {
+          save.mutate({ alertEmailTo: null })
+        }}
         isSaving={save.isPending}
       />
       <NotificationChannelRow
@@ -237,7 +257,9 @@ function NotificationSettingsSection() {
         configured={settings.slackConfigured}
         masked={settings.slackMasked}
         onSave={(value) => save.mutateAsync({ slackWebhookUrl: value })}
-        onClear={() => save.mutate({ slackWebhookUrl: null })}
+        onClear={() => {
+          save.mutate({ slackWebhookUrl: null })
+        }}
         isSaving={save.isPending}
       />
     </div>
@@ -258,12 +280,16 @@ export default function BudgetRulesPanel() {
 
   const deleteRule = useMutation({
     mutationFn: deleteBudgetRule,
-    onMutate: () => setMutationError(null),
+    onMutate: () => {
+      setMutationError(null)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['budget-rules'] })
       setConfirmDeleteId(null)
     },
-    onError: (e: Error) => setMutationError(`Couldn’t remove the rule: ${e.message}`),
+    onError: (e: Error) => {
+      setMutationError(`Couldn’t remove the rule: ${e.message}`)
+    },
   })
 
   const addRule = useMutation({
@@ -273,7 +299,9 @@ export default function BudgetRulesPanel() {
         period,
         thresholdGbp: parseFloat(threshold),
       }),
-    onMutate: () => setMutationError(null),
+    onMutate: () => {
+      setMutationError(null)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['budget-rules'] })
       setPanelOpen(false)
@@ -281,7 +309,9 @@ export default function BudgetRulesPanel() {
       setPeriod('monthly')
       setThreshold('')
     },
-    onError: (e: Error) => setMutationError(`Couldn’t add the rule: ${e.message}`),
+    onError: (e: Error) => {
+      setMutationError(`Couldn’t add the rule: ${e.message}`)
+    },
   })
 
   const budgetAlerts = insights
@@ -368,7 +398,9 @@ export default function BudgetRulesPanel() {
                               <Button
                                 variant="danger"
                                 size="sm"
-                                onClick={() => deleteRule.mutate(rule.id)}
+                                onClick={() => {
+                                  deleteRule.mutate(rule.id)
+                                }}
                                 disabled={deleteRule.isPending}
                               >
                                 Confirm
@@ -376,7 +408,9 @@ export default function BudgetRulesPanel() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => setConfirmDeleteId(null)}
+                                onClick={() => {
+                                  setConfirmDeleteId(null)
+                                }}
                               >
                                 Cancel
                               </Button>
@@ -385,7 +419,9 @@ export default function BudgetRulesPanel() {
                             <Button
                               variant="danger"
                               size="sm"
-                              onClick={() => setConfirmDeleteId(rule.id)}
+                              onClick={() => {
+                                setConfirmDeleteId(rule.id)
+                              }}
                             >
                               Remove
                             </Button>
@@ -410,7 +446,9 @@ export default function BudgetRulesPanel() {
                 Provider
                 <select
                   value={provider}
-                  onChange={(e) => setProvider(e.target.value)}
+                  onChange={(e) => {
+                    setProvider(e.target.value)
+                  }}
                   className="budget-rules__control"
                 >
                   <option value="">All providers</option>
@@ -426,7 +464,9 @@ export default function BudgetRulesPanel() {
                 Period
                 <select
                   value={period}
-                  onChange={(e) => setPeriod(e.target.value as typeof period)}
+                  onChange={(e) => {
+                    setPeriod(e.target.value as typeof period)
+                  }}
                   className="budget-rules__control"
                 >
                   {PERIODS.map((p) => (
@@ -444,7 +484,9 @@ export default function BudgetRulesPanel() {
                   min="0.01"
                   step="0.01"
                   value={threshold}
-                  onChange={(e) => setThreshold(e.target.value)}
+                  onChange={(e) => {
+                    setThreshold(e.target.value)
+                  }}
                   placeholder="e.g. 50"
                   required
                   className="budget-rules__control"
@@ -461,7 +503,14 @@ export default function BudgetRulesPanel() {
               >
                 {addRule.isPending ? 'Adding...' : 'Add rule'}
               </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setPanelOpen(false)}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setPanelOpen(false)
+                }}
+              >
                 Cancel
               </Button>
             </div>

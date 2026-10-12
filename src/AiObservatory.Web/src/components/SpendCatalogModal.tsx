@@ -50,7 +50,9 @@ export default function SpendCatalogModal({ categories, vendors, onClose }: Prop
             aria-selected={tab === 'categories'}
             aria-controls="catalog-panel-categories"
             className="catalog-tab"
-            onClick={() => setTab('categories')}
+            onClick={() => {
+              setTab('categories')
+            }}
           >
             Categories
           </button>
@@ -61,7 +63,9 @@ export default function SpendCatalogModal({ categories, vendors, onClose }: Prop
             aria-selected={tab === 'vendors'}
             aria-controls="catalog-panel-vendors"
             className="catalog-tab"
-            onClick={() => setTab('vendors')}
+            onClick={() => {
+              setTab('vendors')
+            }}
           >
             Vendors
           </button>
