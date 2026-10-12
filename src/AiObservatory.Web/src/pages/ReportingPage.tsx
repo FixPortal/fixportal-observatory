@@ -10,8 +10,16 @@ const BilledVendorSplit = lazy(() => import('../components/BilledVendorSplit'))
 
 export default function ReportingPage() {
   const {
-    from, to, preset, setPreset, setCustom,
-    comparisonFrom, comparisonTo, comparisonMode, setComparison, compareWithPrevious,
+    from,
+    to,
+    preset,
+    setPreset,
+    setCustom,
+    comparisonFrom,
+    comparisonTo,
+    comparisonMode,
+    setComparison,
+    compareWithPrevious,
   } = useDateRange()
   const { report, isLoading, isError } = useBilledReporting(from, to)
   const comparison = useBilledReporting(comparisonFrom, comparisonTo)
@@ -24,7 +32,11 @@ export default function ReportingPage() {
   if (isLoading || comparison.isLoading) {
     charts = <div className="chart-skeleton" />
   } else if ((report?.entryCount ?? 0) === 0 && (comparison.report?.entryCount ?? 0) === 0) {
-    charts = <div className="panel"><p className="panel-empty">No billed spend reported for either period.</p></div>
+    charts = (
+      <div className="panel">
+        <p className="panel-empty">No billed spend reported for either period.</p>
+      </div>
+    )
   } else {
     charts = (
       <div className="main-grid">
@@ -36,7 +48,9 @@ export default function ReportingPage() {
               range={{ from, to }}
               comparisonData={comparison.report?.dailySeries ?? []}
               comparisonRange={{ from: comparisonFrom, to: comparisonTo }}
-              comparisonLabel={comparisonMode === 'previous' ? 'Previous period' : 'Comparison period'}
+              comparisonLabel={
+                comparisonMode === 'previous' ? 'Previous period' : 'Comparison period'
+              }
             />
           </Suspense>
         </div>
@@ -57,19 +71,31 @@ export default function ReportingPage() {
   return (
     <div className="reporting-page">
       <SpendRangeControls
-        from={from} to={to} preset={preset}
-        comparisonFrom={comparisonFrom} comparisonTo={comparisonTo} comparisonMode={comparisonMode}
-        onPreset={setPreset} onCustom={setCustom} onComparison={setComparison}
+        from={from}
+        to={to}
+        preset={preset}
+        comparisonFrom={comparisonFrom}
+        comparisonTo={comparisonTo}
+        comparisonMode={comparisonMode}
+        onPreset={setPreset}
+        onCustom={setCustom}
+        onComparison={setComparison}
         onPreviousComparison={compareWithPrevious}
       />
       {/* Inline banner, not an early return: the range controls stay mounted so a range
           the API rejects can be edited, and BudgetRulesPanel does not depend on billed
           reporting at all. */}
       {loadError ? (
-        <div className="error-banner" role="alert">Couldn’t load billed reporting. Check the API service and try refreshing.</div>
+        <div className="error-banner" role="alert">
+          Couldn’t load billed reporting. Check the API service and try refreshing.
+        </div>
       ) : (
         <>
-          <ReportingCards report={report} comparisonReport={comparison.report} comparisonLabel={comparisonLabel} />
+          <ReportingCards
+            report={report}
+            comparisonReport={comparison.report}
+            comparisonLabel={comparisonLabel}
+          />
           {charts}
         </>
       )}

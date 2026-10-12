@@ -4,8 +4,13 @@ import { useDateRange } from './dateRange'
 
 describe('useDateRange', () => {
   const FIXED = new Date('2026-06-21T12:00:00Z')
-  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(FIXED) })
-  afterEach(() => { vi.useRealTimers() })
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(FIXED)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
 
   it('defaults to 31-day preset', () => {
     const { result } = renderHook(() => useDateRange())
@@ -19,7 +24,9 @@ describe('useDateRange', () => {
     const { result } = renderHook(() => useDateRange())
     act(() => result.current.setPreset(7))
     expect(result.current.preset).toBe(7)
-    const diffDays = Math.round((result.current.to.getTime() - result.current.from.getTime()) / 86400000)
+    const diffDays = Math.round(
+      (result.current.to.getTime() - result.current.from.getTime()) / 86400000,
+    )
     expect(diffDays).toBe(6)
   })
 

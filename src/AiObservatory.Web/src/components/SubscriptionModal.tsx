@@ -56,7 +56,10 @@ function subToForm(sub: Subscription): FormValues {
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
-const FALLBACK_BADGE = { color: 'var(--provider-other)', background: 'color-mix(in srgb, var(--provider-other) 12%, transparent)' }
+const FALLBACK_BADGE = {
+  color: 'var(--provider-other)',
+  background: 'color-mix(in srgb, var(--provider-other) 12%, transparent)',
+}
 
 type FormMode = 'none' | 'add' | (string & {})
 
@@ -95,7 +98,11 @@ function reducer(state: State, action: Action): State {
     case 'CLOSE':
       return { ...state, formMode: 'none', mutationError: null }
     case 'SET_FORM_VALUE':
-      return { ...state, formValues: { ...state.formValues, [action.field]: action.value }, formError: null }
+      return {
+        ...state,
+        formValues: { ...state.formValues, [action.field]: action.value },
+        formError: null,
+      }
     case 'SET_CONFIRM_DELETE':
       return { ...state, confirmDeleteId: action.id }
     case 'SET_FORM_ERROR':
@@ -121,14 +128,23 @@ export default function SubscriptionModal({ open, onClose }: Props) {
 
   const addMutation = useMutation({
     mutationFn: createSubscription,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['subscriptions'] }); dispatch({ type: 'CLOSE' }) },
-    onError: () => dispatch({ type: 'SET_MUTATION_ERROR', error: 'Failed to save — please try again.' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['subscriptions'] })
+      dispatch({ type: 'CLOSE' })
+    },
+    onError: () =>
+      dispatch({ type: 'SET_MUTATION_ERROR', error: 'Failed to save — please try again.' }),
   })
 
   const editMutation = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Omit<Subscription, 'id'> }) => updateSubscription(id, body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['subscriptions'] }); dispatch({ type: 'CLOSE' }) },
-    onError: () => dispatch({ type: 'SET_MUTATION_ERROR', error: 'Failed to save — please try again.' }),
+    mutationFn: ({ id, body }: { id: string; body: Omit<Subscription, 'id'> }) =>
+      updateSubscription(id, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['subscriptions'] })
+      dispatch({ type: 'CLOSE' })
+    },
+    onError: () =>
+      dispatch({ type: 'SET_MUTATION_ERROR', error: 'Failed to save — please try again.' }),
   })
 
   const deleteMutation = useMutation({
@@ -137,7 +153,8 @@ export default function SubscriptionModal({ open, onClose }: Props) {
       qc.invalidateQueries({ queryKey: ['subscriptions'] })
       dispatch({ type: 'ON_DELETE', id })
     },
-    onError: () => dispatch({ type: 'SET_MUTATION_ERROR', error: 'Failed to delete — please try again.' }),
+    onError: () =>
+      dispatch({ type: 'SET_MUTATION_ERROR', error: 'Failed to delete — please try again.' }),
   })
 
   if (!open) return null
@@ -167,9 +184,10 @@ export default function SubscriptionModal({ open, onClose }: Props) {
       costAmount: parseFloat(state.formValues.costAmount) || 0,
       currency: state.formValues.currency,
       billingInterval: state.formValues.billingInterval,
-      billingMonth: state.formValues.billingInterval === 'annual'
-        ? parseInt(state.formValues.billingMonth, 10)
-        : null,
+      billingMonth:
+        state.formValues.billingInterval === 'annual'
+          ? parseInt(state.formValues.billingMonth, 10)
+          : null,
       billingDay: parseInt(state.formValues.billingDay, 10) || 1,
       activeFrom: state.formValues.activeFrom,
       activeTo: state.formValues.activeTo || null,
@@ -187,7 +205,8 @@ export default function SubscriptionModal({ open, onClose }: Props) {
       if (!Number.isInteger(month) || month < 1 || month > 12) return 'Renewal month is required.'
     }
     const day = parseInt(state.formValues.billingDay, 10)
-    if (!Number.isInteger(day) || day < 1 || day > 31) return 'Billing day must be between 1 and 31.'
+    if (!Number.isInteger(day) || day < 1 || day > 31)
+      return 'Billing day must be between 1 and 31.'
     const curr = state.formValues.currency.toUpperCase()
     if (curr !== 'GBP' && curr !== 'USD') return 'Currency must be GBP or USD.'
     return null
@@ -195,7 +214,10 @@ export default function SubscriptionModal({ open, onClose }: Props) {
 
   function handleSave() {
     const err = validate()
-    if (err) { dispatch({ type: 'SET_FORM_ERROR', error: err }); return }
+    if (err) {
+      dispatch({ type: 'SET_FORM_ERROR', error: err })
+      return
+    }
     if (state.formMode === 'add') {
       addMutation.mutate(buildBody())
     } else {
@@ -205,19 +227,27 @@ export default function SubscriptionModal({ open, onClose }: Props) {
 
   return (
     <dialog
-      ref={el => { if (el && !el.open) el.showModal() }}
+      ref={(el) => {
+        if (el && !el.open) el.showModal()
+      }}
       className="modal"
       aria-labelledby="modal-title"
       onClose={onClose}
     >
       <div className="modal__header">
-        <span id="modal-title" className="modal__title">Manage subscriptions</span>
-        <button type="button" className="modal__close" onClick={onClose} aria-label="Close">×</button>
+        <span id="modal-title" className="modal__title">
+          Manage subscriptions
+        </span>
+        <button type="button" className="modal__close" onClick={onClose} aria-label="Close">
+          ×
+        </button>
       </div>
 
       <div className="modal__body">
         {state.mutationError && (
-          <p className="modal__error" role="alert">{state.mutationError}</p>
+          <p className="modal__error" role="alert">
+            {state.mutationError}
+          </p>
         )}
 
         {subscriptions.length === 0 && !showForm && (
@@ -225,7 +255,7 @@ export default function SubscriptionModal({ open, onClose }: Props) {
         )}
 
         <ul className="sub-list">
-          {subscriptions.map(sub => {
+          {subscriptions.map((sub) => {
             const provider = getProvider(sub.provider.toLowerCase())
             const colours = provider?.badgeStyle ?? FALLBACK_BADGE
             return (
@@ -234,7 +264,10 @@ export default function SubscriptionModal({ open, onClose }: Props) {
                   {provider?.displayName ?? capitalize(sub.provider)}
                 </span>
                 <span className="sub-list__name">{sub.name}</span>
-                <span className="sub-list__cost">{formatCurrency(sub.costAmount, sub.currency)}/{sub.billingInterval === 'annual' ? 'yr' : 'mo'}</span>
+                <span className="sub-list__cost">
+                  {formatCurrency(sub.costAmount, sub.currency)}/
+                  {sub.billingInterval === 'annual' ? 'yr' : 'mo'}
+                </span>
 
                 {state.confirmDeleteId === sub.id ? (
                   <span className="sub-list__confirm">
@@ -293,141 +326,169 @@ export default function SubscriptionModal({ open, onClose }: Props) {
             {/* noValidate: min="0"/min="1" inputs below would otherwise let native
                 constraint validation abort the submit before validate() ever runs,
                 the same latent bug SpendEntryModal fixed the same way. */}
-            <form noValidate onSubmit={(e) => { e.preventDefault(); handleSave() }}>
-            <div className="sub-form__grid">
-              <div>
-                <label htmlFor="sub-form-provider" className="sub-form__label">Provider</label>
-                <select
-                  id="sub-form-provider"
-                  className="sub-form__select"
-                  value={state.formValues.provider}
-                  onChange={e => set('provider', e.target.value)}
-                >
-                  {PROVIDERS.map(p => (
-                    <option key={p.key} value={p.key}>{p.displayName}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="sub-form-name" className="sub-form__label">Plan name</label>
-                <input
-                  id="sub-form-name"
-                  className="sub-form__input"
-                  type="text"
-                  value={state.formValues.name}
-                  onChange={e => set('name', e.target.value)}
-                  placeholder="e.g. Claude Max"
-                />
-              </div>
-              <div>
-                <label htmlFor="sub-form-cost" className="sub-form__label">
-                  {state.formValues.billingInterval === 'annual' ? 'Annual cost' : 'Monthly cost'}
-                </label>
-                <input
-                  id="sub-form-cost"
-                  className="sub-form__input"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={state.formValues.costAmount}
-                  onChange={e => set('costAmount', e.target.value)}
-                  placeholder="100.00"
-                />
-              </div>
-              <div>
-                <label htmlFor="sub-form-billing-interval" className="sub-form__label">Billing interval</label>
-                <select
-                  id="sub-form-billing-interval"
-                  className="sub-form__select"
-                  value={state.formValues.billingInterval}
-                  onChange={e => set('billingInterval', e.target.value)}
-                >
-                  <option value="monthly">Monthly</option>
-                  <option value="annual">Annual</option>
-                </select>
-              </div>
-              {state.formValues.billingInterval === 'annual' && (
+            <form
+              noValidate
+              onSubmit={(e) => {
+                e.preventDefault()
+                handleSave()
+              }}
+            >
+              <div className="sub-form__grid">
                 <div>
-                  <label htmlFor="sub-form-billing-month" className="sub-form__label">Renewal month</label>
+                  <label htmlFor="sub-form-provider" className="sub-form__label">
+                    Provider
+                  </label>
                   <select
-                    id="sub-form-billing-month"
+                    id="sub-form-provider"
                     className="sub-form__select"
-                    value={state.formValues.billingMonth}
-                    onChange={e => set('billingMonth', e.target.value)}
+                    value={state.formValues.provider}
+                    onChange={(e) => set('provider', e.target.value)}
                   >
-                    <option value="">Select month</option>
-                    {Array.from({ length: 12 }, (_, index) => index + 1).map(month => (
-                      <option key={month} value={month}>{billingMonthName(month)}</option>
+                    {PROVIDERS.map((p) => (
+                      <option key={p.key} value={p.key}>
+                        {p.displayName}
+                      </option>
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label htmlFor="sub-form-name" className="sub-form__label">
+                    Plan name
+                  </label>
+                  <input
+                    id="sub-form-name"
+                    className="sub-form__input"
+                    type="text"
+                    value={state.formValues.name}
+                    onChange={(e) => set('name', e.target.value)}
+                    placeholder="e.g. Claude Max"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="sub-form-cost" className="sub-form__label">
+                    {state.formValues.billingInterval === 'annual' ? 'Annual cost' : 'Monthly cost'}
+                  </label>
+                  <input
+                    id="sub-form-cost"
+                    className="sub-form__input"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={state.formValues.costAmount}
+                    onChange={(e) => set('costAmount', e.target.value)}
+                    placeholder="100.00"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="sub-form-billing-interval" className="sub-form__label">
+                    Billing interval
+                  </label>
+                  <select
+                    id="sub-form-billing-interval"
+                    className="sub-form__select"
+                    value={state.formValues.billingInterval}
+                    onChange={(e) => set('billingInterval', e.target.value)}
+                  >
+                    <option value="monthly">Monthly</option>
+                    <option value="annual">Annual</option>
+                  </select>
+                </div>
+                {state.formValues.billingInterval === 'annual' && (
+                  <div>
+                    <label htmlFor="sub-form-billing-month" className="sub-form__label">
+                      Renewal month
+                    </label>
+                    <select
+                      id="sub-form-billing-month"
+                      className="sub-form__select"
+                      value={state.formValues.billingMonth}
+                      onChange={(e) => set('billingMonth', e.target.value)}
+                    >
+                      <option value="">Select month</option>
+                      {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+                        <option key={month} value={month}>
+                          {billingMonthName(month)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label htmlFor="sub-form-currency" className="sub-form__label">
+                    Currency
+                  </label>
+                  <select
+                    id="sub-form-currency"
+                    className="sub-form__select"
+                    value={state.formValues.currency}
+                    onChange={(e) => set('currency', e.target.value)}
+                  >
+                    <option value="GBP">GBP (£)</option>
+                    <option value="USD">USD ($)</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="sub-form-billing-day" className="sub-form__label">
+                    Billing day
+                  </label>
+                  <input
+                    id="sub-form-billing-day"
+                    className="sub-form__input"
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={state.formValues.billingDay}
+                    onChange={(e) => set('billingDay', e.target.value)}
+                    placeholder="15"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="sub-form-active-from" className="sub-form__label">
+                    Active from
+                  </label>
+                  <input
+                    id="sub-form-active-from"
+                    className="sub-form__input"
+                    type="date"
+                    value={state.formValues.activeFrom}
+                    onChange={(e) => set('activeFrom', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="sub-form-active-to" className="sub-form__label">
+                    Active to (optional)
+                  </label>
+                  <input
+                    id="sub-form-active-to"
+                    className="sub-form__input"
+                    type="date"
+                    value={state.formValues.activeTo}
+                    onChange={(e) => set('activeTo', e.target.value)}
+                  />
+                </div>
+              </div>
+              {state.formError && (
+                <p className="modal__error" role="alert">
+                  {state.formError}
+                </p>
               )}
-              <div>
-                <label htmlFor="sub-form-currency" className="sub-form__label">Currency</label>
-                <select
-                  id="sub-form-currency"
-                  className="sub-form__select"
-                  value={state.formValues.currency}
-                  onChange={e => set('currency', e.target.value)}
+              <div className="sub-form__actions">
+                <button
+                  type="button"
+                  className="sub-form__btn sub-form__btn--secondary"
+                  onClick={() => dispatch({ type: 'CLOSE' })}
+                  disabled={isSaving}
                 >
-                  <option value="GBP">GBP (£)</option>
-                  <option value="USD">USD ($)</option>
-                </select>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="sub-form__btn sub-form__btn--primary"
+                  disabled={isSaving}
+                >
+                  {isSaving ? 'Saving...' : 'Save'}
+                </button>
               </div>
-              <div>
-                <label htmlFor="sub-form-billing-day" className="sub-form__label">Billing day</label>
-                <input
-                  id="sub-form-billing-day"
-                  className="sub-form__input"
-                  type="number"
-                  min="1"
-                  max="31"
-                  value={state.formValues.billingDay}
-                  onChange={e => set('billingDay', e.target.value)}
-                  placeholder="15"
-                />
-              </div>
-              <div>
-                <label htmlFor="sub-form-active-from" className="sub-form__label">Active from</label>
-                <input
-                  id="sub-form-active-from"
-                  className="sub-form__input"
-                  type="date"
-                  value={state.formValues.activeFrom}
-                  onChange={e => set('activeFrom', e.target.value)}
-                />
-              </div>
-              <div>
-                <label htmlFor="sub-form-active-to" className="sub-form__label">Active to (optional)</label>
-                <input
-                  id="sub-form-active-to"
-                  className="sub-form__input"
-                  type="date"
-                  value={state.formValues.activeTo}
-                  onChange={e => set('activeTo', e.target.value)}
-                />
-              </div>
-            </div>
-            {state.formError && (
-              <p className="modal__error" role="alert">{state.formError}</p>
-            )}
-            <div className="sub-form__actions">
-              <button
-                type="button"
-                className="sub-form__btn sub-form__btn--secondary"
-                onClick={() => dispatch({ type: 'CLOSE' })}
-                disabled={isSaving}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="sub-form__btn sub-form__btn--primary"
-                disabled={isSaving}
-              >
-                {isSaving ? 'Saving...' : 'Save'}
-              </button>
-            </div>
             </form>
           </div>
         )}

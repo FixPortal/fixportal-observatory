@@ -9,7 +9,10 @@ import { useInsights } from '../api/queries'
 import { isReadonly } from '../auth/msal'
 
 const TYPE_LABELS: Record<string, string> = {
-  summary: 'Summary', efficiency: 'Efficiency', anomaly: 'Anomaly', recommendation: 'Recommendation',
+  summary: 'Summary',
+  efficiency: 'Efficiency',
+  anomaly: 'Anomaly',
+  recommendation: 'Recommendation',
   budgetalert: 'Budget alert',
 }
 
@@ -29,7 +32,9 @@ function InsightRow({ insight }: { insight: Insight }) {
   const ack = useMutation({
     mutationFn: acknowledgeInsight,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['insights'] }),
-    onError: () => { /* dismiss silently fails; button re-enables for retry */ },
+    onError: () => {
+      /* dismiss silently fails; button re-enables for retry */
+    },
   })
 
   const explain = useMutation({
@@ -47,10 +52,16 @@ function InsightRow({ insight }: { insight: Insight }) {
 
   return (
     <div className={`insight insight-${insight.insightType}`}>
-      {INSIGHT_VARIANTS[insight.insightType]
-        ? <StatusBadge variant={INSIGHT_VARIANTS[insight.insightType]} label={TYPE_LABELS[insight.insightType] ?? insight.insightType} />
-        : <div className="insight-type">{TYPE_LABELS[insight.insightType] ?? insight.insightType}</div>
-      }
+      {INSIGHT_VARIANTS[insight.insightType] ? (
+        <StatusBadge
+          variant={INSIGHT_VARIANTS[insight.insightType]}
+          label={TYPE_LABELS[insight.insightType] ?? insight.insightType}
+        />
+      ) : (
+        <div className="insight-type">
+          {TYPE_LABELS[insight.insightType] ?? insight.insightType}
+        </div>
+      )}
       <div className="insight-title">{insight.title}</div>
       <div className="insight-body">
         <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{insight.body}</ReactMarkdown>
@@ -63,17 +74,27 @@ function InsightRow({ insight }: { insight: Insight }) {
           </div>
         </div>
       )}
-      {explainError && (
-        <p className="insight-explain-error">Failed to load guidance. Try again.</p>
-      )}
+      {explainError && <p className="insight-explain-error">Failed to load guidance. Try again.</p>}
       {!isReadonly && (
         <div className="insight-actions">
           {canExplain && !explanation && (
-            <Button variant="ghost" size="sm" onClick={() => explain.mutate()} disabled={explain.isPending}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => explain.mutate()}
+              disabled={explain.isPending}
+            >
               {explain.isPending ? 'Loading...' : 'How to implement'}
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={() => ack.mutate(insight.id)} disabled={ack.isPending}>Dismiss</Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => ack.mutate(insight.id)}
+            disabled={ack.isPending}
+          >
+            Dismiss
+          </Button>
         </div>
       )}
     </div>
@@ -82,7 +103,7 @@ function InsightRow({ insight }: { insight: Insight }) {
 
 export default function InsightsFeed() {
   const { insights, isLoading } = useInsights()
-  const unread = insights.filter(i => !i.acknowledged)
+  const unread = insights.filter((i) => !i.acknowledged)
   if (isLoading) return <p className="panel-empty">Loading insights...</p>
   if (unread.length === 0) return <p className="panel-empty">No unread insights.</p>
 
@@ -91,14 +112,18 @@ export default function InsightsFeed() {
 
   return (
     <div className="insights-feed">
-      {visible.map(insight => (
+      {visible.map((insight) => (
         <InsightRow key={insight.id} insight={insight} />
       ))}
       {older.length > 0 && (
         <details className="insights-older">
-          <summary>Show {older.length} older insight{older.length === 1 ? '' : 's'}</summary>
+          <summary>
+            Show {older.length} older insight{older.length === 1 ? '' : 's'}
+          </summary>
           <div className="insights-feed insights-feed--older">
-            {older.map(insight => <InsightRow key={insight.id} insight={insight} />)}
+            {older.map((insight) => (
+              <InsightRow key={insight.id} insight={insight} />
+            ))}
           </div>
         </details>
       )}

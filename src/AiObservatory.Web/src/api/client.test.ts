@@ -8,9 +8,15 @@ const msalMock = vi.hoisted(() => ({
 vi.mock('../auth/msal', () => msalMock)
 
 import {
-  getAggregates, getSourceStatuses, ApiError,
-  getBilledReporting, getSpendEntries,
-  createSpendCategory, patchSpendCategory, createSpendVendor, patchSpendVendor,
+  getAggregates,
+  getSourceStatuses,
+  ApiError,
+  getBilledReporting,
+  getSpendEntries,
+  createSpendCategory,
+  patchSpendCategory,
+  createSpendVendor,
+  patchSpendVendor,
   SPEND_SOURCE_VALUES,
 } from './client'
 import type { DailyAggregate } from './client'
@@ -48,7 +54,10 @@ function mockFetchOnceJsonError(status: number, value: unknown) {
     ok: false,
     status,
     text: () => Promise.resolve(bodyText),
-    headers: { get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : null) },
+    headers: {
+      get: (name: string) =>
+        name.toLowerCase() === 'content-type' ? 'application/json; charset=utf-8' : null,
+    },
   })
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
@@ -61,7 +70,9 @@ function mockFetchOnceRawTextError(status: number, text: string, contentType = '
     ok: false,
     status,
     text: () => Promise.resolve(text),
-    headers: { get: (name: string) => (name.toLowerCase() === 'content-type' ? contentType : null) },
+    headers: {
+      get: (name: string) => (name.toLowerCase() === 'content-type' ? contentType : null),
+    },
   })
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
@@ -94,7 +105,18 @@ test('spend-source values match the backend enum wire contract', () => {
 })
 
 test('gets the source-status wire response and preserves unknown source and aggregate strings', async () => {
-  const response = [{ sourceId: 'new-source', status: 'fresh', isConfigured: true, lastAttemptAt: null, lastSuccessAt: '2026-08-24T12:00:00Z', latestObservationAt: null, consecutiveFailureCount: 0, lastError: null }]
+  const response = [
+    {
+      sourceId: 'new-source',
+      status: 'fresh',
+      isConfigured: true,
+      lastAttemptAt: null,
+      lastSuccessAt: '2026-08-24T12:00:00Z',
+      latestObservationAt: null,
+      consecutiveFailureCount: 0,
+      lastError: null,
+    },
+  ]
   const fetchMock = mockFetchOnce(200, response)
 
   await expect(getSourceStatuses()).resolves.toEqual(response)
@@ -130,20 +152,37 @@ test('passes filters to spend entries before the server-side cap', async () => {
 })
 
 test('preserves unknown source and aggregate strings from the wire', async () => {
-  const response: DailyAggregate[] = [{
-    date: '2026-08-24', provider: 'new-oss-provider', model: 'model-x', sourceId: 'new-source',
-    sourceKind: 'futureSource', usageScope: 'futureScope', costBasis: 'futureBasis', inputTokens: 1,
-    outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4, cacheWrite1hTokens: 5, costUsd: 6,
-    unknownCostCount: 7, cacheSavingsUsd: 8, unknownCacheSavingsCount: 9, requestCount: 10,
-  }]
+  const response: DailyAggregate[] = [
+    {
+      date: '2026-08-24',
+      provider: 'new-oss-provider',
+      model: 'model-x',
+      sourceId: 'new-source',
+      sourceKind: 'futureSource',
+      usageScope: 'futureScope',
+      costBasis: 'futureBasis',
+      inputTokens: 1,
+      outputTokens: 2,
+      cacheReadTokens: 3,
+      cacheWriteTokens: 4,
+      cacheWrite1hTokens: 5,
+      costUsd: 6,
+      unknownCostCount: 7,
+      cacheSavingsUsd: 8,
+      unknownCacheSavingsCount: 9,
+      requestCount: 10,
+    },
+  ]
   mockFetchOnce(200, response)
 
-  await expect(getAggregates()).resolves.toMatchObject([{
-    sourceId: 'new-source',
-    sourceKind: 'futureSource',
-    usageScope: 'futureScope',
-    costBasis: 'futureBasis',
-  }])
+  await expect(getAggregates()).resolves.toMatchObject([
+    {
+      sourceId: 'new-source',
+      sourceKind: 'futureSource',
+      usageScope: 'futureScope',
+      costBasis: 'futureBasis',
+    },
+  ])
 })
 
 describe('authHeaders precedence: URL viewer key > Entra > self-host key > none', () => {
@@ -236,9 +275,12 @@ describe('ApiError', () => {
     // (quotes included) -- this is the assertion that fails against a raw res.text().
     mockFetchOnceJsonError(409, 'Category key already exists: credits')
 
-    const error = await createSpendCategory(
-      { key: 'credits', displayName: 'Credits', colorVar: null, sortOrder: 0 },
-    ).catch((e: unknown) => e)
+    const error = await createSpendCategory({
+      key: 'credits',
+      displayName: 'Credits',
+      colorVar: null,
+      sortOrder: 0,
+    }).catch((e: unknown) => e)
 
     expect(error).toBeInstanceOf(ApiError)
     expect((error as ApiError).message).toBe('Category key already exists: credits')
@@ -248,9 +290,12 @@ describe('ApiError', () => {
   test('picks the detail/title out of a ProblemDetails-shaped object rather than stringifying it', async () => {
     mockFetchOnceJsonError(400, { title: 'One or more validation errors occurred.', status: 400 })
 
-    const error = await createSpendCategory(
-      { key: 'x', displayName: 'X', colorVar: null, sortOrder: 0 },
-    ).catch((e: unknown) => e)
+    const error = await createSpendCategory({
+      key: 'x',
+      displayName: 'X',
+      colorVar: null,
+      sortOrder: 0,
+    }).catch((e: unknown) => e)
 
     expect((error as ApiError).message).toBe('One or more validation errors occurred.')
     expect((error as ApiError).message).not.toContain('[object Object]')
@@ -259,9 +304,12 @@ describe('ApiError', () => {
   test('prefers detail over title when a ProblemDetails object has both', async () => {
     mockFetchOnceJsonError(400, { title: 'Bad Request', detail: 'DisplayName is required' })
 
-    const error = await createSpendCategory(
-      { key: 'x', displayName: 'X', colorVar: null, sortOrder: 0 },
-    ).catch((e: unknown) => e)
+    const error = await createSpendCategory({
+      key: 'x',
+      displayName: 'X',
+      colorVar: null,
+      sortOrder: 0,
+    }).catch((e: unknown) => e)
 
     expect((error as ApiError).message).toBe('DisplayName is required')
   })
@@ -269,9 +317,12 @@ describe('ApiError', () => {
   test('falls back to the raw text for a non-JSON error body', async () => {
     mockFetchOnceRawTextError(400, 'from must be yyyy-MM-dd')
 
-    const error = await createSpendCategory(
-      { key: 'x', displayName: 'X', colorVar: null, sortOrder: 0 },
-    ).catch((e: unknown) => e)
+    const error = await createSpendCategory({
+      key: 'x',
+      displayName: 'X',
+      colorVar: null,
+      sortOrder: 0,
+    }).catch((e: unknown) => e)
 
     expect((error as ApiError).message).toBe('from must be yyyy-MM-dd')
   })
@@ -279,7 +330,9 @@ describe('ApiError', () => {
   test('falls back to a generic status line when the body is empty', async () => {
     mockFetchOnceEmptyError(404)
 
-    const error = await patchSpendCategory('missing-id', { archived: true }).catch((e: unknown) => e)
+    const error = await patchSpendCategory('missing-id', { archived: true }).catch(
+      (e: unknown) => e,
+    )
 
     expect(error).toBeInstanceOf(ApiError)
     expect((error as ApiError).message).toMatch(/failed: 404/)
@@ -288,19 +341,43 @@ describe('ApiError', () => {
 
 describe('spend catalog writes', () => {
   test('creates a category and returns the created entity', async () => {
-    const created = { id: 'c1', key: 'credits', displayName: 'Credits', colorVar: '', sortOrder: 0, archivedAt: null }
+    const created = {
+      id: 'c1',
+      key: 'credits',
+      displayName: 'Credits',
+      colorVar: '',
+      sortOrder: 0,
+      archivedAt: null,
+    }
     const fetchMock = mockFetchOnceWithText(201, created)
 
-    const result = await createSpendCategory({ key: 'credits', displayName: 'Credits', colorVar: null, sortOrder: 0 })
+    const result = await createSpendCategory({
+      key: 'credits',
+      displayName: 'Credits',
+      colorVar: null,
+      sortOrder: 0,
+    })
 
     expect(result).toEqual(created)
     const [, init] = fetchMock.mock.calls[0]
     expect(init.method).toBe('POST')
-    expect(JSON.parse(init.body as string)).toEqual({ key: 'credits', displayName: 'Credits', colorVar: null, sortOrder: 0 })
+    expect(JSON.parse(init.body as string)).toEqual({
+      key: 'credits',
+      displayName: 'Credits',
+      colorVar: null,
+      sortOrder: 0,
+    })
   })
 
   test('patches a category with only the changed field', async () => {
-    const patched = { id: 'c1', key: 'credits', displayName: 'Credits', colorVar: '', sortOrder: 0, archivedAt: '2026-07-26T00:00:00Z' }
+    const patched = {
+      id: 'c1',
+      key: 'credits',
+      displayName: 'Credits',
+      colorVar: '',
+      sortOrder: 0,
+      archivedAt: '2026-07-26T00:00:00Z',
+    }
     const fetchMock = mockFetchOnceWithText(200, patched)
 
     const result = await patchSpendCategory('c1', { archived: true })
@@ -312,10 +389,22 @@ describe('spend catalog writes', () => {
   })
 
   test('creates a vendor with no provider by sending null, not an empty string', async () => {
-    const created = { id: 'v1', key: 'gha', displayName: 'GitHub Actions', provider: null, defaultCategoryId: null, archivedAt: null }
+    const created = {
+      id: 'v1',
+      key: 'gha',
+      displayName: 'GitHub Actions',
+      provider: null,
+      defaultCategoryId: null,
+      archivedAt: null,
+    }
     const fetchMock = mockFetchOnceWithText(201, created)
 
-    const result = await createSpendVendor({ key: 'gha', displayName: 'GitHub Actions', provider: null, defaultCategoryId: null })
+    const result = await createSpendVendor({
+      key: 'gha',
+      displayName: 'GitHub Actions',
+      provider: null,
+      defaultCategoryId: null,
+    })
 
     expect(result).toEqual(created)
     const [, init] = fetchMock.mock.calls[0]
@@ -323,7 +412,14 @@ describe('spend catalog writes', () => {
   })
 
   test('patches a vendor display name (rename)', async () => {
-    const patched = { id: 'v1', key: 'anthropic', displayName: 'Anthropic Inc', provider: 'anthropic', defaultCategoryId: null, archivedAt: null }
+    const patched = {
+      id: 'v1',
+      key: 'anthropic',
+      displayName: 'Anthropic Inc',
+      provider: 'anthropic',
+      defaultCategoryId: null,
+      archivedAt: null,
+    }
     const fetchMock = mockFetchOnceWithText(200, patched)
 
     const result = await patchSpendVendor('v1', { displayName: 'Anthropic Inc' })

@@ -43,9 +43,11 @@ export function ThemeToggle({ value, onChange, variant = 'default' }: ThemeToggl
       role="radiogroup"
       aria-label="Theme"
       onKeyDown={onKeyDown}
-      className={variant === 'sidebar' ? 'fpds-theme-toggle fpds-theme-toggle--sidebar' : 'fpds-theme-toggle'}
+      className={
+        variant === 'sidebar' ? 'fpds-theme-toggle fpds-theme-toggle--sidebar' : 'fpds-theme-toggle'
+      }
     >
-      {OPTIONS.map(opt => (
+      {OPTIONS.map((opt) => (
         <button
           key={opt.value}
           type="button"

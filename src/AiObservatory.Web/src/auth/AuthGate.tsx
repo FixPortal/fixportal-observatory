@@ -37,7 +37,11 @@ function EntraGate({ children }: { children: ReactNode }) {
         type="button"
         className="auth-gate__button"
         disabled={signingIn}
-        onClick={() => { instance.loginRedirect(loginRequest).catch(() => { /* redirect aborted */ }) }}
+        onClick={() => {
+          instance.loginRedirect(loginRequest).catch(() => {
+            /* redirect aborted */
+          })
+        }}
       >
         {signingIn ? 'Signing in…' : 'Sign in with Microsoft'}
       </button>

@@ -1,6 +1,9 @@
 import { buildComparisonSeries, type ComparisonRange } from './comparisonSeries'
 
-interface DailyPoint { date: string; amountGbp: number }
+interface DailyPoint {
+  date: string
+  amountGbp: number
+}
 
 export interface BilledComparisonPoint {
   slot: number
@@ -17,7 +20,9 @@ export function buildBilledComparisonSeries(
   comparisonRange: ComparisonRange,
 ): { grain: 'day' | 'week'; points: BilledComparisonPoint[] } {
   return buildComparisonSeries(
-    selectedSeries.map(({ date, amountGbp }) => ({ date, value: amountGbp })), selectedRange,
-    comparisonSeries.map(({ date, amountGbp }) => ({ date, value: amountGbp })), comparisonRange,
+    selectedSeries.map(({ date, amountGbp }) => ({ date, value: amountGbp })),
+    selectedRange,
+    comparisonSeries.map(({ date, amountGbp }) => ({ date, value: amountGbp })),
+    comparisonRange,
   )
 }

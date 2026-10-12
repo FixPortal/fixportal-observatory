@@ -150,16 +150,22 @@ describe('getAccessToken', () => {
     const account = { homeAccountId: 'acc-1' }
     let resolveRedirect!: () => void
     const acquireTokenRedirect = vi.fn().mockReturnValue(
-      new Promise<void>((resolve) => { resolveRedirect = resolve })
+      new Promise<void>((resolve) => {
+        resolveRedirect = resolve
+      }),
     )
     const instance = {
       getActiveAccount: vi.fn().mockReturnValue(account),
       getAllAccounts: vi.fn().mockReturnValue([account]),
-      acquireTokenSilent: vi.fn().mockRejectedValue(new MockInteractionRequiredAuthError('needs interaction')),
+      acquireTokenSilent: vi
+        .fn()
+        .mockRejectedValue(new MockInteractionRequiredAuthError('needs interaction')),
       acquireTokenRedirect,
     }
     vi.doMock('@azure/msal-browser', () => ({
-      PublicClientApplication: vi.fn().mockImplementation(function () { return instance }),
+      PublicClientApplication: vi.fn().mockImplementation(function () {
+        return instance
+      }),
       InteractionRequiredAuthError: MockInteractionRequiredAuthError,
     }))
     vi.stubEnv('VITE_AAD_CLIENT_ID', 'test-client-id')
@@ -191,7 +197,9 @@ describe('getAccessToken', () => {
       acquireTokenRedirect,
     }
     vi.doMock('@azure/msal-browser', () => ({
-      PublicClientApplication: vi.fn().mockImplementation(function () { return instance }),
+      PublicClientApplication: vi.fn().mockImplementation(function () {
+        return instance
+      }),
       InteractionRequiredAuthError: MockInteractionRequiredAuthError,
     }))
     vi.stubEnv('VITE_AAD_CLIENT_ID', 'test-client-id')
@@ -212,7 +220,9 @@ describe('getAccessToken', () => {
       acquireTokenRedirect: vi.fn(),
     }
     vi.doMock('@azure/msal-browser', () => ({
-      PublicClientApplication: vi.fn().mockImplementation(function () { return instance }),
+      PublicClientApplication: vi.fn().mockImplementation(function () {
+        return instance
+      }),
       InteractionRequiredAuthError: class extends Error {},
     }))
     vi.stubEnv('VITE_AAD_CLIENT_ID', 'test-client-id')
@@ -220,7 +230,7 @@ describe('getAccessToken', () => {
     const mod = await import('./msal')
     const result = mod.getAccessToken().then(
       () => 'resolved',
-      error => error instanceof Error ? error.message : String(error),
+      (error) => (error instanceof Error ? error.message : String(error)),
     )
 
     await vi.advanceTimersByTimeAsync(10_000)
@@ -235,7 +245,9 @@ describe('getAccessToken', () => {
       acquireTokenRedirect: vi.fn(),
     }
     vi.doMock('@azure/msal-browser', () => ({
-      PublicClientApplication: vi.fn().mockImplementation(function () { return instance }),
+      PublicClientApplication: vi.fn().mockImplementation(function () {
+        return instance
+      }),
       InteractionRequiredAuthError: class extends Error {},
     }))
     vi.stubEnv('VITE_AAD_CLIENT_ID', 'test-client-id')

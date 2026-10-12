@@ -12,7 +12,11 @@ function readMode(): ThemeMode {
 
 function resolve(mode: ThemeMode): ResolvedTheme {
   if (mode === 'system') {
-    return typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    return typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches
+      ? 'dark'
+      : 'light'
   }
   return mode
 }
@@ -47,9 +51,5 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const setMode = useCallback((next: ThemeMode) => setModeState(next), [])
 
   const ctxValue = useMemo(() => ({ mode, setMode, resolved }), [mode, setMode, resolved])
-  return (
-    <ThemeContext.Provider value={ctxValue}>
-      {children}
-    </ThemeContext.Provider>
-  )
+  return <ThemeContext.Provider value={ctxValue}>{children}</ThemeContext.Provider>
 }

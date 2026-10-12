@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  createSpendCategory, patchSpendCategory,
-  type SpendCategory, type NewSpendCategory,
+  createSpendCategory,
+  patchSpendCategory,
+  type SpendCategory,
+  type NewSpendCategory,
 } from '../api/client'
 
 interface Props {
@@ -31,21 +33,28 @@ export default function SpendCategoryCatalog({ categories }: Props) {
   // (series labels, topVendorName), which a rename/archival would otherwise leave
   // stale in cache until that query happened to refetch. Ledger rows carry ids and
   // resolve names through the catalog map, so ['spend-entries'] needs no refresh.
-  const invalidate = () => Promise.all([
-    qc.invalidateQueries({ queryKey: ['spend-categories'] }),
-    qc.invalidateQueries({ queryKey: ['billed-reporting'] }),
-  ])
+  const invalidate = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: ['spend-categories'] }),
+      qc.invalidateQueries({ queryKey: ['billed-reporting'] }),
+    ])
 
   const create = useMutation({
     mutationFn: (body: NewSpendCategory) => createSpendCategory(body),
-    onSuccess: () => { invalidate(); setForm(EMPTY_FORM) },
+    onSuccess: () => {
+      invalidate()
+      setForm(EMPTY_FORM)
+    },
     onError: (err: Error) => setFormError(err.message),
   })
 
   const patch = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Parameters<typeof patchSpendCategory>[1] }) =>
       patchSpendCategory(id, body),
-    onSuccess: () => { invalidate(); setRenamingId(null) },
+    onSuccess: () => {
+      invalidate()
+      setRenamingId(null)
+    },
     onError: (err: Error) => setMutationError(err.message),
   })
 
@@ -76,7 +85,10 @@ export default function SpendCategoryCatalog({ categories }: Props) {
   }
 
   function saveRename(id: string) {
-    if (!renameValue.trim()) { setMutationError('Display name is required'); return }
+    if (!renameValue.trim()) {
+      setMutationError('Display name is required')
+      return
+    }
     patch.mutate({ id, body: { displayName: renameValue.trim() } })
   }
 
@@ -87,12 +99,16 @@ export default function SpendCategoryCatalog({ categories }: Props) {
 
   return (
     <div>
-      {mutationError && <p className="modal__error" role="alert">{mutationError}</p>}
+      {mutationError && (
+        <p className="modal__error" role="alert">
+          {mutationError}
+        </p>
+      )}
 
       {categories.length === 0 && <p className="panel-empty">No categories yet.</p>}
 
       <ul className="sub-list">
-        {categories.map(c => (
+        {categories.map((c) => (
           <li key={c.id} className="sub-list-row">
             <code className="catalog-key">{c.key}</code>
 
@@ -106,13 +122,22 @@ export default function SpendCategoryCatalog({ categories }: Props) {
                   aria-label={`Rename ${c.displayName}`}
                   className="sub-form__input"
                   value={renameValue}
-                  onChange={e => setRenameValue(e.target.value)}
+                  onChange={(e) => setRenameValue(e.target.value)}
                 />
                 <span className="sub-list__actions">
-                  <button type="button" className="sub-list__btn" onClick={() => saveRename(c.id)} disabled={patch.isPending}>
+                  <button
+                    type="button"
+                    className="sub-list__btn"
+                    onClick={() => saveRename(c.id)}
+                    disabled={patch.isPending}
+                  >
                     Save
                   </button>
-                  <button type="button" className="sub-list__btn" onClick={() => setRenamingId(null)}>
+                  <button
+                    type="button"
+                    className="sub-list__btn"
+                    onClick={() => setRenamingId(null)}
+                  >
                     Cancel
                   </button>
                 </span>
@@ -154,42 +179,56 @@ export default function SpendCategoryCatalog({ categories }: Props) {
         <form noValidate onSubmit={submitCreate}>
           <div className="sub-form__grid">
             <div>
-              <label htmlFor="new-category-key" className="sub-form__label">Key</label>
+              <label htmlFor="new-category-key" className="sub-form__label">
+                Key
+              </label>
               <input
                 id="new-category-key"
                 className="sub-form__input"
                 value={form.key}
-                onChange={e => setForm(f => ({ ...f, key: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
                 maxLength={60}
                 placeholder="e.g. inference"
               />
             </div>
             <div>
-              <label htmlFor="new-category-name" className="sub-form__label">Display name</label>
+              <label htmlFor="new-category-name" className="sub-form__label">
+                Display name
+              </label>
               <input
                 id="new-category-name"
                 className="sub-form__input"
                 value={form.displayName}
-                onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))}
                 maxLength={100}
               />
             </div>
             <div>
-              <label htmlFor="new-category-sort" className="sub-form__label">Sort order</label>
+              <label htmlFor="new-category-sort" className="sub-form__label">
+                Sort order
+              </label>
               <input
                 id="new-category-sort"
                 className="sub-form__input"
                 type="number"
                 value={form.sortOrder}
-                onChange={e => setForm(f => ({ ...f, sortOrder: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, sortOrder: e.target.value }))}
               />
             </div>
           </div>
 
-          {formError && <p className="modal__error" role="alert">{formError}</p>}
+          {formError && (
+            <p className="modal__error" role="alert">
+              {formError}
+            </p>
+          )}
 
           <div className="sub-form__actions">
-            <button type="submit" className="sub-form__btn sub-form__btn--primary" disabled={create.isPending}>
+            <button
+              type="submit"
+              className="sub-form__btn sub-form__btn--primary"
+              disabled={create.isPending}
+            >
               {create.isPending ? 'Adding...' : 'Add category'}
             </button>
           </div>

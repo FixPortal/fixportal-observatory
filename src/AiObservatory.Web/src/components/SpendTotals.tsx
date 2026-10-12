@@ -12,12 +12,19 @@ interface Props {
  * Region 2. Every figure here is of the CURRENT filter, not the calendar month —
  * that is what makes "the filtered aggregate" unambiguous.
  */
-export default function SpendTotals({ total, entryCount, largestCategory, comparisonTotal, comparisonLabel }: Props) {
+export default function SpendTotals({
+  total,
+  entryCount,
+  largestCategory,
+  comparisonTotal,
+  comparisonLabel,
+}: Props) {
   const delta = comparisonTotal == null ? null : total - comparisonTotal
   const direction = delta == null || delta === 0 ? 'same' : delta < 0 ? 'lower' : 'higher'
-  const percentage = comparisonTotal != null && comparisonTotal > 0 && delta !== null
-    ? Math.abs(delta / comparisonTotal * 100)
-    : null
+  const percentage =
+    comparisonTotal != null && comparisonTotal > 0 && delta !== null
+      ? Math.abs((delta / comparisonTotal) * 100)
+      : null
 
   return (
     <div className="spend-totals">
@@ -34,14 +41,18 @@ export default function SpendTotals({ total, entryCount, largestCategory, compar
         <span className="spend-totals__value">{largestCategory ?? '—'}</span>
       </div>
       {delta !== null && (
-        <div className={`spend-totals__card spend-totals__card--comparison spend-totals__card--${direction}`}>
+        <div
+          className={`spend-totals__card spend-totals__card--comparison spend-totals__card--${direction}`}
+        >
           <span className="spend-totals__label">vs {comparisonLabel ?? 'comparison period'}</span>
           <span className="spend-totals__value">
             {direction === 'same' ? 'No change' : `${gbp(Math.abs(delta))} ${direction}`}
           </span>
           <span className="spend-totals__comparison">
             {percentage == null
-              ? comparisonTotal === 0 ? 'No prior spend' : `Compared with ${gbp(comparisonTotal ?? 0)}`
+              ? comparisonTotal === 0
+                ? 'No prior spend'
+                : `Compared with ${gbp(comparisonTotal ?? 0)}`
               : `${percentage.toFixed(1)}%`}
           </span>
         </div>

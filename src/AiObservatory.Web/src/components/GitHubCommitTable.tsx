@@ -10,7 +10,11 @@ interface GitHubCommitTableProps {
   isError?: boolean
 }
 
-export default function GitHubCommitTable({ summary, isLoading = false, isError = false }: GitHubCommitTableProps) {
+export default function GitHubCommitTable({
+  summary,
+  isLoading = false,
+  isError = false,
+}: GitHubCommitTableProps) {
   const [sortField, setSortField] = useState<CommitSortField>('commitCount')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
 
@@ -21,11 +25,15 @@ export default function GitHubCommitTable({ summary, isLoading = false, isError 
 
   if (isLoading) return <p className="panel-empty">Loading commit activity...</p>
   if (isError) return <p className="panel-empty">Couldn’t load commit activity.</p>
-  if (summary.length === 0) return <p className="panel-empty">No commit activity for this period.</p>
+  if (summary.length === 0)
+    return <p className="panel-empty">No commit activity for this period.</p>
 
   const handleSort = (field: CommitSortField) => {
     if (sortField === field) setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
-    else { setSortField(field); setSortDirection('desc') }
+    else {
+      setSortField(field)
+      setSortDirection('desc')
+    }
   }
 
   return (
@@ -33,8 +41,20 @@ export default function GitHubCommitTable({ summary, isLoading = false, isError 
       <table className="project-table github-table">
         <thead>
           <tr>
-            <GitHubSortableHeader field="repo" label="Repo" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
-            <GitHubSortableHeader field="commitCount" label="Commits" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+            <GitHubSortableHeader
+              field="repo"
+              label="Repo"
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSort={handleSort}
+            />
+            <GitHubSortableHeader
+              field="commitCount"
+              label="Commits"
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSort={handleSort}
+            />
             <th>Churn</th>
           </tr>
         </thead>
@@ -43,7 +63,9 @@ export default function GitHubCommitTable({ summary, isLoading = false, isError 
             <tr key={s.repo}>
               <td>{s.repo}</td>
               <td>{s.commitCount}</td>
-              <td>+{s.additions} / -{s.deletions}</td>
+              <td>
+                +{s.additions} / -{s.deletions}
+              </td>
             </tr>
           ))}
         </tbody>

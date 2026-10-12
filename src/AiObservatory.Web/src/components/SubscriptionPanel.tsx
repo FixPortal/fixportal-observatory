@@ -5,7 +5,11 @@ import { patchExtraUsage, type Subscription } from '../api/client'
 import { useSubscriptions, useAggregates, localDate } from '../api/queries'
 import { providerColor } from '../theme/providerColors'
 import { gbp, useUsdToGbp, formatCurrency } from '../lib/currency'
-import { billingMonthName, currentBillingPeriodStart, subscriptionUsage } from '../lib/subscriptions'
+import {
+  billingMonthName,
+  currentBillingPeriodStart,
+  subscriptionUsage,
+} from '../lib/subscriptions'
 import SubscriptionModal from './SubscriptionModal'
 import { isReadonly } from '../auth/msal'
 import { PROVIDER_ORDER, providerDisplayName } from '../config/providers'
@@ -34,9 +38,10 @@ function usagePresentation(
     }
   }
   const ratio = totalGbp > 0 ? valueGbp / totalGbp : 0
-  const unknownLabel = unknownCostCount > 0
-    ? ` · ${unknownCostCount.toLocaleString()} ${unknownCostCount === 1 ? 'request' : 'requests'} not reported`
-    : ''
+  const unknownLabel =
+    unknownCostCount > 0
+      ? ` · ${unknownCostCount.toLocaleString()} ${unknownCostCount === 1 ? 'request' : 'requests'} not reported`
+      : ''
   return {
     value: gbp(valueGbp),
     ratio,
@@ -49,7 +54,9 @@ function ExtraUsageChip({ sub }: { sub: Subscription }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const escapedRef = useRef(false)
-  const focusInput = useCallback((el: HTMLInputElement | null) => { el?.focus() }, [])
+  const focusInput = useCallback((el: HTMLInputElement | null) => {
+    el?.focus()
+  }, [])
 
   const patch = useMutation({
     mutationFn: (amount: number | null) => patchExtraUsage(sub.id, amount),
@@ -65,8 +72,12 @@ function ExtraUsageChip({ sub }: { sub: Subscription }) {
   // Read-only viewers (share link) can't patch — show the value, no edit affordance.
   if (isReadonly) {
     return (
-      <span className={`sub-card__extra-chip${sub.extraUsageCost === null ? ' sub-card__extra-chip--null' : ''}`}>
-        {sub.extraUsageCost !== null ? `+ ${formatCurrency(sub.extraUsageCost, sub.currency)}` : '—'}
+      <span
+        className={`sub-card__extra-chip${sub.extraUsageCost === null ? ' sub-card__extra-chip--null' : ''}`}
+      >
+        {sub.extraUsageCost !== null
+          ? `+ ${formatCurrency(sub.extraUsageCost, sub.currency)}`
+          : '—'}
       </span>
     )
   }
@@ -81,18 +92,27 @@ function ExtraUsageChip({ sub }: { sub: Subscription }) {
         min="0"
         aria-label="Extra usage cost"
         value={draft}
-        onChange={e => setDraft(e.target.value)}
+        onChange={(e) => setDraft(e.target.value)}
         onBlur={() => {
-          if (escapedRef.current) { escapedRef.current = false; return }
+          if (escapedRef.current) {
+            escapedRef.current = false
+            return
+          }
           const trimmed = draft.trim()
-          if (trimmed === '') { patch.mutate(null); return } // blank clears the value
+          if (trimmed === '') {
+            patch.mutate(null)
+            return
+          } // blank clears the value
           const val = parseFloat(trimmed)
           // Reject negatives (min="0" only constrains the spinner, not typed input): a
           // negative would deflate the total, % of budget, and over-budget flag.
-          if (!Number.isFinite(val) || val < 0) { setEditing(false); return }
+          if (!Number.isFinite(val) || val < 0) {
+            setEditing(false)
+            return
+          }
           patch.mutate(val)
         }}
-        onKeyDown={e => {
+        onKeyDown={(e) => {
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
           if (e.key === 'Escape') {
             escapedRef.current = true
@@ -115,7 +135,9 @@ function ExtraUsageChip({ sub }: { sub: Subscription }) {
       }}
       title="Click to edit extra usage"
     >
-      {sub.extraUsageCost !== null ? `+ ${formatCurrency(sub.extraUsageCost, sub.currency)}` : '— add'}
+      {sub.extraUsageCost !== null
+        ? `+ ${formatCurrency(sub.extraUsageCost, sub.currency)}`
+        : '— add'}
     </button>
   )
 }
@@ -140,7 +162,11 @@ interface GroupedSubscription {
 }
 
 export default function SubscriptionPanel() {
-  const { subscriptions, isError: subscriptionsError, isLoading: subscriptionsLoading } = useSubscriptions()
+  const {
+    subscriptions,
+    isError: subscriptionsError,
+    isLoading: subscriptionsLoading,
+  } = useSubscriptions()
   const rate = useUsdToGbp()
   const [modalOpen, setModalOpen] = useState(false)
   const today = localDate(new Date())
@@ -148,15 +174,15 @@ export default function SubscriptionPanel() {
   const active = useMemo(
     () =>
       subscriptions
-        .filter(s => s.activeFrom <= today && (s.activeTo === null || s.activeTo >= today))
+        .filter((s) => s.activeFrom <= today && (s.activeTo === null || s.activeTo >= today))
         .sort((a, b) => {
           const ak = a.provider.toLowerCase()
           const bk = b.provider.toLowerCase()
-          const ai = PROVIDER_ORDER.indexOf(ak as typeof PROVIDER_ORDER[number])
-          const bi = PROVIDER_ORDER.indexOf(bk as typeof PROVIDER_ORDER[number])
+          const ai = PROVIDER_ORDER.indexOf(ak as (typeof PROVIDER_ORDER)[number])
+          const bi = PROVIDER_ORDER.indexOf(bk as (typeof PROVIDER_ORDER)[number])
           return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi)
         }),
-    [subscriptions, today]
+    [subscriptions, today],
   )
 
   // Collapse only subscriptions that share provider, currency, and billing cycle.
@@ -202,13 +228,24 @@ export default function SubscriptionPanel() {
   // refetching on every window focus (the default queryClient sets none).
   const aggregateWindow = useMemo(() => {
     const from = collapsed.reduce<string | null>((earliest, sub) => {
-      const start = currentBillingPeriodStart(sub.billingDay, today, sub.billingInterval, sub.billingMonth)
+      const start = currentBillingPeriodStart(
+        sub.billingDay,
+        today,
+        sub.billingInterval,
+        sub.billingMonth,
+      )
       const windowStart = sub.activeFrom > start ? sub.activeFrom : start
       return earliest === null || windowStart < earliest ? windowStart : earliest
     }, null)
-    return from === null ? null : { from: new Date(`${from}T00:00:00`), to: new Date(`${today}T00:00:00`) }
+    return from === null
+      ? null
+      : { from: new Date(`${from}T00:00:00`), to: new Date(`${today}T00:00:00`) }
   }, [collapsed, today])
-  const { aggregates } = useAggregates(aggregateWindow?.from, aggregateWindow?.to, SUBSCRIPTION_AGGREGATES_STALE_MS)
+  const { aggregates } = useAggregates(
+    aggregateWindow?.from,
+    aggregateWindow?.to,
+    SUBSCRIPTION_AGGREGATES_STALE_MS,
+  )
 
   return (
     <div className="sub-panel">
@@ -217,9 +254,19 @@ export default function SubscriptionPanel() {
           <div className="sub-panel-title-row">
             <span className="sub-panel-title">Subscriptions</span>
             <InfoPopover id="subscriptions-info" title="Subscriptions">
-              <p>Notional usage value applies current public API list prices to eligible subscription activity. It is a comparison, not money charged.</p>
-              <p>When subscription logs omit API-only routing flags, standard/global pricing is assumed; Google uses the published short-context rate, and unknown Claude cache-write duration uses the published five-minute rate.</p>
-              <p>The cycle resets on the renewal day shown in each card. The progress bar shows notional usage value as a percentage of the subscription price.</p>
+              <p>
+                Notional usage value applies current public API list prices to eligible subscription
+                activity. It is a comparison, not money charged.
+              </p>
+              <p>
+                When subscription logs omit API-only routing flags, standard/global pricing is
+                assumed; Google uses the published short-context rate, and unknown Claude
+                cache-write duration uses the published five-minute rate.
+              </p>
+              <p>
+                The cycle resets on the renewal day shown in each card. The progress bar shows
+                notional usage value as a percentage of the subscription price.
+              </p>
             </InfoPopover>
           </div>
           {!isReadonly && (
@@ -242,24 +289,40 @@ export default function SubscriptionPanel() {
           </div>
         ) : (
           <div className="sub-cards">
-            {collapsed.map(sub => {
+            {collapsed.map((sub) => {
               const providerKey = sub.provider.toLowerCase()
-              const start = currentBillingPeriodStart(sub.billingDay, today, sub.billingInterval, sub.billingMonth)
+              const start = currentBillingPeriodStart(
+                sub.billingDay,
+                today,
+                sub.billingInterval,
+                sub.billingMonth,
+              )
               const windowStart = sub.activeFrom > start ? sub.activeFrom : start
               const usage = subscriptionUsage(aggregates, providerKey, windowStart)
               const periodNotionalGbp = usage.notionalUsd === null ? null : usage.notionalUsd * rate
-              
+
               const total = sub.costAmount + (sub.extraUsageCost ?? 0)
               const totalGbp = sub.currency.toUpperCase() === 'USD' ? total * rate : total
-              
-              const presentation = usagePresentation(periodNotionalGbp, usage.requestCount, usage.unknownCostCount, totalGbp, total, sub.currency)
+
+              const presentation = usagePresentation(
+                periodNotionalGbp,
+                usage.requestCount,
+                usage.unknownCostCount,
+                totalGbp,
+                total,
+                sub.currency,
+              )
               const ratio = presentation.ratio
               const pct = Math.min(ratio * 100, 100)
               const isOver = ratio > 1
               const accentColor = providerColor(providerKey)
 
               return (
-                <div key={sub.groupKey} className="sub-card" style={{ borderLeftColor: accentColor }}>
+                <div
+                  key={sub.groupKey}
+                  className="sub-card"
+                  style={{ borderLeftColor: accentColor }}
+                >
                   <div className="sub-card__header">
                     <span className="sub-card__provider" style={{ color: accentColor }}>
                       {providerDisplayName(providerKey)}
@@ -269,7 +332,10 @@ export default function SubscriptionPanel() {
 
                   <div className="sub-card__cost">
                     {formatCurrency(sub.costAmount, sub.currency)}
-                    <span className="sub-card__cost-unit"> /{sub.billingInterval === 'annual' ? 'yr' : 'mo'}</span>
+                    <span className="sub-card__cost-unit">
+                      {' '}
+                      /{sub.billingInterval === 'annual' ? 'yr' : 'mo'}
+                    </span>
                   </div>
 
                   <div className="sub-card__extra">
@@ -282,7 +348,9 @@ export default function SubscriptionPanel() {
                         className={`sub-card__extra-chip${sub.extraUsageCost === null ? ' sub-card__extra-chip--null' : ''}`}
                         title="Combined extra usage across merged plans — edit each plan via Manage subscriptions"
                       >
-                        {sub.extraUsageCost !== null ? `+ ${formatCurrency(sub.extraUsageCost, sub.currency)}` : '—'}
+                        {sub.extraUsageCost !== null
+                          ? `+ ${formatCurrency(sub.extraUsageCost, sub.currency)}`
+                          : '—'}
                       </span>
                     ) : (
                       <ExtraUsageChip sub={sub.originalSubscription} />
@@ -297,7 +365,9 @@ export default function SubscriptionPanel() {
 
                   <div className="sub-card__period-row">
                     <span className="sub-card__period-label">Notional usage value</span>
-                    <span className={`sub-card__period-value${isOver ? ' sub-card__period-value--over' : ''}`}>
+                    <span
+                      className={`sub-card__period-value${isOver ? ' sub-card__period-value--over' : ''}`}
+                    >
                       {presentation.value}
                     </span>
                   </div>
@@ -308,9 +378,7 @@ export default function SubscriptionPanel() {
                       style={{ width: `${pct}%`, background: isOver ? undefined : 'var(--brand)' }}
                     />
                   </div>
-                  <div className="sub-progress-label">
-                    {presentation.label}
-                  </div>
+                  <div className="sub-progress-label">{presentation.label}</div>
                 </div>
               )
             })}

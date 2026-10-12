@@ -4,13 +4,24 @@ import type { RunGroup } from './adversarialReviewGrouping'
 export type SortDirection = 'asc' | 'desc'
 
 export type StatsSortField =
-  | 'reviewer' | 'model' | 'runCount' | 'avgCostPerRun'
-  | 'avgIssuesRaised' | 'avgIssuesAccepted' | 'avgCostPerAcceptedFinding' | 'avgDurationMs'
+  | 'reviewer'
+  | 'model'
+  | 'runCount'
+  | 'avgCostPerRun'
+  | 'avgIssuesRaised'
+  | 'avgIssuesAccepted'
+  | 'avgCostPerAcceptedFinding'
+  | 'avgDurationMs'
 
-export function filterStats(stats: AdversarialReviewStats[], query: string): AdversarialReviewStats[] {
+export function filterStats(
+  stats: AdversarialReviewStats[],
+  query: string,
+): AdversarialReviewStats[] {
   const q = query.trim().toLowerCase()
   if (!q) return stats
-  return stats.filter((s) => s.reviewer.toLowerCase().includes(q) || s.model.toLowerCase().includes(q))
+  return stats.filter(
+    (s) => s.reviewer.toLowerCase().includes(q) || s.model.toLowerCase().includes(q),
+  )
 }
 
 // avgCostPerAcceptedFinding is null when a reviewer has zero accepted findings — nulls
@@ -18,7 +29,9 @@ export function filterStats(stats: AdversarialReviewStats[], query: string): Adv
 // bakes in `direction` itself rather than going through the uniform asc/desc flip below:
 // flipping a "null sorts last" comparison for desc would put nulls first instead.
 function compareNullableCostPerFinding(
-  a: AdversarialReviewStats, b: AdversarialReviewStats, direction: SortDirection,
+  a: AdversarialReviewStats,
+  b: AdversarialReviewStats,
+  direction: SortDirection,
 ): number {
   if (a.avgCostPerAcceptedFinding == null && b.avgCostPerAcceptedFinding == null) return 0
   if (a.avgCostPerAcceptedFinding == null) return 1
@@ -41,7 +54,9 @@ const STATS_COMPARATORS: Record<
 }
 
 export function sortStats(
-  stats: AdversarialReviewStats[], field: StatsSortField, direction: SortDirection,
+  stats: AdversarialReviewStats[],
+  field: StatsSortField,
+  direction: SortDirection,
 ): AdversarialReviewStats[] {
   if (field === 'avgCostPerAcceptedFinding') {
     return stats.toSorted((a, b) => compareNullableCostPerFinding(a, b, direction))
@@ -58,12 +73,16 @@ export function filterRunGroups(groups: RunGroup[], query: string): RunGroup[] {
   const q = query.trim().toLowerCase()
   if (!q) return groups
   return groups.filter(
-    (g) => (g.repo?.toLowerCase().includes(q) ?? false) || (g.summary?.toLowerCase().includes(q) ?? false),
+    (g) =>
+      (g.repo?.toLowerCase().includes(q) ?? false) ||
+      (g.summary?.toLowerCase().includes(q) ?? false),
   )
 }
 
 export function filterRunGroupsByStatus(
-  groups: RunGroup[], completeness: CompletenessFilter, validity: ValidityFilter,
+  groups: RunGroup[],
+  completeness: CompletenessFilter,
+  validity: ValidityFilter,
 ): RunGroup[] {
   return groups.filter((g) => {
     if (completeness === 'complete' && !g.isComplete) return false
@@ -75,7 +94,9 @@ export function filterRunGroupsByStatus(
 }
 
 export function sortRunGroups(
-  groups: RunGroup[], field: RunSortField, direction: SortDirection,
+  groups: RunGroup[],
+  field: RunSortField,
+  direction: SortDirection,
 ): RunGroup[] {
   return groups.toSorted((a, b) => {
     let comparison: number

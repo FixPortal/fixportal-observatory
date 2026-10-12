@@ -15,7 +15,8 @@ export default function GitHubReviewerTable({
 }: GitHubReviewerTableProps) {
   if (isLoading) return <p className="panel-empty">Loading review activity...</p>
   if (isError) return <p className="panel-empty">Couldn’t load review activity.</p>
-  if (reviewers.length === 0) return <p className="panel-empty">No reviews submitted in this period.</p>
+  if (reviewers.length === 0)
+    return <p className="panel-empty">No reviews submitted in this period.</p>
 
   return (
     <div className="model-table-wrap">

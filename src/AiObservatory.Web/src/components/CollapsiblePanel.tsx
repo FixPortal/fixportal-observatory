@@ -17,7 +17,7 @@ export function CollapsiblePanel({ id, title, summary, children }: CollapsiblePa
   }, [id, open])
 
   function toggle() {
-    setOpen(prev => !prev)
+    setOpen((prev) => !prev)
   }
 
   return (
@@ -31,9 +31,7 @@ export function CollapsiblePanel({ id, title, summary, children }: CollapsiblePa
       >
         <span className="collapsible-panel__dot" aria-hidden="true" />
         <span className="collapsible-panel__title">{title}</span>
-        {summary !== undefined && (
-          <span className="collapsible-panel__summary">{summary}</span>
-        )}
+        {summary !== undefined && <span className="collapsible-panel__summary">{summary}</span>}
         <span
           className={`collapsible-panel__chevron${open ? ' collapsible-panel__chevron--open' : ''}`}
           aria-hidden="true"
@@ -47,9 +45,7 @@ export function CollapsiblePanel({ id, title, summary, children }: CollapsiblePa
         aria-hidden={!open}
         inert={!open}
       >
-        <div className="collapsible-panel__body-inner">
-          {children}
-        </div>
+        <div className="collapsible-panel__body-inner">{children}</div>
       </div>
     </div>
   )

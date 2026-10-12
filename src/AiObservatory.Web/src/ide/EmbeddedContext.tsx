@@ -22,5 +22,12 @@ export default function EmbeddedContext({ children }: { children: ReactNode }) {
     : context?.repository
       ? `Following repository ${context.repository}`
       : 'Global Observatory'
-  return <><div className="embedded-context" role="status">{label}</div>{children}</>
+  return (
+    <>
+      <div className="embedded-context" role="status">
+        {label}
+      </div>
+      {children}
+    </>
+  )
 }

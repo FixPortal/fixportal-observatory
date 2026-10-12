@@ -3,8 +3,15 @@ import { filterPrs, sortPrs, sortCommitSummaries, sortCiSummaries } from './gith
 import type { GitHubPr, GitHubCommitSummary, GitHubCiSummary } from '../api/client'
 
 const pr = (overrides: Partial<GitHubPr>): GitHubPr => ({
-  repo: 'fix-portal/example', number: 1, title: 'A PR', author: 'chris', state: 'open',
-  createdAt: '2026-07-01T09:00:00Z', mergedAt: null, reviewCount: 0, turnaroundHours: null,
+  repo: 'fix-portal/example',
+  number: 1,
+  title: 'A PR',
+  author: 'chris',
+  state: 'open',
+  createdAt: '2026-07-01T09:00:00Z',
+  mergedAt: null,
+  reviewCount: 0,
+  turnaroundHours: null,
   ...overrides,
 })
 
@@ -41,10 +48,12 @@ describe('sortPrs', () => {
     const fast = pr({ number: 2, turnaroundHours: 1 })
     const slow = pr({ number: 3, turnaroundHours: 10 })
 
-    expect(sortPrs([unreviewed, slow, fast], 'turnaroundHours', 'asc').map((p) => p.number))
-      .toEqual([2, 3, 1])
-    expect(sortPrs([unreviewed, slow, fast], 'turnaroundHours', 'desc').map((p) => p.number))
-      .toEqual([3, 2, 1])
+    expect(
+      sortPrs([unreviewed, slow, fast], 'turnaroundHours', 'asc').map((p) => p.number),
+    ).toEqual([2, 3, 1])
+    expect(
+      sortPrs([unreviewed, slow, fast], 'turnaroundHours', 'desc').map((p) => p.number),
+    ).toEqual([3, 2, 1])
   })
 })
 
@@ -59,8 +68,20 @@ describe('sortCommitSummaries', () => {
 
 describe('sortCiSummaries', () => {
   it('sorts by successRate ascending, surfacing the worst repo first', () => {
-    const a: GitHubCiSummary = { repo: 'a', workflowName: 'ci', totalRuns: 10, failedRuns: 1, successRate: 90 }
-    const b: GitHubCiSummary = { repo: 'b', workflowName: 'ci', totalRuns: 10, failedRuns: 5, successRate: 50 }
+    const a: GitHubCiSummary = {
+      repo: 'a',
+      workflowName: 'ci',
+      totalRuns: 10,
+      failedRuns: 1,
+      successRate: 90,
+    }
+    const b: GitHubCiSummary = {
+      repo: 'b',
+      workflowName: 'ci',
+      totalRuns: 10,
+      failedRuns: 5,
+      successRate: 50,
+    }
     const result = sortCiSummaries([a, b], 'successRate', 'asc')
     expect(result[0].repo).toBe('b')
   })

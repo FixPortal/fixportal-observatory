@@ -33,7 +33,12 @@ interface ConfiguredChannelActionsProps {
 // ponytail: split out of NotificationChannelRow's configured branch purely to bring that
 // branch's conditional count under sonarjs/expression-complexity's limit of 3 -- no behavior
 // change (Minor #7).
-function ConfiguredChannelActions({ label, isSaving, onEdit, onClear }: ConfiguredChannelActionsProps) {
+function ConfiguredChannelActions({
+  label,
+  isSaving,
+  onEdit,
+  onClear,
+}: ConfiguredChannelActionsProps) {
   const [confirmingRemove, setConfirmingRemove] = useState(false)
 
   if (isReadonly) return null
@@ -41,7 +46,15 @@ function ConfiguredChannelActions({ label, isSaving, onEdit, onClear }: Configur
   if (confirmingRemove) {
     return (
       <>
-        <Button variant="danger" size="sm" disabled={isSaving} onClick={() => { onClear(); setConfirmingRemove(false) }}>
+        <Button
+          variant="danger"
+          size="sm"
+          disabled={isSaving}
+          onClick={() => {
+            onClear()
+            setConfirmingRemove(false)
+          }}
+        >
           Confirm
         </Button>
         <Button variant="ghost" size="sm" onClick={() => setConfirmingRemove(false)}>
@@ -56,14 +69,27 @@ function ConfiguredChannelActions({ label, isSaving, onEdit, onClear }: Configur
       <Button variant="ghost" size="sm" aria-label={`Edit ${label.toLowerCase()}`} onClick={onEdit}>
         Edit
       </Button>
-      <Button variant="danger" size="sm" aria-label={`Remove ${label.toLowerCase()}`} onClick={() => setConfirmingRemove(true)}>
+      <Button
+        variant="danger"
+        size="sm"
+        aria-label={`Remove ${label.toLowerCase()}`}
+        onClick={() => setConfirmingRemove(true)}
+      >
         Remove
       </Button>
     </>
   )
 }
 
-function NotificationChannelRow({ channel, label, configured, masked, onSave, onClear, isSaving }: NotificationChannelRowProps) {
+function NotificationChannelRow({
+  channel,
+  label,
+  configured,
+  masked,
+  onSave,
+  onClear,
+  isSaving,
+}: NotificationChannelRowProps) {
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState('')
   const fieldId = `notification-${channel}-input`
@@ -88,20 +114,41 @@ function NotificationChannelRow({ channel, label, configured, masked, onSave, on
     return (
       <div className="budget-rules__channel-row">
         <span className="budget-rules__channel-label">{label}</span>
-        <label htmlFor={fieldId} className="visually-hidden">{fieldLabel}</label>
+        <label htmlFor={fieldId} className="visually-hidden">
+          {fieldLabel}
+        </label>
         <input
           id={fieldId}
           type="text"
           value={value}
-          onChange={e => setValue(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void submit() } }}
-          placeholder={channel === 'email' ? 'you@example.com' : 'https://hooks.slack.com/services/...'}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              void submit()
+            }
+          }}
+          placeholder={
+            channel === 'email' ? 'you@example.com' : 'https://hooks.slack.com/services/...'
+          }
           className="budget-rules__control"
         />
-        <Button variant="primary" size="sm" disabled={isSaving || value.trim() === ''} onClick={() => void submit()}>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={isSaving || value.trim() === ''}
+          onClick={() => void submit()}
+        >
           Save
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => { setEditing(false); setValue('') }}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setEditing(false)
+            setValue('')
+          }}
+        >
           Cancel
         </Button>
       </div>
@@ -114,13 +161,25 @@ function NotificationChannelRow({ channel, label, configured, masked, onSave, on
       {configured ? (
         <>
           <span className="budget-rules__channel-value">{masked}</span>
-          <ConfiguredChannelActions label={label} isSaving={isSaving} onEdit={() => setEditing(true)} onClear={onClear} />
+          <ConfiguredChannelActions
+            label={label}
+            isSaving={isSaving}
+            onEdit={() => setEditing(true)}
+            onClear={onClear}
+          />
         </>
       ) : (
         <>
-          <span className="budget-rules__channel-value budget-rules__channel-value--unset">Not set</span>
+          <span className="budget-rules__channel-value budget-rules__channel-value--unset">
+            Not set
+          </span>
           {!isReadonly && (
-            <Button variant="ghost" size="sm" aria-label={`Add ${label.toLowerCase()}`} onClick={() => setEditing(true)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={`Add ${label.toLowerCase()}`}
+              onClick={() => setEditing(true)}
+            >
               Add
             </Button>
           )}
@@ -146,7 +205,9 @@ function NotificationSettingsSection() {
     return (
       <div className="panel budget-rules__history">
         <div className="panel-title">Notifications</div>
-        <p className="panel-empty" role="alert">Failed to load notification settings.</p>
+        <p className="panel-empty" role="alert">
+          Failed to load notification settings.
+        </p>
       </div>
     )
   }
@@ -156,13 +217,17 @@ function NotificationSettingsSection() {
   return (
     <div className="panel budget-rules__history">
       <div className="panel-title">Notifications</div>
-      {saveError && <p className="panel-empty" role="alert">{saveError}</p>}
+      {saveError && (
+        <p className="panel-empty" role="alert">
+          {saveError}
+        </p>
+      )}
       <NotificationChannelRow
         channel="email"
         label="Email"
         configured={settings.emailConfigured}
         masked={settings.emailMasked}
-        onSave={value => save.mutateAsync({ alertEmailTo: value })}
+        onSave={(value) => save.mutateAsync({ alertEmailTo: value })}
         onClear={() => save.mutate({ alertEmailTo: null })}
         isSaving={save.isPending}
       />
@@ -171,7 +236,7 @@ function NotificationSettingsSection() {
         label="Slack"
         configured={settings.slackConfigured}
         masked={settings.slackMasked}
-        onSave={value => save.mutateAsync({ slackWebhookUrl: value })}
+        onSave={(value) => save.mutateAsync({ slackWebhookUrl: value })}
         onClear={() => save.mutate({ slackWebhookUrl: null })}
         isSaving={save.isPending}
       />
@@ -194,7 +259,10 @@ export default function BudgetRulesPanel() {
   const deleteRule = useMutation({
     mutationFn: deleteBudgetRule,
     onMutate: () => setMutationError(null),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['budget-rules'] }); setConfirmDeleteId(null) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['budget-rules'] })
+      setConfirmDeleteId(null)
+    },
     onError: (e: Error) => setMutationError(`Couldn’t remove the rule: ${e.message}`),
   })
 
@@ -217,7 +285,7 @@ export default function BudgetRulesPanel() {
   })
 
   const budgetAlerts = insights
-    .filter(i => i.title.startsWith('Budget alert:'))
+    .filter((i) => i.title.startsWith('Budget alert:'))
     .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))
     .slice(0, 10)
 
@@ -240,9 +308,7 @@ export default function BudgetRulesPanel() {
       <div className="panel">
         <div className="budget-rules__header">
           <div className="budget-rules__title-row">
-            <span className="panel-title">
-              Budget Rules
-            </span>
+            <span className="panel-title">Budget Rules</span>
           </div>
           {!isReadonly && (
             <Button variant="ghost" size="sm" onClick={handleOpenPanel} disabled={panelOpen}>
@@ -253,76 +319,82 @@ export default function BudgetRulesPanel() {
 
         <div className="budget-rules__body">
           {isError && <p className="panel-empty">Failed to load budget rules.</p>}
-          {mutationError && <p className="panel-empty" role="alert">{mutationError}</p>}
+          {mutationError && (
+            <p className="panel-empty" role="alert">
+              {mutationError}
+            </p>
+          )}
           {!isError && !isLoading && rules.length === 0 && (
             <p className="panel-empty">No budget rules configured.</p>
           )}
           {rules.length > 0 && (
             <div className="model-table-wrap">
               <table className="budget-rules__table">
-              <thead>
-                <tr>
-                  <th>
-                    Provider
-                  </th>
-                  <th>
-                    Period
-                  </th>
-                  <th>
-                    Current / limit
-                  </th>
-                  <th>
-                    Last fired
-                  </th>
-                  {!isReadonly && <th aria-label="Actions" />}
-                </tr>
-              </thead>
-              <tbody>
-                {rules.map(rule => (
-                  <tr key={rule.id}>
-                    <td data-label="Provider">
-                      {rule.provider ? capitalize(rule.provider) : 'All providers'}
-                    </td>
-                    <td data-label="Period">
-                      {capitalize(rule.period)}
-                    </td>
-                    <td data-label="Current / limit">
-                      <span className="budget-rules__amount">{gbp(rule.currentSpendGbp)} / {gbp(rule.thresholdGbp)}</span>
-                      <span className={`budget-rules__status${rule.currentSpendGbp > rule.thresholdGbp ? ' budget-rules__status--over' : ''}`}>
-                        {rule.currentSpendGbp > rule.thresholdGbp ? 'Over limit' : 'Within limit'}
-                      </span>
-                    </td>
-                    <td data-label="Last fired">
-                      {rule.lastTriggeredAt
-                        ? new Date(rule.lastTriggeredAt).toLocaleString()
-                        : 'Never'}
-                    </td>
-                    {!isReadonly && (
-                      <td className="budget-rules__actions">
-                        {confirmDeleteId === rule.id ? (
-                          <span>
+                <thead>
+                  <tr>
+                    <th>Provider</th>
+                    <th>Period</th>
+                    <th>Current / limit</th>
+                    <th>Last fired</th>
+                    {!isReadonly && <th aria-label="Actions" />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rules.map((rule) => (
+                    <tr key={rule.id}>
+                      <td data-label="Provider">
+                        {rule.provider ? capitalize(rule.provider) : 'All providers'}
+                      </td>
+                      <td data-label="Period">{capitalize(rule.period)}</td>
+                      <td data-label="Current / limit">
+                        <span className="budget-rules__amount">
+                          {gbp(rule.currentSpendGbp)} / {gbp(rule.thresholdGbp)}
+                        </span>
+                        <span
+                          className={`budget-rules__status${rule.currentSpendGbp > rule.thresholdGbp ? ' budget-rules__status--over' : ''}`}
+                        >
+                          {rule.currentSpendGbp > rule.thresholdGbp ? 'Over limit' : 'Within limit'}
+                        </span>
+                      </td>
+                      <td data-label="Last fired">
+                        {rule.lastTriggeredAt
+                          ? new Date(rule.lastTriggeredAt).toLocaleString()
+                          : 'Never'}
+                      </td>
+                      {!isReadonly && (
+                        <td className="budget-rules__actions">
+                          {confirmDeleteId === rule.id ? (
+                            <span>
+                              <Button
+                                variant="danger"
+                                size="sm"
+                                onClick={() => deleteRule.mutate(rule.id)}
+                                disabled={deleteRule.isPending}
+                              >
+                                Confirm
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setConfirmDeleteId(null)}
+                              >
+                                Cancel
+                              </Button>
+                            </span>
+                          ) : (
                             <Button
                               variant="danger"
                               size="sm"
-                              onClick={() => deleteRule.mutate(rule.id)}
-                              disabled={deleteRule.isPending}
+                              onClick={() => setConfirmDeleteId(rule.id)}
                             >
-                              Confirm
+                              Remove
                             </Button>
-                            <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteId(null)}>
-                              Cancel
-                            </Button>
-                          </span>
-                        ) : (
-                          <Button variant="danger" size="sm" onClick={() => setConfirmDeleteId(rule.id)}>
-                            Remove
-                          </Button>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
               </table>
             </div>
           )}
@@ -338,12 +410,14 @@ export default function BudgetRulesPanel() {
                 Provider
                 <select
                   value={provider}
-                  onChange={e => setProvider(e.target.value)}
+                  onChange={(e) => setProvider(e.target.value)}
                   className="budget-rules__control"
                 >
                   <option value="">All providers</option>
-                  {PROVIDERS.map(p => (
-                    <option key={p} value={p}>{capitalize(p)}</option>
+                  {PROVIDERS.map((p) => (
+                    <option key={p} value={p}>
+                      {capitalize(p)}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -352,11 +426,13 @@ export default function BudgetRulesPanel() {
                 Period
                 <select
                   value={period}
-                  onChange={e => setPeriod(e.target.value as typeof period)}
+                  onChange={(e) => setPeriod(e.target.value as typeof period)}
                   className="budget-rules__control"
                 >
-                  {PERIODS.map(p => (
-                    <option key={p} value={p}>{capitalize(p)}</option>
+                  {PERIODS.map((p) => (
+                    <option key={p} value={p}>
+                      {capitalize(p)}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -368,7 +444,7 @@ export default function BudgetRulesPanel() {
                   min="0.01"
                   step="0.01"
                   value={threshold}
-                  onChange={e => setThreshold(e.target.value)}
+                  onChange={(e) => setThreshold(e.target.value)}
                   placeholder="e.g. 50"
                   required
                   className="budget-rules__control"
@@ -377,7 +453,12 @@ export default function BudgetRulesPanel() {
             </div>
 
             <div className="budget-rules__actions">
-              <Button type="submit" variant="primary" size="sm" disabled={addRule.isPending || threshold === ''}>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={addRule.isPending || threshold === ''}
+              >
                 {addRule.isPending ? 'Adding...' : 'Add rule'}
               </Button>
               <Button type="button" variant="ghost" size="sm" onClick={() => setPanelOpen(false)}>
@@ -396,15 +477,10 @@ export default function BudgetRulesPanel() {
           <p className="panel-empty">No budget alerts triggered.</p>
         ) : (
           <div className="budget-rules__history">
-            {budgetAlerts.map(alert => (
-              <div
-                key={alert.id}
-                className="insight insight-anomaly"
-              >
+            {budgetAlerts.map((alert) => (
+              <div key={alert.id} className="insight insight-anomaly">
                 <div className="insight-title">{alert.title}</div>
-                <div className="insight-body">
-                  {alert.body}
-                </div>
+                <div className="insight-body">{alert.body}</div>
                 <div className="budget-rules__history-time">
                   {new Date(alert.generatedAt).toLocaleString()}
                 </div>

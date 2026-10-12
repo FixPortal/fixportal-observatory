@@ -27,7 +27,11 @@ interface GitHubCiTableProps {
   isError?: boolean
 }
 
-export default function GitHubCiTable({ ci, isLoading = false, isError = false }: GitHubCiTableProps) {
+export default function GitHubCiTable({
+  ci,
+  isLoading = false,
+  isError = false,
+}: GitHubCiTableProps) {
   const [sortField, setSortField] = useState<CiSortField>('successRate')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
@@ -42,7 +46,10 @@ export default function GitHubCiTable({ ci, isLoading = false, isError = false }
 
   const handleSort = (field: CiSortField) => {
     if (sortField === field) setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
-    else { setSortField(field); setSortDirection('asc') }
+    else {
+      setSortField(field)
+      setSortDirection('asc')
+    }
   }
 
   return (
@@ -50,11 +57,29 @@ export default function GitHubCiTable({ ci, isLoading = false, isError = false }
       <table className="project-table github-table">
         <thead>
           <tr>
-            <GitHubSortableHeader field="repo" label="Repo" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+            <GitHubSortableHeader
+              field="repo"
+              label="Repo"
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSort={handleSort}
+            />
             <th>Workflow</th>
-            <GitHubSortableHeader field="totalRuns" label="Runs" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+            <GitHubSortableHeader
+              field="totalRuns"
+              label="Runs"
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSort={handleSort}
+            />
             <th>Failed</th>
-            <GitHubSortableHeader field="successRate" label="Success rate" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+            <GitHubSortableHeader
+              field="successRate"
+              label="Success rate"
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSort={handleSort}
+            />
           </tr>
         </thead>
         <tbody>
@@ -64,9 +89,16 @@ export default function GitHubCiTable({ ci, isLoading = false, isError = false }
               <td>{c.workflowName}</td>
               <td>{c.totalRuns}</td>
               <td>{c.failedRuns}</td>
-              <td style={{ color: c.successRate < SUCCESS_RATE_WARN_THRESHOLD ? 'var(--bad-text)' : undefined }}>
+              <td
+                style={{
+                  color:
+                    c.successRate < SUCCESS_RATE_WARN_THRESHOLD ? 'var(--bad-text)' : undefined,
+                }}
+              >
                 {c.successRate.toFixed(0)}%
-                {c.successRate < SUCCESS_RATE_WARN_THRESHOLD && <span style={srOnlyStyle}> (low success rate)</span>}
+                {c.successRate < SUCCESS_RATE_WARN_THRESHOLD && (
+                  <span style={srOnlyStyle}> (low success rate)</span>
+                )}
               </td>
             </tr>
           ))}

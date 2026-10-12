@@ -10,7 +10,9 @@ export function filterProjects<T extends ProjectActivity>(projects: T[], query: 
 }
 
 export function sortProjects<T extends ProjectActivity>(
-  projects: T[], field: ProjectSortField, direction: SortDirection,
+  projects: T[],
+  field: ProjectSortField,
+  direction: SortDirection,
 ): T[] {
   return projects.toSorted((a, b) => {
     let comparison: number

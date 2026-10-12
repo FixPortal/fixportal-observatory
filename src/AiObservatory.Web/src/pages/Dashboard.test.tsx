@@ -2,7 +2,14 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import Dashboard from './Dashboard'
 
-const dashboardStatus = vi.hoisted(() => ({ isError: false, isLoading: false, isRetrying: false, isAutomaticallyRetrying: false, error: null as unknown, retry: vi.fn() }))
+const dashboardStatus = vi.hoisted(() => ({
+  isError: false,
+  isLoading: false,
+  isRetrying: false,
+  isAutomaticallyRetrying: false,
+  error: null as unknown,
+  retry: vi.fn(),
+}))
 const authMock = vi.hoisted(() => ({
   TokenAcquisitionTimeoutError: class extends Error {},
   signIn: vi.fn(),
@@ -11,10 +18,22 @@ const authMock = vi.hoisted(() => ({
 vi.mock('../api/queries', () => ({ useDashboardStatus: () => dashboardStatus }))
 vi.mock('../theme/useTheme', () => ({ useTheme: () => ({ mode: 'dark', setMode: vi.fn() }) }))
 vi.mock('../auth/msal', () => ({ authEnabled: true, isReadonly: false, ...authMock }))
-vi.mock('../components/SummaryCards', () => ({ default: () => <section aria-label="Summary evidence">Summary</section> }))
-vi.mock('../components/SourceStatusPanel', () => ({ default: () => <div className="source-status-zone"><section aria-label="Source freshness">Sources</section></div> }))
-vi.mock('../components/CavemanStatsPanel', () => ({ default: () => <section aria-label="Caveman statistics" /> }))
-vi.mock('../components/SubscriptionPanel', () => ({ default: () => <section aria-label="Subscriptions" /> }))
+vi.mock('../components/SummaryCards', () => ({
+  default: () => <section aria-label="Summary evidence">Summary</section>,
+}))
+vi.mock('../components/SourceStatusPanel', () => ({
+  default: () => (
+    <div className="source-status-zone">
+      <section aria-label="Source freshness">Sources</section>
+    </div>
+  ),
+}))
+vi.mock('../components/CavemanStatsPanel', () => ({
+  default: () => <section aria-label="Caveman statistics" />,
+}))
+vi.mock('../components/SubscriptionPanel', () => ({
+  default: () => <section aria-label="Subscriptions" />,
+}))
 vi.mock('../components/ModelBreakdown', () => ({ default: () => null }))
 vi.mock('../components/InsightsFeed', () => ({ default: () => null }))
 vi.mock('../components/SpendChart', () => ({ default: () => null }))
@@ -88,7 +107,9 @@ test('places data-source operations after the overview evidence', async () => {
   render(<Dashboard />)
   const sources = await screen.findByRole('region', { name: 'Source freshness' })
   const usageGrid = screen.getByText('Usage value · last 31 days').closest('.main-grid')!
-  const caveman = screen.getByRole('region', { name: 'Caveman statistics' }).closest('.collapsible-panel-zone')!
+  const caveman = screen
+    .getByRole('region', { name: 'Caveman statistics' })
+    .closest('.collapsible-panel-zone')!
   const subscriptions = screen.getByRole('region', { name: 'Subscriptions' })
   const bottomGrid = screen.getByText('Model breakdown').closest('.bottom-grid')!
   const sourceZone = sources.closest('.source-status-zone')!

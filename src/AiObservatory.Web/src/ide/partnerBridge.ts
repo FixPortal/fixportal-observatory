@@ -25,11 +25,15 @@ export function createEmbeddedBridge(port: WebViewPort): EmbeddedBridge {
     const next = readContext(event.data)
     if (!next) return
     current = next
-    subscribers.forEach(listener => { listener(current) })
+    subscribers.forEach((listener) => {
+      listener(current)
+    })
   }
   port.addEventListener('message', receive)
   return {
-    get context() { return current },
+    get context() {
+      return current
+    },
     postReady() {
       port.postMessage({
         contractVersion: '1.0',
@@ -40,7 +44,9 @@ export function createEmbeddedBridge(port: WebViewPort): EmbeddedBridge {
     },
     subscribe(listener) {
       subscribers.add(listener)
-      return () => { subscribers.delete(listener) }
+      return () => {
+        subscribers.delete(listener)
+      }
     },
     dispose() {
       subscribers.clear()

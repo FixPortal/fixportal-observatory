@@ -2,7 +2,10 @@ import { useState, useCallback } from 'react'
 
 export type DateRangePreset = 7 | 31 | 90 | 'thisMonth' | 'lastMonth' | 'thisQuarter'
 
-interface Range { from: Date; to: Date }
+interface Range {
+  from: Date
+  to: Date
+}
 
 export const AGGREGATES_DAYS_RANGE = 31
 
@@ -11,7 +14,8 @@ export const dashboardDateRange = (to = new Date()): Range => ({
   to: new Date(to),
 })
 
-const orderedRange = (from: Date, to: Date): Range => from <= to ? { from, to } : { from: to, to: from }
+const orderedRange = (from: Date, to: Date): Range =>
+  from <= to ? { from, to } : { from: to, to: from }
 
 function shiftDays(date: Date, days: number) {
   const shifted = new Date(date)
@@ -52,8 +56,12 @@ function previousRange(range: Range, preset: DateRangePreset | 'custom'): Range 
     }
   }
 
-  const days = Math.round((Date.UTC(range.to.getFullYear(), range.to.getMonth(), range.to.getDate())
-    - Date.UTC(range.from.getFullYear(), range.from.getMonth(), range.from.getDate())) / 86_400_000) + 1
+  const days =
+    Math.round(
+      (Date.UTC(range.to.getFullYear(), range.to.getMonth(), range.to.getDate()) -
+        Date.UTC(range.from.getFullYear(), range.from.getMonth(), range.from.getDate())) /
+        86_400_000,
+    ) + 1
   const to = shiftDays(range.from, -1)
   return { from: shiftDays(to, -(days - 1)), to }
 }
@@ -85,12 +93,15 @@ export function useDateRange() {
     setCustomComparison(orderedRange(comparisonFrom, comparisonTo))
   }, [])
 
-  const comparison = comparisonMode === 'previous'
-    ? previousRange({ from, to }, preset)
-    : customComparison
+  const comparison =
+    comparisonMode === 'previous' ? previousRange({ from, to }, preset) : customComparison
 
   return {
-    from, to, preset, setPreset, setCustom,
+    from,
+    to,
+    preset,
+    setPreset,
+    setCustom,
     comparisonFrom: comparison.from,
     comparisonTo: comparison.to,
     comparisonMode,

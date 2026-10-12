@@ -8,12 +8,14 @@ const analyze = !!process.env.ANALYZE
 export default defineConfig({
   plugins: [
     react(),
-    ...(analyze ? [visualizer({ filename: 'dist/stats.html', gzipSize: true, brotliSize: true })] : []),
+    ...(analyze
+      ? [visualizer({ filename: 'dist/stats.html', gzipSize: true, brotliSize: true })]
+      : []),
   ],
   server: {
     proxy: {
-      '/api': 'http://localhost:5039'
-    }
+      '/api': 'http://localhost:5039',
+    },
   },
   build: {
     rollupOptions: {

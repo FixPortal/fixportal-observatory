@@ -17,15 +17,20 @@ interface Props {
 }
 
 export default function BilledSpendChart({
-  data, range, comparisonData, comparisonRange,
-  selectedLabel = 'Selected period', comparisonLabel = 'Previous period',
+  data,
+  range,
+  comparisonData,
+  comparisonRange,
+  selectedLabel = 'Selected period',
+  comparisonLabel = 'Previous period',
 }: Props) {
-  const comparison = range && comparisonData && comparisonRange
-    ? buildBilledComparisonSeries(data, range, comparisonData, comparisonRange)
-    : null
+  const comparison =
+    range && comparisonData && comparisonRange
+      ? buildBilledComparisonSeries(data, range, comparisonData, comparisonRange)
+      : null
   const chartData: Record<string, unknown>[] = comparison
-    ? comparison.points.map(point => ({ ...point }))
-    : data.map(point => ({ ...point }))
+    ? comparison.points.map((point) => ({ ...point }))
+    : data.map((point) => ({ ...point }))
 
   return (
     <>
@@ -33,23 +38,44 @@ export default function BilledSpendChart({
         <BarChart data={chartData}>
           <XAxis
             dataKey={comparison ? 'slot' : 'date'}
-            tickFormatter={comparison ? (value: number) => `${comparison.grain === 'day' ? 'Day' : 'Week'} ${value}` : formatShortDate}
+            tickFormatter={
+              comparison
+                ? (value: number) => `${comparison.grain === 'day' ? 'Day' : 'Week'} ${value}`
+                : formatShortDate
+            }
             tick={{ fontSize: 10, fill: TEXT_MUTED }}
           />
-          <YAxis tick={{ fontSize: 10, fill: TEXT_MUTED }} tickFormatter={(value: number) => gbp(value)} />
+          <YAxis
+            tick={{ fontSize: 10, fill: TEXT_MUTED }}
+            tickFormatter={(value: number) => gbp(value)}
+          />
           <Tooltip
-            contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-chip)', color: 'var(--text)' }}
+            contentStyle={{
+              background: 'var(--card-bg)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--r-chip)',
+              color: 'var(--text)',
+            }}
             labelStyle={{ color: 'var(--text)' }}
             itemStyle={{ color: TEXT_MUTED }}
-            labelFormatter={value => comparison
-              ? `${comparison.grain === 'day' ? 'Day' : 'Week'} ${value}`
-              : formatShortDate(String(value ?? ''))}
-            formatter={(value: ValueType | undefined) => gbp(Number(Array.isArray(value) ? value[0] : value ?? 0))}
+            labelFormatter={(value) =>
+              comparison
+                ? `${comparison.grain === 'day' ? 'Day' : 'Week'} ${value}`
+                : formatShortDate(String(value ?? ''))
+            }
+            formatter={(value: ValueType | undefined) =>
+              gbp(Number(Array.isArray(value) ? value[0] : (value ?? 0)))
+            }
           />
           {comparison ? (
             <>
               <Bar dataKey="selected" name={selectedLabel} fill="var(--brand)" />
-              <Bar dataKey="comparison" name={comparisonLabel} fill="var(--text-muted)" fillOpacity={0.55} />
+              <Bar
+                dataKey="comparison"
+                name={comparisonLabel}
+                fill="var(--text-muted)"
+                fillOpacity={0.55}
+              />
             </>
           ) : (
             <Bar dataKey="amountGbp" name="Billed spend" fill="var(--brand)" />
@@ -58,8 +84,14 @@ export default function BilledSpendChart({
       </ResponsiveContainer>
       {comparison && (
         <div className="spend-chart__legend" aria-label="Billed spend comparison">
-          <span><i className="spend-chart__swatch spend-chart__swatch--selected" />{selectedLabel}</span>
-          <span><i className="spend-chart__swatch spend-chart__swatch--comparison" />{comparisonLabel}</span>
+          <span>
+            <i className="spend-chart__swatch spend-chart__swatch--selected" />
+            {selectedLabel}
+          </span>
+          <span>
+            <i className="spend-chart__swatch spend-chart__swatch--comparison" />
+            {comparisonLabel}
+          </span>
         </div>
       )}
     </>

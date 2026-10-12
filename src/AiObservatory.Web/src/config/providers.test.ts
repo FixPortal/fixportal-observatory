@@ -20,18 +20,18 @@ test('every backend provider has a frontend config entry', () => {
   expect([...PROVIDER_ORDER].sort()).toEqual([...BACKEND_PROVIDERS].sort())
 })
 
-test.each(BACKEND_PROVIDERS)('%s resolves to its own colour, not the "other" fallback', key => {
+test.each(BACKEND_PROVIDERS)('%s resolves to its own colour, not the "other" fallback', (key) => {
   expect(providerColor(key)).toBe(`var(--provider-${key})`)
   expect(providerColor(key)).not.toBe('var(--provider-other)')
 })
 
-test.each(BACKEND_PROVIDERS)('%s declares a display name and badge style', key => {
+test.each(BACKEND_PROVIDERS)('%s declares a display name and badge style', (key) => {
   const provider = getProvider(key)
   expect(provider?.displayName).toBeTruthy()
   expect(provider?.badgeStyle.color).toBe(`var(--provider-${key})`)
 })
 
-test.each(BACKEND_PROVIDERS)('%s has no frontend cache-pricing rate', key => {
+test.each(BACKEND_PROVIDERS)('%s has no frontend cache-pricing rate', (key) => {
   expect(getProvider(key)).not.toHaveProperty('cacheSavingsPerToken')
 })
 
@@ -40,8 +40,18 @@ test('an unknown provider still falls back to the neutral colour', () => {
 })
 
 test('declares every current acquisition and pricing source with public setup guidance', () => {
-  const setupHref = 'https://github.com/FixPortal/fixportal-observatory/blob/main/docs/provider-setup.md'
-  expect(PROVIDERS.flatMap(provider => provider.sources.map(source => [provider.key, source.id, source.displayName, source.setupHref]))).toEqual([
+  const setupHref =
+    'https://github.com/FixPortal/fixportal-observatory/blob/main/docs/provider-setup.md'
+  expect(
+    PROVIDERS.flatMap((provider) =>
+      provider.sources.map((source) => [
+        provider.key,
+        source.id,
+        source.displayName,
+        source.setupHref,
+      ]),
+    ),
+  ).toEqual([
     ['anthropic', 'anthropic-usage-api', 'Messages usage', setupHref],
     ['anthropic', 'anthropic-cost-report', 'Cost report', setupHref],
     ['anthropic', 'claude-code-usage-api', 'Claude Code usage', setupHref],
@@ -67,7 +77,15 @@ test('declares every current acquisition and pricing source with public setup gu
 })
 
 test('keeps known ordering closed while arbitrary provider and source slugs stay readable', () => {
-  expect(PROVIDER_KEYS).toEqual(['anthropic', 'copilot', 'google', 'openai', 'moonshot', 'xai', 'meta'])
+  expect(PROVIDER_KEYS).toEqual([
+    'anthropic',
+    'copilot',
+    'google',
+    'openai',
+    'moonshot',
+    'xai',
+    'meta',
+  ])
   expect(getProvider('new-oss-provider')).toBeUndefined()
   expect(providerDisplayName('new-oss-provider')).toBe('New oss provider')
   expect(sourceDisplayName('new-source-feed')).toBe('New source feed')

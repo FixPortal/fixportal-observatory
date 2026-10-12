@@ -32,10 +32,13 @@ export function sortPrs(prs: GitHubPr[], field: PrSortField, direction: SortDire
 export type CommitSortField = 'repo' | 'commitCount'
 
 export function sortCommitSummaries(
-  summaries: GitHubCommitSummary[], field: CommitSortField, direction: SortDirection,
+  summaries: GitHubCommitSummary[],
+  field: CommitSortField,
+  direction: SortDirection,
 ): GitHubCommitSummary[] {
   return summaries.toSorted((a, b) => {
-    const comparison = field === 'repo' ? a.repo.localeCompare(b.repo) : a.commitCount - b.commitCount
+    const comparison =
+      field === 'repo' ? a.repo.localeCompare(b.repo) : a.commitCount - b.commitCount
     return direction === 'asc' ? comparison : -comparison
   })
 }
@@ -43,7 +46,9 @@ export function sortCommitSummaries(
 export type CiSortField = 'repo' | 'totalRuns' | 'successRate'
 
 export function sortCiSummaries(
-  summaries: GitHubCiSummary[], field: CiSortField, direction: SortDirection,
+  summaries: GitHubCiSummary[],
+  field: CiSortField,
+  direction: SortDirection,
 ): GitHubCiSummary[] {
   return summaries.toSorted((a, b) => {
     let comparison: number

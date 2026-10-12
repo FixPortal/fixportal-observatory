@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { postSpendEntries, type NewSpendEntry, type SpendCategory, type SpendVendor } from '../api/client'
+import {
+  postSpendEntries,
+  type NewSpendEntry,
+  type SpendCategory,
+  type SpendVendor,
+} from '../api/client'
 import { invalidateSpendData, localDate } from '../api/queries'
 
 interface Props {
@@ -33,7 +38,9 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
   // initialiser only; mid-form it would clobber the category the user already picked.
   const liveDefaultCategoryId = (vendor: SpendVendor | undefined) => {
     const preferred = vendor?.defaultCategoryId
-    return preferred && categories.some(c => c.id === preferred) ? preferred : categories[0]?.id ?? ''
+    return preferred && categories.some((c) => c.id === preferred)
+      ? preferred
+      : (categories[0]?.id ?? '')
   }
   const [categoryId, setCategoryId] = useState(() => liveDefaultCategoryId(vendors[0]))
   const [amount, setAmount] = useState('')
@@ -48,7 +55,7 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
 
   const save = useMutation({
     mutationFn: (entry: NewSpendEntry) => postSpendEntries([entry]),
-    onSuccess: async results => {
+    onSuccess: async (results) => {
       const result = results[0]
       // A per-row verdict is not an HTTP failure, so it has to be read rather than assumed.
       if (result?.status === 'rejected') {
@@ -66,8 +73,8 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
     // Follow the vendor's default category as a starting point — but only when it is
     // still a live, selectable category. Falling back to the first live category here
     // (as the initialiser does) would clobber the category the user already picked.
-    const defaultId = vendors.find(v => v.id === id)?.defaultCategoryId
-    if (defaultId && categories.some(c => c.id === defaultId)) setCategoryId(defaultId)
+    const defaultId = vendors.find((v) => v.id === id)?.defaultCategoryId
+    if (defaultId && categories.some((c) => c.id === defaultId)) setCategoryId(defaultId)
   }
 
   function handleSave() {
@@ -112,14 +119,20 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
 
   return (
     <dialog
-      ref={el => { if (el && !el.open) el.showModal() }}
+      ref={(el) => {
+        if (el && !el.open) el.showModal()
+      }}
       className="modal"
       aria-labelledby="spend-entry-modal-title"
       onClose={onClose}
     >
       <div className="modal__header">
-        <span id="spend-entry-modal-title" className="modal__title">Add spend entry</span>
-        <button type="button" className="modal__close" onClick={onClose} aria-label="Close">×</button>
+        <span id="spend-entry-modal-title" className="modal__title">
+          Add spend entry
+        </span>
+        <button type="button" className="modal__close" onClick={onClose} aria-label="Close">
+          ×
+        </button>
       </div>
 
       <div className="modal__body">
@@ -127,10 +140,18 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
           {/* noValidate: this form shows its own role="alert" message instead of
               relying on native constraint-validation bubbles (which would also
               silently swallow the submit event before handleSave ever runs). */}
-          <form noValidate onSubmit={e => { e.preventDefault(); handleSave() }}>
+          <form
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault()
+              handleSave()
+            }}
+          >
             <div className="sub-form__grid">
               <div>
-                <label htmlFor="spend-entry-date" className="sub-form__label">Date</label>
+                <label htmlFor="spend-entry-date" className="sub-form__label">
+                  Date
+                </label>
                 <input
                   id="spend-entry-date"
                   className="sub-form__input"
@@ -138,33 +159,47 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
                   min={minDate}
                   max={maxDate}
                   value={occurredOn}
-                  onChange={e => setOccurredOn(e.target.value)}
+                  onChange={(e) => setOccurredOn(e.target.value)}
                 />
               </div>
               <div>
-                <label htmlFor="spend-entry-vendor" className="sub-form__label">Vendor</label>
+                <label htmlFor="spend-entry-vendor" className="sub-form__label">
+                  Vendor
+                </label>
                 <select
                   id="spend-entry-vendor"
                   className="sub-form__select"
                   value={vendorId}
-                  onChange={e => onVendorChange(e.target.value)}
+                  onChange={(e) => onVendorChange(e.target.value)}
                 >
-                  {vendors.map(v => <option key={v.id} value={v.id}>{v.displayName}</option>)}
+                  {vendors.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.displayName}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
-                <label htmlFor="spend-entry-category" className="sub-form__label">Category</label>
+                <label htmlFor="spend-entry-category" className="sub-form__label">
+                  Category
+                </label>
                 <select
                   id="spend-entry-category"
                   className="sub-form__select"
                   value={categoryId}
-                  onChange={e => setCategoryId(e.target.value)}
+                  onChange={(e) => setCategoryId(e.target.value)}
                 >
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.displayName}</option>)}
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.displayName}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
-                <label htmlFor="spend-entry-amount" className="sub-form__label">Amount</label>
+                <label htmlFor="spend-entry-amount" className="sub-form__label">
+                  Amount
+                </label>
                 <input
                   id="spend-entry-amount"
                   className="sub-form__input"
@@ -172,7 +207,7 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
                   step="0.01"
                   min="0"
                   value={amount}
-                  onChange={e => setAmount(e.target.value)}
+                  onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00"
                 />
               </div>
@@ -202,31 +237,39 @@ export default function SpendEntryModal({ categories, vendors, from, to, onClose
                 </div>
               </fieldset>
               <div>
-                <label htmlFor="spend-entry-currency" className="sub-form__label">Currency</label>
+                <label htmlFor="spend-entry-currency" className="sub-form__label">
+                  Currency
+                </label>
                 <select
                   id="spend-entry-currency"
                   className="sub-form__select"
                   value={currency}
-                  onChange={e => setCurrency(e.target.value)}
+                  onChange={(e) => setCurrency(e.target.value)}
                 >
                   <option value="GBP">GBP (£)</option>
                   <option value="USD">USD ($)</option>
                 </select>
               </div>
               <div>
-                <label htmlFor="spend-entry-description" className="sub-form__label">Description (optional)</label>
+                <label htmlFor="spend-entry-description" className="sub-form__label">
+                  Description (optional)
+                </label>
                 <input
                   id="spend-entry-description"
                   className="sub-form__input"
                   type="text"
                   maxLength={200}
                   value={description}
-                  onChange={e => setDescription(e.target.value)}
+                  onChange={(e) => setDescription(e.target.value)}
                 />
               </div>
             </div>
 
-            {error && <p className="modal__error" role="alert">{error}</p>}
+            {error && (
+              <p className="modal__error" role="alert">
+                {error}
+              </p>
+            )}
 
             <div className="sub-form__actions">
               <button

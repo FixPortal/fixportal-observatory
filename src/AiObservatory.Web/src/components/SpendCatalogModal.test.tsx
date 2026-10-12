@@ -3,8 +3,26 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SpendCatalogModal from './SpendCatalogModal'
 
-const categories = [{ id: 'c1', key: 'credits', displayName: 'Credits', colorVar: '', sortOrder: 1, archivedAt: null }]
-const vendors = [{ id: 'v1', key: 'anthropic', displayName: 'Anthropic', provider: 'anthropic', defaultCategoryId: 'c1', archivedAt: null }]
+const categories = [
+  {
+    id: 'c1',
+    key: 'credits',
+    displayName: 'Credits',
+    colorVar: '',
+    sortOrder: 1,
+    archivedAt: null,
+  },
+]
+const vendors = [
+  {
+    id: 'v1',
+    key: 'anthropic',
+    displayName: 'Anthropic',
+    provider: 'anthropic',
+    defaultCategoryId: 'c1',
+    archivedAt: null,
+  },
+]
 
 function renderModal(onClose = vi.fn()) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })

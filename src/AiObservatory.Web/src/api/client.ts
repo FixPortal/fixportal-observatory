@@ -37,7 +37,8 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
     ...init,
     headers: { ...(init.headers as Record<string, string>), ...(await authHeaders()) },
   })
-  if (!res.ok) throw new ApiError(res.status, await readErrorMessage(res, path, init.method ?? 'GET'))
+  if (!res.ok)
+    throw new ApiError(res.status, await readErrorMessage(res, path, init.method ?? 'GET'))
   return res
 }
 
@@ -70,9 +71,11 @@ async function readErrorMessage(res: Response, path: string, method: string): Pr
   }
 }
 
-export type SourceKind = 'providerApi' | 'localTelemetry' | 'manual' | 'synthetic' | 'legacy' | string
+export type SourceKind =
+  'providerApi' | 'localTelemetry' | 'manual' | 'synthetic' | 'legacy' | string
 export type UsageScope = 'api' | 'subscription' | 'mixed' | 'unknown' | string
-export type CostBasis = 'billed' | 'providerEstimated' | 'listPriceEstimate' | 'notional' | 'none' | 'unknown' | string
+export type CostBasis =
+  'billed' | 'providerEstimated' | 'listPriceEstimate' | 'notional' | 'none' | 'unknown' | string
 
 export interface DailyAggregate {
   date: string
@@ -113,7 +116,7 @@ export interface Subscription {
   billingInterval: 'monthly' | 'annual'
   billingMonth: number | null
   billingDay: number
-  activeFrom: string        // ISO date yyyy-MM-dd
+  activeFrom: string // ISO date yyyy-MM-dd
   activeTo: string | null
   extraUsageCost: number | null
 }
@@ -229,7 +232,10 @@ export const createSubscription = async (body: Omit<Subscription, 'id'>): Promis
   return res.json() as Promise<Subscription>
 }
 
-export const updateSubscription = async (id: string, body: Omit<Subscription, 'id'>): Promise<Subscription> => {
+export const updateSubscription = async (
+  id: string,
+  body: Omit<Subscription, 'id'>,
+): Promise<Subscription> => {
   const res = await request(`/subscriptions/${id}`, {
     method: 'PUT',
     headers: jsonHeaders,
@@ -322,8 +328,14 @@ export interface BudgetRule {
 
 export const getBudgetRules = () => getJson<BudgetRule[]>('/budget-rules')
 
-export const createBudgetRule = async (body: Pick<BudgetRule, 'provider' | 'period' | 'thresholdGbp'>): Promise<void> => {
-  await request('/budget-rules', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(body) })
+export const createBudgetRule = async (
+  body: Pick<BudgetRule, 'provider' | 'period' | 'thresholdGbp'>,
+): Promise<void> => {
+  await request('/budget-rules', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify(body),
+  })
 }
 
 export const deleteBudgetRule = async (id: string): Promise<void> => {
@@ -339,10 +351,15 @@ export interface NotificationSettings {
 
 export const getNotificationSettings = () => getJson<NotificationSettings>('/notification-settings')
 
-export const updateNotificationSettings = async (
-  body: { alertEmailTo?: string | null; slackWebhookUrl?: string | null },
-): Promise<NotificationSettings> => {
-  const res = await request('/notification-settings', { method: 'PUT', headers: jsonHeaders, body: JSON.stringify(body) })
+export const updateNotificationSettings = async (body: {
+  alertEmailTo?: string | null
+  slackWebhookUrl?: string | null
+}): Promise<NotificationSettings> => {
+  const res = await request('/notification-settings', {
+    method: 'PUT',
+    headers: jsonHeaders,
+    body: JSON.stringify(body),
+  })
   return res.json() as Promise<NotificationSettings>
 }
 
@@ -359,7 +376,7 @@ export interface SpendVendor {
   id: string
   key: string
   displayName: string
-  provider: string | null      // null for vendors with no token estimate
+  provider: string | null // null for vendors with no token estimate
   defaultCategoryId: string | null
   archivedAt: string | null
 }
@@ -369,16 +386,16 @@ export interface SpendVendor {
 // wire value is 'manual' / 'csv' / 'portal', matching how Provider already lower-cases
 // ('anthropic' etc. above), not the PascalCase SpendSource member names.
 export const SPEND_SOURCE_VALUES = ['manual', 'csv', 'portal', 'api'] as const
-export type SpendSourceValue = typeof SPEND_SOURCE_VALUES[number]
+export type SpendSourceValue = (typeof SPEND_SOURCE_VALUES)[number]
 
 export interface SpendEntry {
   id: string
-  occurredOn: string           // ISO date yyyy-MM-dd
+  occurredOn: string // ISO date yyyy-MM-dd
   vendorId: string
   categoryId: string
-  amount: number               // as charged; signed — negative is a refund/credit
+  amount: number // as charged; signed — negative is a refund/credit
   currency: string
-  amountGbp: number            // frozen at write, signed — sum this, never `amount`
+  amountGbp: number // frozen at write, signed — sum this, never `amount`
   fxRate: number
   description: string | null
   source: SpendSourceValue
@@ -406,10 +423,14 @@ export interface NewSpendEntry {
 // includeArchived defaults to false server-side; pass true so a historical row whose
 // category/vendor has since been archived can still resolve a display name (spec §8).
 export const getSpendCategories = (includeArchived = false) =>
-  getJson<SpendCategory[]>('/spend/categories', { includeArchived: includeArchived ? 'true' : undefined })
+  getJson<SpendCategory[]>('/spend/categories', {
+    includeArchived: includeArchived ? 'true' : undefined,
+  })
 
 export const getSpendVendors = (includeArchived = false) =>
-  getJson<SpendVendor[]>('/spend/vendors', { includeArchived: includeArchived ? 'true' : undefined })
+  getJson<SpendVendor[]>('/spend/vendors', {
+    includeArchived: includeArchived ? 'true' : undefined,
+  })
 
 export interface NewSpendCategory {
   key: string
@@ -427,12 +448,23 @@ export interface SpendCategoryPatch {
 }
 
 export const createSpendCategory = async (body: NewSpendCategory): Promise<SpendCategory> => {
-  const res = await request('/spend/categories', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(body) })
+  const res = await request('/spend/categories', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify(body),
+  })
   return res.json() as Promise<SpendCategory>
 }
 
-export const patchSpendCategory = async (id: string, body: SpendCategoryPatch): Promise<SpendCategory> => {
-  const res = await request(`/spend/categories/${id}`, { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify(body) })
+export const patchSpendCategory = async (
+  id: string,
+  body: SpendCategoryPatch,
+): Promise<SpendCategory> => {
+  const res = await request(`/spend/categories/${id}`, {
+    method: 'PATCH',
+    headers: jsonHeaders,
+    body: JSON.stringify(body),
+  })
   return res.json() as Promise<SpendCategory>
 }
 
@@ -456,12 +488,23 @@ export interface SpendVendorPatch {
 }
 
 export const createSpendVendor = async (body: NewSpendVendor): Promise<SpendVendor> => {
-  const res = await request('/spend/vendors', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(body) })
+  const res = await request('/spend/vendors', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify(body),
+  })
   return res.json() as Promise<SpendVendor>
 }
 
-export const patchSpendVendor = async (id: string, body: SpendVendorPatch): Promise<SpendVendor> => {
-  const res = await request(`/spend/vendors/${id}`, { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify(body) })
+export const patchSpendVendor = async (
+  id: string,
+  body: SpendVendorPatch,
+): Promise<SpendVendor> => {
+  const res = await request(`/spend/vendors/${id}`, {
+    method: 'PATCH',
+    headers: jsonHeaders,
+    body: JSON.stringify(body),
+  })
   return res.json() as Promise<SpendVendor>
 }
 
@@ -480,8 +523,12 @@ export interface BilledReporting {
   categorySeries: { categoryId: string; name: string; amountGbp: number }[]
 }
 
-export const getBilledReporting = (from: string, to: string, vendorId?: string, categoryId?: string) =>
-  getJson<BilledReporting>('/spend/reporting', { from, to, vendorId, categoryId })
+export const getBilledReporting = (
+  from: string,
+  to: string,
+  vendorId?: string,
+  categoryId?: string,
+) => getJson<BilledReporting>('/spend/reporting', { from, to, vendorId, categoryId })
 
 /** Always an array — the manual form sends one. */
 export const postSpendEntries = async (entries: NewSpendEntry[]): Promise<SpendEntryResult[]> => {

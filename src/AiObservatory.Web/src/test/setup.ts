@@ -8,7 +8,9 @@ import '@testing-library/jest-dom/vitest'
 // with their own afterEach(cleanup) are unaffected.
 import { afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
-afterEach(() => { cleanup() })
+afterEach(() => {
+  cleanup()
+})
 
 // Add project-specific test-environment shims below. Common ones:
 //   - vi.stubEnv('VITE_SOME_FLAG', 'false')  // pin dev-only flags off under test
@@ -21,7 +23,9 @@ afterEach(() => { cleanup() })
 // which is overkill for patching a browser API jsdom doesn't implement.
 if (!HTMLDialogElement.prototype.showModal) {
   // eslint-disable-next-line sonarjs/class-prototype
-  HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) { this.open = true }
+  HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+    this.open = true
+  }
 }
 if (!HTMLDialogElement.prototype.close) {
   // eslint-disable-next-line sonarjs/class-prototype

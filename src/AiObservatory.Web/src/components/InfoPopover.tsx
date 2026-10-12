@@ -36,7 +36,7 @@ export function InfoPopover({ id, title, children, className }: Props) {
         aria-label={title}
         aria-expanded={open}
         aria-controls={open ? id : undefined}
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen((o) => !o)}
       >
         i
       </button>

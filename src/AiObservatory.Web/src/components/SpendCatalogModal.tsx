@@ -25,14 +25,20 @@ export default function SpendCatalogModal({ categories, vendors, onClose }: Prop
 
   return (
     <dialog
-      ref={el => { if (el && !el.open) el.showModal() }}
+      ref={(el) => {
+        if (el && !el.open) el.showModal()
+      }}
       className="modal"
       aria-labelledby="spend-catalog-modal-title"
       onClose={onClose}
     >
       <div className="modal__header">
-        <span id="spend-catalog-modal-title" className="modal__title">Manage spend catalog</span>
-        <button type="button" className="modal__close" onClick={onClose} aria-label="Close">×</button>
+        <span id="spend-catalog-modal-title" className="modal__title">
+          Manage spend catalog
+        </span>
+        <button type="button" className="modal__close" onClick={onClose} aria-label="Close">
+          ×
+        </button>
       </div>
 
       <div className="modal__body">
@@ -61,17 +67,19 @@ export default function SpendCatalogModal({ categories, vendors, onClose }: Prop
           </button>
         </div>
 
-        {tab === 'categories'
-          ? (
-            <div role="tabpanel" id="catalog-panel-categories" aria-labelledby="catalog-tab-categories">
-              <SpendCategoryCatalog categories={categories} />
-            </div>
-          )
-          : (
-            <div role="tabpanel" id="catalog-panel-vendors" aria-labelledby="catalog-tab-vendors">
-              <SpendVendorCatalog vendors={vendors} categories={categories} />
-            </div>
-          )}
+        {tab === 'categories' ? (
+          <div
+            role="tabpanel"
+            id="catalog-panel-categories"
+            aria-labelledby="catalog-tab-categories"
+          >
+            <SpendCategoryCatalog categories={categories} />
+          </div>
+        ) : (
+          <div role="tabpanel" id="catalog-panel-vendors" aria-labelledby="catalog-tab-vendors">
+            <SpendVendorCatalog vendors={vendors} categories={categories} />
+          </div>
+        )}
       </div>
     </dialog>
   )

@@ -8,7 +8,7 @@ test('collapsed by default when no localStorage entry', () => {
   render(
     <CollapsiblePanel id="test" title="Test panel">
       <p>body content</p>
-    </CollapsiblePanel>
+    </CollapsiblePanel>,
   )
   expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false')
 })
@@ -18,7 +18,7 @@ test('expanded when localStorage has true', () => {
   render(
     <CollapsiblePanel id="test" title="Test panel">
       <p>body content</p>
-    </CollapsiblePanel>
+    </CollapsiblePanel>,
   )
   expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'true')
 })
@@ -27,7 +27,7 @@ test('click toggles open state and writes localStorage', () => {
   render(
     <CollapsiblePanel id="test" title="Test panel">
       <p>body content</p>
-    </CollapsiblePanel>
+    </CollapsiblePanel>,
   )
   const btn = screen.getByRole('button')
   fireEvent.click(btn)
@@ -59,7 +59,7 @@ test('aria-controls points to body element id', () => {
   render(
     <CollapsiblePanel id="test" title="Test panel">
       <p>body content</p>
-    </CollapsiblePanel>
+    </CollapsiblePanel>,
   )
   expect(screen.getByRole('button')).toHaveAttribute('aria-controls', 'panel-test-body')
   expect(document.getElementById('panel-test-body')).toBeInTheDocument()
@@ -69,7 +69,7 @@ test('summary shown in header when provided', () => {
   render(
     <CollapsiblePanel id="test" title="Test panel" summary="5 sessions · £20 saved">
       <p>body content</p>
-    </CollapsiblePanel>
+    </CollapsiblePanel>,
   )
   expect(screen.getByText('5 sessions · £20 saved')).toBeInTheDocument()
 })
@@ -78,7 +78,7 @@ test('no summary span rendered when summary prop omitted', () => {
   render(
     <CollapsiblePanel id="test" title="Test panel">
       <p>body content</p>
-    </CollapsiblePanel>
+    </CollapsiblePanel>,
   )
   expect(screen.getByRole('button').querySelector('.collapsible-panel__summary')).toBeNull()
 })
@@ -87,7 +87,7 @@ test('body is hidden and inert when collapsed, then exposed when expanded', () =
   render(
     <CollapsiblePanel id="test" title="Test panel">
       <p>body content</p>
-    </CollapsiblePanel>
+    </CollapsiblePanel>,
   )
   const body = document.getElementById('panel-test-body')!
   expect(body).toHaveAttribute('aria-hidden', 'true')

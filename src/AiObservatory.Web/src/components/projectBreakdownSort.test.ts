@@ -9,8 +9,9 @@ const projects: ProjectActivity[] = [
 ]
 
 test('filterProjects matches case-insensitively', () => {
-  expect(filterProjects(projects, 'FIXPORTAL').map(p => p.project)).toEqual([
-    'fixportal-ai-observatory', 'fixportal-quickfixn',
+  expect(filterProjects(projects, 'FIXPORTAL').map((p) => p.project)).toEqual([
+    'fixportal-ai-observatory',
+    'fixportal-quickfixn',
   ])
 })
 
@@ -24,17 +25,29 @@ test('filterProjects with no matches returns empty array', () => {
 
 test('sortProjects by project name ascending', () => {
   const sorted = sortProjects(projects, 'project', 'asc')
-  expect(sorted.map(p => p.project)).toEqual(['fixportal-ai-observatory', 'fixportal-quickfixn', 'Training'])
+  expect(sorted.map((p) => p.project)).toEqual([
+    'fixportal-ai-observatory',
+    'fixportal-quickfixn',
+    'Training',
+  ])
 })
 
 test('sortProjects by activeSeconds descending', () => {
   const sorted = sortProjects(projects, 'activeSeconds', 'desc')
-  expect(sorted.map(p => p.project)).toEqual(['fixportal-ai-observatory', 'fixportal-quickfixn', 'Training'])
+  expect(sorted.map((p) => p.project)).toEqual([
+    'fixportal-ai-observatory',
+    'fixportal-quickfixn',
+    'Training',
+  ])
 })
 
 test('sortProjects by sessions ascending', () => {
   const sorted = sortProjects(projects, 'sessions', 'asc')
-  expect(sorted.map(p => p.project)).toEqual(['Training', 'fixportal-quickfixn', 'fixportal-ai-observatory'])
+  expect(sorted.map((p) => p.project)).toEqual([
+    'Training',
+    'fixportal-quickfixn',
+    'fixportal-ai-observatory',
+  ])
 })
 
 test('sortProjects does not mutate the input array', () => {
