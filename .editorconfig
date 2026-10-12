@@ -1,4 +1,4 @@
-# Thin formatter configuration. Analyzer/style rules come from the vendored global config;
+# Thin formatter configuration. Analyzer/style rules come from FixPortal.CodeStyle;
 # only documented project-specific exceptions belong below.
 
 root = true
@@ -31,7 +31,7 @@ indent_style = space
 tab_width = 4
 max_line_length = 120
 
-# Roslyn formatter compatibility. The vendored global config owns these values, but
+# Roslyn formatter compatibility. The package global config owns these values, but
 # dotnet format needs them in a hierarchical .editorconfig to activate its fixers.
 csharp_prefer_braces = true:error
 dotnet_style_predefined_type_for_locals_parameters_members = true:error

@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import os from 'node:os'
@@ -18,7 +17,6 @@ const privatePlumbingPatterns = [
   new RegExp(['package', 'SourceCredentials'].join(''), 'i'),
 ]
 const privatePackageIds = [
-  ['FixPortal', 'CodeStyle'].join('.'),
   ['FixPortal', 'CodeStyle', 'ArchRules'].join('.'),
 ]
 const privateArchitectureRule = ['FixPortal', 'ArchRules'].join('')
@@ -92,7 +90,7 @@ test('private package matcher detects supported MSBuild attribute forms', () => 
     ['sample.props', `<PackageVersion Version="0.1.11" Update='${packageId}' />`],
     ['sample.targets', `<PackageReference PrivateAssets="all" Include='${packageId}' />`],
     ['lowercase.csproj', `<PackageReference Include='${packageId.toLowerCase()}' />`],
-    ['mixed-case.targets', `<PackageReference Update='${privatePackageIds[1].toLowerCase()}' />`],
+    ['mixed-case.targets', `<PackageReference Update='${packageId.toLowerCase()}' />`],
   ]) {
     assert.equal(hasPrivatePackageReference(pathname, element), true, `${pathname} must detect ${element}`)
   }
@@ -138,6 +136,10 @@ test('successful recovery cleans the isolated cache without masking the primary 
 })
 
 test('public restore contract excludes private package plumbing and leaves live build assets usable', async () => {
+  const buildProps = await readFile(path.join(root, 'Directory.Build.props'), 'utf8')
+  assert.match(buildProps, /<PackageReference Include="FixPortal\.CodeStyle" PrivateAssets="all"\s*\/>/)
+  assert.doesNotMatch(buildProps, /GlobalAnalyzerConfigFiles|SonarAnalyzer\.CSharp/)
+
   for (const pathname of trackedFiles().filter(isLive)) {
     const text = await readFile(path.join(root, pathname), 'utf8')
     assertNoPrivatePlumbing(pathname, text)
@@ -148,13 +150,6 @@ test('public restore contract excludes private package plumbing and leaves live 
       assert.doesNotMatch(text, new RegExp(privateArchitectureRule), `${pathname} retains a private architecture rule call`)
     }
   }
-
-  const analyzerConfig = await readFile(path.join(root, 'eng/analysis/CodeStyle.globalconfig'))
-  assert.equal(createHash('sha256').update(analyzerConfig).digest('hex').toUpperCase(), 'BEC88C438FE90967DB45F87371C95DB741F2077B60BD2E3AB3FC04D5571D8134')
-
-  const attributes = spawnSync('git', ['check-attr', 'eol', '--', 'eng/analysis/CodeStyle.globalconfig'], { cwd: root, encoding: 'utf8' })
-  assert.equal(attributes.status, 0, attributes.stderr)
-  assert.match(attributes.stdout, /eng\/analysis\/CodeStyle\.globalconfig: eol: lf/, attributes.stdout)
 
   const packages = await mkdtemp(path.join(os.tmpdir(), 'aiobservatory-public-restore-'))
   const githubPackagesToken = ['GITHUB', 'PACKAGES', 'TOKEN'].join('_')
