@@ -97,7 +97,7 @@ export async function getAccessToken(): Promise<string | null> {
 // Self-host mode: set VITE_API_KEY to authenticate the UI with the API key instead
 // of Entra. AuthGate is a no-op (no sign-in screen); the key is injected as
 // X-Observatory-Key on every request. Takes no effect when authEnabled is true.
-export const apiKey = import.meta.env['VITE_API_KEY'] ?? ''
+export const apiKey = import.meta.env.VITE_API_KEY ?? ''
 
 // Viewer-key share link: ?key=<value> in the URL grants read-only access without
 // Entra sign-in. Persist to sessionStorage so a reload / tab-restore — which re-evaluates
@@ -135,6 +135,7 @@ export const urlApiKey = readViewerKey()
 // Strip the key from the visible URL once captured so it does not linger in the
 // address bar, browser history, or any Referer header. The value is already held
 // in urlApiKey (and sessionStorage) for the session.
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- window.history.replaceState is missing in some embedded webviews and test environments even though the DOM types say it is always present
 if ((urlApiKey || isEmbedded) && typeof window.history?.replaceState === 'function') {
   const stripped = new URL(window.location.href)
   if (stripped.searchParams.has('key')) {

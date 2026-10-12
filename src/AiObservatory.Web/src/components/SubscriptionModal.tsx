@@ -129,7 +129,7 @@ export function SubscriptionModal({ open, onClose }: Props) {
   const addMutation = useMutation({
     mutationFn: createSubscription,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['subscriptions'] })
+      void qc.invalidateQueries({ queryKey: ['subscriptions'] })
       dispatch({ type: 'CLOSE' })
     },
     onError: () => {
@@ -141,7 +141,7 @@ export function SubscriptionModal({ open, onClose }: Props) {
     mutationFn: ({ id, body }: { id: string; body: Omit<Subscription, 'id'> }) =>
       updateSubscription(id, body),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['subscriptions'] })
+      void qc.invalidateQueries({ queryKey: ['subscriptions'] })
       dispatch({ type: 'CLOSE' })
     },
     onError: () => {
@@ -152,7 +152,7 @@ export function SubscriptionModal({ open, onClose }: Props) {
   const deleteMutation = useMutation({
     mutationFn: deleteSubscription,
     onSuccess: (_, id) => {
-      qc.invalidateQueries({ queryKey: ['subscriptions'] })
+      void qc.invalidateQueries({ queryKey: ['subscriptions'] })
       dispatch({ type: 'ON_DELETE', id })
     },
     onError: () => {

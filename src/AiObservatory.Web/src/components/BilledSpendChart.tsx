@@ -1,3 +1,4 @@
+import { chartLabel } from '../lib/chartLabel'
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { ValueType } from 'recharts/types/component/DefaultTooltipContent'
 import { gbp } from '../lib/currency'
@@ -40,7 +41,8 @@ export function BilledSpendChart({
             dataKey={comparison ? 'slot' : 'date'}
             tickFormatter={
               comparison
-                ? (value: number) => `${comparison.grain === 'day' ? 'Day' : 'Week'} ${value}`
+                ? (value: number) =>
+                    `${comparison.grain === 'day' ? 'Day' : 'Week'} ${chartLabel(value)}`
                 : formatShortDate
             }
             tick={{ fontSize: 10, fill: TEXT_MUTED }}
@@ -60,8 +62,8 @@ export function BilledSpendChart({
             itemStyle={{ color: TEXT_MUTED }}
             labelFormatter={(value) =>
               comparison
-                ? `${comparison.grain === 'day' ? 'Day' : 'Week'} ${value}`
-                : formatShortDate(String(value ?? ''))
+                ? `${comparison.grain === 'day' ? 'Day' : 'Week'} ${chartLabel(value)}`
+                : formatShortDate(chartLabel(value))
             }
             formatter={(value: ValueType | undefined) =>
               gbp(Number(Array.isArray(value) ? value[0] : (value ?? 0)))

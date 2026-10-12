@@ -1,3 +1,4 @@
+import { systemClock } from '../lib/clock'
 import type { SourceStatusResponse } from '../api/client'
 import { useSourceStatuses } from '../api/queries'
 import {
@@ -62,7 +63,7 @@ export interface LastSuccessDisplay {
 
 export function formatLastSuccess(
   value: string | null,
-  now = new Date(),
+  now = systemClock.now(),
 ): LastSuccessDisplay | null {
   if (!value) return null
   const date = new Date(value)

@@ -1,3 +1,4 @@
+import { systemClock } from './clock'
 import { useState, useCallback } from 'react'
 
 export type DateRangePreset = 7 | 31 | 90 | 'thisMonth' | 'lastMonth' | 'thisQuarter'
@@ -9,7 +10,7 @@ interface Range {
 
 export const AGGREGATES_DAYS_RANGE = 31
 
-export const dashboardDateRange = (to = new Date()): Range => ({
+export const dashboardDateRange = (to = systemClock.now()): Range => ({
   from: shiftDays(to, -(AGGREGATES_DAYS_RANGE - 1)),
   to: new Date(to),
 })
@@ -23,7 +24,7 @@ function shiftDays(date: Date, days: number) {
   return shifted
 }
 
-function presetRange(preset: DateRangePreset, now = new Date()): Range {
+function presetRange(preset: DateRangePreset, now = systemClock.now()): Range {
   if (preset === 'thisMonth') {
     return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: new Date(now) }
   }

@@ -114,7 +114,7 @@ describe('SpendVendorCatalog', () => {
     renderPanel()
     // Exact label: the per-row pickers below are labelled "Default category for <vendor>",
     // so a loose regex would now match several selects.
-    const select = screen.getByLabelText('Default category') as HTMLSelectElement
+    const select = screen.getByLabelText<HTMLSelectElement>('Default category')
     const optionLabels = Array.from(select.options).map((o) => o.textContent)
     expect(optionLabels).toContain('Compute')
     expect(optionLabels).not.toContain('Legacy')
@@ -145,7 +145,7 @@ describe('SpendVendorCatalog', () => {
     const patch = vi.spyOn(client, 'patchSpendVendor')
     renderPanel()
 
-    const select = screen.getByLabelText('Default category for Anthropic') as HTMLSelectElement
+    const select = screen.getByLabelText<HTMLSelectElement>('Default category for Anthropic')
     fireEvent.change(select, { target: { value: '' } })
     const row = screen.getByText('anthropic').closest('li')!
     fireEvent.click(within(row).getByRole('button', { name: /^cancel$/i }))
@@ -158,7 +158,7 @@ describe('SpendVendorCatalog', () => {
     const patch = vi.spyOn(client, 'patchSpendVendor')
     renderPanel()
 
-    const select = screen.getByLabelText('Default category for Anthropic') as HTMLSelectElement
+    const select = screen.getByLabelText<HTMLSelectElement>('Default category for Anthropic')
     fireEvent.change(select, { target: { value: '' } })
     fireEvent.change(select, { target: { value: 'k1' } })
 
@@ -187,7 +187,7 @@ describe('SpendVendorCatalog', () => {
       </QueryClientProvider>,
     )
 
-    const select = screen.getByLabelText('Default category for Legacy Vendor') as HTMLSelectElement
+    const select = screen.getByLabelText<HTMLSelectElement>('Default category for Legacy Vendor')
     // Without the archived option present the browser falls back to the first option,
     // silently reporting "No default category" for a vendor that has one.
     expect(select.value).toBe('k2')

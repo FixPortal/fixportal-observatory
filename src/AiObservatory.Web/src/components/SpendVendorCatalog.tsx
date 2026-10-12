@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState, type SyntheticEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   createSpendVendor,
@@ -68,7 +68,7 @@ export function SpendVendorCatalog({ vendors, categories }: Props) {
   const create = useMutation({
     mutationFn: (body: NewSpendVendor) => createSpendVendor(body),
     onSuccess: () => {
-      invalidate()
+      void invalidate()
       setForm(EMPTY_FORM)
     },
     onError: (err: Error) => {
@@ -80,7 +80,7 @@ export function SpendVendorCatalog({ vendors, categories }: Props) {
     mutationFn: ({ id, body }: { id: string; body: Parameters<typeof patchSpendVendor>[1] }) =>
       patchSpendVendor(id, body),
     onSuccess: () => {
-      invalidate()
+      void invalidate()
       setRenamingId(null)
       setCategoryDraft(null)
     },
@@ -89,7 +89,7 @@ export function SpendVendorCatalog({ vendors, categories }: Props) {
     },
   })
 
-  function submitCreate(e: FormEvent) {
+  function submitCreate(e: SyntheticEvent) {
     e.preventDefault()
     setFormError(null)
     if (!form.key.trim() || !form.displayName.trim()) {

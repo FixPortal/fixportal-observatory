@@ -45,7 +45,7 @@ function InsightRow({ insight }: { insight: Insight }) {
     onSuccess: (data) => {
       setExplainError(false)
       setExplanation(data.explanation)
-      qc.invalidateQueries({ queryKey: ['insights'] })
+      void qc.invalidateQueries({ queryKey: ['insights'] })
     },
     onError: () => {
       setExplainError(true)

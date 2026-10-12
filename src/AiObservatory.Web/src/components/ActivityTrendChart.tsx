@@ -1,3 +1,4 @@
+import { chartLabel } from '../lib/chartLabel'
 import { lazy, Suspense, useMemo } from 'react'
 import type { ValueType } from 'recharts/types/component/DefaultTooltipContent'
 import { useActivityDaily } from '../api/queries'
@@ -48,8 +49,8 @@ const ChartInner = lazy(() =>
                 itemStyle={{ color: TEXT_MUTED }}
                 labelFormatter={(label) =>
                   comparison
-                    ? `${comparison.grain === 'day' ? 'Day' : 'Week'} ${label}`
-                    : formatShortDate(String(label ?? ''))
+                    ? `${comparison.grain === 'day' ? 'Day' : 'Week'} ${chartLabel(label)}`
+                    : formatShortDate(chartLabel(label))
                 }
                 formatter={(v: ValueType | undefined) =>
                   formatActiveTime(Number(Array.isArray(v) ? v[0] : (v ?? 0)) * 60)

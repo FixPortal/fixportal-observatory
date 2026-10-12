@@ -1,3 +1,4 @@
+import { useClock } from '../lib/useClock'
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -23,11 +24,12 @@ export function SpendEntryModal({ categories, vendors, from, to, onClose }: Prop
   const minDate = localDate(from)
   const maxDate = localDate(to)
   const qc = useQueryClient()
+  const clock = useClock()
   // Clamped into [minDate, maxDate]: "today" can fall outside the mounted bounds if the
   // dashboard is left open past midnight, and an untouched form must still be valid --
   // see the range check in handleSave, which this clamp is not a substitute for.
   const [occurredOn, setOccurredOn] = useState(() => {
-    const today = localDate(new Date())
+    const today = localDate(clock.now())
     return today < minDate ? minDate : today > maxDate ? maxDate : today
   })
   const [vendorId, setVendorId] = useState(vendors[0]?.id ?? '')

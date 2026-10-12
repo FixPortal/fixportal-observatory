@@ -52,9 +52,11 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
 // detail/title picked out rather than stringified wholesale.
 async function readErrorMessage(res: Response, path: string, method: string): Promise<string> {
   const generic = `${method} ${path} failed: ${res.status}`
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- test doubles pass partial Response objects without text(), so the method is checked at runtime
   const bodyText = res.text ? await res.text().catch(() => '') : ''
   if (!bodyText) return generic
 
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- test doubles pass partial Response objects without headers, so they are checked at runtime
   const contentType = res.headers?.get?.('content-type') ?? ''
   if (!contentType.includes('json')) return bodyText
 
@@ -72,10 +74,16 @@ async function readErrorMessage(res: Response, path: string, method: string): Pr
 }
 
 export type SourceKind =
-  'providerApi' | 'localTelemetry' | 'manual' | 'synthetic' | 'legacy' | string
-export type UsageScope = 'api' | 'subscription' | 'mixed' | 'unknown' | string
+  'providerApi' | 'localTelemetry' | 'manual' | 'synthetic' | 'legacy' | (string & {})
+export type UsageScope = 'api' | 'subscription' | 'mixed' | 'unknown' | (string & {})
 export type CostBasis =
-  'billed' | 'providerEstimated' | 'listPriceEstimate' | 'notional' | 'none' | 'unknown' | string
+  | 'billed'
+  | 'providerEstimated'
+  | 'listPriceEstimate'
+  | 'notional'
+  | 'none'
+  | 'unknown'
+  | (string & {})
 
 export interface DailyAggregate {
   date: string
@@ -137,7 +145,8 @@ export const getInsights = () => getJson<Insight[]>('/insights')
 
 export interface SourceStatusResponse {
   sourceId: string
-  status: 'configured' | 'fresh' | 'stale' | 'failing' | 'unavailable' | 'notConfigured' | string
+  status:
+    'configured' | 'fresh' | 'stale' | 'failing' | 'unavailable' | 'notConfigured' | (string & {})
   isConfigured: boolean
   lastAttemptAt: string | null
   lastSuccessAt: string | null
