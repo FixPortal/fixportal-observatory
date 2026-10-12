@@ -30,7 +30,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [mode, systemResolved])
 
   useEffect(() => {
-    document.documentElement.dataset.theme = resolved
+    document.documentElement.dataset['theme'] = resolved
   }, [resolved])
 
   useEffect(() => {

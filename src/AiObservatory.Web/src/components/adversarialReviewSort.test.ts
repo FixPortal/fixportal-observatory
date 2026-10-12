@@ -29,7 +29,7 @@ describe('filterStats', () => {
       'GEMINI',
     )
     expect(result).toHaveLength(1)
-    expect(result[0].reviewer).toBe('google')
+    expect(result[0]!.reviewer).toBe('google')
   })
 
   it('returns everything when query is blank', () => {
@@ -42,7 +42,7 @@ describe('sortStats', () => {
     const cheap = stat({ reviewer: 'a', avgCostPerRun: 0.1 })
     const pricey = stat({ reviewer: 'b', avgCostPerRun: 5 })
     const result = sortStats([pricey, cheap], 'avgCostPerRun', 'asc')
-    expect(result[0].reviewer).toBe('a')
+    expect(result[0]!.reviewer).toBe('a')
   })
 
   it('sorts missing avgCostPerAcceptedFinding last in both directions', () => {
@@ -96,7 +96,7 @@ describe('filterRunGroups', () => {
       'BETA',
     )
     expect(result).toHaveLength(1)
-    expect(result[0].runId).toBe('R2')
+    expect(result[0]!.runId).toBe('R2')
   })
 })
 
@@ -140,7 +140,7 @@ describe('sortRunGroups', () => {
   it('sorts by recordedAt descending by default direction', () => {
     const older = group({ runId: 'R1', recordedAt: '2026-07-01T09:00:00Z' })
     const newer = group({ runId: 'R2', recordedAt: '2026-07-02T09:00:00Z' })
-    expect(sortRunGroups([older, newer], 'recordedAt', 'desc')[0].runId).toBe('R2')
+    expect(sortRunGroups([older, newer], 'recordedAt', 'desc')[0]!.runId).toBe('R2')
   })
 
   it('sorts by total cost', () => {
@@ -152,12 +152,12 @@ describe('sortRunGroups', () => {
       runId: 'R2',
       totals: { raised: 1, accepted: 1, costUsd: 5, durationMs: 1000 },
     })
-    expect(sortRunGroups([cheap, pricey], 'costUsd', 'desc')[0].runId).toBe('R2')
+    expect(sortRunGroups([cheap, pricey], 'costUsd', 'desc')[0]!.runId).toBe('R2')
   })
 
   it('treats a null repo as sorting first', () => {
     const noRepo = group({ runId: 'R1', repo: null })
     const withRepo = group({ runId: 'R2', repo: 'fix-portal/example' })
-    expect(sortRunGroups([withRepo, noRepo], 'repo', 'asc')[0].runId).toBe('R1')
+    expect(sortRunGroups([withRepo, noRepo], 'repo', 'asc')[0]!.runId).toBe('R1')
   })
 })

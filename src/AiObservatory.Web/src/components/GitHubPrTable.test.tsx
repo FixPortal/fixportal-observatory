@@ -62,7 +62,7 @@ describe('GitHubPrTable', () => {
     const mergedRow = screen.getByText(/Fix bug/).closest('tr')!
     const openRow = screen.getByText(/Add feature/).closest('tr')!
     expect(within(mergedRow).getAllByRole('cell')[5]).toHaveTextContent(
-      new Date(prs[1].mergedAt!).toLocaleDateString(),
+      new Date(prs[1]!.mergedAt!).toLocaleDateString(),
     )
     expect(within(openRow).getAllByRole('cell')[5]).toHaveTextContent('—')
   })

@@ -4,7 +4,7 @@ import type { BilledReporting } from '../api/client'
 
 interface Props {
   report: BilledReporting | undefined
-  comparisonReport?: BilledReporting
+  comparisonReport?: BilledReporting | undefined
   comparisonLabel?: string
 }
 

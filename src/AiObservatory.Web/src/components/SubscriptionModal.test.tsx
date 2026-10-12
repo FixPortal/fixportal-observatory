@@ -32,6 +32,6 @@ describe('SubscriptionModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(create).toHaveBeenCalledOnce())
-    expect(create.mock.calls[0][0]).toMatchObject({ billingInterval: 'annual', billingMonth: 7 })
+    expect(create.mock.calls[0]![0]).toMatchObject({ billingInterval: 'annual', billingMonth: 7 })
   })
 })

@@ -6,8 +6,8 @@ const PROJECT_URL = 'https://github.com/FixPortal/fixportal-observatory'
 // project's maintainer in its footer, so both halves are opt-in: set VITE_ATTRIBUTION_NAME and
 // VITE_ATTRIBUTION_URL to credit whoever runs the instance, or leave them unset and the footer
 // shows only the project link. The FixPortal deployment sets them.
-const ATTRIBUTION_NAME = import.meta.env.VITE_ATTRIBUTION_NAME as string | undefined
-const ATTRIBUTION_URL = import.meta.env.VITE_ATTRIBUTION_URL as string | undefined
+const ATTRIBUTION_NAME = import.meta.env['VITE_ATTRIBUTION_NAME'] as string | undefined
+const ATTRIBUTION_URL = import.meta.env['VITE_ATTRIBUTION_URL'] as string | undefined
 
 export default function Footer() {
   const attributed = Boolean(ATTRIBUTION_NAME && ATTRIBUTION_URL)

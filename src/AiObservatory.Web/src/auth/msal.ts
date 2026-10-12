@@ -11,9 +11,9 @@ import {
 } from '@azure/msal-browser'
 import { windowWebViewPort } from '../ide/partnerBridge'
 
-const clientId = import.meta.env.VITE_AAD_CLIENT_ID ?? ''
-const tenantId = import.meta.env.VITE_AAD_TENANT_ID ?? ''
-const apiScope = import.meta.env.VITE_AAD_API_SCOPE ?? ''
+const clientId = import.meta.env['VITE_AAD_CLIENT_ID'] ?? ''
+const tenantId = import.meta.env['VITE_AAD_TENANT_ID'] ?? ''
+const apiScope = import.meta.env['VITE_AAD_API_SCOPE'] ?? ''
 
 export const authEnabled = clientId.length > 0
 
@@ -98,7 +98,7 @@ export async function getAccessToken(): Promise<string | null> {
 // Self-host mode: set VITE_API_KEY to authenticate the UI with the API key instead
 // of Entra. AuthGate is a no-op (no sign-in screen); the key is injected as
 // X-Observatory-Key on every request. Takes no effect when authEnabled is true.
-export const apiKey = import.meta.env.VITE_API_KEY ?? ''
+export const apiKey = import.meta.env['VITE_API_KEY'] ?? ''
 
 // Viewer-key share link: ?key=<value> in the URL grants read-only access without
 // Entra sign-in. Persist to sessionStorage so a reload / tab-restore — which re-evaluates
@@ -150,4 +150,4 @@ if ((urlApiKey || isEmbedded) && typeof window.history?.replaceState === 'functi
 // ?key= visitor holds; Entra and self-host keys never set urlApiKey.) A demo build
 // is also a viewer: it bakes the read-only key via VITE_API_KEY rather than a link,
 // so urlApiKey is empty there and the build flag is the signal.
-export const isReadonly = urlApiKey.length > 0 || import.meta.env.VITE_DEMO_BANNER === 'true'
+export const isReadonly = urlApiKey.length > 0 || import.meta.env['VITE_DEMO_BANNER'] === 'true'

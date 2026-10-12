@@ -98,7 +98,7 @@ describe('SpendCategoryCatalog', () => {
   it('archives a live category', async () => {
     const patch = vi
       .spyOn(client, 'patchSpendCategory')
-      .mockResolvedValue({ ...categories[0], archivedAt: '2026-07-26T00:00:00Z' })
+      .mockResolvedValue({ ...categories[0]!, archivedAt: '2026-07-26T00:00:00Z' })
     renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /^archive credits$/i }))
@@ -109,7 +109,7 @@ describe('SpendCategoryCatalog', () => {
   it('unarchives an archived category', async () => {
     const patch = vi
       .spyOn(client, 'patchSpendCategory')
-      .mockResolvedValue({ ...categories[1], archivedAt: null })
+      .mockResolvedValue({ ...categories[1]!, archivedAt: null })
     renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /^unarchive subscriptions$/i }))
@@ -120,7 +120,7 @@ describe('SpendCategoryCatalog', () => {
   it('renames a category via PATCH DisplayName', async () => {
     const patch = vi
       .spyOn(client, 'patchSpendCategory')
-      .mockResolvedValue({ ...categories[0], displayName: 'AI Credits' })
+      .mockResolvedValue({ ...categories[0]!, displayName: 'AI Credits' })
     renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /^rename credits$/i }))

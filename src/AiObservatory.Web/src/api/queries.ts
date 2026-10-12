@@ -81,7 +81,7 @@ export function useAggregates(
   } = useQuery({
     queryKey: ['aggregates', localDate(range.from), localDate(range.to)],
     queryFn: () => getAggregates(localDate(range.from), localDate(range.to)),
-    staleTime,
+    ...(staleTime === undefined ? {} : { staleTime }),
   })
   return { aggregates: data, isError, isLoading: isPending }
 }

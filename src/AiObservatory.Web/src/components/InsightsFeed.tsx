@@ -49,12 +49,13 @@ function InsightRow({ insight }: { insight: Insight }) {
   })
 
   const canExplain = EXPLAINABLE.has(insight.insightType)
+  const variant = INSIGHT_VARIANTS[insight.insightType]
 
   return (
     <div className={`insight insight-${insight.insightType}`}>
-      {INSIGHT_VARIANTS[insight.insightType] ? (
+      {variant ? (
         <StatusBadge
-          variant={INSIGHT_VARIANTS[insight.insightType]}
+          variant={variant}
           label={TYPE_LABELS[insight.insightType] ?? insight.insightType}
         />
       ) : (

@@ -63,18 +63,18 @@ export function windowWebViewPort(): WebViewPort | null {
 function readContext(value: unknown): HostContext | null {
   if (!value || typeof value !== 'object') return null
   const message = value as Record<string, unknown>
-  if (message.contractVersion !== '1.0' || message.kind !== 'host.context') return null
-  const payload = message.payload
+  if (message['contractVersion'] !== '1.0' || message['kind'] !== 'host.context') return null
+  const payload = message['payload']
   if (!payload || typeof payload !== 'object') return null
   const state = payload as Record<string, unknown>
-  const id = state.partnerId as { value?: unknown } | undefined
+  const id = state['partnerId'] as { value?: unknown } | undefined
   if (id?.value !== partnerId) return null
-  const context = state.context
+  const context = state['context']
   if (context === null) return { missionId: null, repository: null }
   if (!context || typeof context !== 'object') return null
   const fields = context as Record<string, unknown>
-  const mission = fields.missionId as { value?: unknown } | null | undefined
+  const mission = fields['missionId'] as { value?: unknown } | null | undefined
   const missionId = typeof mission?.value === 'string' ? mission.value : null
-  const repository = typeof fields.repository === 'string' ? fields.repository : null
+  const repository = typeof fields['repository'] === 'string' ? fields['repository'] : null
   return { missionId, repository }
 }

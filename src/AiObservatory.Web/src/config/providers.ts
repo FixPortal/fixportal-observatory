@@ -156,7 +156,7 @@ function readableSlug(value: string): string {
     .replace(/[-_|]+/g, ' ')
     .trim()
     .toLowerCase()
-  return words ? words[0].toUpperCase() + words.slice(1) : value
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : value
 }
 
 export function providerDisplayName(key: string): string {

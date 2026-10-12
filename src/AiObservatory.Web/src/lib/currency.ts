@@ -27,7 +27,7 @@ export function useUsdToGbp(): number {
   return data ?? FALLBACK_USD_TO_GBP
 }
 
-const formatters: Record<number, Intl.NumberFormat> = {
+const formatters: Record<2 | 3, Intl.NumberFormat> = {
   2: new Intl.NumberFormat('en-GB', {
     style: 'currency',
     currency: 'GBP',

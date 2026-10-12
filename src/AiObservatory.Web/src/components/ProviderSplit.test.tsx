@@ -73,9 +73,9 @@ test('builds notional and activity shares without blending cost bases', () => {
 })
 
 test('keeps arbitrary provider labels readable', () => {
-  expect(buildProviderSlices([aggregate({ provider: 'new-oss-provider' })], 'tokens')[0].name).toBe(
-    'New oss provider',
-  )
+  expect(
+    buildProviderSlices([aggregate({ provider: 'new-oss-provider' })], 'tokens')[0]!.name,
+  ).toBe('New oss provider')
 })
 
 test('uses native accessible toggles and reports zero selected totals truthfully', async () => {

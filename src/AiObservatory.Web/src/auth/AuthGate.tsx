@@ -21,8 +21,9 @@ function EntraGate({ children }: { children: ReactNode }) {
   const { instance, accounts, inProgress } = useMsal()
 
   useEffect(() => {
-    if (accounts.length > 0 && !instance.getActiveAccount()) {
-      instance.setActiveAccount(accounts[0])
+    const [firstAccount] = accounts
+    if (firstAccount !== undefined && !instance.getActiveAccount()) {
+      instance.setActiveAccount(firstAccount)
     }
   }, [accounts, instance])
 

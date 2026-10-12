@@ -59,10 +59,10 @@ describe('SpendEntryModal', () => {
     fireEvent.click(screen.getByRole('button', { name: /save/i }))
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
-    const [payload] = post.mock.calls[0]
+    const [payload] = post.mock.calls[0]!
     expect(payload).toHaveLength(1)
-    expect(payload[0].source).toBe('manual')
-    expect(payload[0].entryKey).toBeNull()
+    expect(payload[0]!.source).toBe('manual')
+    expect(payload[0]!.entryKey).toBeNull()
   })
 
   it('defaults to Charge and posts a positive amount', async () => {
@@ -77,7 +77,7 @@ describe('SpendEntryModal', () => {
     fireEvent.click(screen.getByRole('button', { name: /save/i }))
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
-    expect(post.mock.calls[0][0][0].amount).toBe(80)
+    expect(post.mock.calls[0]![0]![0]!.amount).toBe(80)
   })
 
   it('negates the amount when Refund is selected', async () => {
@@ -92,7 +92,7 @@ describe('SpendEntryModal', () => {
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
     // Signed amount is how a refund nets off the total — see SpendEntry.Amount.
-    expect(post.mock.calls[0][0][0].amount).toBeCloseTo(-286.16)
+    expect(post.mock.calls[0]![0]![0]!.amount).toBeCloseTo(-286.16)
   })
 
   it('refuses a typed negative amount — the toggle is the only way to book a refund', async () => {
@@ -168,7 +168,7 @@ describe('SpendEntryModal', () => {
       <QueryClientProvider client={qc}>
         <SpendEntryModal
           categories={categories}
-          vendors={[{ ...vendors[0], defaultCategoryId: 'archived-cat' }]}
+          vendors={[{ ...vendors[0]!, defaultCategoryId: 'archived-cat' }]}
           from={from}
           to={to}
           onClose={vi.fn()}
@@ -180,7 +180,7 @@ describe('SpendEntryModal', () => {
   })
 
   const twoCategories = [
-    categories[0],
+    categories[0]!,
     {
       id: 'c2',
       key: 'subscription',
@@ -191,7 +191,7 @@ describe('SpendEntryModal', () => {
     },
   ]
   const twoVendors = [
-    vendors[0],
+    vendors[0]!,
     {
       id: 'v2',
       key: 'openai',

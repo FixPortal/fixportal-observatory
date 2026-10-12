@@ -33,7 +33,8 @@ export function ThemeToggle({ value, onChange, variant = 'default' }: ThemeToggl
     e.preventDefault()
     const current = OPTIONS.findIndex((opt) => opt.value === value)
     const next = (current + delta + OPTIONS.length) % OPTIONS.length
-    onChange(OPTIONS[next].value)
+    const option = OPTIONS[next]
+    if (option !== undefined) onChange(option.value)
     const buttons = e.currentTarget.querySelectorAll('button')
     ;(buttons[next] as HTMLButtonElement | undefined)?.focus()
   }

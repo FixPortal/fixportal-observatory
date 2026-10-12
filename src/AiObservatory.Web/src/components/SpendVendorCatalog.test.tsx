@@ -123,7 +123,7 @@ describe('SpendVendorCatalog', () => {
   it('does not write a default-category change until the user saves it', async () => {
     const patch = vi
       .spyOn(client, 'patchSpendVendor')
-      .mockResolvedValue({ ...vendors[0], defaultCategoryId: null })
+      .mockResolvedValue({ ...vendors[0]!, defaultCategoryId: null })
     renderPanel()
 
     fireEvent.change(screen.getByLabelText('Default category for Anthropic'), {
@@ -258,7 +258,7 @@ describe('SpendVendorCatalog', () => {
   it('archives a live vendor', async () => {
     const patch = vi
       .spyOn(client, 'patchSpendVendor')
-      .mockResolvedValue({ ...vendors[0], archivedAt: '2026-07-26T00:00:00Z' })
+      .mockResolvedValue({ ...vendors[0]!, archivedAt: '2026-07-26T00:00:00Z' })
     renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /^archive anthropic$/i }))
@@ -269,7 +269,7 @@ describe('SpendVendorCatalog', () => {
   it('unarchives an archived vendor', async () => {
     const patch = vi
       .spyOn(client, 'patchSpendVendor')
-      .mockResolvedValue({ ...vendors[1], archivedAt: null })
+      .mockResolvedValue({ ...vendors[1]!, archivedAt: null })
     renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /^unarchive github actions$/i }))
@@ -280,7 +280,7 @@ describe('SpendVendorCatalog', () => {
   it('renames a vendor via PATCH DisplayName', async () => {
     const patch = vi
       .spyOn(client, 'patchSpendVendor')
-      .mockResolvedValue({ ...vendors[0], displayName: 'Anthropic Inc' })
+      .mockResolvedValue({ ...vendors[0]!, displayName: 'Anthropic Inc' })
     renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /^rename anthropic$/i }))

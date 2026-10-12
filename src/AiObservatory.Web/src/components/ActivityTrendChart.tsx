@@ -17,7 +17,7 @@ const ChartInner = lazy(() =>
         comparisonLabel,
       }: {
         byDate: Record<string, unknown>[]
-        comparison?: { grain: 'day' | 'week' }
+        comparison?: { grain: 'day' | 'week' } | undefined
         selectedLabel: string
         comparisonLabel: string
       }) {
