@@ -1,0 +1,4 @@
+# The web app predates the repo-wide 4-space baseline and is formatted with 2 spaces.
+[*]
+indent_size = 2
+tab_width = 2
