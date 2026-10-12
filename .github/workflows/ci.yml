@@ -130,6 +130,7 @@ jobs:
           cache-dependency-path: src/AiObservatory.Web/package-lock.json
 
       - run: npm ci
+      - run: npm run format
       - run: npm run lint
       - run: npm test -- --coverage
       - run: npm run build
