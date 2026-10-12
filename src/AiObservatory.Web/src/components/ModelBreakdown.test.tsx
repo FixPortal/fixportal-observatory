@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, test, vi } from 'vitest'
 import type { DailyAggregate } from '../api/client'
-import ModelBreakdown, { groupModelRows } from './ModelBreakdown'
+import { ModelBreakdown, groupModelRows } from './ModelBreakdown'
 
 const data = vi.hoisted(() => ({ aggregates: [] as DailyAggregate[] }))
 vi.mock('../api/queries', () => ({

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import GitHubCiTable from './GitHubCiTable'
+import { GitHubCiTable } from './GitHubCiTable'
 import type { GitHubCiSummary } from '../api/client'
 
 const ci: GitHubCiSummary[] = [

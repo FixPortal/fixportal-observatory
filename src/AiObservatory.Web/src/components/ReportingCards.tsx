@@ -15,7 +15,7 @@ const comparisonText = (current: number, previous: number, label: string) => {
     : `${gbp(Math.abs(delta))} ${delta > 0 ? 'higher' : 'lower'} vs ${label}`
 }
 
-export default function ReportingCards({
+export function ReportingCards({
   report,
   comparisonReport,
   comparisonLabel = 'previous period',

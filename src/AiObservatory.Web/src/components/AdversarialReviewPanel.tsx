@@ -27,8 +27,8 @@ import type {
   CompletenessFilter,
   ValidityFilter,
 } from './adversarialReviewSort'
-import GitHubSortableHeader from './GitHubSortableHeader'
-import SearchIcon from '../design/SearchIcon'
+import { GitHubSortableHeader } from './GitHubSortableHeader'
+import { SearchIcon } from '../design/SearchIcon'
 
 const PUTATIVE_NOTE =
   '~ putative cost — estimated from a combined token count (subscription model, no exact per-call billing)'
@@ -442,7 +442,7 @@ function RunsList({ groups, isLoading, isError }: RunsListProps) {
   )
 }
 
-export default function AdversarialReviewPanel() {
+export function AdversarialReviewPanel() {
   const { stats, isError: statsError, isLoading: statsLoading } = useAdversarialReviewStats()
   const { runs, isError: runsError, isLoading: runsLoading } = useAdversarialReviewRuns()
   const groups = useMemo(() => groupRuns(runs), [runs])

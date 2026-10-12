@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
-import Dashboard from './Dashboard'
+import { Dashboard } from './Dashboard'
 
 const dashboardStatus = vi.hoisted(() => ({
   isError: false,
@@ -20,25 +20,25 @@ vi.mock('../api/queries', () => ({ useDashboardStatus: () => dashboardStatus }))
 vi.mock('../theme/useTheme', () => ({ useTheme: () => ({ mode: 'dark', setMode: vi.fn() }) }))
 vi.mock('../auth/msal', () => ({ authEnabled: true, isReadonly: false, ...authMock }))
 vi.mock('../components/SummaryCards', () => ({
-  default: () => <section aria-label="Summary evidence">Summary</section>,
+  SummaryCards: () => <section aria-label="Summary evidence">Summary</section>,
 }))
 vi.mock('../components/SourceStatusPanel', () => ({
-  default: () => (
+  SourceStatusPanel: () => (
     <div className="source-status-zone">
       <section aria-label="Source freshness">Sources</section>
     </div>
   ),
 }))
 vi.mock('../components/CavemanStatsPanel', () => ({
-  default: () => <section aria-label="Caveman statistics" />,
+  CavemanStatsPanel: () => <section aria-label="Caveman statistics" />,
 }))
 vi.mock('../components/SubscriptionPanel', () => ({
-  default: () => <section aria-label="Subscriptions" />,
+  SubscriptionPanel: () => <section aria-label="Subscriptions" />,
 }))
-vi.mock('../components/ModelBreakdown', () => ({ default: () => null }))
-vi.mock('../components/InsightsFeed', () => ({ default: () => null }))
-vi.mock('../components/SpendChart', () => ({ default: () => null }))
-vi.mock('../components/ProviderSplit', () => ({ default: () => null }))
+vi.mock('../components/ModelBreakdown', () => ({ ModelBreakdown: () => null }))
+vi.mock('../components/InsightsFeed', () => ({ InsightsFeed: () => null }))
+vi.mock('../components/SpendChart', () => ({ SpendChart: () => null }))
+vi.mock('../components/ProviderSplit', () => ({ ProviderSplit: () => null }))
 
 beforeEach(() => {
   dashboardStatus.isError = false

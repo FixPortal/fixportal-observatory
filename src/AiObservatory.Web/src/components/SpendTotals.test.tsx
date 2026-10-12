@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import SpendTotals from './SpendTotals'
+import { SpendTotals } from './SpendTotals'
 
 describe('SpendTotals', () => {
   it('shows the filtered total in GBP', () => {

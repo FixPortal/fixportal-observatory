@@ -99,7 +99,7 @@ interface Props {
   comparisonLabel?: string
 }
 
-export default function ActivityTrendChart({
+export function ActivityTrendChart({
   from,
   to,
   comparisonFrom,

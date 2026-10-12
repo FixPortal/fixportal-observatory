@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
-import ActivityPage from './ActivityPage'
+import { ActivityPage } from './ActivityPage'
 
 vi.mock('../lib/dateRange', () => ({
   useDateRange: () => ({
@@ -22,8 +22,8 @@ vi.mock('../api/queries', () => ({
   useActivityByProject: () => ({ projects: [], isError: false, isLoading: false }),
 }))
 
-vi.mock('../components/ActivityTrendChart', () => ({ default: () => null }))
-vi.mock('../components/ProjectTreemap', () => ({ default: () => null }))
+vi.mock('../components/ActivityTrendChart', () => ({ ActivityTrendChart: () => null }))
+vi.mock('../components/ProjectTreemap', () => ({ ProjectTreemap: () => null }))
 
 test('offers the same selected and comparison period controls as Spend', () => {
   render(<ActivityPage />)

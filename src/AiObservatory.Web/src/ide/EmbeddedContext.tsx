@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { isEmbedded } from '../auth/msal'
 import { createEmbeddedBridge, type HostContext, windowWebViewPort } from './partnerBridge'
 
-export default function EmbeddedContext({ children }: { children: ReactNode }) {
+export function EmbeddedContext({ children }: { children: ReactNode }) {
   const [context, setContext] = useState<HostContext | null>(null)
 
   useEffect(() => {

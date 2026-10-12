@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { DailyAggregate } from '../api/client'
-import SpendChart, { buildUsageSeries } from './SpendChart'
+import { SpendChart, buildUsageSeries } from './SpendChart'
 
 const data = vi.hoisted(() => ({ aggregates: [] as DailyAggregate[] }))
 vi.mock('../api/queries', () => ({

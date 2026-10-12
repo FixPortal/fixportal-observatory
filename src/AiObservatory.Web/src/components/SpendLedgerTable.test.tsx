@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
-import SpendLedgerTable from './SpendLedgerTable'
+import { SpendLedgerTable } from './SpendLedgerTable'
 import type { SpendCategory, SpendEntry, SpendVendor } from '../api/client'
 
 const liveCategory: SpendCategory = {

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { BudgetRule, Insight, NotificationSettings } from '../api/client'
-import BudgetRulesPanel from './BudgetRulesPanel'
+import { BudgetRulesPanel } from './BudgetRulesPanel'
 
 const data = vi.hoisted(() => ({
   rules: [] as BudgetRule[],
@@ -166,7 +166,7 @@ describe('BudgetRulesPanel notification settings', () => {
   test('hides every notification control for a readonly viewer', async () => {
     vi.doMock('../auth/msal', () => ({ isReadonly: true }))
     vi.resetModules()
-    const { default: ReadonlyPanel } = await import('./BudgetRulesPanel')
+    const { BudgetRulesPanel: ReadonlyPanel } = await import('./BudgetRulesPanel')
     render(
       <QueryClientProvider client={new QueryClient()}>
         <ReadonlyPanel />

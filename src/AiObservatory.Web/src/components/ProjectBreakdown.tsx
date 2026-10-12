@@ -3,7 +3,7 @@ import type { ProjectActivity } from '../api/client'
 import { filterProjects, sortProjects } from './projectBreakdownSort'
 import type { ProjectSortField, SortDirection } from './projectBreakdownSort'
 import { formatActiveTime } from '../lib/duration'
-import SearchIcon from '../design/SearchIcon'
+import { SearchIcon } from '../design/SearchIcon'
 
 interface SortableHeaderProps {
   field: ProjectSortField
@@ -66,7 +66,7 @@ function formatComparisonChange(activeSeconds: number, comparisonActiveSeconds: 
   return `${percentage >= 0 ? '+' : ''}${percentage}%`
 }
 
-export default function ProjectBreakdown({
+export function ProjectBreakdown({
   projects,
   comparisonProjects,
   selectedProject,

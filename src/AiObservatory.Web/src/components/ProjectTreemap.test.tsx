@@ -1,6 +1,6 @@
 import { test, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import ProjectTreemap from './ProjectTreemap'
+import { ProjectTreemap } from './ProjectTreemap'
 import type { ProjectActivity } from '../api/client'
 
 const projects: ProjectActivity[] = [

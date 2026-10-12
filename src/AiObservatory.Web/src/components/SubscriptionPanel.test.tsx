@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Subscription } from '../api/client'
-import SubscriptionPanel from './SubscriptionPanel'
+import { SubscriptionPanel } from './SubscriptionPanel'
 
 const mockData = vi.hoisted(() => ({
   aggregates: [

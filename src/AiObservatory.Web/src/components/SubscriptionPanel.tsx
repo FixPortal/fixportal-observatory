@@ -10,7 +10,7 @@ import {
   currentBillingPeriodStart,
   subscriptionUsage,
 } from '../lib/subscriptions'
-import SubscriptionModal from './SubscriptionModal'
+import { SubscriptionModal } from './SubscriptionModal'
 import { isReadonly } from '../auth/msal'
 import { PROVIDER_ORDER, providerDisplayName } from '../config/providers'
 
@@ -163,7 +163,7 @@ interface GroupedSubscription {
   memberCount: number // subs merged into this card; >1 disables inline extra-usage edit
 }
 
-export default function SubscriptionPanel() {
+export function SubscriptionPanel() {
   const {
     subscriptions,
     isError: subscriptionsError,

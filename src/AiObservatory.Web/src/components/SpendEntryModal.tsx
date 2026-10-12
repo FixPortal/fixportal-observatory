@@ -19,7 +19,7 @@ interface Props {
   onClose: () => void
 }
 
-export default function SpendEntryModal({ categories, vendors, from, to, onClose }: Props) {
+export function SpendEntryModal({ categories, vendors, from, to, onClose }: Props) {
   const minDate = localDate(from)
   const maxDate = localDate(to)
   const qc = useQueryClient()

@@ -1,11 +1,11 @@
 import { lazy, Suspense, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import SpendFilterBar from '../components/SpendFilterBar'
-import SpendTotals from '../components/SpendTotals'
-import SpendLedgerTable from '../components/SpendLedgerTable'
-import SpendEntryModal from '../components/SpendEntryModal'
-import SpendCatalogModal from '../components/SpendCatalogModal'
-import SpendRangeControls from '../components/SpendRangeControls'
+import { SpendFilterBar } from '../components/SpendFilterBar'
+import { SpendTotals } from '../components/SpendTotals'
+import { SpendLedgerTable } from '../components/SpendLedgerTable'
+import { SpendEntryModal } from '../components/SpendEntryModal'
+import { SpendCatalogModal } from '../components/SpendCatalogModal'
+import { SpendRangeControls } from '../components/SpendRangeControls'
 import {
   useSpendCategories,
   useSpendVendors,
@@ -19,9 +19,11 @@ import { deleteSpendEntry } from '../api/client'
 import { isReadonly } from '../auth/msal'
 import { useDateRange } from '../lib/dateRange'
 
-const BilledSpendChart = lazy(() => import('../components/BilledSpendChart'))
+const BilledSpendChart = lazy(() =>
+  import('../components/BilledSpendChart').then((m) => ({ default: m.BilledSpendChart })),
+)
 
-export default function SpendPage() {
+export function SpendPage() {
   const qc = useQueryClient()
   const [categoryId, setCategoryId] = useState<string | undefined>()
   const [vendorId, setVendorId] = useState<string | undefined>()

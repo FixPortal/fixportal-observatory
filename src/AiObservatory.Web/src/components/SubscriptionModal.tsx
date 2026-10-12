@@ -119,7 +119,7 @@ function reducer(state: State, action: Action): State {
   }
 }
 
-export default function SubscriptionModal({ open, onClose }: Props) {
+export function SubscriptionModal({ open, onClose }: Props) {
   const { subscriptions } = useSubscriptions()
   const qc = useQueryClient()
 

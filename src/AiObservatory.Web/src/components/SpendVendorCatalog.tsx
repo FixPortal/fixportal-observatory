@@ -23,7 +23,7 @@ const EMPTY_FORM = { key: '', displayName: '', provider: '', defaultCategoryId: 
 
 /** The vendor axis of the spend catalog panel. See SpendCategoryCatalog for the
  * shared shape (list/create/rename/archive) and why Key is never editable. */
-export default function SpendVendorCatalog({ vendors, categories }: Props) {
+export function SpendVendorCatalog({ vendors, categories }: Props) {
   const qc = useQueryClient()
   const [form, setForm] = useState(EMPTY_FORM)
   const [formError, setFormError] = useState<string | null>(null)

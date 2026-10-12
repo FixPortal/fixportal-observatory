@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
-import ReportingPage from './ReportingPage'
+import { ReportingPage } from './ReportingPage'
 
 const useBilledReporting = vi.hoisted(() => vi.fn())
 
@@ -8,9 +8,9 @@ vi.mock('../api/queries', () => ({
   localDate: () => '2026-08-01',
   useBilledReporting,
 }))
-vi.mock('../components/BudgetRulesPanel', () => ({ default: () => null }))
-vi.mock('../components/BilledSpendChart', () => ({ default: () => null }))
-vi.mock('../components/BilledVendorSplit', () => ({ default: () => null }))
+vi.mock('../components/BudgetRulesPanel', () => ({ BudgetRulesPanel: () => null }))
+vi.mock('../components/BilledSpendChart', () => ({ BilledSpendChart: () => null }))
+vi.mock('../components/BilledVendorSplit', () => ({ BilledVendorSplit: () => null }))
 
 beforeEach(() => useBilledReporting.mockReset())
 

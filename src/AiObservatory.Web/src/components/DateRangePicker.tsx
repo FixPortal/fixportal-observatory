@@ -11,7 +11,7 @@ interface Props {
   onCustom: (from: Date, to: Date) => void
 }
 
-export default function DateRangePicker({ from, to, preset, onPreset, onCustom }: Props) {
+export function DateRangePicker({ from, to, preset, onPreset, onCustom }: Props) {
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [prevFrom, setPrevFrom] = useState(from)
   const [prevTo, setPrevTo] = useState(to)

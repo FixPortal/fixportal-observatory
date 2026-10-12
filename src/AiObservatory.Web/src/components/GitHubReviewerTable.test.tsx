@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import GitHubReviewerTable from './GitHubReviewerTable'
+import { GitHubReviewerTable } from './GitHubReviewerTable'
 import type { GitHubReviewerSummary } from '../api/client'
 
 const reviewers: GitHubReviewerSummary[] = [

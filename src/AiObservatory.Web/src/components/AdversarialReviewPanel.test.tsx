@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { AdversarialReviewRun, AdversarialReviewStats } from '../api/client'
-import AdversarialReviewPanel from './AdversarialReviewPanel'
+import { AdversarialReviewPanel } from './AdversarialReviewPanel'
 
 const data = vi.hoisted(() => ({
   stats: [] as AdversarialReviewStats[],

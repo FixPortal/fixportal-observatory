@@ -29,9 +29,9 @@ vi.mock('@azure/msal-react', () => ({
   }),
 }))
 
-vi.mock('./pages/Dashboard', () => ({ default: () => <p>dashboard content</p> }))
+vi.mock('./pages/Dashboard', () => ({ Dashboard: () => <p>dashboard content</p> }))
 
-import App from './App'
+import { App } from './App'
 
 describe('App composition for the IDE embed', () => {
   beforeEach(() => {

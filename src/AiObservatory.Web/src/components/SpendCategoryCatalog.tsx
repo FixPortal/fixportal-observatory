@@ -19,7 +19,7 @@ const EMPTY_FORM = { key: '', displayName: '', sortOrder: '0' }
  * archive/un-archive. Key is set once at creation and never edited afterward --
  * imports and the portal feed reference it by key, which is the entire reason a
  * separate immutable slug exists alongside DisplayName. */
-export default function SpendCategoryCatalog({ categories }: Props) {
+export function SpendCategoryCatalog({ categories }: Props) {
   const qc = useQueryClient()
   const [form, setForm] = useState(EMPTY_FORM)
   const [formError, setFormError] = useState<string | null>(null)

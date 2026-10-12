@@ -1,14 +1,18 @@
 import { lazy, Suspense } from 'react'
-import SpendRangeControls from '../components/SpendRangeControls'
-import ReportingCards from '../components/ReportingCards'
-import BudgetRulesPanel from '../components/BudgetRulesPanel'
+import { SpendRangeControls } from '../components/SpendRangeControls'
+import { ReportingCards } from '../components/ReportingCards'
+import { BudgetRulesPanel } from '../components/BudgetRulesPanel'
 import { useDateRange } from '../lib/dateRange'
 import { localDate, useBilledReporting } from '../api/queries'
 
-const BilledSpendChart = lazy(() => import('../components/BilledSpendChart'))
-const BilledVendorSplit = lazy(() => import('../components/BilledVendorSplit'))
+const BilledSpendChart = lazy(() =>
+  import('../components/BilledSpendChart').then((m) => ({ default: m.BilledSpendChart })),
+)
+const BilledVendorSplit = lazy(() =>
+  import('../components/BilledVendorSplit').then((m) => ({ default: m.BilledVendorSplit })),
+)
 
-export default function ReportingPage() {
+export function ReportingPage() {
   const {
     from,
     to,

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
-import SpendFilterBar from './SpendFilterBar'
+import { SpendFilterBar } from './SpendFilterBar'
 
 const categories = [
   {

@@ -16,7 +16,7 @@ interface Props {
   comparisonLabel?: string
 }
 
-export default function BilledSpendChart({
+export function BilledSpendChart({
   data,
   range,
   comparisonData,

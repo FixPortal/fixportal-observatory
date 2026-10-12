@@ -19,7 +19,7 @@ interface Props {
   data: BilledReporting['vendorSeries']
 }
 
-export default function BilledVendorSplit({ data }: Props) {
+export function BilledVendorSplit({ data }: Props) {
   return (
     <ResponsiveContainer width="100%" height={200}>
       <BarChart data={data} layout="vertical" margin={{ right: 56 }}>

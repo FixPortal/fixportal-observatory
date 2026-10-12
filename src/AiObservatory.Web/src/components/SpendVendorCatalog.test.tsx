@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import SpendVendorCatalog from './SpendVendorCatalog'
+import { SpendVendorCatalog } from './SpendVendorCatalog'
 // eslint-disable-next-line sonarjs/no-wildcard-import -- vi.spyOn requires the live module namespace
 import * as client from '../api/client'
 
