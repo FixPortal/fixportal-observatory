@@ -5,43 +5,73 @@ import type { SpendEntry } from '../api/client'
 import SpendPage from './SpendPage'
 
 const reporting = vi.hoisted(() => {
-  const liveCategory = { id: 'cloud-id', key: 'cloud', displayName: 'Cloud', colorVar: '', sortOrder: 1, archivedAt: null }
-  const liveVendor = { id: 'azure-id', key: 'azure', displayName: 'Azure', provider: 'azure', defaultCategoryId: 'cloud-id', archivedAt: null }
+  const liveCategory = {
+    id: 'cloud-id',
+    key: 'cloud',
+    displayName: 'Cloud',
+    colorVar: '',
+    sortOrder: 1,
+    archivedAt: null,
+  }
+  const liveVendor = {
+    id: 'azure-id',
+    key: 'azure',
+    displayName: 'Azure',
+    provider: 'azure',
+    defaultCategoryId: 'cloud-id',
+    archivedAt: null,
+  }
   return {
     entryCount: 1,
     entries: [] as SpendEntry[],
     liveCategories: [liveCategory],
     liveCategory,
     liveVendor,
-    useBilledReporting: vi.fn((_from: Date, _to: Date, vendorId?: string, _categoryId?: string) => ({
-      report: {
-        entryCount: reporting.entryCount,
-        totalGbp: vendorId === 'azure-id' ? 50 : 100,
-        dailyAverageGbp: 0,
-        projectedMonthlyGbp: 0,
-        topVendorName: null,
-        topVendorGbp: null,
-        dailySeries: [],
-        vendorSeries: [],
-        categorySeries: [{ categoryId: 'cloud-id', name: 'Cloud', amountGbp: vendorId === 'azure-id' ? 50 : 100 }],
-      },
-      isLoading: false,
-      isError: false,
-    })),
+    useBilledReporting: vi.fn(
+      (_from: Date, _to: Date, vendorId?: string, _categoryId?: string) => ({
+        report: {
+          entryCount: reporting.entryCount,
+          totalGbp: vendorId === 'azure-id' ? 50 : 100,
+          dailyAverageGbp: 0,
+          projectedMonthlyGbp: 0,
+          topVendorName: null,
+          topVendorGbp: null,
+          dailySeries: [],
+          vendorSeries: [],
+          categorySeries: [
+            {
+              categoryId: 'cloud-id',
+              name: 'Cloud',
+              amountGbp: vendorId === 'azure-id' ? 50 : 100,
+            },
+          ],
+        },
+        isLoading: false,
+        isError: false,
+      }),
+    ),
     deleteSpendEntry: vi.fn(),
   }
 })
 
-vi.mock('../api/client', async importOriginal => ({
-  ...await importOriginal<typeof import('../api/client')>(),
+vi.mock('../api/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api/client')>()),
   deleteSpendEntry: reporting.deleteSpendEntry,
 }))
 
-vi.mock('../api/queries', async importOriginal => ({
-  ...await importOriginal<typeof import('../api/queries')>(),
-  useSpendCategories: () => ({ categories: reporting.liveCategories, isError: false, isLoading: false }),
+vi.mock('../api/queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api/queries')>()),
+  useSpendCategories: () => ({
+    categories: reporting.liveCategories,
+    isError: false,
+    isLoading: false,
+  }),
   useSpendVendors: () => ({ vendors: [reporting.liveVendor], isError: false, isLoading: false }),
-  useAllSpendCategories: () => ({ categories: [reporting.liveCategory], isError: false, isLoading: false }),
+  useAllSpendCategories: () => ({
+    categories: [reporting.liveCategory],
+    isError: false,
+    isLoading: false,
+  }),
   useAllSpendVendors: () => ({ vendors: [reporting.liveVendor], isError: false, isLoading: false }),
   useSpendEntries: () => ({ entries: reporting.entries, isLoading: false, isError: false }),
   useBilledReporting: reporting.useBilledReporting,
@@ -167,11 +197,22 @@ test('says so when the ledger is truncated below the reported entry count', () =
   // The entries endpoint caps at the newest 5000 rows while the totals come from the
   // uncapped reporting endpoint — the page must not let the two silently disagree.
   reporting.entryCount = 5003
-  reporting.entries = [{
-    id: 'e1', occurredOn: '2026-08-20', vendorId: 'azure-id', categoryId: 'cloud-id',
-    amount: 10, currency: 'GBP', amountGbp: 10, fxRate: 1, description: null,
-    source: 'manual', entryKey: null, recordedAt: '2026-08-20T12:00:00Z',
-  }]
+  reporting.entries = [
+    {
+      id: 'e1',
+      occurredOn: '2026-08-20',
+      vendorId: 'azure-id',
+      categoryId: 'cloud-id',
+      amount: 10,
+      currency: 'GBP',
+      amountGbp: 10,
+      fxRate: 1,
+      description: null,
+      source: 'manual',
+      entryKey: null,
+      recordedAt: '2026-08-20T12:00:00Z',
+    },
+  ]
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={queryClient}>
@@ -183,11 +224,22 @@ test('says so when the ledger is truncated below the reported entry count', () =
 })
 
 test('shows a delete failure inline instead of a blocking alert', async () => {
-  reporting.entries = [{
-    id: 'e1', occurredOn: '2026-08-20', vendorId: 'azure-id', categoryId: 'cloud-id',
-    amount: 10, currency: 'GBP', amountGbp: 10, fxRate: 1, description: null,
-    source: 'manual', entryKey: null, recordedAt: '2026-08-20T12:00:00Z',
-  }]
+  reporting.entries = [
+    {
+      id: 'e1',
+      occurredOn: '2026-08-20',
+      vendorId: 'azure-id',
+      categoryId: 'cloud-id',
+      amount: 10,
+      currency: 'GBP',
+      amountGbp: 10,
+      fxRate: 1,
+      description: null,
+      source: 'manual',
+      entryKey: null,
+      recordedAt: '2026-08-20T12:00:00Z',
+    },
+  ]
   reporting.deleteSpendEntry.mockRejectedValue(new Error('gone'))
   const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -200,6 +252,8 @@ test('shows a delete failure inline instead of a blocking alert', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Delete entry from 2026-08-20' }))
   fireEvent.click(screen.getByRole('button', { name: 'Confirm delete entry from 2026-08-20' }))
 
-  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Failed to delete entry: gone'))
+  await waitFor(() =>
+    expect(screen.getByRole('alert')).toHaveTextContent('Failed to delete entry: gone'),
+  )
   expect(alertSpy).not.toHaveBeenCalled()
 })

@@ -1,6 +1,10 @@
 import type { DateRangePreset } from '../lib/dateRange'
 
-const DATE_FORMAT = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+const DATE_FORMAT = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+})
 
 interface Props {
   from: Date
@@ -42,13 +46,21 @@ const withInputDate = (value: string, apply: (date: Date) => void) => {
 const label = (from: Date, to: Date) => `${DATE_FORMAT.format(from)} – ${DATE_FORMAT.format(to)}`
 
 export default function SpendRangeControls({
-  from, to, preset, comparisonFrom, comparisonTo, comparisonMode,
-  onPreset, onCustom, onComparison, onPreviousComparison,
+  from,
+  to,
+  preset,
+  comparisonFrom,
+  comparisonTo,
+  comparisonMode,
+  onPreset,
+  onCustom,
+  onComparison,
+  onPreviousComparison,
 }: Props) {
   return (
     <div className="spend-periods">
       <div className="spend-periods__presets" role="group" aria-label="Selected period presets">
-        {PRESETS.map(option => (
+        {PRESETS.map((option) => (
           <button
             key={option.value}
             type="button"
@@ -66,13 +78,35 @@ export default function SpendRangeControls({
           <span className="spend-periods__eyebrow">Selected</span>
           <strong>{label(from, to)}</strong>
           <div className="spend-periods__dates">
-            <label>Selected from<input aria-label="Selected from" type="date" value={inputDate(from)} onChange={event => withInputDate(event.target.value, date => onCustom(date, to))} /></label>
+            <label>
+              Selected from
+              <input
+                aria-label="Selected from"
+                type="date"
+                value={inputDate(from)}
+                onChange={(event) =>
+                  withInputDate(event.target.value, (date) => onCustom(date, to))
+                }
+              />
+            </label>
             <span aria-hidden="true">→</span>
-            <label>Selected to<input aria-label="Selected to" type="date" value={inputDate(to)} onChange={event => withInputDate(event.target.value, date => onCustom(from, date))} /></label>
+            <label>
+              Selected to
+              <input
+                aria-label="Selected to"
+                type="date"
+                value={inputDate(to)}
+                onChange={(event) =>
+                  withInputDate(event.target.value, (date) => onCustom(from, date))
+                }
+              />
+            </label>
           </div>
         </div>
 
-        <span className="spend-periods__versus" aria-hidden="true">vs</span>
+        <span className="spend-periods__versus" aria-hidden="true">
+          vs
+        </span>
 
         <div className="spend-periods__period spend-periods__period--comparison">
           <div className="spend-periods__comparison-heading">
@@ -87,9 +121,29 @@ export default function SpendRangeControls({
           </div>
           <strong>{label(comparisonFrom, comparisonTo)}</strong>
           <div className="spend-periods__dates">
-            <label>Compare from<input aria-label="Compare from" type="date" value={inputDate(comparisonFrom)} onChange={event => withInputDate(event.target.value, date => onComparison(date, comparisonTo))} /></label>
+            <label>
+              Compare from
+              <input
+                aria-label="Compare from"
+                type="date"
+                value={inputDate(comparisonFrom)}
+                onChange={(event) =>
+                  withInputDate(event.target.value, (date) => onComparison(date, comparisonTo))
+                }
+              />
+            </label>
             <span aria-hidden="true">→</span>
-            <label>Compare to<input aria-label="Compare to" type="date" value={inputDate(comparisonTo)} onChange={event => withInputDate(event.target.value, date => onComparison(comparisonFrom, date))} /></label>
+            <label>
+              Compare to
+              <input
+                aria-label="Compare to"
+                type="date"
+                value={inputDate(comparisonTo)}
+                onChange={(event) =>
+                  withInputDate(event.target.value, (date) => onComparison(comparisonFrom, date))
+                }
+              />
+            </label>
           </div>
         </div>
       </div>

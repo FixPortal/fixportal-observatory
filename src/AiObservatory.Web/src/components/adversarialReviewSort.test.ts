@@ -1,12 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { filterStats, sortStats, filterRunGroups, filterRunGroupsByStatus, sortRunGroups } from './adversarialReviewSort'
+import {
+  filterStats,
+  sortStats,
+  filterRunGroups,
+  filterRunGroupsByStatus,
+  sortRunGroups,
+} from './adversarialReviewSort'
 import type { AdversarialReviewStats } from '../api/client'
 import type { RunGroup } from './adversarialReviewGrouping'
 
 const stat = (overrides: Partial<AdversarialReviewStats>): AdversarialReviewStats => ({
-  reviewer: 'anthropic', model: 'claude-sonnet-4-6', role: 'reviewer',
-  runCount: 1, avgCostPerRun: 1, avgIssuesRaised: 1, avgIssuesAccepted: 1,
-  avgCostPerAcceptedFinding: 1, avgDurationMs: 1000,
+  reviewer: 'anthropic',
+  model: 'claude-sonnet-4-6',
+  role: 'reviewer',
+  runCount: 1,
+  avgCostPerRun: 1,
+  avgIssuesRaised: 1,
+  avgIssuesAccepted: 1,
+  avgCostPerAcceptedFinding: 1,
+  avgDurationMs: 1000,
   ...overrides,
 })
 
@@ -38,29 +50,49 @@ describe('sortStats', () => {
     const cheap = stat({ reviewer: 'b', avgCostPerAcceptedFinding: 1 })
     const pricey = stat({ reviewer: 'c', avgCostPerAcceptedFinding: 10 })
 
-    expect(sortStats([noAccepted, pricey, cheap], 'avgCostPerAcceptedFinding', 'asc').map((s) => s.reviewer))
-      .toEqual(['b', 'c', 'a'])
-    expect(sortStats([noAccepted, pricey, cheap], 'avgCostPerAcceptedFinding', 'desc').map((s) => s.reviewer))
-      .toEqual(['c', 'b', 'a'])
+    expect(
+      sortStats([noAccepted, pricey, cheap], 'avgCostPerAcceptedFinding', 'asc').map(
+        (s) => s.reviewer,
+      ),
+    ).toEqual(['b', 'c', 'a'])
+    expect(
+      sortStats([noAccepted, pricey, cheap], 'avgCostPerAcceptedFinding', 'desc').map(
+        (s) => s.reviewer,
+      ),
+    ).toEqual(['c', 'b', 'a'])
   })
 
   it('sorts by reviewer alphabetically', () => {
-    const result = sortStats([stat({ reviewer: 'openai' }), stat({ reviewer: 'anthropic' })], 'reviewer', 'asc')
+    const result = sortStats(
+      [stat({ reviewer: 'openai' }), stat({ reviewer: 'anthropic' })],
+      'reviewer',
+      'asc',
+    )
     expect(result.map((s) => s.reviewer)).toEqual(['anthropic', 'openai'])
   })
 })
 
 const group = (overrides: Partial<RunGroup>): RunGroup => ({
-  runId: 'R1', repo: 'fix-portal/example', summary: null, recordedAt: '2026-07-01T09:00:00Z',
-  participants: [], totals: { raised: 1, accepted: 1, costUsd: 1, durationMs: 1000 },
-  isComplete: true, statusReason: 'complete', isValid: true, chunkCount: null,
+  runId: 'R1',
+  repo: 'fix-portal/example',
+  summary: null,
+  recordedAt: '2026-07-01T09:00:00Z',
+  participants: [],
+  totals: { raised: 1, accepted: 1, costUsd: 1, durationMs: 1000 },
+  isComplete: true,
+  statusReason: 'complete',
+  isValid: true,
+  chunkCount: null,
   ...overrides,
 })
 
 describe('filterRunGroups', () => {
   it('matches on repo or summary, case-insensitively', () => {
     const result = filterRunGroups(
-      [group({ runId: 'R1', repo: 'fix-portal/alpha' }), group({ runId: 'R2', repo: 'fix-portal/beta' })],
+      [
+        group({ runId: 'R1', repo: 'fix-portal/alpha' }),
+        group({ runId: 'R2', repo: 'fix-portal/beta' }),
+      ],
       'BETA',
     )
     expect(result).toHaveLength(1)
@@ -74,7 +106,9 @@ describe('filterRunGroupsByStatus', () => {
   const incompleteInvalid = group({ runId: 'R3', isComplete: false, isValid: false })
 
   it('passes everything through with "all"/"all"', () => {
-    expect(filterRunGroupsByStatus([complete, incompleteValid, incompleteInvalid], 'all', 'all')).toHaveLength(3)
+    expect(
+      filterRunGroupsByStatus([complete, incompleteValid, incompleteInvalid], 'all', 'all'),
+    ).toHaveLength(3)
   })
 
   it('filters to complete only', () => {
@@ -93,7 +127,11 @@ describe('filterRunGroupsByStatus', () => {
   })
 
   it('combines completeness and validity filters', () => {
-    const result = filterRunGroupsByStatus([complete, incompleteValid, incompleteInvalid], 'incomplete', 'valid')
+    const result = filterRunGroupsByStatus(
+      [complete, incompleteValid, incompleteInvalid],
+      'incomplete',
+      'valid',
+    )
     expect(result.map((g) => g.runId)).toEqual(['R2'])
   })
 })
@@ -106,8 +144,14 @@ describe('sortRunGroups', () => {
   })
 
   it('sorts by total cost', () => {
-    const cheap = group({ runId: 'R1', totals: { raised: 1, accepted: 1, costUsd: 0.1, durationMs: 1000 } })
-    const pricey = group({ runId: 'R2', totals: { raised: 1, accepted: 1, costUsd: 5, durationMs: 1000 } })
+    const cheap = group({
+      runId: 'R1',
+      totals: { raised: 1, accepted: 1, costUsd: 0.1, durationMs: 1000 },
+    })
+    const pricey = group({
+      runId: 'R2',
+      totals: { raised: 1, accepted: 1, costUsd: 5, durationMs: 1000 },
+    })
     expect(sortRunGroups([cheap, pricey], 'costUsd', 'desc')[0].runId).toBe('R2')
   })
 

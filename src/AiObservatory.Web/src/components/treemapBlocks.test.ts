@@ -2,8 +2,12 @@ import { test, expect } from 'vitest'
 import { buildTreemapBlocks } from './treemapBlocks'
 import type { ProjectActivity } from '../api/client'
 
-const make = (project: string, activeSeconds: number): ProjectActivity =>
-  ({ project, activeSeconds, sessionCount: 1, sharePercent: 0 })
+const make = (project: string, activeSeconds: number): ProjectActivity => ({
+  project,
+  activeSeconds,
+  sessionCount: 1,
+  sharePercent: 0,
+})
 
 test('returns empty array when there is no activity', () => {
   expect(buildTreemapBlocks([])).toEqual([])

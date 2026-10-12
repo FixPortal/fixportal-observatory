@@ -3,7 +3,12 @@
 // config, so `msalInstance` is null, `authEnabled` is false, and the app talks to
 // the (key-free) local API directly. In production the build bakes the client id,
 // tenant, and API scope, and every request carries a bearer token.
-import { PublicClientApplication, InteractionRequiredAuthError, type Configuration, type RedirectRequest } from '@azure/msal-browser'
+import {
+  PublicClientApplication,
+  InteractionRequiredAuthError,
+  type Configuration,
+  type RedirectRequest,
+} from '@azure/msal-browser'
 import { windowWebViewPort } from '../ide/partnerBridge'
 
 const clientId = import.meta.env.VITE_AAD_CLIENT_ID ?? ''
@@ -43,7 +48,9 @@ export const msalInstance = authEnabled ? new PublicClientApplication(config) : 
  */
 /** Start an interactive sign-in (redirect). No-op when auth is disabled. */
 export function signIn(): void {
-  msalInstance?.loginRedirect(loginRequest).catch(() => { /* redirect aborted */ })
+  msalInstance?.loginRedirect(loginRequest).catch(() => {
+    /* redirect aborted */
+  })
 }
 
 // Single-flight guard for the interactive redirect. The dashboard mounts many queries at
@@ -62,7 +69,10 @@ export async function getAccessToken(): Promise<string | null> {
     const result = await Promise.race([
       instance.acquireTokenSilent({ ...loginRequest, account }),
       new Promise<never>((_, reject) => {
-        timeoutId = window.setTimeout(() => reject(new TokenAcquisitionTimeoutError()), TOKEN_TIMEOUT_MS)
+        timeoutId = window.setTimeout(
+          () => reject(new TokenAcquisitionTimeoutError()),
+          TOKEN_TIMEOUT_MS,
+        )
       }),
     ])
     return result.accessToken
@@ -75,9 +85,9 @@ export async function getAccessToken(): Promise<string | null> {
     }
     // Share one redirect across concurrent callers and swallow interaction_in_progress
     // so it never escapes; the page reloads once the redirect completes.
-    redirectInFlight ??= instance
-      .acquireTokenRedirect({ ...loginRequest, account })
-      .catch(() => { /* interaction_in_progress or redirect aborted; page will reload */ })
+    redirectInFlight ??= instance.acquireTokenRedirect({ ...loginRequest, account }).catch(() => {
+      /* interaction_in_progress or redirect aborted; page will reload */
+    })
     await redirectInFlight
     return null
   } finally {
@@ -107,10 +117,18 @@ function readViewerKey(): string {
   if (isEmbedded) return ''
   const fromUrl = new URLSearchParams(window.location.search).get('key')
   if (fromUrl) {
-    try { window.sessionStorage.setItem(VIEWER_KEY_STORAGE, fromUrl) } catch { /* storage blocked */ }
+    try {
+      window.sessionStorage.setItem(VIEWER_KEY_STORAGE, fromUrl)
+    } catch {
+      /* storage blocked */
+    }
     return fromUrl
   }
-  try { return window.sessionStorage.getItem(VIEWER_KEY_STORAGE) ?? '' } catch { return '' }
+  try {
+    return window.sessionStorage.getItem(VIEWER_KEY_STORAGE) ?? ''
+  } catch {
+    return ''
+  }
 }
 
 export const urlApiKey = readViewerKey()

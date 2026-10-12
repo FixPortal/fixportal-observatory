@@ -5,12 +5,24 @@ import type { AdversarialReviewRun, AdversarialReviewStats } from '../api/client
 import AdversarialReviewPanel from './AdversarialReviewPanel'
 
 const data = vi.hoisted(() => ({
-  stats: [] as AdversarialReviewStats[], statsError: false, statsLoading: false,
-  runs: [] as AdversarialReviewRun[], runsError: false, runsLoading: false,
+  stats: [] as AdversarialReviewStats[],
+  statsError: false,
+  statsLoading: false,
+  runs: [] as AdversarialReviewRun[],
+  runsError: false,
+  runsLoading: false,
 }))
 vi.mock('../api/queries', () => ({
-  useAdversarialReviewStats: () => ({ stats: data.stats, isError: data.statsError, isLoading: data.statsLoading }),
-  useAdversarialReviewRuns: () => ({ runs: data.runs, isError: data.runsError, isLoading: data.runsLoading }),
+  useAdversarialReviewStats: () => ({
+    stats: data.stats,
+    isError: data.statsError,
+    isLoading: data.statsLoading,
+  }),
+  useAdversarialReviewRuns: () => ({
+    runs: data.runs,
+    isError: data.runsError,
+    isLoading: data.runsLoading,
+  }),
 }))
 
 const deleteAdversarialReviewRun = vi.hoisted(() => vi.fn(() => Promise.resolve()))
@@ -23,10 +35,23 @@ vi.mock('../auth/msal', () => ({ isReadonly: false }))
 
 function run(p: Partial<AdversarialReviewRun>): AdversarialReviewRun {
   return {
-    id: 'p1', reviewer: 'anthropic', model: 'claude-sonnet-4-6', role: 'reviewer', repo: 'fix-portal/example',
-    summary: null, inputTokens: 0, outputTokens: 0, costUsd: 1, reviewDurationMs: 1000,
-    issuesRaised: 2, issuesAccepted: 1, costPerAcceptedFinding: 1, chunkCount: null,
-    runId: 'R1', recordedAt: '2026-08-27T12:00:00Z', ...p,
+    id: 'p1',
+    reviewer: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    role: 'reviewer',
+    repo: 'fix-portal/example',
+    summary: null,
+    inputTokens: 0,
+    outputTokens: 0,
+    costUsd: 1,
+    reviewDurationMs: 1000,
+    issuesRaised: 2,
+    issuesAccepted: 1,
+    costPerAcceptedFinding: 1,
+    chunkCount: null,
+    runId: 'R1',
+    recordedAt: '2026-08-27T12:00:00Z',
+    ...p,
   }
 }
 
@@ -71,18 +96,32 @@ describe('AdversarialReviewPanel loading state', () => {
 describe('AdversarialReviewPanel run status filters', () => {
   beforeEach(() => {
     data.runs = [
-      run({ id: 'a', runId: 'R1', reviewer: 'anthropic', role: 'reviewer', summary: 'Full complete run' }),
+      run({
+        id: 'a',
+        runId: 'R1',
+        reviewer: 'anthropic',
+        role: 'reviewer',
+        summary: 'Full complete run',
+      }),
       run({ id: 'b', runId: 'R1', reviewer: 'google', role: 'reviewer' }),
       run({ id: 'c', runId: 'R1', reviewer: 'openai', role: 'reviewer' }),
       run({ id: 'd', runId: 'R1', reviewer: 'moonshot', role: 'reviewer' }),
       run({ id: 'e', runId: 'R1', reviewer: 'anthropic', role: 'judge' }),
-      run({ id: 'f', runId: 'R2', reviewer: 'anthropic', role: 'reviewer', summary: 'Solo invalid run' }),
+      run({
+        id: 'f',
+        runId: 'R2',
+        reviewer: 'anthropic',
+        role: 'reviewer',
+        summary: 'Solo invalid run',
+      }),
     ]
   })
 
   test('filters to incomplete runs', () => {
     renderPanel()
-    fireEvent.change(screen.getByLabelText('Filter runs by completeness'), { target: { value: 'incomplete' } })
+    fireEvent.change(screen.getByLabelText('Filter runs by completeness'), {
+      target: { value: 'incomplete' },
+    })
 
     expect(screen.getByText('Solo invalid run')).toBeInTheDocument()
     expect(screen.queryByText('Full complete run')).not.toBeInTheDocument()
@@ -90,7 +129,9 @@ describe('AdversarialReviewPanel run status filters', () => {
 
   test('filters to invalid runs (below the minimum reviewer threshold)', () => {
     renderPanel()
-    fireEvent.change(screen.getByLabelText('Filter runs by validity'), { target: { value: 'invalid' } })
+    fireEvent.change(screen.getByLabelText('Filter runs by validity'), {
+      target: { value: 'invalid' },
+    })
 
     expect(screen.getByText('Solo invalid run')).toBeInTheDocument()
     expect(screen.queryByText('Full complete run')).not.toBeInTheDocument()
@@ -110,6 +151,8 @@ describe('AdversarialReviewPanel sweep removal', () => {
     expect(deleteAdversarialReviewRun).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm remove' }))
-    await waitFor(() => expect(deleteAdversarialReviewRun).toHaveBeenCalledWith('R1', expect.anything()))
+    await waitFor(() =>
+      expect(deleteAdversarialReviewRun).toHaveBeenCalledWith('R1', expect.anything()),
+    )
   })
 })

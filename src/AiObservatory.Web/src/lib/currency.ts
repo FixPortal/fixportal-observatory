@@ -28,8 +28,18 @@ export function useUsdToGbp(): number {
 }
 
 const formatters: Record<number, Intl.NumberFormat> = {
-  2: new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-  3: new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 3, maximumFractionDigits: 3 }),
+  2: new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency: 'GBP',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }),
+  3: new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency: 'GBP',
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  }),
 }
 
 /** Format an amount that is already in GBP, e.g. `12.34` -> `£12.34`. */

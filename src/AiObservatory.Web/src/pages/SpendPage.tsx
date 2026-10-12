@@ -7,8 +7,13 @@ import SpendEntryModal from '../components/SpendEntryModal'
 import SpendCatalogModal from '../components/SpendCatalogModal'
 import SpendRangeControls from '../components/SpendRangeControls'
 import {
-  useSpendCategories, useSpendVendors, useBilledReporting,
-  useAllSpendCategories, useAllSpendVendors, useSpendEntries, invalidateSpendData,
+  useSpendCategories,
+  useSpendVendors,
+  useBilledReporting,
+  useAllSpendCategories,
+  useAllSpendVendors,
+  useSpendEntries,
+  invalidateSpendData,
 } from '../api/queries'
 import { deleteSpendEntry } from '../api/client'
 import { isReadonly } from '../auth/msal'
@@ -26,11 +31,23 @@ export default function SpendPage() {
   // The default remains Overview's inclusive rolling 31-day window; Spend can then
   // move to calendar or arbitrary periods without changing Overview's definition.
   const {
-    from, to, preset, setPreset, setCustom,
-    comparisonFrom, comparisonTo, comparisonMode, setComparison, compareWithPrevious,
+    from,
+    to,
+    preset,
+    setPreset,
+    setCustom,
+    comparisonFrom,
+    comparisonTo,
+    comparisonMode,
+    setComparison,
+    compareWithPrevious,
   } = useDateRange()
 
-  const { categories, isError: categoriesError, isLoading: categoriesLoading } = useSpendCategories()
+  const {
+    categories,
+    isError: categoriesError,
+    isLoading: categoriesLoading,
+  } = useSpendCategories()
   const { vendors, isError: vendorsError, isLoading: vendorsLoading } = useSpendVendors()
   // Includes archived rows: a historical entry must still resolve a display name for a
   // category or vendor that has since been retired (spec §8). Pickers stay on the live
@@ -42,16 +59,26 @@ export default function SpendPage() {
   // the live picker lists. Derive the effective filter against the resolved live lists
   // so a retired id simply drops out of every query (and the select reads "All …")
   // instead of invisibly filtering on an id the UI says is not selected.
-  const activeCategoryId = !categoryId || categoriesLoading || categories.some(c => c.id === categoryId)
-    ? categoryId
-    : undefined
-  const activeVendorId = !vendorId || vendorsLoading || vendors.some(v => v.id === vendorId)
-    ? vendorId
-    : undefined
+  const activeCategoryId =
+    !categoryId || categoriesLoading || categories.some((c) => c.id === categoryId)
+      ? categoryId
+      : undefined
+  const activeVendorId =
+    !vendorId || vendorsLoading || vendors.some((v) => v.id === vendorId) ? vendorId : undefined
 
-  const { entries, isLoading, isError } = useSpendEntries(from, to, activeVendorId, activeCategoryId)
+  const { entries, isLoading, isError } = useSpendEntries(
+    from,
+    to,
+    activeVendorId,
+    activeCategoryId,
+  )
   const primaryReporting = useBilledReporting(from, to, activeVendorId, activeCategoryId)
-  const comparisonReporting = useBilledReporting(comparisonFrom, comparisonTo, activeVendorId, activeCategoryId)
+  const comparisonReporting = useBilledReporting(
+    comparisonFrom,
+    comparisonTo,
+    activeVendorId,
+    activeCategoryId,
+  )
 
   const total = primaryReporting.report?.totalGbp ?? 0
   const largestCategory = primaryReporting.report?.categorySeries[0]?.name ?? null
@@ -60,16 +87,27 @@ export default function SpendPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const remove = useMutation({
     mutationFn: deleteSpendEntry,
-    onSuccess: () => { setDeleteError(null); invalidateSpendData(qc) },
+    onSuccess: () => {
+      setDeleteError(null)
+      invalidateSpendData(qc)
+    },
     onError: (err: Error) => setDeleteError(`Failed to delete entry: ${err.message}`),
   })
 
-  const loadError = [isError, primaryReporting.isError, comparisonReporting.isError,
-    categoriesError, vendorsError, allCategoriesError, allVendorsError].some(Boolean)
+  const loadError = [
+    isError,
+    primaryReporting.isError,
+    comparisonReporting.isError,
+    categoriesError,
+    vendorsError,
+    allCategoriesError,
+    allVendorsError,
+  ].some(Boolean)
 
   const reportingLoading = primaryReporting.isLoading || comparisonReporting.isLoading
-  const bothReportsEmpty = (primaryReporting.report?.entryCount ?? 0) === 0
-    && (comparisonReporting.report?.entryCount ?? 0) === 0
+  const bothReportsEmpty =
+    (primaryReporting.report?.entryCount ?? 0) === 0 &&
+    (comparisonReporting.report?.entryCount ?? 0) === 0
   let chartContent = <div className="chart-skeleton" />
   if (!reportingLoading) {
     chartContent = bothReportsEmpty ? (
@@ -89,14 +127,20 @@ export default function SpendPage() {
 
   // The entries endpoint caps at 5000 newest rows; the totals above come from the
   // uncapped reporting endpoint. Say so rather than let the two silently disagree.
-  const truncated = !isLoading && primaryReporting.report != null
-    && entries.length < primaryReporting.report.entryCount
+  const truncated =
+    !isLoading &&
+    primaryReporting.report != null &&
+    entries.length < primaryReporting.report.entryCount
 
   // Inline banner, not an early return: the range/filter controls stay mounted either
   // way, so a range the API rejects can be edited without reloading the page.
   let pageContent
   if (loadError) {
-    pageContent = <div className="error-banner" role="alert">Couldn’t load spend. Check the API service and try refreshing.</div>
+    pageContent = (
+      <div className="error-banner" role="alert">
+        Couldn’t load spend. Check the API service and try refreshing.
+      </div>
+    )
   } else {
     pageContent = (
       <>
@@ -119,24 +163,32 @@ export default function SpendPage() {
           {chartContent}
         </div>
 
-        {deleteError && <p className="modal__error" role="alert">{deleteError}</p>}
-
-        {truncated && primaryReporting.report != null && (
-          <p className="panel-note">
-            Showing the newest {entries.length.toLocaleString()} of {primaryReporting.report.entryCount.toLocaleString()} entries — narrow the date range to see older ones.
+        {deleteError && (
+          <p className="modal__error" role="alert">
+            {deleteError}
           </p>
         )}
 
-        {isLoading
-          ? <p>Loading spend…</p>
-          : <SpendLedgerTable
-              entries={entries}
-              categories={allCategories}
-              vendors={allVendors}
-              onDelete={id => remove.mutate(id)}
-              canEdit={!isReadonly}
-              isDeleting={remove.isPending}
-            />}
+        {truncated && primaryReporting.report != null && (
+          <p className="panel-note">
+            Showing the newest {entries.length.toLocaleString()} of{' '}
+            {primaryReporting.report.entryCount.toLocaleString()} entries — narrow the date range to
+            see older ones.
+          </p>
+        )}
+
+        {isLoading ? (
+          <p>Loading spend…</p>
+        ) : (
+          <SpendLedgerTable
+            entries={entries}
+            categories={allCategories}
+            vendors={allVendors}
+            onDelete={(id) => remove.mutate(id)}
+            canEdit={!isReadonly}
+            isDeleting={remove.isPending}
+          />
+        )}
       </>
     )
   }

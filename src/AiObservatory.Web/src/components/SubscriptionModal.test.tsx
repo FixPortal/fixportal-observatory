@@ -13,7 +13,9 @@ describe('SubscriptionModal', () => {
   beforeEach(() => vi.restoreAllMocks())
 
   test('saves an annual subscription with its renewal month', async () => {
-    const create = vi.spyOn(client, 'createSubscription').mockResolvedValue({ id: 'google-one' } as client.Subscription)
+    const create = vi
+      .spyOn(client, 'createSubscription')
+      .mockResolvedValue({ id: 'google-one' } as client.Subscription)
     render(
       <QueryClientProvider client={new QueryClient()}>
         <SubscriptionModal open onClose={vi.fn()} />

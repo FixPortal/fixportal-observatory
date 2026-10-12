@@ -48,7 +48,7 @@ describe('currentBillingPeriodStart', () => {
     expect(currentBillingPeriodStart(2, today, 'annual', 7)).toBe(expected)
   })
 
-  it.each([0, 13])('rejects annual renewal month %s', billingMonth => {
+  it.each([0, 13])('rejects annual renewal month %s', (billingMonth) => {
     expect(() => currentBillingPeriodStart(2, '2026-08-27', 'annual', billingMonth)).toThrow(
       'billingMonth must be between 1 and 12.',
     )
@@ -65,17 +65,64 @@ describe('subscriptionUsage', () => {
   })
 
   it('keeps activity visible when every monetary value is unreported', () => {
-    expect(subscriptionUsage([
-      { provider: 'anthropic', date: '2026-08-01', costBasis: 'notional', costUsd: 0, requestCount: 12, unknownCostCount: 12 },
-    ], 'anthropic', '2026-08-01')).toEqual({ notionalUsd: null, requestCount: 12, unknownCostCount: 12 })
+    expect(
+      subscriptionUsage(
+        [
+          {
+            provider: 'anthropic',
+            date: '2026-08-01',
+            costBasis: 'notional',
+            costUsd: 0,
+            requestCount: 12,
+            unknownCostCount: 12,
+          },
+        ],
+        'anthropic',
+        '2026-08-01',
+      ),
+    ).toEqual({ notionalUsd: null, requestCount: 12, unknownCostCount: 12 })
   })
 
   it('excludes non-notional, out-of-provider, and pre-period aggregate costs and requests', () => {
-    expect(subscriptionUsage([
-      { provider: 'anthropic', date: '2026-08-01', costBasis: 'notional', costUsd: 10, requestCount: 1, unknownCostCount: 0 },
-      { provider: 'anthropic', date: '2026-08-02', costBasis: 'listPriceEstimate', costUsd: 1000, requestCount: 1, unknownCostCount: 0 },
-      { provider: 'anthropic', date: '2026-08-03', costBasis: 'notional', costUsd: 8, requestCount: 1, unknownCostCount: 1 },
-      { provider: 'openai', date: '2026-08-02', costBasis: 'notional', costUsd: 7, requestCount: 1, unknownCostCount: 0 },
-    ], 'anthropic', '2026-08-01')).toEqual({ notionalUsd: 10, requestCount: 2, unknownCostCount: 1 })
+    expect(
+      subscriptionUsage(
+        [
+          {
+            provider: 'anthropic',
+            date: '2026-08-01',
+            costBasis: 'notional',
+            costUsd: 10,
+            requestCount: 1,
+            unknownCostCount: 0,
+          },
+          {
+            provider: 'anthropic',
+            date: '2026-08-02',
+            costBasis: 'listPriceEstimate',
+            costUsd: 1000,
+            requestCount: 1,
+            unknownCostCount: 0,
+          },
+          {
+            provider: 'anthropic',
+            date: '2026-08-03',
+            costBasis: 'notional',
+            costUsd: 8,
+            requestCount: 1,
+            unknownCostCount: 1,
+          },
+          {
+            provider: 'openai',
+            date: '2026-08-02',
+            costBasis: 'notional',
+            costUsd: 7,
+            requestCount: 1,
+            unknownCostCount: 0,
+          },
+        ],
+        'anthropic',
+        '2026-08-01',
+      ),
+    ).toEqual({ notionalUsd: 10, requestCount: 2, unknownCostCount: 1 })
   })
 })

@@ -82,9 +82,11 @@ export function groupRuns(runs: AdversarialReviewRun[]): RunGroup[] {
       participants[0].recordedAt,
     )
     participants.sort(sortParticipants)
-    const reviewerVendors = new Set(participants.flatMap(p => (p.role === 'reviewer' ? [p.reviewer] : [])))
-    const hasJudge = participants.some(p => p.role === 'judge')
-    const reviewerCount = REVIEWER_ORDER.filter(vendor => reviewerVendors.has(vendor)).length
+    const reviewerVendors = new Set(
+      participants.flatMap((p) => (p.role === 'reviewer' ? [p.reviewer] : [])),
+    )
+    const hasJudge = participants.some((p) => p.role === 'judge')
+    const reviewerCount = REVIEWER_ORDER.filter((vendor) => reviewerVendors.has(vendor)).length
     const isComplete = reviewerCount === EXPECTED_REVIEWER_VENDORS && hasJudge
     const statusReason = isComplete
       ? 'complete'
@@ -92,8 +94,8 @@ export function groupRuns(runs: AdversarialReviewRun[]): RunGroup[] {
 
     groups.push({
       runId,
-      repo: participants.find(p => p.repo)?.repo ?? null,
-      summary: participants.find(p => p.summary)?.summary ?? null,
+      repo: participants.find((p) => p.repo)?.repo ?? null,
+      summary: participants.find((p) => p.summary)?.summary ?? null,
       recordedAt,
       participants,
       totals: {
@@ -107,7 +109,7 @@ export function groupRuns(runs: AdversarialReviewRun[]): RunGroup[] {
       isValid: reviewerCount >= MIN_VALID_REVIEWERS,
       // A batched run carries the same chunk count on every participant; take the
       // first non-null. Null when no participant reported one (single-diff run).
-      chunkCount: participants.find(p => p.chunkCount != null)?.chunkCount ?? null,
+      chunkCount: participants.find((p) => p.chunkCount != null)?.chunkCount ?? null,
     })
   }
 

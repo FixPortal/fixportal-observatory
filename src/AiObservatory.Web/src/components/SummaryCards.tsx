@@ -1,6 +1,12 @@
 import { useMemo } from 'react'
 import { Card } from '../design/Card'
-import { useAggregates, useBilledReporting, useInsights, AGGREGATES_DAYS_RANGE, dashboardDateRange } from '../api/queries'
+import {
+  useAggregates,
+  useBilledReporting,
+  useInsights,
+  AGGREGATES_DAYS_RANGE,
+  dashboardDateRange,
+} from '../api/queries'
 import { useUsdToGbp, formatGbp } from '../lib/currency'
 import { formatInt } from '../lib/format'
 import { observedInputTokens, summarizeCosts } from '../lib/costSummary'
@@ -34,8 +40,13 @@ function BilledSpendCard({ loading, error, billedGbp }: BilledSpendCardProps) {
       <div className="card-label card-label--row">
         Billed spend · {AGGREGATES_DAYS_RANGE} days
         <InfoPopover id="billed-spend-info" title="Billed spend" className="info-popover--summary">
-          <p>Financial ledger entries reported by a provider or recorded as spend. It does not include token-rate estimates or subscription notional value.</p>
-          <p>This uses the same rolling {AGGREGATES_DAYS_RANGE}-day window as every financial lane.</p>
+          <p>
+            Financial ledger entries reported by a provider or recorded as spend. It does not
+            include token-rate estimates or subscription notional value.
+          </p>
+          <p>
+            This uses the same rolling {AGGREGATES_DAYS_RANGE}-day window as every financial lane.
+          </p>
         </InfoPopover>
       </div>
       <div className="card-value card-value--lead">
@@ -56,20 +67,32 @@ interface MoneyEstimateCardProps {
   unknownObservations: number
 }
 
-function MoneyEstimateCard({ label, popoverId, description, loading, usd, rate, unknownObservations }: MoneyEstimateCardProps) {
+function MoneyEstimateCard({
+  label,
+  popoverId,
+  description,
+  loading,
+  usd,
+  rate,
+  unknownObservations,
+}: MoneyEstimateCardProps) {
   return (
     <Card>
       <div className="card-label card-label--row">
         {label}
         <InfoPopover id={popoverId} title={label} className="info-popover--summary">
           <p>{description}</p>
-          <p>This uses the same rolling {AGGREGATES_DAYS_RANGE}-day window as every financial lane.</p>
+          <p>
+            This uses the same rolling {AGGREGATES_DAYS_RANGE}-day window as every financial lane.
+          </p>
         </InfoPopover>
       </div>
       <div className="card-value">{moneyCardValue(loading, usd, rate)}</div>
       <div className="card-sub">USD basis; shown in GBP when reported</div>
       {!loading && unknownObservations > 0 && (
-        <div className="card-sub">{unknownObservations} observation{unknownObservations === 1 ? '' : 's'} not reported</div>
+        <div className="card-sub">
+          {unknownObservations} observation{unknownObservations === 1 ? '' : 's'} not reported
+        </div>
       )}
     </Card>
   )
@@ -86,7 +109,16 @@ interface TokensCardProps {
   rate: number
 }
 
-function TokensCard({ loading, hasAggregates, totalInputTokens, totalOutputTokens, totalCacheRead, cacheSavingsUsd, unknownCacheSavingsObservations, rate }: TokensCardProps) {
+function TokensCard({
+  loading,
+  hasAggregates,
+  totalInputTokens,
+  totalOutputTokens,
+  totalCacheRead,
+  cacheSavingsUsd,
+  unknownCacheSavingsObservations,
+  rate,
+}: TokensCardProps) {
   const totalTokens = totalInputTokens + totalOutputTokens
   const cacheHitRate = totalInputTokens > 0 ? totalCacheRead / totalInputTokens : 0
   return (
@@ -95,14 +127,35 @@ function TokensCard({ loading, hasAggregates, totalInputTokens, totalOutputToken
       <div className="card-value">{tokensCardValue(loading, hasAggregates, totalTokens)}</div>
       {totalTokens > 0 && (
         <div className="card-sub">
-          <div>{formatInt(totalInputTokens)} in / {formatInt(totalOutputTokens)} out</div>
+          <div>
+            {formatInt(totalInputTokens)} in / {formatInt(totalOutputTokens)} out
+          </div>
           {totalCacheRead > 0 && (
             <div className="card-cache">
-              <div>{cacheHitRate.toLocaleString(undefined, { style: 'percent', maximumFractionDigits: 0 })} cache hit</div>
-              <div>Cache savings: {cacheSavingsUsd === null ? notReported : `${formatGbp(cacheSavingsUsd, rate)} (server-reported, USD-derived)`}</div>
-              {unknownCacheSavingsObservations > 0 && <div>{unknownCacheSavingsObservations} savings observation{unknownCacheSavingsObservations === 1 ? '' : 's'} not reported</div>}
+              <div>
+                {cacheHitRate.toLocaleString(undefined, {
+                  style: 'percent',
+                  maximumFractionDigits: 0,
+                })}{' '}
+                cache hit
+              </div>
+              <div>
+                Cache savings:{' '}
+                {cacheSavingsUsd === null
+                  ? notReported
+                  : `${formatGbp(cacheSavingsUsd, rate)} (server-reported, USD-derived)`}
+              </div>
+              {unknownCacheSavingsObservations > 0 && (
+                <div>
+                  {unknownCacheSavingsObservations} savings observation
+                  {unknownCacheSavingsObservations === 1 ? '' : 's'} not reported
+                </div>
+              )}
               <InfoPopover id="cache-info" title="Prompt cache" className="info-popover--summary">
-                <p>Cache hit is the share of observed prompt tokens served from cache. Savings are shown only when the server reported them.</p>
+                <p>
+                  Cache hit is the share of observed prompt tokens served from cache. Savings are
+                  shown only when the server reported them.
+                </p>
               </InfoPopover>
             </div>
           )}
@@ -129,19 +182,30 @@ function InsightsCard({ loading, unread }: InsightsCardProps) {
 export default function SummaryCards() {
   const range = useMemo(() => dashboardDateRange(), [])
   const { aggregates, isLoading: aggregatesLoading } = useAggregates(range.from, range.to)
-  const { report: billedReporting, isLoading: billedLoading, isError: billedError } = useBilledReporting(range.from, range.to)
+  const {
+    report: billedReporting,
+    isLoading: billedLoading,
+    isError: billedError,
+  } = useBilledReporting(range.from, range.to)
   const { insights, isLoading: insightsLoading } = useInsights()
   const rate = useUsdToGbp()
   const summary = summarizeCosts(aggregates, [])
   const billedGbp = billedReporting?.entryCount ? billedReporting.totalGbp : null
 
-  const { totalInputTokens, totalOutputTokens, totalCacheRead } = useMemo(() => aggregates.reduce((total, aggregate) => ({
-    totalInputTokens: total.totalInputTokens + observedInputTokens(aggregate),
-    totalOutputTokens: total.totalOutputTokens + aggregate.outputTokens,
-    totalCacheRead: total.totalCacheRead + aggregate.cacheReadTokens,
-  }), { totalInputTokens: 0, totalOutputTokens: 0, totalCacheRead: 0 }), [aggregates])
+  const { totalInputTokens, totalOutputTokens, totalCacheRead } = useMemo(
+    () =>
+      aggregates.reduce(
+        (total, aggregate) => ({
+          totalInputTokens: total.totalInputTokens + observedInputTokens(aggregate),
+          totalOutputTokens: total.totalOutputTokens + aggregate.outputTokens,
+          totalCacheRead: total.totalCacheRead + aggregate.cacheReadTokens,
+        }),
+        { totalInputTokens: 0, totalOutputTokens: 0, totalCacheRead: 0 },
+      ),
+    [aggregates],
+  )
 
-  const unread = insights.filter(insight => !insight.acknowledged).length
+  const unread = insights.filter((insight) => !insight.acknowledged).length
 
   return (
     <div className="summary-cards summary-cards--overview">
@@ -186,8 +250,8 @@ export default function SummaryCards() {
       <InsightsCard loading={insightsLoading} unread={unread} />
       {summary.unclassifiedUsd !== null && (
         <p className="panel-note summary-cards__unclassified">
-          {formatGbp(summary.unclassifiedUsd, rate)} reported under a cost basis the cards above don’t
-          categorize — see the Model breakdown table below for the full figure.
+          {formatGbp(summary.unclassifiedUsd, rate)} reported under a cost basis the cards above
+          don’t categorize — see the Model breakdown table below for the full figure.
         </p>
       )}
     </div>

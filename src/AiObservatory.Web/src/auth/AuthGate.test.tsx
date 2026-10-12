@@ -26,7 +26,11 @@ describe('AuthGate', () => {
     msalMock.isEmbedded = false
     useIsAuthenticated.mockReset().mockReturnValue(false)
     useMsal.mockReset().mockReturnValue({
-      instance: { loginRedirect: vi.fn().mockResolvedValue(undefined), getActiveAccount: vi.fn(), setActiveAccount: vi.fn() },
+      instance: {
+        loginRedirect: vi.fn().mockResolvedValue(undefined),
+        getActiveAccount: vi.fn(),
+        setActiveAccount: vi.fn(),
+      },
       accounts: [],
       inProgress: 'none',
     })
@@ -34,14 +38,22 @@ describe('AuthGate', () => {
 
   test('renders children directly when auth is disabled (local dev, no client id baked)', () => {
     msalMock.authEnabled = false
-    render(<AuthGate><p>dashboard content</p></AuthGate>)
+    render(
+      <AuthGate>
+        <p>dashboard content</p>
+      </AuthGate>,
+    )
     expect(screen.getByText('dashboard content')).toBeInTheDocument()
   })
 
   test('renders children directly when a viewer share-link key is present, bypassing Entra entirely', () => {
     msalMock.authEnabled = true
     msalMock.urlApiKey = 'viewer-key-123'
-    render(<AuthGate><p>dashboard content</p></AuthGate>)
+    render(
+      <AuthGate>
+        <p>dashboard content</p>
+      </AuthGate>,
+    )
     expect(screen.getByText('dashboard content')).toBeInTheDocument()
     // useIsAuthenticated must not even be consulted on the viewer-key bypass path.
     expect(useIsAuthenticated).not.toHaveBeenCalled()
@@ -52,7 +64,11 @@ describe('AuthGate', () => {
     msalMock.urlApiKey = ''
     useIsAuthenticated.mockReturnValue(false)
 
-    render(<AuthGate><p>dashboard content</p></AuthGate>)
+    render(
+      <AuthGate>
+        <p>dashboard content</p>
+      </AuthGate>,
+    )
 
     expect(screen.queryByText('dashboard content')).not.toBeInTheDocument()
     expect(screen.getByRole('main')).toBeInTheDocument()
@@ -64,7 +80,11 @@ describe('AuthGate', () => {
     msalMock.urlApiKey = 'viewer-key-123'
     msalMock.isEmbedded = true
 
-    render(<AuthGate><p>dashboard content</p></AuthGate>)
+    render(
+      <AuthGate>
+        <p>dashboard content</p>
+      </AuthGate>,
+    )
 
     expect(screen.queryByText('dashboard content')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /sign in with microsoft/i })).toBeInTheDocument()
@@ -75,10 +95,16 @@ describe('AuthGate', () => {
     msalMock.urlApiKey = ''
     useIsAuthenticated.mockReturnValue(true)
 
-    render(<AuthGate><p>dashboard content</p></AuthGate>)
+    render(
+      <AuthGate>
+        <p>dashboard content</p>
+      </AuthGate>,
+    )
 
     expect(screen.getByText('dashboard content')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /sign in with microsoft/i })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /sign in with microsoft/i }),
+    ).not.toBeInTheDocument()
   })
 
   test('the sign-in button is disabled while a redirect is already in progress', () => {
@@ -91,7 +117,11 @@ describe('AuthGate', () => {
       inProgress: 'login',
     })
 
-    render(<AuthGate><p>dashboard content</p></AuthGate>)
+    render(
+      <AuthGate>
+        <p>dashboard content</p>
+      </AuthGate>,
+    )
 
     expect(screen.getByRole('button', { name: /signing in/i })).toBeDisabled()
   })

@@ -7,19 +7,35 @@ import BudgetRulesPanel from './BudgetRulesPanel'
 const data = vi.hoisted(() => ({
   rules: [] as BudgetRule[],
   insights: [] as Insight[],
-  settings: { emailConfigured: false, emailMasked: null, slackConfigured: false, slackMasked: null } as NotificationSettings,
+  settings: {
+    emailConfigured: false,
+    emailMasked: null,
+    slackConfigured: false,
+    slackMasked: null,
+  } as NotificationSettings,
   settingsError: false,
 }))
 
 vi.mock('../api/queries', () => ({
   useBudgetRules: () => ({ rules: data.rules, isLoading: false, isError: false }),
   useInsights: () => ({ insights: data.insights, isError: false, isLoading: false }),
-  useNotificationSettings: () => ({ settings: data.settings, isLoading: false, isError: data.settingsError }),
+  useNotificationSettings: () => ({
+    settings: data.settings,
+    isLoading: false,
+    isError: data.settingsError,
+  }),
 }))
 
-const updateNotificationSettings = vi.hoisted(() => vi.fn(() => Promise.resolve({
-  emailConfigured: true, emailMasked: 'ch***@fixportal.org', slackConfigured: false, slackMasked: null,
-})))
+const updateNotificationSettings = vi.hoisted(() =>
+  vi.fn(() =>
+    Promise.resolve({
+      emailConfigured: true,
+      emailMasked: 'ch***@fixportal.org',
+      slackConfigured: false,
+      slackMasked: null,
+    }),
+  ),
+)
 vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
   updateNotificationSettings,
@@ -38,12 +54,22 @@ function renderPanel() {
 beforeEach(() => {
   data.rules = []
   data.insights = []
-  data.settings = { emailConfigured: false, emailMasked: null, slackConfigured: false, slackMasked: null }
+  data.settings = {
+    emailConfigured: false,
+    emailMasked: null,
+    slackConfigured: false,
+    slackMasked: null,
+  }
   data.settingsError = false
   updateNotificationSettings.mockClear()
-  updateNotificationSettings.mockImplementation(() => Promise.resolve({
-    emailConfigured: true, emailMasked: 'ch***@fixportal.org', slackConfigured: false, slackMasked: null,
-  }))
+  updateNotificationSettings.mockImplementation(() =>
+    Promise.resolve({
+      emailConfigured: true,
+      emailMasked: 'ch***@fixportal.org',
+      slackConfigured: false,
+      slackMasked: null,
+    }),
+  )
 })
 
 describe('BudgetRulesPanel notification settings', () => {
@@ -56,7 +82,12 @@ describe('BudgetRulesPanel notification settings', () => {
   })
 
   test('shows the masked value and Edit/Remove for a configured channel', () => {
-    data.settings = { emailConfigured: true, emailMasked: 'ch***@fixportal.org', slackConfigured: false, slackMasked: null }
+    data.settings = {
+      emailConfigured: true,
+      emailMasked: 'ch***@fixportal.org',
+      slackConfigured: false,
+      slackMasked: null,
+    }
     renderPanel()
 
     expect(screen.getByText('ch***@fixportal.org')).toBeInTheDocument()
@@ -68,11 +99,16 @@ describe('BudgetRulesPanel notification settings', () => {
     renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /add email/i }))
-    fireEvent.change(screen.getByLabelText('Email address'), { target: { value: 'chris@fixportal.org' } })
+    fireEvent.change(screen.getByLabelText('Email address'), {
+      target: { value: 'chris@fixportal.org' },
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
-      expect(updateNotificationSettings).toHaveBeenCalledWith({ alertEmailTo: 'chris@fixportal.org' }, expect.anything()),
+      expect(updateNotificationSettings).toHaveBeenCalledWith(
+        { alertEmailTo: 'chris@fixportal.org' },
+        expect.anything(),
+      ),
     )
   })
 
@@ -89,7 +125,9 @@ describe('BudgetRulesPanel notification settings', () => {
     renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /add email/i }))
-    fireEvent.change(screen.getByLabelText('Email address'), { target: { value: 'chris@fixportal.org' } })
+    fireEvent.change(screen.getByLabelText('Email address'), {
+      target: { value: 'chris@fixportal.org' },
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
@@ -103,8 +141,10 @@ describe('BudgetRulesPanel notification settings', () => {
 
   test('removing a configured Slack webhook requires a confirm click', async () => {
     data.settings = {
-      emailConfigured: false, emailMasked: null,
-      slackConfigured: true, slackMasked: 'https://hooks.slack.com/services/***',
+      emailConfigured: false,
+      emailMasked: null,
+      slackConfigured: true,
+      slackMasked: 'https://hooks.slack.com/services/***',
     }
     renderPanel()
 
@@ -113,7 +153,10 @@ describe('BudgetRulesPanel notification settings', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
     await waitFor(() =>
-      expect(updateNotificationSettings).toHaveBeenCalledWith({ slackWebhookUrl: null }, expect.anything()),
+      expect(updateNotificationSettings).toHaveBeenCalledWith(
+        { slackWebhookUrl: null },
+        expect.anything(),
+      ),
     )
   })
 

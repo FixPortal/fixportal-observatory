@@ -14,7 +14,7 @@ test('shows the synthetic-data notice when VITE_DEMO_BANNER is true', () => {
   )
 })
 
-test.each(['', 'false', 'TRUE'])('renders nothing when VITE_DEMO_BANNER is %j', value => {
+test.each(['', 'false', 'TRUE'])('renders nothing when VITE_DEMO_BANNER is %j', (value) => {
   vi.stubEnv('VITE_DEMO_BANNER', value)
   const { container } = render(<DemoBanner />)
   expect(container).toBeEmptyDOMElement()

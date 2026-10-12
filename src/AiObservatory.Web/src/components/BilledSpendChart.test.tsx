@@ -16,9 +16,27 @@ test('aligns daily periods by position and fills dates without spend with zero',
   expect(result).toEqual({
     grain: 'day',
     points: [
-      { slot: 1, selectedDate: '2026-08-01', comparisonDate: '2026-07-01', selected: 70, comparison: 0 },
-      { slot: 2, selectedDate: '2026-08-02', comparisonDate: '2026-07-02', selected: 0, comparison: 20 },
-      { slot: 3, selectedDate: '2026-08-03', comparisonDate: '2026-07-03', selected: 40, comparison: 0 },
+      {
+        slot: 1,
+        selectedDate: '2026-08-01',
+        comparisonDate: '2026-07-01',
+        selected: 70,
+        comparison: 0,
+      },
+      {
+        slot: 2,
+        selectedDate: '2026-08-02',
+        comparisonDate: '2026-07-02',
+        selected: 0,
+        comparison: 20,
+      },
+      {
+        slot: 3,
+        selectedDate: '2026-08-03',
+        comparisonDate: '2026-07-03',
+        selected: 40,
+        comparison: 0,
+      },
     ],
   })
 })
@@ -37,7 +55,19 @@ test('uses weekly buckets for long arbitrary ranges', () => {
 
   expect(result.grain).toBe('week')
   expect(result.points.slice(0, 2)).toEqual([
-    { slot: 1, selectedDate: '2026-01-01', comparisonDate: '2025-09-03', selected: 30, comparison: 0 },
-    { slot: 2, selectedDate: '2026-01-08', comparisonDate: '2025-09-10', selected: 30, comparison: 0 },
+    {
+      slot: 1,
+      selectedDate: '2026-01-01',
+      comparisonDate: '2025-09-03',
+      selected: 30,
+      comparison: 0,
+    },
+    {
+      slot: 2,
+      selectedDate: '2026-01-08',
+      comparisonDate: '2025-09-10',
+      selected: 30,
+      comparison: 0,
+    },
   ])
 })

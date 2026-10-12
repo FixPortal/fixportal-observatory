@@ -6,13 +6,41 @@ import SpendVendorCatalog from './SpendVendorCatalog'
 import * as client from '../api/client'
 
 const categories = [
-  { id: 'k1', key: 'compute', displayName: 'Compute', colorVar: '', sortOrder: 1, archivedAt: null },
-  { id: 'k2', key: 'legacy', displayName: 'Legacy', colorVar: '', sortOrder: 2, archivedAt: '2026-06-01T00:00:00Z' },
+  {
+    id: 'k1',
+    key: 'compute',
+    displayName: 'Compute',
+    colorVar: '',
+    sortOrder: 1,
+    archivedAt: null,
+  },
+  {
+    id: 'k2',
+    key: 'legacy',
+    displayName: 'Legacy',
+    colorVar: '',
+    sortOrder: 2,
+    archivedAt: '2026-06-01T00:00:00Z',
+  },
 ]
 
 const vendors = [
-  { id: 'v1', key: 'anthropic', displayName: 'Anthropic', provider: 'anthropic', defaultCategoryId: 'k1', archivedAt: null },
-  { id: 'v2', key: 'gha', displayName: 'GitHub Actions', provider: null, defaultCategoryId: null, archivedAt: '2026-06-01T00:00:00Z' },
+  {
+    id: 'v1',
+    key: 'anthropic',
+    displayName: 'Anthropic',
+    provider: 'anthropic',
+    defaultCategoryId: 'k1',
+    archivedAt: null,
+  },
+  {
+    id: 'v2',
+    key: 'gha',
+    displayName: 'GitHub Actions',
+    provider: null,
+    defaultCategoryId: null,
+    archivedAt: '2026-06-01T00:00:00Z',
+  },
 ]
 
 function renderPanel() {
@@ -50,7 +78,16 @@ describe('SpendVendorCatalog', () => {
     render(
       <QueryClientProvider client={qc}>
         <SpendVendorCatalog
-          vendors={[{ id: 'v9', key: 'acme', displayName: 'Acme', provider: 'azure', defaultCategoryId: null, archivedAt: null }]}
+          vendors={[
+            {
+              id: 'v9',
+              key: 'acme',
+              displayName: 'Acme',
+              provider: 'azure',
+              defaultCategoryId: null,
+              archivedAt: null,
+            },
+          ]}
           categories={categories}
         />
       </QueryClientProvider>,
@@ -66,7 +103,9 @@ describe('SpendVendorCatalog', () => {
     const row = screen.getByText('anthropic').closest('li')!
     const details = row.querySelector('.vendor-catalog__details')
 
-    expect(details).toContainElement(within(row).getByText('Anthropic', { selector: '.sub-list__name' }))
+    expect(details).toContainElement(
+      within(row).getByText('Anthropic', { selector: '.sub-list__name' }),
+    )
     expect(details).toContainElement(screen.getByLabelText('Default category for Anthropic'))
     expect(row.querySelector('.sub-list__actions--fixed')).not.toBeNull()
   })
@@ -76,16 +115,20 @@ describe('SpendVendorCatalog', () => {
     // Exact label: the per-row pickers below are labelled "Default category for <vendor>",
     // so a loose regex would now match several selects.
     const select = screen.getByLabelText('Default category') as HTMLSelectElement
-    const optionLabels = Array.from(select.options).map(o => o.textContent)
+    const optionLabels = Array.from(select.options).map((o) => o.textContent)
     expect(optionLabels).toContain('Compute')
     expect(optionLabels).not.toContain('Legacy')
   })
 
   it('does not write a default-category change until the user saves it', async () => {
-    const patch = vi.spyOn(client, 'patchSpendVendor').mockResolvedValue({ ...vendors[0], defaultCategoryId: null })
+    const patch = vi
+      .spyOn(client, 'patchSpendVendor')
+      .mockResolvedValue({ ...vendors[0], defaultCategoryId: null })
     renderPanel()
 
-    fireEvent.change(screen.getByLabelText('Default category for Anthropic'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Default category for Anthropic'), {
+      target: { value: '' },
+    })
 
     expect(patch).not.toHaveBeenCalled()
     const row = screen.getByText('anthropic').closest('li')!
@@ -127,7 +170,14 @@ describe('SpendVendorCatalog', () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     // v3's default points at 'k2', which has since been archived.
     const withArchivedDefault = [
-      { id: 'v3', key: 'legacy-vendor', displayName: 'Legacy Vendor', provider: null, defaultCategoryId: 'k2', archivedAt: null },
+      {
+        id: 'v3',
+        key: 'legacy-vendor',
+        displayName: 'Legacy Vendor',
+        provider: null,
+        defaultCategoryId: 'k2',
+        archivedAt: null,
+      },
     ]
     render(
       <QueryClientProvider client={qc}>
@@ -139,12 +189,17 @@ describe('SpendVendorCatalog', () => {
     // Without the archived option present the browser falls back to the first option,
     // silently reporting "No default category" for a vendor that has one.
     expect(select.value).toBe('k2')
-    expect(Array.from(select.options).map(o => o.textContent)).toContain('Legacy (archived)')
+    expect(Array.from(select.options).map((o) => o.textContent)).toContain('Legacy (archived)')
   })
 
   it('creates a vendor with an explicitly chosen provider', async () => {
     const create = vi.spyOn(client, 'createSpendVendor').mockResolvedValue({
-      id: 'v3', key: 'openai-direct', displayName: 'OpenAI Direct', provider: 'openai', defaultCategoryId: null, archivedAt: null,
+      id: 'v3',
+      key: 'openai-direct',
+      displayName: 'OpenAI Direct',
+      provider: 'openai',
+      defaultCategoryId: null,
+      archivedAt: null,
     })
     renderPanel()
 
@@ -155,13 +210,22 @@ describe('SpendVendorCatalog', () => {
 
     await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ key: 'openai-direct', displayName: 'OpenAI Direct', provider: 'openai' }),
+      expect.objectContaining({
+        key: 'openai-direct',
+        displayName: 'OpenAI Direct',
+        provider: 'openai',
+      }),
     )
   })
 
   it('creates a vendor with no provider as an explicit null, the normal case for unmetered tools', async () => {
     const create = vi.spyOn(client, 'createSpendVendor').mockResolvedValue({
-      id: 'v4', key: 'coderabbit', displayName: 'CodeRabbit', provider: null, defaultCategoryId: null, archivedAt: null,
+      id: 'v4',
+      key: 'coderabbit',
+      displayName: 'CodeRabbit',
+      provider: null,
+      defaultCategoryId: null,
+      archivedAt: null,
     })
     renderPanel()
 
@@ -175,7 +239,10 @@ describe('SpendVendorCatalog', () => {
 
   it('surfaces a 400 bad-slug failure from the server rather than a generic message', async () => {
     vi.spyOn(client, 'createSpendVendor').mockRejectedValue(
-      new client.ApiError(400, 'Key must be a slug of 60 characters or fewer and DisplayName is required'),
+      new client.ApiError(
+        400,
+        'Key must be a slug of 60 characters or fewer and DisplayName is required',
+      ),
     )
     renderPanel()
 
@@ -184,11 +251,14 @@ describe('SpendVendorCatalog', () => {
     fireEvent.click(screen.getByRole('button', { name: /add vendor/i }))
 
     await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent(/slug of 60 characters/))
+      expect(screen.getByRole('alert')).toHaveTextContent(/slug of 60 characters/),
+    )
   })
 
   it('archives a live vendor', async () => {
-    const patch = vi.spyOn(client, 'patchSpendVendor').mockResolvedValue({ ...vendors[0], archivedAt: '2026-07-26T00:00:00Z' })
+    const patch = vi
+      .spyOn(client, 'patchSpendVendor')
+      .mockResolvedValue({ ...vendors[0], archivedAt: '2026-07-26T00:00:00Z' })
     renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /^archive anthropic$/i }))
@@ -197,7 +267,9 @@ describe('SpendVendorCatalog', () => {
   })
 
   it('unarchives an archived vendor', async () => {
-    const patch = vi.spyOn(client, 'patchSpendVendor').mockResolvedValue({ ...vendors[1], archivedAt: null })
+    const patch = vi
+      .spyOn(client, 'patchSpendVendor')
+      .mockResolvedValue({ ...vendors[1], archivedAt: null })
     renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /^unarchive github actions$/i }))
@@ -206,7 +278,9 @@ describe('SpendVendorCatalog', () => {
   })
 
   it('renames a vendor via PATCH DisplayName', async () => {
-    const patch = vi.spyOn(client, 'patchSpendVendor').mockResolvedValue({ ...vendors[0], displayName: 'Anthropic Inc' })
+    const patch = vi
+      .spyOn(client, 'patchSpendVendor')
+      .mockResolvedValue({ ...vendors[0], displayName: 'Anthropic Inc' })
     renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /^rename anthropic$/i }))
@@ -219,6 +293,8 @@ describe('SpendVendorCatalog', () => {
 
   it('explains that one vendor can span several spend categories', () => {
     renderPanel()
-    expect(screen.getByText(/suppliers; categories describe what was purchased/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/suppliers; categories describe what was purchased/i),
+    ).toBeInTheDocument()
   })
 })

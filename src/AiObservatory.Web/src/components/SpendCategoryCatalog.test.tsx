@@ -6,8 +6,22 @@ import SpendCategoryCatalog from './SpendCategoryCatalog'
 import * as client from '../api/client'
 
 const categories = [
-  { id: 'c1', key: 'credits', displayName: 'Credits', colorVar: '--provider-anthropic', sortOrder: 1, archivedAt: null },
-  { id: 'c2', key: 'subscriptions', displayName: 'Subscriptions', colorVar: '', sortOrder: 2, archivedAt: '2026-06-01T00:00:00Z' },
+  {
+    id: 'c1',
+    key: 'credits',
+    displayName: 'Credits',
+    colorVar: '--provider-anthropic',
+    sortOrder: 1,
+    archivedAt: null,
+  },
+  {
+    id: 'c2',
+    key: 'subscriptions',
+    displayName: 'Subscriptions',
+    colorVar: '',
+    sortOrder: 2,
+    archivedAt: '2026-06-01T00:00:00Z',
+  },
 ]
 
 function renderPanel() {
@@ -42,7 +56,12 @@ describe('SpendCategoryCatalog', () => {
 
   it('creates a category from the form', async () => {
     const create = vi.spyOn(client, 'createSpendCategory').mockResolvedValue({
-      id: 'c3', key: 'inference', displayName: 'Inference', colorVar: '', sortOrder: 3, archivedAt: null,
+      id: 'c3',
+      key: 'inference',
+      displayName: 'Inference',
+      colorVar: '',
+      sortOrder: 3,
+      archivedAt: null,
     })
     renderPanel()
 
@@ -72,11 +91,14 @@ describe('SpendCategoryCatalog', () => {
     fireEvent.click(screen.getByRole('button', { name: /add category/i }))
 
     await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('Category key already exists: credits'))
+      expect(screen.getByRole('alert')).toHaveTextContent('Category key already exists: credits'),
+    )
   })
 
   it('archives a live category', async () => {
-    const patch = vi.spyOn(client, 'patchSpendCategory').mockResolvedValue({ ...categories[0], archivedAt: '2026-07-26T00:00:00Z' })
+    const patch = vi
+      .spyOn(client, 'patchSpendCategory')
+      .mockResolvedValue({ ...categories[0], archivedAt: '2026-07-26T00:00:00Z' })
     renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /^archive credits$/i }))
@@ -85,7 +107,9 @@ describe('SpendCategoryCatalog', () => {
   })
 
   it('unarchives an archived category', async () => {
-    const patch = vi.spyOn(client, 'patchSpendCategory').mockResolvedValue({ ...categories[1], archivedAt: null })
+    const patch = vi
+      .spyOn(client, 'patchSpendCategory')
+      .mockResolvedValue({ ...categories[1], archivedAt: null })
     renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /^unarchive subscriptions$/i }))
@@ -94,7 +118,9 @@ describe('SpendCategoryCatalog', () => {
   })
 
   it('renames a category via PATCH DisplayName', async () => {
-    const patch = vi.spyOn(client, 'patchSpendCategory').mockResolvedValue({ ...categories[0], displayName: 'AI Credits' })
+    const patch = vi
+      .spyOn(client, 'patchSpendCategory')
+      .mockResolvedValue({ ...categories[0], displayName: 'AI Credits' })
     renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /^rename credits$/i }))

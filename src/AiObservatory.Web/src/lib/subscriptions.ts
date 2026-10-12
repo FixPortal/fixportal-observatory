@@ -8,20 +8,35 @@ interface NotionalAggregate {
 }
 
 const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ]
 
 export const billingMonthName = (month: number): string => MONTHS[month - 1] ?? ''
 
 export function subscriptionUsage(aggregates: NotionalAggregate[], provider: string, from: string) {
-  const period = aggregates.filter(a => a.provider === provider && a.date >= from && a.costBasis === 'notional')
+  const period = aggregates.filter(
+    (a) => a.provider === provider && a.date >= from && a.costBasis === 'notional',
+  )
   const requestCount = period.reduce((total, a) => total + a.requestCount, 0)
   const unknownCostCount = period.reduce((total, a) => total + a.unknownCostCount, 0)
   return {
-    notionalUsd: requestCount === 0 || requestCount > unknownCostCount
-      ? period.filter(a => a.requestCount > a.unknownCostCount).reduce((total, a) => total + a.costUsd, 0)
-      : null,
+    notionalUsd:
+      requestCount === 0 || requestCount > unknownCostCount
+        ? period
+            .filter((a) => a.requestCount > a.unknownCostCount)
+            .reduce((total, a) => total + a.costUsd, 0)
+        : null,
     requestCount,
     unknownCostCount,
   }
@@ -51,7 +66,8 @@ export function currentBillingPeriodStart(
 
   if (billingInterval === 'annual') {
     if (billingMonth === null) throw new Error('Annual subscriptions require a billing month.')
-    if (billingMonth < 1 || billingMonth > 12) throw new Error('billingMonth must be between 1 and 12.')
+    if (billingMonth < 1 || billingMonth > 12)
+      throw new Error('billingMonth must be between 1 and 12.')
     const renewalDay = clamp(year, billingMonth)
     const renewalPassed = month > billingMonth || (month === billingMonth && day >= renewalDay)
     const startYear = renewalPassed ? year : year - 1

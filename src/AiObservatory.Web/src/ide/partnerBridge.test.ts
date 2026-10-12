@@ -11,8 +11,12 @@ describe('embedded partner bridge', () => {
     postMessage.mockReset()
     port = {
       postMessage,
-      addEventListener: (_kind, next) => { listener = next },
-      removeEventListener: (_kind, next) => { if (listener === next) listener = null },
+      addEventListener: (_kind, next) => {
+        listener = next
+      },
+      removeEventListener: (_kind, next) => {
+        if (listener === next) listener = null
+      },
     }
   })
 
@@ -21,34 +25,40 @@ describe('embedded partner bridge', () => {
 
     bridge.postReady()
 
-    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
-      contractVersion: '1.0',
-      kind: 'partner.ready',
-      authority: 'workspace',
-      payload: expect.objectContaining({ capabilities: [], connection: 'ready' }),
-    }))
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contractVersion: '1.0',
+        kind: 'partner.ready',
+        authority: 'workspace',
+        payload: expect.objectContaining({ capabilities: [], connection: 'ready' }),
+      }),
+    )
   })
 
   test('accepts only the bounded host context message', () => {
     const bridge = createEmbeddedBridge(port)
     const observed: Array<string | null> = []
-    bridge.subscribe(context => observed.push(context?.repository ?? null))
+    bridge.subscribe((context) => observed.push(context?.repository ?? null))
 
-    listener?.(new MessageEvent('message', { data: {
-      contractVersion: '1.0',
-      kind: 'host.context',
-      payload: {
-        partnerId: { value: '753cb584-cd0b-4e16-9f08-6c0ce130a84a' },
-        contextMode: 0,
-        context: {
-          missionId: { value: '11111111-1111-1111-1111-111111111111' },
-          repository: 'fixportal-ide',
+    listener?.(
+      new MessageEvent('message', {
+        data: {
+          contractVersion: '1.0',
+          kind: 'host.context',
+          payload: {
+            partnerId: { value: '753cb584-cd0b-4e16-9f08-6c0ce130a84a' },
+            contextMode: 0,
+            context: {
+              missionId: { value: '11111111-1111-1111-1111-111111111111' },
+              repository: 'fixportal-ide',
+            },
+            capabilities: [],
+            connection: 1,
+            observedAt: '2026-08-04T12:00:00Z',
+          },
         },
-        capabilities: [],
-        connection: 1,
-        observedAt: '2026-08-04T12:00:00Z',
-      },
-    } }))
+      }),
+    )
 
     expect(bridge.context).toEqual({
       missionId: '11111111-1111-1111-1111-111111111111',

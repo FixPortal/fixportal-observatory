@@ -31,8 +31,8 @@
      --sidebar-bg. It remains visibly fainter than --sidebar-text-muted. */
   --sidebar-text-faint: #7c8ca2;
   --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
-  --sidebar-selected-bg: rgba(255, 255, 255, 0.10);
-  --sidebar-border: rgba(255, 255, 255, 0.10);
+  --sidebar-selected-bg: rgba(255, 255, 255, 0.1);
+  --sidebar-border: rgba(255, 255, 255, 0.1);
   --sidebar-active-bg: hsl(217 82% 20%);
   --sidebar-active-text: hsl(217 82% 80%);
   /* Attention badge on a subnav entry. Amber on
@@ -113,7 +113,7 @@
   --side-sell-text: #991b1b;
 
   /* Modal / dialog backdrop. */
-  --overlay-bg: rgba(0, 0, 0, 0.40);
+  --overlay-bg: rgba(0, 0, 0, 0.4);
 
   /* DEPRECATED alongside --info-*, and for the same reason: a fifth hue that exists
      only to avoid colliding with the fourth. Order-status "new" should read from
@@ -136,14 +136,14 @@
   /* Font families — canonical here on :root so non-Tailwind consumers read them
      directly via var(--font-sans/-mono). theme.css restates identical values for
      Tailwind's font-sans/font-mono utilities; keep the two in sync. */
-  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 }
 
 /* Element-scopable light set — mirrors the themable tokens declared on :root
    so a subtree can be pinned light even inside a dark ancestor. Sidebar /
    code / font tokens are theme-invariant and intentionally NOT restated. */
-[data-theme="light"] {
+[data-theme='light'] {
   --app-bg: #f3f7fc;
   --card-bg: #ffffff;
   --header-bg: #edf4fc;
@@ -165,17 +165,32 @@
   --brand-ring: hsl(217 82% 35% / 0.6);
   --brand-pill-bg: hsl(217 82% 45% / 0.12);
   --flow-out-soft: hsl(217 25% 28%);
-  --ok-bg: #dcfce7; --ok-border: #16a34a; --ok-text: #15803d;
-  --warn-bg: #fef3c7; --warn-border: #fbbf24; --warn-text: #92400e;
-  --bad-bg: #fef2f2; --bad-border: #fca5a5; --bad-text: #991b1b;
-  --info-bg: #eef2ff; --info-border: #a5b4fc; --info-text: #3730a3;
-  --side-buy-bg: #dcfce7; --side-buy-border: #16a34a; --side-buy-text: #15803d;
-  --side-sell-bg: #fef2f2; --side-sell-border: #fca5a5; --side-sell-text: #991b1b;
-  --overlay-bg: rgba(0, 0, 0, 0.40);
-  --new-bg: #eff6ff; --new-border: #93c5fd; --new-text: #1d4ed8;
+  --ok-bg: #dcfce7;
+  --ok-border: #16a34a;
+  --ok-text: #15803d;
+  --warn-bg: #fef3c7;
+  --warn-border: #fbbf24;
+  --warn-text: #92400e;
+  --bad-bg: #fef2f2;
+  --bad-border: #fca5a5;
+  --bad-text: #991b1b;
+  --info-bg: #eef2ff;
+  --info-border: #a5b4fc;
+  --info-text: #3730a3;
+  --side-buy-bg: #dcfce7;
+  --side-buy-border: #16a34a;
+  --side-buy-text: #15803d;
+  --side-sell-bg: #fef2f2;
+  --side-sell-border: #fca5a5;
+  --side-sell-text: #991b1b;
+  --overlay-bg: rgba(0, 0, 0, 0.4);
+  --new-bg: #eff6ff;
+  --new-border: #93c5fd;
+  --new-text: #1d4ed8;
 }
 
-:root[data-theme="dark"], [data-theme="dark"] {
+:root[data-theme='dark'],
+[data-theme='dark'] {
   --app-bg: #07111f;
   --card-bg: #0d1b2e;
   --header-bg: #081426;
@@ -212,7 +227,7 @@
   /* The readable flow companion is lifted for the dark canvas. */
   --flow-out-soft: hsl(217 25% 78%);
 
-  --ok-bg: rgba(22, 163, 74, 0.20);
+  --ok-bg: rgba(22, 163, 74, 0.2);
   --ok-text: #86efac;
 
   /* Amber in dark as well as light. This was fuchsia (#c026d3 / #f0abfc) on the
@@ -232,11 +247,11 @@
   --bad-border: #7f1d1d;
   --bad-text: #fecaca;
 
-  --info-bg: rgba(99, 102, 241, 0.10);
+  --info-bg: rgba(99, 102, 241, 0.1);
   --info-border: #4338ca;
   --info-text: #c7d2fe;
 
-  --side-buy-bg: rgba(22, 163, 74, 0.20);
+  --side-buy-bg: rgba(22, 163, 74, 0.2);
   --side-buy-border: #15803d;
   --side-buy-text: #86efac;
 
@@ -244,7 +259,7 @@
   --side-sell-border: #7f1d1d;
   --side-sell-text: #fecaca;
 
-  --overlay-bg: rgba(0, 0, 0, 0.60);
+  --overlay-bg: rgba(0, 0, 0, 0.6);
 
   --new-bg: rgba(59, 130, 246, 0.18);
   --new-border: #1d4ed8;
@@ -256,7 +271,9 @@
    makes carries it; a dedicated component stylesheet is an SP4b concern. Used by
    the BrandAvatar `animate` prop. */
 @keyframes fpds-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 .fpds-spin {
   /* slow, brand-safe rotation (the avatar is identity, not a busy-spinner) */

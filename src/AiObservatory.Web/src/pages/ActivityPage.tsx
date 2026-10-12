@@ -9,8 +9,16 @@ const ProjectTreemap = lazy(() => import('../components/ProjectTreemap'))
 
 export default function ActivityPage() {
   const {
-    from, to, preset, setPreset, setCustom,
-    comparisonFrom, comparisonTo, comparisonMode, setComparison, compareWithPrevious,
+    from,
+    to,
+    preset,
+    setPreset,
+    setCustom,
+    comparisonFrom,
+    comparisonTo,
+    comparisonMode,
+    setComparison,
+    compareWithPrevious,
   } = useDateRange()
   const primary = useActivityByProject(from, to)
   const comparison = useActivityByProject(comparisonFrom, comparisonTo)
@@ -35,7 +43,8 @@ export default function ActivityPage() {
       />
       {(primary.isError || comparison.isError) && (
         <div className="error-banner" role="alert">
-          Couldn’t load activity data. It may be unavailable or you may not be authorised — try refreshing.
+          Couldn’t load activity data. It may be unavailable or you may not be authorised — try
+          refreshing.
         </div>
       )}
       <div className="panel">
@@ -53,7 +62,12 @@ export default function ActivityPage() {
       <div className="panel">
         <div className="panel-title">Project share</div>
         <Suspense fallback={<div className="chart-skeleton" />}>
-          <ProjectTreemap projects={primary.projects} selectedProject={selectedProject} onSelectProject={setSelectedProject} isLoading={primary.isLoading} />
+          <ProjectTreemap
+            projects={primary.projects}
+            selectedProject={selectedProject}
+            onSelectProject={setSelectedProject}
+            isLoading={primary.isLoading}
+          />
         </Suspense>
       </div>
       <div className="panel">

@@ -5,10 +5,16 @@ import type { Subscription } from '../api/client'
 import SubscriptionPanel from './SubscriptionPanel'
 
 const mockData = vi.hoisted(() => ({
-  aggregates: [{
-    provider: 'google', date: '2026-08-01', costBasis: 'notional', costUsd: 0,
-    requestCount: 7, unknownCostCount: 7,
-  }],
+  aggregates: [
+    {
+      provider: 'google',
+      date: '2026-08-01',
+      costBasis: 'notional',
+      costUsd: 0,
+      requestCount: 7,
+      unknownCostCount: 7,
+    },
+  ],
   aggregateRange: [] as Date[],
 }))
 
@@ -27,7 +33,11 @@ const annualSubscription = {
 } as unknown as Subscription
 
 vi.mock('../api/queries', () => ({
-  useSubscriptions: () => ({ subscriptions: [annualSubscription], isError: false, isLoading: false }),
+  useSubscriptions: () => ({
+    subscriptions: [annualSubscription],
+    isError: false,
+    isLoading: false,
+  }),
   useAggregates: (from?: Date, to?: Date) => {
     mockData.aggregateRange = from && to ? [from, to] : []
     return { aggregates: mockData.aggregates, isError: false, isLoading: false }
@@ -46,10 +56,16 @@ vi.mock('../auth/msal', () => ({ isReadonly: true }))
 describe('SubscriptionPanel', () => {
   beforeEach(() => {
     mockData.aggregateRange = []
-    mockData.aggregates = [{
-      provider: 'google', date: '2026-08-01', costBasis: 'notional', costUsd: 0,
-      requestCount: 7, unknownCostCount: 7,
-    }]
+    mockData.aggregates = [
+      {
+        provider: 'google',
+        date: '2026-08-01',
+        costBasis: 'notional',
+        costUsd: 0,
+        requestCount: 7,
+        unknownCostCount: 7,
+      },
+    ]
   })
 
   test('renders annual price and renewal date', () => {
@@ -88,10 +104,16 @@ describe('SubscriptionPanel', () => {
   })
 
   test('qualifies a partial monetary value with the unpriced request count', () => {
-    mockData.aggregates = [{
-      provider: 'google', date: '2026-08-01', costBasis: 'notional', costUsd: 5,
-      requestCount: 7, unknownCostCount: 2,
-    }]
+    mockData.aggregates = [
+      {
+        provider: 'google',
+        date: '2026-08-01',
+        costBasis: 'notional',
+        costUsd: 5,
+        requestCount: 7,
+        unknownCostCount: 2,
+      },
+    ]
 
     render(
       <QueryClientProvider client={new QueryClient()}>

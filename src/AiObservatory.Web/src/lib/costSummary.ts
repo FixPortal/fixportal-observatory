@@ -23,15 +23,20 @@ interface TokenAggregate {
 export const observedInputTokens = (aggregate: TokenAggregate) =>
   aggregate.inputTokens + aggregate.cacheReadTokens + aggregate.cacheWriteTokens
 
-export const observedTokens = (aggregate: TokenAggregate) => observedInputTokens(aggregate) + aggregate.outputTokens
+export const observedTokens = (aggregate: TokenAggregate) =>
+  observedInputTokens(aggregate) + aggregate.outputTokens
 
 // "none" is a legitimate, DB-constraint-enforced always-zero basis (e.g. Copilot daily
 // reports); a zero-cost row under any basis carries nothing worth flagging either way.
-const isUnclassifiedSpend = (aggregate: CostAggregate) => aggregate.costBasis !== 'none' && aggregate.costUsd !== 0
+const isUnclassifiedSpend = (aggregate: CostAggregate) =>
+  aggregate.costBasis !== 'none' && aggregate.costUsd !== 0
 
 // Only rows with observed cache traffic say anything about savings; among those, a
 // bucket contributes its subtotal only when at least one request's savings are known.
-function accumulateCacheSavings(aggregates: CostAggregate[]): { cacheSavingsUsd: number | null; unknownCacheSavingsObservations: number } {
+function accumulateCacheSavings(aggregates: CostAggregate[]): {
+  cacheSavingsUsd: number | null
+  unknownCacheSavingsObservations: number
+} {
   let cacheSavingsUsd: number | null = null
   let unknownCacheSavingsObservations = 0
   for (const aggregate of aggregates) {
@@ -68,14 +73,19 @@ export interface CostSummary {
   unclassifiedUsd: number | null
 }
 
-export function summarizeCosts(aggregates: CostAggregate[], spendEntries: SpendAmount[]): CostSummary {
+export function summarizeCosts(
+  aggregates: CostAggregate[],
+  spendEntries: SpendAmount[],
+): CostSummary {
   let billedGbp = spendEntries.length === 0 ? null : 0
   let listPriceEstimateUsd: number | null = null
   let providerEstimateUsd: number | null = null
   let notionalUsd: number | null = null
   let unknownCostObservations = 0
   const unknownByBasis: Record<'listPriceEstimate' | 'providerEstimated' | 'notional', number> = {
-    listPriceEstimate: 0, providerEstimated: 0, notional: 0,
+    listPriceEstimate: 0,
+    providerEstimated: 0,
+    notional: 0,
   }
   const { cacheSavingsUsd, unknownCacheSavingsObservations } = accumulateCacheSavings(aggregates)
   let unclassifiedUsd: number | null = null
@@ -85,7 +95,8 @@ export function summarizeCosts(aggregates: CostAggregate[], spendEntries: SpendA
   for (const aggregate of aggregates) {
     unknownCostObservations += aggregate.unknownCostCount
     if (aggregate.costBasis in unknownByBasis) {
-      unknownByBasis[aggregate.costBasis as keyof typeof unknownByBasis] += aggregate.unknownCostCount
+      unknownByBasis[aggregate.costBasis as keyof typeof unknownByBasis] +=
+        aggregate.unknownCostCount
     }
 
     if (aggregate.requestCount <= aggregate.unknownCostCount) continue

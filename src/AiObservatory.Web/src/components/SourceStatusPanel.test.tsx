@@ -3,13 +3,22 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { SourceStatusResponse } from '../api/client'
 import SourceStatusPanel, { formatLastSuccess, mergeSourceStatuses } from './SourceStatusPanel'
 
-const data = vi.hoisted(() => ({ statuses: [] as SourceStatusResponse[], isError: false, isLoading: false }))
+const data = vi.hoisted(() => ({
+  statuses: [] as SourceStatusResponse[],
+  isError: false,
+  isLoading: false,
+}))
 vi.mock('../api/queries', () => ({ useSourceStatuses: () => data }))
 
 const status = (overrides: Partial<SourceStatusResponse>): SourceStatusResponse => ({
-  sourceId: 'openai-usage-api', status: 'fresh', isConfigured: true,
-  lastAttemptAt: '2026-08-25T11:00:00Z', lastSuccessAt: '2026-08-25T11:00:00Z',
-  latestObservationAt: '2026-08-25T10:00:00Z', consecutiveFailureCount: 0, lastError: null,
+  sourceId: 'openai-usage-api',
+  status: 'fresh',
+  isConfigured: true,
+  lastAttemptAt: '2026-08-25T11:00:00Z',
+  lastSuccessAt: '2026-08-25T11:00:00Z',
+  latestObservationAt: '2026-08-25T10:00:00Z',
+  consecutiveFailureCount: 0,
+  lastError: null,
   ...overrides,
 })
 
@@ -31,15 +40,24 @@ describe('source status helpers', () => {
       status({ sourceId: 'z-new-source', status: 'fresh' }),
       status({ sourceId: 'a-new-source', status: 'configured' }),
     ])
-    expect(rows.find(row => row.sourceId === 'openai-usage-api')).toMatchObject({ status: 'failing', consecutiveFailureCount: 2 })
-    expect(rows.find(row => row.sourceId === 'codex-local')).toMatchObject({ status: 'notConfigured', isConfigured: false, lastSuccessAt: null })
-    expect(rows.slice(-2).map(row => row.sourceId)).toEqual(['a-new-source', 'z-new-source'])
+    expect(rows.find((row) => row.sourceId === 'openai-usage-api')).toMatchObject({
+      status: 'failing',
+      consecutiveFailureCount: 2,
+    })
+    expect(rows.find((row) => row.sourceId === 'codex-local')).toMatchObject({
+      status: 'notConfigured',
+      isConfigured: false,
+      lastSuccessAt: null,
+    })
+    expect(rows.slice(-2).map((row) => row.sourceId)).toEqual(['a-new-source', 'z-new-source'])
   })
 
   test('formats deterministic relative and absolute success evidence and preserves null', () => {
     expect(formatLastSuccess(null, new Date('2026-08-25T12:00:00Z'))).toBeNull()
     expect(formatLastSuccess('2026-08-25T11:00:00Z', new Date('2026-08-25T12:00:00Z'))).toEqual({
-      relative: '1 hour ago', absolute: '25 Aug 2026, 12:00', dateTime: '2026-08-25T11:00:00Z',
+      relative: '1 hour ago',
+      absolute: '25 Aug 2026, 12:00',
+      dateTime: '2026-08-25T11:00:00Z',
     })
   })
 })
@@ -49,7 +67,12 @@ test('maps all statuses, shows failure evidence, and uses native time/details/li
     status({ sourceId: 'anthropic-usage-api', status: 'fresh' }),
     status({ sourceId: 'anthropic-cost-report', status: 'configured' }),
     status({ sourceId: 'claude-code-usage-api', status: 'stale' }),
-    status({ sourceId: 'claude-local', status: 'failing', consecutiveFailureCount: 3, lastError: 'Sanitized failure only' }),
+    status({
+      sourceId: 'claude-local',
+      status: 'failing',
+      consecutiveFailureCount: 3,
+      lastError: 'Sanitized failure only',
+    }),
     status({ sourceId: 'claude-pricing', status: 'unavailable' }),
   ]
   render(<SourceStatusPanel />)
@@ -60,7 +83,9 @@ test('maps all statuses, shows failure evidence, and uses native time/details/li
   const panelButton = screen.getByRole('button', { name: /Data sources/ })
   expect(panelButton).toHaveAttribute('aria-expanded', 'false')
   expect(screen.getByText('1 reporting · 16 not connected · 3 need attention')).toBeInTheDocument()
-  expect(screen.getByText(/Collection health for optional APIs and local telemetry/i)).toBeInTheDocument()
+  expect(
+    screen.getByText(/Collection health for optional APIs and local telemetry/i),
+  ).toBeInTheDocument()
   fireEvent.click(panelButton)
   const failingRow = screen.getByText('Claude local').closest('li')!
   expect(within(failingRow).getByText('3 failures')).toBeInTheDocument()

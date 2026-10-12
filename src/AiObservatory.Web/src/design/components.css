@@ -33,14 +33,21 @@
   font-size: 0.78rem;
   padding: 0.25rem 0.75rem;
   cursor: pointer;
-  transition: background var(--transition-base) ease, color var(--transition-base) ease;
+  transition:
+    background var(--transition-base) ease,
+    color var(--transition-base) ease;
 }
 .fpds-theme-toggle__btn + .fpds-theme-toggle__btn {
   border-left: 1px solid var(--border);
 }
-.fpds-theme-toggle__btn:hover { color: var(--text); }
-.fpds-theme-toggle__btn:focus-visible { outline: 2px solid var(--brand-ring); outline-offset: 2px; }
-.fpds-theme-toggle__btn[aria-checked="true"] {
+.fpds-theme-toggle__btn:hover {
+  color: var(--text);
+}
+.fpds-theme-toggle__btn:focus-visible {
+  outline: 2px solid var(--brand-ring);
+  outline-offset: 2px;
+}
+.fpds-theme-toggle__btn[aria-checked='true'] {
   background: var(--brand-strong);
   color: var(--brand-contrast);
 }
@@ -55,12 +62,18 @@
   --brand-ring: var(--sidebar-active-text);
   border-color: var(--sidebar-border);
 }
-.fpds-theme-toggle--sidebar .fpds-theme-toggle__btn { color: var(--sidebar-text-muted); }
+.fpds-theme-toggle--sidebar .fpds-theme-toggle__btn {
+  color: var(--sidebar-text-muted);
+}
 .fpds-theme-toggle--sidebar .fpds-theme-toggle__btn + .fpds-theme-toggle__btn {
   border-left-color: var(--sidebar-border);
 }
-.fpds-theme-toggle--sidebar .fpds-theme-toggle__btn:hover { color: var(--sidebar-text); }
-.fpds-theme-toggle--sidebar .fpds-theme-toggle__btn[aria-checked="true"] { color: var(--brand-contrast); }
+.fpds-theme-toggle--sidebar .fpds-theme-toggle__btn:hover {
+  color: var(--sidebar-text);
+}
+.fpds-theme-toggle--sidebar .fpds-theme-toggle__btn[aria-checked='true'] {
+  color: var(--brand-contrast);
+}
 
 /* ── Button ────────────────────────────────────────────────── */
 .fpds-btn {
@@ -72,16 +85,28 @@
   font: inherit;
   font-weight: 500;
   cursor: pointer;
-  transition: background var(--transition-base) ease, color var(--transition-base) ease, border-color var(--transition-base) ease;
+  transition:
+    background var(--transition-base) ease,
+    color var(--transition-base) ease,
+    border-color var(--transition-base) ease;
 }
 .fpds-btn:focus-visible {
   outline: 2px solid var(--brand-ring);
   outline-offset: 2px;
 }
-.fpds-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.fpds-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
-.fpds-btn--md { font-size: 0.875rem; padding: 6px 16px; }
-.fpds-btn--sm { font-size: 0.75rem;  padding: 4px 8px; }
+.fpds-btn--md {
+  font-size: 0.875rem;
+  padding: 6px 16px;
+}
+.fpds-btn--sm {
+  font-size: 0.75rem;
+  padding: 4px 8px;
+}
 
 .fpds-btn--primary {
   background: var(--brand-strong);
@@ -126,8 +151,13 @@
   background: transparent;
   color: var(--brand-text);
 }
-.fpds-btn--text:hover:not(:disabled) { color: var(--brand-text); }
-.fpds-btn--text:active:not(:disabled) { background: var(--brand-bg-hover); color: var(--brand-text); }
+.fpds-btn--text:hover:not(:disabled) {
+  color: var(--brand-text);
+}
+.fpds-btn--text:active:not(:disabled) {
+  background: var(--brand-bg-hover);
+  color: var(--brand-text);
+}
 
 .fpds-icon-btn {
   display: inline-flex;
@@ -142,12 +172,26 @@
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background var(--transition-base) ease, color var(--transition-base) ease;
+  transition:
+    background var(--transition-base) ease,
+    color var(--transition-base) ease;
 }
-.fpds-icon-btn:hover:not(:disabled) { background: var(--brand-tint); color: var(--brand-text); }
-.fpds-icon-btn:active:not(:disabled) { background: var(--brand-bg-hover); color: var(--brand-text); }
-.fpds-icon-btn:focus-visible { outline: 2px solid var(--brand-ring); outline-offset: 2px; }
-.fpds-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.fpds-icon-btn:hover:not(:disabled) {
+  background: var(--brand-tint);
+  color: var(--brand-text);
+}
+.fpds-icon-btn:active:not(:disabled) {
+  background: var(--brand-bg-hover);
+  color: var(--brand-text);
+}
+.fpds-icon-btn:focus-visible {
+  outline: 2px solid var(--brand-ring);
+  outline-offset: 2px;
+}
+.fpds-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .fpds-disclosure {
   display: inline-flex;
@@ -163,17 +207,30 @@
   text-align: left;
   cursor: pointer;
 }
-.fpds-disclosure:hover:not(:disabled) { color: var(--text); }
-.fpds-disclosure:active:not(:disabled) { background: var(--brand-bg-hover); color: var(--brand-text); }
-.fpds-disclosure:focus-visible { outline: 2px solid var(--brand-ring); outline-offset: 2px; }
-.fpds-disclosure:disabled { opacity: 0.5; cursor: not-allowed; }
+.fpds-disclosure:hover:not(:disabled) {
+  color: var(--text);
+}
+.fpds-disclosure:active:not(:disabled) {
+  background: var(--brand-bg-hover);
+  color: var(--brand-text);
+}
+.fpds-disclosure:focus-visible {
+  outline: 2px solid var(--brand-ring);
+  outline-offset: 2px;
+}
+.fpds-disclosure:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .fpds-disclosure__caret {
   display: inline-block;
   font-size: 0.75rem;
   line-height: 1;
   transition: transform var(--transition-base) ease;
 }
-.fpds-disclosure[aria-expanded="true"] .fpds-disclosure__caret { transform: rotate(90deg); }
+.fpds-disclosure[aria-expanded='true'] .fpds-disclosure__caret {
+  transform: rotate(90deg);
+}
 
 /* ── Navigation and tabs ──────────────────────────────────── */
 .fpds-nav-item {
@@ -192,29 +249,53 @@
   text-align: left;
   text-decoration: none;
   cursor: pointer;
-  transition: background var(--transition-base) ease, color var(--transition-base) ease,
+  transition:
+    background var(--transition-base) ease,
+    color var(--transition-base) ease,
     border-color var(--transition-base) ease;
 }
-.fpds-nav-item:focus-visible { outline: 2px solid var(--brand-ring); outline-offset: 2px; }
-.fpds-nav-item[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+.fpds-nav-item:focus-visible {
+  outline: 2px solid var(--brand-ring);
+  outline-offset: 2px;
+}
+.fpds-nav-item[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
-.fpds-nav-item--canvas { border-left: 2px solid transparent; }
-.fpds-nav-item--canvas:hover:not([aria-disabled="true"]) { background: var(--brand-bg); color: var(--text); }
-.fpds-nav-item--canvas:active:not([aria-disabled="true"]) { background: var(--brand-bg-hover); }
-.fpds-nav-item--canvas[aria-current="page"] {
+.fpds-nav-item--canvas {
+  border-left: 2px solid transparent;
+}
+.fpds-nav-item--canvas:hover:not([aria-disabled='true']) {
+  background: var(--brand-bg);
+  color: var(--text);
+}
+.fpds-nav-item--canvas:active:not([aria-disabled='true']) {
+  background: var(--brand-bg-hover);
+}
+.fpds-nav-item--canvas[aria-current='page'] {
   border-left-color: var(--brand);
   background: var(--brand-bg);
   color: var(--brand-text);
 }
 
-.fpds-nav-item--sidebar { --brand-ring: var(--sidebar-active-text); color: var(--sidebar-text); }
-.fpds-nav-item--sidebar:hover:not([aria-disabled="true"]) { background: var(--sidebar-hover-bg); }
-.fpds-nav-item--sidebar:active:not([aria-disabled="true"]) { background: var(--sidebar-selected-bg); }
-.fpds-nav-item--sidebar[aria-current="page"] {
+.fpds-nav-item--sidebar {
+  --brand-ring: var(--sidebar-active-text);
+  color: var(--sidebar-text);
+}
+.fpds-nav-item--sidebar:hover:not([aria-disabled='true']) {
+  background: var(--sidebar-hover-bg);
+}
+.fpds-nav-item--sidebar:active:not([aria-disabled='true']) {
+  background: var(--sidebar-selected-bg);
+}
+.fpds-nav-item--sidebar[aria-current='page'] {
   background: var(--sidebar-active-bg);
   color: var(--sidebar-active-text);
 }
-.fpds-nav-item--sidebar[aria-disabled="true"] { color: var(--sidebar-text-faint); }
+.fpds-nav-item--sidebar[aria-disabled='true'] {
+  color: var(--sidebar-text-faint);
+}
 
 .fpds-tab-list,
 .fpds-tab-links {
@@ -238,31 +319,53 @@
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
-  transition: background var(--transition-base) ease, color var(--transition-base) ease,
+  transition:
+    background var(--transition-base) ease,
+    color var(--transition-base) ease,
     border-color var(--transition-base) ease;
 }
 .fpds-tab + .fpds-tab,
-.fpds-tab-link + .fpds-tab-link { margin-left: -1px; }
+.fpds-tab-link + .fpds-tab-link {
+  margin-left: -1px;
+}
 .fpds-tab:first-child,
-.fpds-tab-link:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.fpds-tab-link:first-child {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
 .fpds-tab:last-child,
-.fpds-tab-link:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.fpds-tab-link:last-child {
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
 .fpds-tab:only-child,
-.fpds-tab-link:only-child { border-radius: var(--radius); }
-.fpds-tab:hover:not(:disabled):not([aria-selected="true"]),
-.fpds-tab-link:hover:not([aria-current="page"]) { background: var(--brand-bg); color: var(--brand-text); }
-.fpds-tab:active:not(:disabled):not([aria-selected="true"]),
-.fpds-tab-link:active:not([aria-current="page"]) { background: var(--brand-bg-hover); }
+.fpds-tab-link:only-child {
+  border-radius: var(--radius);
+}
+.fpds-tab:hover:not(:disabled):not([aria-selected='true']),
+.fpds-tab-link:hover:not([aria-current='page']) {
+  background: var(--brand-bg);
+  color: var(--brand-text);
+}
+.fpds-tab:active:not(:disabled):not([aria-selected='true']),
+.fpds-tab-link:active:not([aria-current='page']) {
+  background: var(--brand-bg-hover);
+}
 .fpds-tab:focus-visible,
-.fpds-tab-link:focus-visible { position: relative; outline: 2px solid var(--brand-ring); outline-offset: 2px; }
-.fpds-tab[aria-selected="true"],
-.fpds-tab-link[aria-current="page"] {
+.fpds-tab-link:focus-visible {
+  position: relative;
+  outline: 2px solid var(--brand-ring);
+  outline-offset: 2px;
+}
+.fpds-tab[aria-selected='true'],
+.fpds-tab-link[aria-current='page'] {
   position: relative;
   border-color: var(--brand-strong);
   background: var(--brand-strong);
   color: var(--brand-contrast);
 }
-.fpds-tab:disabled { opacity: 0.5; cursor: not-allowed; }
+.fpds-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 /* ── Card ──────────────────────────────────────────────────── */
 .fpds-card {
@@ -284,10 +387,26 @@
   border-radius: var(--radius);
   border: 1px solid;
 }
-.fpds-badge--ok   { background: var(--ok-bg);   border-color: var(--ok-border);   color: var(--ok-text);   }
-.fpds-badge--warn { background: var(--warn-bg);  border-color: var(--warn-border); color: var(--warn-text); }
-.fpds-badge--bad  { background: var(--bad-bg);   border-color: var(--bad-border);  color: var(--bad-text);  }
-.fpds-badge--info { background: var(--info-bg);  border-color: var(--info-border); color: var(--info-text); }
+.fpds-badge--ok {
+  background: var(--ok-bg);
+  border-color: var(--ok-border);
+  color: var(--ok-text);
+}
+.fpds-badge--warn {
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+  color: var(--warn-text);
+}
+.fpds-badge--bad {
+  background: var(--bad-bg);
+  border-color: var(--bad-border);
+  color: var(--bad-text);
+}
+.fpds-badge--info {
+  background: var(--info-bg);
+  border-color: var(--info-border);
+  color: var(--info-text);
+}
 
 /* Canon site footer — compact, centered, theme-aware. Self-contained sizing
    (concrete rem) so it renders correctly outside any page frame; colour from
@@ -310,17 +429,20 @@
   gap: 0.5rem;
   pointer-events: none;
 }
-.site-footer__wordmark { color: var(--text); opacity: 0.85; }
+.site-footer__wordmark {
+  color: var(--text);
+  opacity: 0.85;
+}
 .site-footer__tagline {
   font-family: var(--font-mono);
-  font-size: 0.625rem;        /* 10px */
+  font-size: 0.625rem; /* 10px */
   letter-spacing: 0.34em;
   text-transform: uppercase;
   color: var(--text-faint);
 }
 .site-footer__attrib {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;       /* 11px */
+  font-size: 0.6875rem; /* 11px */
   line-height: 1.6;
   color: var(--text-muted);
 }
@@ -329,7 +451,9 @@
   text-decoration: none;
   border-bottom: 1px solid color-mix(in srgb, var(--brand-text) 45%, transparent);
 }
-.site-footer__attrib a:hover { border-bottom-color: var(--brand-text); }
+.site-footer__attrib a:hover {
+  border-bottom-color: var(--brand-text);
+}
 .site-footer__attrib a:focus-visible {
   outline: 2px solid var(--brand-ring);
   outline-offset: 2px;
@@ -349,11 +473,18 @@
   background: var(--header-bg);
   border-bottom: 1px solid var(--border);
 }
-.app-header__lockup { display: flex; align-items: flex-end; gap: 0.625rem; }
-.app-header__wordmark { display: block; color: var(--text); }
+.app-header__lockup {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.625rem;
+}
+.app-header__wordmark {
+  display: block;
+  color: var(--text);
+}
 .app-header__descriptor {
   font-family: var(--font-mono);
-  font-size: 0.8125rem;        /* 13px */
+  font-size: 0.8125rem; /* 13px */
   letter-spacing: 0.05em;
   color: var(--text-muted);
   padding-bottom: 0.25rem;
@@ -368,40 +499,43 @@
   align-items: center;
   gap: 0.25rem;
   font: inherit;
-  font-size: 0.6875rem;       /* 11px */
+  font-size: 0.6875rem; /* 11px */
   font-weight: 600;
   padding: 0.25rem 0.625rem;
   border-radius: 9999px;
   border: 1px solid;
   cursor: pointer;
-  transition: background var(--transition-base) ease, color var(--transition-base) ease, border-color var(--transition-base) ease;
+  transition:
+    background var(--transition-base) ease,
+    color var(--transition-base) ease,
+    border-color var(--transition-base) ease;
 }
 /* `on` reads the BRAND palette, not ok-*: it means "this toggle is active",
    a selection state, not a health verdict. */
-.fpds-pill--on[aria-pressed="true"] {
+.fpds-pill--on[aria-pressed='true'] {
   background: var(--brand-tint);
   border-color: color-mix(in srgb, var(--brand-soft) 40%, transparent);
   color: var(--brand-text);
 }
-.fpds-pill--on[aria-pressed="false"],
-.fpds-pill--neutral[aria-pressed="false"] {
+.fpds-pill--on[aria-pressed='false'],
+.fpds-pill--neutral[aria-pressed='false'] {
   background: var(--card-bg);
   border-color: var(--border);
   color: var(--text-muted);
 }
-.fpds-pill--warn[aria-pressed="true"] {
+.fpds-pill--warn[aria-pressed='true'] {
   background: var(--warn-bg);
   border-color: var(--warn-border);
   color: var(--warn-text);
 }
-.fpds-pill--warn[aria-pressed="false"] {
+.fpds-pill--warn[aria-pressed='false'] {
   background: var(--card-bg);
   border-color: var(--warn-border);
   color: var(--warn-text);
 }
 /* The one variant that escapes the tinted-bg + border-tone + text-tone family:
    destructive states must dominate. Reserved — nothing else may mimic it. */
-.fpds-pill--danger[aria-pressed="true"] {
+.fpds-pill--danger[aria-pressed='true'] {
   background: var(--bad-solid);
   border-color: var(--bad-solid);
   color: #fff;
@@ -410,18 +544,21 @@
 /* Unpressed carries the bad TINT, not the card background: on dark that left a
    #7f1d1d border on a #0f172a card — effectively invisible — so an armed
    control read as washed-out text. Quiet is not the same as absent. */
-.fpds-pill--danger[aria-pressed="false"] {
+.fpds-pill--danger[aria-pressed='false'] {
   background: var(--bad-bg);
   border-color: var(--bad-border);
   color: var(--bad-text);
 }
 /* Mode selection (a tab, not a toggle) takes the firmer border of the two. */
-.fpds-pill--neutral[aria-pressed="true"] {
+.fpds-pill--neutral[aria-pressed='true'] {
   background: var(--brand-tint);
   border-color: var(--brand);
   color: var(--brand-text);
 }
-.fpds-pill:focus-visible { outline: 2px solid var(--brand-ring); outline-offset: 2px; }
+.fpds-pill:focus-visible {
+  outline: 2px solid var(--brand-ring);
+  outline-offset: 2px;
+}
 
 /* ── SessionBadge ──────────────────────────────────────────── */
 .fpds-session-badge {
@@ -430,8 +567,12 @@
   height: 0.75rem;
   border-radius: 9999px;
 }
-.fpds-session-badge--on  { background: var(--ok-border); }
-.fpds-session-badge--off { background: var(--text-faint); }
+.fpds-session-badge--on {
+  background: var(--ok-border);
+}
+.fpds-session-badge--off {
+  background: var(--text-faint);
+}
 
 /* ── RateReadout ───────────────────────────────────────────── */
 .fpds-rate {
@@ -440,13 +581,24 @@
 }
 /* Both directions idle: the whole readout recedes so a quiet session does not
    draw the eye. */
-.fpds-rate--idle { color: var(--text-faint); }
-.fpds-rate__in   { color: var(--brand-text); }
-.fpds-rate__out  { color: var(--flow-out-soft); }
-.fpds-rate__sep  { color: var(--text-faint); }
+.fpds-rate--idle {
+  color: var(--text-faint);
+}
+.fpds-rate__in {
+  color: var(--brand-text);
+}
+.fpds-rate__out {
+  color: var(--flow-out-soft);
+}
+.fpds-rate__sep {
+  color: var(--text-faint);
+}
 
 /* ── DualBarSparkline ──────────────────────────────────────── */
-.fpds-sparkline { display: block; width: 100%; }
+.fpds-sparkline {
+  display: block;
+  width: 100%;
+}
 
 /* ── CopyButton ──────────────────────────────────────────────
    PAIRED LINE-HEIGHTS. The utility classes these components were translated
@@ -469,15 +621,20 @@
   cursor: pointer;
   transition: color var(--transition-base) ease;
 }
-.fpds-copy-btn:hover { color: var(--text); }
-.fpds-copy-btn:focus-visible { outline: 2px solid var(--brand-ring); outline-offset: 2px; }
+.fpds-copy-btn:hover {
+  color: var(--text);
+}
+.fpds-copy-btn:focus-visible {
+  outline: 2px solid var(--brand-ring);
+  outline-offset: 2px;
+}
 
 /* ── Modal ─────────────────────────────────────────────────────
    The primary shadow case in the system. Outside a modal, a transient toast,
    the danger-Pill halo and floating popovers, depth is a border or a
    background shift — never a shadow. */
 .fpds-modal {
-  margin: auto;               /* Tailwind's preflight zeroes <dialog> margin. */
+  margin: auto; /* Tailwind's preflight zeroes <dialog> margin. */
   /* The package ships no reset and supports consumers without Tailwind
      preflight, so the content-box default would add padding+border on top of
      max-width and overflow a 320px viewport. The only other .fpds-* block
@@ -495,17 +652,26 @@
      Measured against the original rather than eyeballed: a hand-written 0.30
      here was three times too dark, which reads as a heavier modal on every
      surface it opens over. */
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.10), 0 4px 6px -4px rgba(0, 0, 0, 0.10);
+  box-shadow:
+    0 10px 15px -3px rgba(0, 0, 0, 0.1),
+    0 4px 6px -4px rgba(0, 0, 0, 0.1);
   outline: none;
 }
-.fpds-modal::backdrop { background: var(--overlay-bg); }
+.fpds-modal::backdrop {
+  background: var(--overlay-bg);
+}
 .fpds-modal__header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   margin-bottom: 1rem;
 }
-.fpds-modal__title { font-size: 1rem; line-height: 1.5rem; font-weight: 600; color: var(--text); }
+.fpds-modal__title {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 600;
+  color: var(--text);
+}
 .fpds-modal__close {
   border: 0;
   background: transparent;
@@ -519,23 +685,34 @@
   min-width: 2.5rem;
   min-height: 2.5rem;
 }
-.fpds-modal__close:hover { color: var(--text); }
-.fpds-modal__close:focus-visible { outline: 2px solid var(--brand-ring); outline-offset: 2px; }
+.fpds-modal__close:hover {
+  color: var(--text);
+}
+.fpds-modal__close:focus-visible {
+  outline: 2px solid var(--brand-ring);
+  outline-offset: 2px;
+}
 
 /* The opt-in workbench tone is deliberately theme-INVARIANT: it must stay
    legible while tenant theme tokens change around it, which is why these four
    values are literals rather than tokens (design-standard.md § exemptions). */
 .fpds-modal--workbench {
   background: #0f172a;
-  border-color: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.1);
   color: #f1f5f9;
 }
-.fpds-modal--workbench::backdrop { background: rgba(0, 0, 0, 0.60); }
-.fpds-modal--workbench .fpds-modal__title { color: #f1f5f9; }
+.fpds-modal--workbench::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+.fpds-modal--workbench .fpds-modal__title {
+  color: #f1f5f9;
+}
 .fpds-modal--workbench .fpds-modal__close {
   color: #94a3b8;
 }
-.fpds-modal--workbench .fpds-modal__close:hover { color: #f1f5f9; }
+.fpds-modal--workbench .fpds-modal__close:hover {
+  color: #f1f5f9;
+}
 
 /* ── Segmented control (DashboardViewToggle) ───────────────────
    Shares ThemeToggle's shape but reads canvas tokens, since it sits on a
@@ -562,11 +739,18 @@
   border-radius: var(--radius);
   color: var(--text-muted);
   cursor: pointer;
-  transition: background var(--transition-base) ease, color var(--transition-base) ease;
+  transition:
+    background var(--transition-base) ease,
+    color var(--transition-base) ease;
 }
-.fpds-segmented__btn:hover { color: var(--text); }
-.fpds-segmented__btn:focus-visible { outline: 2px solid var(--brand-ring); outline-offset: 2px; }
-.fpds-segmented__btn[aria-checked="true"] {
+.fpds-segmented__btn:hover {
+  color: var(--text);
+}
+.fpds-segmented__btn:focus-visible {
+  outline: 2px solid var(--brand-ring);
+  outline-offset: 2px;
+}
+.fpds-segmented__btn[aria-checked='true'] {
   background: var(--brand-tint);
   color: var(--brand-text);
 }
@@ -575,7 +759,9 @@
    Every applied filter is echoed back as its own removable chip. A filter the
    operator can neither see nor take off presents as an empty list rather than
    as an active filter — which is the defect this shape exists to prevent. */
-.fpds-filterbar { margin-bottom: 0.75rem; }
+.fpds-filterbar {
+  margin-bottom: 0.75rem;
+}
 .fpds-filterbar__summary {
   display: flex;
   flex-wrap: wrap;
@@ -588,13 +774,17 @@
   color: var(--text-muted);
 }
 .fpds-filterbar__title {
-  font-size: 0.625rem;        /* 10px */
+  font-size: 0.625rem; /* 10px */
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
 }
-.fpds-filterbar__empty { font-size: 0.75rem; line-height: 1rem; color: var(--text-faint); }
+.fpds-filterbar__empty {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--text-faint);
+}
 .fpds-filterbar__chip {
   display: inline-flex;
   align-items: center;
@@ -604,13 +794,20 @@
   background: var(--app-bg);
   padding: 0.25rem 0.625rem;
   font: inherit;
-  font-size: 0.6875rem;       /* 11px */
+  font-size: 0.6875rem; /* 11px */
   color: var(--text);
   cursor: pointer;
 }
-.fpds-filterbar__chip:hover { border-color: var(--border-strong); }
-.fpds-filterbar__chip:focus-visible { outline: 2px solid var(--brand-ring); outline-offset: 2px; }
-.fpds-filterbar__chip-x { color: var(--text-muted); }
+.fpds-filterbar__chip:hover {
+  border-color: var(--border-strong);
+}
+.fpds-filterbar__chip:focus-visible {
+  outline: 2px solid var(--brand-ring);
+  outline-offset: 2px;
+}
+.fpds-filterbar__chip-x {
+  color: var(--text-muted);
+}
 .fpds-filterbar__clear {
   margin-left: auto;
   border: 0;
@@ -622,8 +819,13 @@
   text-underline-offset: 2px;
   cursor: pointer;
 }
-.fpds-filterbar__clear:hover { text-decoration: underline; }
-.fpds-filterbar__clear:focus-visible { outline: 2px solid var(--brand-ring); outline-offset: 2px; }
+.fpds-filterbar__clear:hover {
+  text-decoration: underline;
+}
+.fpds-filterbar__clear:focus-visible {
+  outline: 2px solid var(--brand-ring);
+  outline-offset: 2px;
+}
 .fpds-filterbar__panel {
   display: flex;
   flex-wrap: wrap;
@@ -645,8 +847,13 @@
   .fpds-tab,
   .fpds-tab-link,
   .fpds-disclosure__caret {
-    transition: color var(--transition-base) ease, background var(--transition-base) ease,
-      border-color var(--transition-base) ease, opacity var(--transition-base) ease;
+    transition:
+      color var(--transition-base) ease,
+      background var(--transition-base) ease,
+      border-color var(--transition-base) ease,
+      opacity var(--transition-base) ease;
   }
-  .fpds-disclosure__caret { transform: none; }
+  .fpds-disclosure__caret {
+    transform: none;
+  }
 }

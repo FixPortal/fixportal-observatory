@@ -22,11 +22,15 @@ export default function Footer() {
         {attributed && (
           <>
             Built by{' '}
-            <a href={ATTRIBUTION_URL} target="_blank" rel="noopener noreferrer">{ATTRIBUTION_NAME}</a>
+            <a href={ATTRIBUTION_URL} target="_blank" rel="noopener noreferrer">
+              {ATTRIBUTION_NAME}
+            </a>
             {' · '}
           </>
         )}
-        <a href={PROJECT_URL} target="_blank" rel="noopener noreferrer">Observatory on GitHub</a>
+        <a href={PROJECT_URL} target="_blank" rel="noopener noreferrer">
+          Observatory on GitHub
+        </a>
       </div>
     </footer>
   )

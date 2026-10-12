@@ -6,7 +6,9 @@ import type { Insight } from '../api/client'
 import InsightsFeed from './InsightsFeed'
 
 const data = vi.hoisted(() => ({ insights: [] as Insight[] }))
-vi.mock('../api/queries', () => ({ useInsights: () => ({ insights: data.insights, isError: false, isLoading: false }) }))
+vi.mock('../api/queries', () => ({
+  useInsights: () => ({ insights: data.insights, isError: false, isLoading: false }),
+}))
 
 const insight = (number: number): Insight => ({
   id: String(number),
@@ -20,13 +22,17 @@ const insight = (number: number): Insight => ({
 
 function renderFeed() {
   return render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
       <InsightsFeed />
     </QueryClientProvider>,
   )
 }
 
-beforeEach(() => { data.insights = [] })
+beforeEach(() => {
+  data.insights = []
+})
 
 test('shows five unread insights before revealing the older remainder', async () => {
   data.insights = [1, 2, 3, 4, 5, 6, 7].map(insight)

@@ -5,8 +5,26 @@ import SpendEntryModal from './SpendEntryModal'
 // eslint-disable-next-line sonarjs/no-wildcard-import -- vi.spyOn requires the live module namespace
 import * as client from '../api/client'
 
-const categories = [{ id: 'c1', key: 'credits', displayName: 'Credits', colorVar: '--c', sortOrder: 1, archivedAt: null }]
-const vendors = [{ id: 'v1', key: 'anthropic', displayName: 'Anthropic', provider: 'anthropic', defaultCategoryId: 'c1', archivedAt: null }]
+const categories = [
+  {
+    id: 'c1',
+    key: 'credits',
+    displayName: 'Credits',
+    colorVar: '--c',
+    sortOrder: 1,
+    archivedAt: null,
+  },
+]
+const vendors = [
+  {
+    id: 'v1',
+    key: 'anthropic',
+    displayName: 'Anthropic',
+    provider: 'anthropic',
+    defaultCategoryId: 'c1',
+    archivedAt: null,
+  },
+]
 
 // Computed relative to "now", like SpendPage's own 90-day window, so the default
 // occurredOn value (today) always falls inside it regardless of when the suite runs.
@@ -17,7 +35,13 @@ function renderModal(onClose = vi.fn()) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <SpendEntryModal categories={categories} vendors={vendors} from={from} to={to} onClose={onClose} />
+      <SpendEntryModal
+        categories={categories}
+        vendors={vendors}
+        from={from}
+        to={to}
+        onClose={onClose}
+      />
     </QueryClientProvider>,
   )
 }
@@ -26,7 +50,8 @@ describe('SpendEntryModal', () => {
   beforeEach(() => vi.restoreAllMocks())
 
   it('posts an array of one, with source manual and no entry key', async () => {
-    const post = vi.spyOn(client, 'postSpendEntries')
+    const post = vi
+      .spyOn(client, 'postSpendEntries')
       .mockResolvedValue([{ id: 'e1', status: 'created', reason: null }])
     renderModal()
 
@@ -41,7 +66,8 @@ describe('SpendEntryModal', () => {
   })
 
   it('defaults to Charge and posts a positive amount', async () => {
-    const post = vi.spyOn(client, 'postSpendEntries')
+    const post = vi
+      .spyOn(client, 'postSpendEntries')
       .mockResolvedValue([{ id: 'e1', status: 'created', reason: null }])
     renderModal()
 
@@ -55,7 +81,8 @@ describe('SpendEntryModal', () => {
   })
 
   it('negates the amount when Refund is selected', async () => {
-    const post = vi.spyOn(client, 'postSpendEntries')
+    const post = vi
+      .spyOn(client, 'postSpendEntries')
       .mockResolvedValue([{ id: 'e1', status: 'created', reason: null }])
     renderModal()
 
@@ -109,14 +136,21 @@ describe('SpendEntryModal', () => {
     // No fake clock needed: bounds dated entirely in the past make the real "today"
     // fall after maxDate, which is exactly what happens if the dashboard is left open
     // past midnight -- the default date must still clamp into range and submit.
-    const post = vi.spyOn(client, 'postSpendEntries')
+    const post = vi
+      .spyOn(client, 'postSpendEntries')
       .mockResolvedValue([{ id: 'e1', status: 'created', reason: null }])
     const pastTo = new Date(Date.now() - 10 * 86_400_000)
     const pastFrom = new Date(pastTo.getTime() - 90 * 86_400_000)
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={qc}>
-        <SpendEntryModal categories={categories} vendors={vendors} from={pastFrom} to={pastTo} onClose={vi.fn()} />
+        <SpendEntryModal
+          categories={categories}
+          vendors={vendors}
+          from={pastFrom}
+          to={pastTo}
+          onClose={vi.fn()}
+        />
       </QueryClientProvider>,
     )
 
@@ -135,7 +169,9 @@ describe('SpendEntryModal', () => {
         <SpendEntryModal
           categories={categories}
           vendors={[{ ...vendors[0], defaultCategoryId: 'archived-cat' }]}
-          from={from} to={to} onClose={vi.fn()}
+          from={from}
+          to={to}
+          onClose={vi.fn()}
         />
       </QueryClientProvider>,
     )
@@ -145,18 +181,38 @@ describe('SpendEntryModal', () => {
 
   const twoCategories = [
     categories[0],
-    { id: 'c2', key: 'subscription', displayName: 'Subscription', colorVar: '--c', sortOrder: 2, archivedAt: null },
+    {
+      id: 'c2',
+      key: 'subscription',
+      displayName: 'Subscription',
+      colorVar: '--c',
+      sortOrder: 2,
+      archivedAt: null,
+    },
   ]
   const twoVendors = [
     vendors[0],
-    { id: 'v2', key: 'openai', displayName: 'OpenAI', provider: 'openai', defaultCategoryId: 'archived-cat', archivedAt: null },
+    {
+      id: 'v2',
+      key: 'openai',
+      displayName: 'OpenAI',
+      provider: 'openai',
+      defaultCategoryId: 'archived-cat',
+      archivedAt: null,
+    },
   ]
 
   function renderTwoVendorModal(vendorList = twoVendors) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     return render(
       <QueryClientProvider client={qc}>
-        <SpendEntryModal categories={twoCategories} vendors={vendorList} from={from} to={to} onClose={vi.fn()} />
+        <SpendEntryModal
+          categories={twoCategories}
+          vendors={vendorList}
+          from={from}
+          to={to}
+          onClose={vi.fn()}
+        />
       </QueryClientProvider>,
     )
   }
@@ -173,7 +229,9 @@ describe('SpendEntryModal', () => {
   })
 
   it('applies the new vendor’s default on vendor change when it is live', () => {
-    renderTwoVendorModal(twoVendors.map(v => v.id === 'v2' ? { ...v, defaultCategoryId: 'c2' } : v))
+    renderTwoVendorModal(
+      twoVendors.map((v) => (v.id === 'v2' ? { ...v, defaultCategoryId: 'c2' } : v)),
+    )
 
     expect(screen.getByLabelText(/category/i)).toHaveValue('c1')
     fireEvent.change(screen.getByLabelText(/vendor/i), { target: { value: 'v2' } })
@@ -182,8 +240,9 @@ describe('SpendEntryModal', () => {
   })
 
   it('surfaces a rejected verdict instead of closing', async () => {
-    vi.spyOn(client, 'postSpendEntries')
-      .mockResolvedValue([{ id: null, status: 'rejected', reason: 'Unknown VendorId' }])
+    vi.spyOn(client, 'postSpendEntries').mockResolvedValue([
+      { id: null, status: 'rejected', reason: 'Unknown VendorId' },
+    ])
     const onClose = vi.fn()
     renderModal(onClose)
 

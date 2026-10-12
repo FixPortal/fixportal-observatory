@@ -1,8 +1,16 @@
 // Single source of truth for all provider metadata.
 // Add new providers here — consuming modules derive from this list automatically.
 
-export const PROVIDER_KEYS = ['anthropic', 'copilot', 'google', 'openai', 'moonshot', 'xai', 'meta'] as const
-export type ProviderKey = typeof PROVIDER_KEYS[number]
+export const PROVIDER_KEYS = [
+  'anthropic',
+  'copilot',
+  'google',
+  'openai',
+  'moonshot',
+  'xai',
+  'meta',
+] as const
+export type ProviderKey = (typeof PROVIDER_KEYS)[number]
 
 export interface ProviderSource {
   id: string
@@ -18,14 +26,18 @@ export interface ProviderConfig {
   sources: ProviderSource[]
 }
 
-const SETUP_HREF = 'https://github.com/FixPortal/fixportal-observatory/blob/main/docs/provider-setup.md'
+const SETUP_HREF =
+  'https://github.com/FixPortal/fixportal-observatory/blob/main/docs/provider-setup.md'
 
 export const PROVIDERS = [
   {
     key: 'anthropic',
     displayName: 'Anthropic',
     colorVar: 'var(--provider-anthropic)',
-    badgeStyle: { color: 'var(--provider-anthropic)', background: 'color-mix(in srgb, var(--provider-anthropic) 12%, transparent)' },
+    badgeStyle: {
+      color: 'var(--provider-anthropic)',
+      background: 'color-mix(in srgb, var(--provider-anthropic) 12%, transparent)',
+    },
     sources: [
       { id: 'anthropic-usage-api', displayName: 'Messages usage', setupHref: SETUP_HREF },
       { id: 'anthropic-cost-report', displayName: 'Cost report', setupHref: SETUP_HREF },
@@ -38,7 +50,10 @@ export const PROVIDERS = [
     key: 'copilot',
     displayName: 'Copilot',
     colorVar: 'var(--provider-copilot)',
-    badgeStyle: { color: 'var(--provider-copilot)', background: 'color-mix(in srgb, var(--provider-copilot) 12%, transparent)' },
+    badgeStyle: {
+      color: 'var(--provider-copilot)',
+      background: 'color-mix(in srgb, var(--provider-copilot) 12%, transparent)',
+    },
     sources: [
       { id: 'copilot-org-report', displayName: 'Organization report', setupHref: SETUP_HREF },
       { id: 'copilot-local', displayName: 'Copilot local', setupHref: SETUP_HREF },
@@ -48,9 +63,16 @@ export const PROVIDERS = [
     key: 'google',
     displayName: 'Google',
     colorVar: 'var(--provider-google)',
-    badgeStyle: { color: 'var(--provider-google)', background: 'color-mix(in srgb, var(--provider-google) 12%, transparent)' },
+    badgeStyle: {
+      color: 'var(--provider-google)',
+      background: 'color-mix(in srgb, var(--provider-google) 12%, transparent)',
+    },
     sources: [
-      { id: 'google-cloud-billing-export', displayName: 'Cloud Billing export', setupHref: SETUP_HREF },
+      {
+        id: 'google-cloud-billing-export',
+        displayName: 'Cloud Billing export',
+        setupHref: SETUP_HREF,
+      },
       { id: 'google-cloud-catalog', displayName: 'Cloud catalog', setupHref: SETUP_HREF },
     ],
   },
@@ -58,7 +80,10 @@ export const PROVIDERS = [
     key: 'openai',
     displayName: 'OpenAI',
     colorVar: 'var(--provider-openai)',
-    badgeStyle: { color: 'var(--provider-openai)', background: 'color-mix(in srgb, var(--provider-openai) 12%, transparent)' },
+    badgeStyle: {
+      color: 'var(--provider-openai)',
+      background: 'color-mix(in srgb, var(--provider-openai) 12%, transparent)',
+    },
     sources: [
       { id: 'openai-usage-api', displayName: 'Usage API', setupHref: SETUP_HREF },
       { id: 'openai-costs-api', displayName: 'Costs API', setupHref: SETUP_HREF },
@@ -70,7 +95,10 @@ export const PROVIDERS = [
     key: 'moonshot',
     displayName: 'Moonshot',
     colorVar: 'var(--provider-moonshot)',
-    badgeStyle: { color: 'var(--provider-moonshot)', background: 'color-mix(in srgb, var(--provider-moonshot) 12%, transparent)' },
+    badgeStyle: {
+      color: 'var(--provider-moonshot)',
+      background: 'color-mix(in srgb, var(--provider-moonshot) 12%, transparent)',
+    },
     sources: [
       { id: 'kimi-local', displayName: 'Kimi local', setupHref: SETUP_HREF },
       { id: 'kimi-pricing', displayName: 'Kimi pricing', setupHref: SETUP_HREF },
@@ -80,7 +108,10 @@ export const PROVIDERS = [
     key: 'xai',
     displayName: 'xAI',
     colorVar: 'var(--provider-xai)',
-    badgeStyle: { color: 'var(--provider-xai)', background: 'color-mix(in srgb, var(--provider-xai) 12%, transparent)' },
+    badgeStyle: {
+      color: 'var(--provider-xai)',
+      background: 'color-mix(in srgb, var(--provider-xai) 12%, transparent)',
+    },
     sources: [
       { id: 'grok-local', displayName: 'Grok local', setupHref: SETUP_HREF },
       { id: 'xai-pricing', displayName: 'xAI pricing', setupHref: SETUP_HREF },
@@ -90,7 +121,10 @@ export const PROVIDERS = [
     key: 'meta',
     displayName: 'Meta',
     colorVar: 'var(--provider-meta)',
-    badgeStyle: { color: 'var(--provider-meta)', background: 'color-mix(in srgb, var(--provider-meta) 12%, transparent)' },
+    badgeStyle: {
+      color: 'var(--provider-meta)',
+      background: 'color-mix(in srgb, var(--provider-meta) 12%, transparent)',
+    },
     sources: [
       { id: 'pi-local', displayName: 'PI local', setupHref: SETUP_HREF },
       { id: 'meta-openrouter-pricing', displayName: 'OpenRouter pricing', setupHref: SETUP_HREF },
@@ -104,20 +138,24 @@ export const NON_PROVIDER_SOURCES = [
 ] satisfies ProviderSource[]
 
 /** Stable display order for provider filter chips and dropdowns. */
-export const PROVIDER_ORDER: ProviderKey[] = PROVIDERS.map(p => p.key)
+export const PROVIDER_ORDER: ProviderKey[] = PROVIDERS.map((p) => p.key)
 
 export function getProvider(key: string): ProviderConfig | undefined {
-  return PROVIDERS.find(p => p.key === key)
+  return PROVIDERS.find((p) => p.key === key)
 }
 
-const SOURCES = [...PROVIDERS.flatMap(provider => provider.sources), ...NON_PROVIDER_SOURCES]
+const SOURCES = [...PROVIDERS.flatMap((provider) => provider.sources), ...NON_PROVIDER_SOURCES]
 
 export function getSource(id: string): ProviderSource | undefined {
-  return SOURCES.find(source => source.id === id)
+  return SOURCES.find((source) => source.id === id)
 }
 
 function readableSlug(value: string): string {
-  const words = value.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[-_|]+/g, ' ').trim().toLowerCase()
+  const words = value
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[-_|]+/g, ' ')
+    .trim()
+    .toLowerCase()
   return words ? words[0].toUpperCase() + words.slice(1) : value
 }
 

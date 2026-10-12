@@ -15,25 +15,60 @@ const data = vi.hoisted(() => ({
 
 vi.mock('../api/queries', () => ({
   AGGREGATES_DAYS_RANGE: 31,
-  useAggregates: () => ({ aggregates: data.aggregates, isError: false, isLoading: data.aggregatesLoading }),
+  useAggregates: () => ({
+    aggregates: data.aggregates,
+    isError: false,
+    isLoading: data.aggregatesLoading,
+  }),
   useInsights: () => ({ insights: data.insights, isError: false, isLoading: data.insightsLoading }),
-  useBilledReporting: () => ({ report: data.billedReporting ?? undefined, isLoading: data.billedLoading, isError: data.billedError }),
-  dashboardDateRange: () => ({ from: new Date('2026-08-01T12:00:00'), to: new Date('2026-08-31T12:00:00') }),
+  useBilledReporting: () => ({
+    report: data.billedReporting ?? undefined,
+    isLoading: data.billedLoading,
+    isError: data.billedError,
+  }),
+  dashboardDateRange: () => ({
+    from: new Date('2026-08-01T12:00:00'),
+    to: new Date('2026-08-31T12:00:00'),
+  }),
 }))
 
-vi.mock('../lib/currency', () => ({ useUsdToGbp: () => 0.8, formatGbp: (usd: number, rate: number) => `£${(usd * rate).toFixed(2)}`, gbp: (amount: number) => `£${amount.toFixed(2)}` }))
+vi.mock('../lib/currency', () => ({
+  useUsdToGbp: () => 0.8,
+  formatGbp: (usd: number, rate: number) => `£${(usd * rate).toFixed(2)}`,
+  gbp: (amount: number) => `£${amount.toFixed(2)}`,
+}))
 
 const aggregate = (overrides: Partial<DailyAggregate>): DailyAggregate => ({
-  date: '2026-08-24', provider: 'openai', model: 'gpt-5', sourceId: 'openai-usage-api',
-  sourceKind: 'providerApi', usageScope: 'api', costBasis: 'none', inputTokens: 0,
-  outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cacheWrite1hTokens: 0,
-  costUsd: 0, unknownCostCount: 0, cacheSavingsUsd: 0, unknownCacheSavingsCount: 0,
-  requestCount: 0, ...overrides,
+  date: '2026-08-24',
+  provider: 'openai',
+  model: 'gpt-5',
+  sourceId: 'openai-usage-api',
+  sourceKind: 'providerApi',
+  usageScope: 'api',
+  costBasis: 'none',
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  cacheWrite1hTokens: 0,
+  costUsd: 0,
+  unknownCostCount: 0,
+  cacheSavingsUsd: 0,
+  unknownCacheSavingsCount: 0,
+  requestCount: 0,
+  ...overrides,
 })
 
 beforeEach(() => {
   data.aggregates = [
-    aggregate({ costBasis: 'listPriceEstimate', costUsd: 2, inputTokens: 100, cacheReadTokens: 50, requestCount: 1, unknownCacheSavingsCount: 1 }),
+    aggregate({
+      costBasis: 'listPriceEstimate',
+      costUsd: 2,
+      inputTokens: 100,
+      cacheReadTokens: 50,
+      requestCount: 1,
+      unknownCacheSavingsCount: 1,
+    }),
     aggregate({ costBasis: 'providerEstimated', costUsd: 3, requestCount: 1 }),
     aggregate({ costBasis: 'notional', costUsd: 4, requestCount: 1 }),
   ]
@@ -41,7 +76,7 @@ beforeEach(() => {
     entryCount: 5003,
     totalGbp: 8,
     dailyAverageGbp: 8 / 31,
-    projectedMonthlyGbp: 8 / 31 * 30,
+    projectedMonthlyGbp: (8 / 31) * 30,
     topVendorName: 'Anthropic',
     topVendorGbp: 8,
     dailySeries: [],
@@ -118,12 +153,14 @@ describe('SummaryCards', () => {
   })
 
   test('counts cached input in token totals and input display', () => {
-    data.aggregates = [aggregate({
-      inputTokens: 1_000_000,
-      outputTokens: 2_000_000,
-      cacheReadTokens: 3_000_000,
-      cacheWriteTokens: 4_000_000,
-    })]
+    data.aggregates = [
+      aggregate({
+        inputTokens: 1_000_000,
+        outputTokens: 2_000_000,
+        cacheReadTokens: 3_000_000,
+        cacheWriteTokens: 4_000_000,
+      }),
+    ]
 
     render(<SummaryCards />)
 
@@ -145,7 +182,10 @@ describe('SummaryCards', () => {
     // Regression: a "unknown"-basis row with a known costUsd used to disappear from
     // every card with zero indication, understating tracked spend against what the
     // Model breakdown table lower on the same screen shows for the same rows.
-    data.aggregates = [...data.aggregates, aggregate({ costBasis: 'unknown', costUsd: 31.5, requestCount: 28 })]
+    data.aggregates = [
+      ...data.aggregates,
+      aggregate({ costBasis: 'unknown', costUsd: 31.5, requestCount: 28 }),
+    ]
     render(<SummaryCards />)
 
     expect(screen.getByText(/£25\.20 reported under a cost basis/)).toBeInTheDocument()
@@ -155,7 +195,10 @@ describe('SummaryCards', () => {
     // Regression: Copilot daily reports carry costBasis "none" with costUsd 0 by DB
     // constraint. Without excluding it, the note used to fire permanently at "£0.00"
     // on any dashboard load that included Copilot data.
-    data.aggregates = [...data.aggregates, aggregate({ costBasis: 'none', costUsd: 0, requestCount: 1 })]
+    data.aggregates = [
+      ...data.aggregates,
+      aggregate({ costBasis: 'none', costUsd: 0, requestCount: 1 }),
+    ]
     render(<SummaryCards />)
 
     expect(screen.queryByText(/reported under a cost basis/)).not.toBeInTheDocument()
@@ -169,18 +212,36 @@ describe('SummaryCards', () => {
   test('qualifies a partially priced estimate with its unpriced observation count', () => {
     // A bucket where only some requests are priced still contributes its partial
     // subtotal — the card must say something was left out.
-    data.aggregates = [...data.aggregates, aggregate({ costBasis: 'listPriceEstimate', costUsd: 2, requestCount: 100, unknownCostCount: 3 })]
+    data.aggregates = [
+      ...data.aggregates,
+      aggregate({
+        costBasis: 'listPriceEstimate',
+        costUsd: 2,
+        requestCount: 100,
+        unknownCostCount: 3,
+      }),
+    ]
     render(<SummaryCards />)
 
-    expect(screen.getByText('List-price estimate').closest('.fpds-card')).toHaveTextContent('3 observations not reported')
+    expect(screen.getByText('List-price estimate').closest('.fpds-card')).toHaveTextContent(
+      '3 observations not reported',
+    )
   })
 
   test('opens every financial popover within the summary structure', () => {
     render(<SummaryCards />)
 
-    for (const title of ['Billed spend', 'List-price estimate', 'Provider estimate', 'Subscription notional']) {
+    for (const title of [
+      'Billed spend',
+      'List-price estimate',
+      'Provider estimate',
+      'Subscription notional',
+    ]) {
       fireEvent.click(screen.getByRole('button', { name: title }))
-      expect(screen.getByRole('region', { name: title })).toHaveClass('info-popover', 'info-popover--summary')
+      expect(screen.getByRole('region', { name: title })).toHaveClass(
+        'info-popover',
+        'info-popover--summary',
+      )
     }
   })
 })

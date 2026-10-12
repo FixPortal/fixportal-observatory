@@ -71,12 +71,15 @@ export default function DateRangePicker({ from, to, preset, onPreset, onCustom }
   return (
     <div ref={containerRef} className="date-range">
       <div className="chart-toggle">
-        {PRESETS.map(days => (
+        {PRESETS.map((days) => (
           <button
             key={days}
             type="button"
             className={`chart-toggle-btn${preset === days ? ' chart-toggle-btn--active' : ''}`}
-            onClick={() => { setPopoverOpen(false); onPreset(days) }}
+            onClick={() => {
+              setPopoverOpen(false)
+              onPreset(days)
+            }}
           >
             {days}d
           </button>
@@ -84,7 +87,7 @@ export default function DateRangePicker({ from, to, preset, onPreset, onCustom }
         <button
           type="button"
           className={`chart-toggle-btn${preset === 'custom' ? ' chart-toggle-btn--active' : ''}`}
-          onClick={() => setPopoverOpen(v => !v)}
+          onClick={() => setPopoverOpen((v) => !v)}
         >
           Custom
         </button>
@@ -98,7 +101,7 @@ export default function DateRangePicker({ from, to, preset, onPreset, onCustom }
               type="date"
               value={fromStr}
               max={toStr}
-              onChange={e => setFromStr(e.target.value)}
+              onChange={(e) => setFromStr(e.target.value)}
               className="date-range__input"
             />
           </label>
@@ -108,15 +111,11 @@ export default function DateRangePicker({ from, to, preset, onPreset, onCustom }
               type="date"
               value={toStr}
               min={fromStr}
-              onChange={e => setToStr(e.target.value)}
+              onChange={(e) => setToStr(e.target.value)}
               className="date-range__input"
             />
           </label>
-          <button
-            type="button"
-            onClick={handleApply}
-            className="date-range__apply"
-          >
+          <button type="button" onClick={handleApply} className="date-range__apply">
             Apply
           </button>
         </div>

@@ -30,15 +30,19 @@ export function toActivityChartRows(daily: DailyActivity[]): ActivityChartRow[] 
 }
 
 export function toActivityComparisonRows(
-  selectedDaily: DailyActivity[], selectedRange: ComparisonRange,
-  comparisonDaily: DailyActivity[], comparisonRange: ComparisonRange,
+  selectedDaily: DailyActivity[],
+  selectedRange: ComparisonRange,
+  comparisonDaily: DailyActivity[],
+  comparisonRange: ComparisonRange,
 ): { grain: 'day' | 'week'; rows: ActivityComparisonRow[] } {
   // wallClockSeconds (not activeSeconds) — the single-period chart already dedupes
   // overlapping sessions to wall-clock time; using the raw per-session sum here would
   // make the same date range read as a bigger number when toggled into comparison mode.
   const series = buildComparisonSeries(
-    selectedDaily.map(day => ({ date: day.date, value: day.wallClockSeconds })), selectedRange,
-    comparisonDaily.map(day => ({ date: day.date, value: day.wallClockSeconds })), comparisonRange,
+    selectedDaily.map((day) => ({ date: day.date, value: day.wallClockSeconds })),
+    selectedRange,
+    comparisonDaily.map((day) => ({ date: day.date, value: day.wallClockSeconds })),
+    comparisonRange,
   )
   return {
     grain: series.grain,

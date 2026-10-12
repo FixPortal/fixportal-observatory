@@ -4,22 +4,37 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ReactNode } from 'react'
 
 const client = vi.hoisted(() => ({
-  getAggregates: vi.fn().mockResolvedValue([]), getInsights: vi.fn().mockResolvedValue([]),
-  getSubscriptions: vi.fn().mockResolvedValue([]), getSourceStatuses: vi.fn().mockResolvedValue([]),
+  getAggregates: vi.fn().mockResolvedValue([]),
+  getInsights: vi.fn().mockResolvedValue([]),
+  getSubscriptions: vi.fn().mockResolvedValue([]),
+  getSourceStatuses: vi.fn().mockResolvedValue([]),
   getSpendEntries: vi.fn().mockResolvedValue([]),
   getActivityDaily: vi.fn().mockResolvedValue([]),
-  getBilledReporting: vi.fn().mockResolvedValue({ entryCount: 0, dailySeries: [], vendorSeries: [] }),
+  getBilledReporting: vi
+    .fn()
+    .mockResolvedValue({ entryCount: 0, dailySeries: [], vendorSeries: [] }),
 }))
 
-vi.mock('./client', async importOriginal => ({ ...await importOriginal<typeof import('./client')>(), ...client }))
+vi.mock('./client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./client')>()),
+  ...client,
+}))
 
 import {
-  dashboardDateRange, invalidateSpendData, localDate, useActivityDaily, useAggregates,
-  useBilledReporting, useDashboardStatus, useSpendEntries,
+  dashboardDateRange,
+  invalidateSpendData,
+  localDate,
+  useActivityDaily,
+  useAggregates,
+  useBilledReporting,
+  useDashboardStatus,
+  useSpendEntries,
 } from './queries'
 
 const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    {children}
+  </QueryClientProvider>
 )
 
 beforeEach(() => {
@@ -63,7 +78,9 @@ describe('dashboard queries', () => {
       calls += 1
       return calls === 1 ? Promise.reject(failure) : new Promise(() => {})
     })
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 3, retryDelay: 60_000 } } })
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: 3, retryDelay: 60_000 } },
+    })
     const retryingWrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     )
@@ -100,27 +117,45 @@ describe('dashboard queries', () => {
   test('manual dashboard retry is not reported as an automatic retry', async () => {
     client.getAggregates.mockRejectedValueOnce(new Error('API unavailable'))
     let finishRetry!: (value: never[]) => void
-    client.getAggregates.mockImplementationOnce(() => new Promise(resolve => { finishRetry = resolve }))
+    client.getAggregates.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRetry = resolve
+        }),
+    )
     const { result } = renderHook(() => useDashboardStatus(), { wrapper })
     await waitFor(() => expect(result.current.isError).toBe(true))
 
-    act(() => { void result.current.retry() })
+    act(() => {
+      void result.current.retry()
+    })
     await waitFor(() => expect(result.current.isRetrying).toBe(true))
     expect(result.current.isAutomaticallyRetrying).toBe(false)
-    await act(async () => { finishRetry([]) })
+    await act(async () => {
+      finishRetry([])
+    })
   })
 
   test('uses the shared aggregate rolling range unchanged for billed reporting', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-31T12:00:00'))
     const range = dashboardDateRange()
-    renderHook(() => {
-      useAggregates()
-      useBilledReporting(range.from, range.to)
-    }, { wrapper })
+    renderHook(
+      () => {
+        useAggregates()
+        useBilledReporting(range.from, range.to)
+      },
+      { wrapper },
+    )
     await vi.runAllTimersAsync()
-    expect(client.getAggregates).toHaveBeenCalledWith(range.from.toISOString().slice(0, 10), range.to.toISOString().slice(0, 10))
-    expect(client.getBilledReporting).toHaveBeenCalledWith(range.from.toISOString().slice(0, 10), range.to.toISOString().slice(0, 10))
+    expect(client.getAggregates).toHaveBeenCalledWith(
+      range.from.toISOString().slice(0, 10),
+      range.to.toISOString().slice(0, 10),
+    )
+    expect(client.getBilledReporting).toHaveBeenCalledWith(
+      range.from.toISOString().slice(0, 10),
+      range.to.toISOString().slice(0, 10),
+    )
   })
 
   test('keeps all 31 local calendar dates across the BST spring transition', () => {
@@ -132,19 +167,25 @@ describe('dashboard queries', () => {
 
   test('shares one dated aggregates cache entry across dated and no-arg callers', async () => {
     const range = dashboardDateRange()
-    const { result } = renderHook(() => {
-      const status = useDashboardStatus()
-      useAggregates(range.from, range.to)
-      useAggregates() // no-arg: must land on the same dated key, not a bare ['aggregates']
-      useBilledReporting(range.from, range.to)
-      return status
-    }, { wrapper })
+    const { result } = renderHook(
+      () => {
+        const status = useDashboardStatus()
+        useAggregates(range.from, range.to)
+        useAggregates() // no-arg: must land on the same dated key, not a bare ['aggregates']
+        useBilledReporting(range.from, range.to)
+        return status
+      },
+      { wrapper },
+    )
 
     await waitFor(() => expect(result.current.isLoading).toBe(false))
     expect(client.getAggregates).toHaveBeenCalledOnce()
     expect(client.getBilledReporting).toHaveBeenCalledOnce()
     expect(client.getAggregates).toHaveBeenCalledWith(localDate(range.from), localDate(range.to))
-    expect(client.getBilledReporting).toHaveBeenCalledWith(localDate(range.from), localDate(range.to))
+    expect(client.getBilledReporting).toHaveBeenCalledWith(
+      localDate(range.from),
+      localDate(range.to),
+    )
   })
 
   test('leaves billed reporting errors out of dashboard status', async () => {
@@ -162,14 +203,25 @@ describe('dashboard queries', () => {
     const to = new Date('2026-08-31')
 
     renderHook(
-      () => (useBilledReporting as unknown as (
-        from: Date, to: Date, vendorId?: string, categoryId?: string,
-      ) => unknown)(from, to, 'azure-id', 'cloud-id'),
+      () =>
+        (
+          useBilledReporting as unknown as (
+            from: Date,
+            to: Date,
+            vendorId?: string,
+            categoryId?: string,
+          ) => unknown
+        )(from, to, 'azure-id', 'cloud-id'),
       { wrapper },
     )
 
     await waitFor(() => expect(client.getBilledReporting).toHaveBeenCalled())
-    expect(client.getBilledReporting).toHaveBeenCalledWith('2026-08-01', '2026-08-31', 'azure-id', 'cloud-id')
+    expect(client.getBilledReporting).toHaveBeenCalledWith(
+      '2026-08-01',
+      '2026-08-31',
+      'azure-id',
+      'cloud-id',
+    )
   })
 
   test('passes spend vendor and category filters to the capped ledger query', async () => {
@@ -179,7 +231,12 @@ describe('dashboard queries', () => {
     )
 
     await waitFor(() => expect(client.getSpendEntries).toHaveBeenCalled())
-    expect(client.getSpendEntries).toHaveBeenCalledWith('2026-08-01', '2026-08-31', 'azure-id', 'cloud-id')
+    expect(client.getSpendEntries).toHaveBeenCalledWith(
+      '2026-08-01',
+      '2026-08-31',
+      'azure-id',
+      'cloud-id',
+    )
   })
 
   test('does not fetch the default activity window when the query is disabled', async () => {

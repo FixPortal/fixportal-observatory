@@ -19,7 +19,12 @@ interface Props {
   isLoading?: boolean
 }
 
-export default function ProjectTreemap({ projects, selectedProject, onSelectProject, isLoading = false }: Props) {
+export default function ProjectTreemap({
+  projects,
+  selectedProject,
+  onSelectProject,
+  isLoading = false,
+}: Props) {
   const blocks = useMemo(() => buildTreemapBlocks(projects), [projects])
 
   if (isLoading) return <div className="chart-skeleton" />
@@ -38,7 +43,9 @@ export default function ProjectTreemap({ projects, selectedProject, onSelectProj
     const project = String(node.name)
     const activeSeconds = Number(node.activeSeconds)
     const label = `${project} — ${formatActiveTime(activeSeconds)} (${node.percent}%)`
-    const select = () => { if (!isOther) onSelectProject(project === selectedProject ? null : project) }
+    const select = () => {
+      if (!isOther) onSelectProject(project === selectedProject ? null : project)
+    }
     return (
       <g
         role="button"
@@ -48,7 +55,7 @@ export default function ProjectTreemap({ projects, selectedProject, onSelectProj
         className={`activity-treemap__cell${project === selectedProject ? ' activity-treemap__cell--selected' : ''}`}
         style={{ background: String(node.color) }}
         onClick={select}
-        onKeyDown={event => {
+        onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
             select()
@@ -56,11 +63,19 @@ export default function ProjectTreemap({ projects, selectedProject, onSelectProj
         }}
       >
         <title>{label}</title>
-        <rect x={node.x} y={node.y} width={node.width} height={node.height} fill={String(node.color)} />
+        <rect
+          x={node.x}
+          y={node.y}
+          width={node.width}
+          height={node.height}
+          fill={String(node.color)}
+        />
         {node.width >= 96 && node.height >= 44 && (
           <text x={node.x + 10} y={node.y + 22} className="activity-treemap__label">
             <tspan>{project}</tspan>
-            <tspan x={node.x + 10} dy="18" className="activity-treemap__value">{formatActiveTime(activeSeconds)}</tspan>
+            <tspan x={node.x + 10} dy="18" className="activity-treemap__value">
+              {formatActiveTime(activeSeconds)}
+            </tspan>
           </text>
         )}
       </g>
@@ -69,7 +84,11 @@ export default function ProjectTreemap({ projects, selectedProject, onSelectProj
 
   return (
     <div className="activity-treemap" role="group" aria-label="Project share treemap">
-      <ResponsiveContainer width="100%" height={240} initialDimension={{ width: 1000, height: 240 }}>
+      <ResponsiveContainer
+        width="100%"
+        height={240}
+        initialDimension={{ width: 1000, height: 240 }}
+      >
         <Treemap
           data={data}
           dataKey="value"

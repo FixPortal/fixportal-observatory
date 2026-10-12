@@ -37,32 +37,32 @@ const FORBIDDEN_EDGES: ReadonlyArray<{
   toGlob: string
 }> = [
   // config is the lowest layer -- must not reach up into anything
-  { from: 'config', fromGlob: '**/config/**', to: 'lib',        toGlob: '**/lib/**'        },
-  { from: 'config', fromGlob: '**/config/**', to: 'auth',       toGlob: '**/auth/**'       },
-  { from: 'config', fromGlob: '**/config/**', to: 'theme',      toGlob: '**/theme/**'      },
-  { from: 'config', fromGlob: '**/config/**', to: 'api',        toGlob: '**/api/**'        },
+  { from: 'config', fromGlob: '**/config/**', to: 'lib', toGlob: '**/lib/**' },
+  { from: 'config', fromGlob: '**/config/**', to: 'auth', toGlob: '**/auth/**' },
+  { from: 'config', fromGlob: '**/config/**', to: 'theme', toGlob: '**/theme/**' },
+  { from: 'config', fromGlob: '**/config/**', to: 'api', toGlob: '**/api/**' },
   { from: 'config', fromGlob: '**/config/**', to: 'components', toGlob: '**/components/**' },
-  { from: 'config', fromGlob: '**/config/**', to: 'pages',      toGlob: '**/pages/**'      },
+  { from: 'config', fromGlob: '**/config/**', to: 'pages', toGlob: '**/pages/**' },
   // lib is a pure-helper layer -- must not import any other internal layer
-  { from: 'lib',    fromGlob: '**/lib/**',    to: 'config',     toGlob: '**/config/**'     },
-  { from: 'lib',    fromGlob: '**/lib/**',    to: 'auth',       toGlob: '**/auth/**'       },
-  { from: 'lib',    fromGlob: '**/lib/**',    to: 'theme',      toGlob: '**/theme/**'      },
-  { from: 'lib',    fromGlob: '**/lib/**',    to: 'api',        toGlob: '**/api/**'        },
-  { from: 'lib',    fromGlob: '**/lib/**',    to: 'components', toGlob: '**/components/**' },
-  { from: 'lib',    fromGlob: '**/lib/**',    to: 'pages',      toGlob: '**/pages/**'      },
+  { from: 'lib', fromGlob: '**/lib/**', to: 'config', toGlob: '**/config/**' },
+  { from: 'lib', fromGlob: '**/lib/**', to: 'auth', toGlob: '**/auth/**' },
+  { from: 'lib', fromGlob: '**/lib/**', to: 'theme', toGlob: '**/theme/**' },
+  { from: 'lib', fromGlob: '**/lib/**', to: 'api', toGlob: '**/api/**' },
+  { from: 'lib', fromGlob: '**/lib/**', to: 'components', toGlob: '**/components/**' },
+  { from: 'lib', fromGlob: '**/lib/**', to: 'pages', toGlob: '**/pages/**' },
   // auth must not reach up into api, components or pages
-  { from: 'auth',   fromGlob: '**/auth/**',   to: 'api',        toGlob: '**/api/**'        },
-  { from: 'auth',   fromGlob: '**/auth/**',   to: 'components', toGlob: '**/components/**' },
-  { from: 'auth',   fromGlob: '**/auth/**',   to: 'pages',      toGlob: '**/pages/**'      },
+  { from: 'auth', fromGlob: '**/auth/**', to: 'api', toGlob: '**/api/**' },
+  { from: 'auth', fromGlob: '**/auth/**', to: 'components', toGlob: '**/components/**' },
+  { from: 'auth', fromGlob: '**/auth/**', to: 'pages', toGlob: '**/pages/**' },
   // theme must not reach up into api, components or pages
-  { from: 'theme',  fromGlob: '**/theme/**',  to: 'api',        toGlob: '**/api/**'        },
-  { from: 'theme',  fromGlob: '**/theme/**',  to: 'components', toGlob: '**/components/**' },
-  { from: 'theme',  fromGlob: '**/theme/**',  to: 'pages',      toGlob: '**/pages/**'      },
+  { from: 'theme', fromGlob: '**/theme/**', to: 'api', toGlob: '**/api/**' },
+  { from: 'theme', fromGlob: '**/theme/**', to: 'components', toGlob: '**/components/**' },
+  { from: 'theme', fromGlob: '**/theme/**', to: 'pages', toGlob: '**/pages/**' },
   // api must not reach up into components or pages
-  { from: 'api',    fromGlob: '**/api/**',    to: 'components', toGlob: '**/components/**' },
-  { from: 'api',    fromGlob: '**/api/**',    to: 'pages',      toGlob: '**/pages/**'      },
+  { from: 'api', fromGlob: '**/api/**', to: 'components', toGlob: '**/components/**' },
+  { from: 'api', fromGlob: '**/api/**', to: 'pages', toGlob: '**/pages/**' },
   // components must not import pages (composition layer)
-  { from: 'components', fromGlob: '**/components/**', to: 'pages', toGlob: '**/pages/**'  },
+  { from: 'components', fromGlob: '**/components/**', to: 'pages', toGlob: '**/pages/**' },
 ]
 
 describe('architecture / layer isolation', () => {
@@ -89,4 +89,3 @@ describe('architecture / cycles', () => {
     expect(violations).toEqual([])
   }, 15_000)
 })
-

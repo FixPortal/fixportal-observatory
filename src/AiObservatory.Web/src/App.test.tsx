@@ -19,7 +19,11 @@ vi.mock('./auth/msal', () => msalMock)
 vi.mock('@azure/msal-react', () => ({
   useIsAuthenticated: () => false,
   useMsal: () => ({
-    instance: { loginRedirect: vi.fn().mockResolvedValue(undefined), getActiveAccount: vi.fn(), setActiveAccount: vi.fn() },
+    instance: {
+      loginRedirect: vi.fn().mockResolvedValue(undefined),
+      getActiveAccount: vi.fn(),
+      setActiveAccount: vi.fn(),
+    },
     accounts: [],
     inProgress: 'none',
   }),
@@ -46,7 +50,11 @@ describe('App composition for the IDE embed', () => {
     expect(screen.getByRole('button', { name: /sign in with microsoft/i })).toBeInTheDocument()
     expect(screen.queryByText('dashboard content')).not.toBeInTheDocument()
     expect(postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ contractVersion: '1.0', kind: 'partner.ready', authority: 'workspace' }),
+      expect.objectContaining({
+        contractVersion: '1.0',
+        kind: 'partner.ready',
+        authority: 'workspace',
+      }),
     )
   })
 })

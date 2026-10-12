@@ -16,8 +16,16 @@ interface Props {
 
 /** Region 1. One filter state, lifted to SpendPage, drives every other region. */
 export default function SpendFilterBar({
-  categories, vendors, categoryId, vendorId,
-  onCategoryChange, onVendorChange, onAddEntry, onManageCatalog, rangeLabel, canEdit,
+  categories,
+  vendors,
+  categoryId,
+  vendorId,
+  onCategoryChange,
+  onVendorChange,
+  onAddEntry,
+  onManageCatalog,
+  rangeLabel,
+  canEdit,
 }: Props) {
   return (
     <div className="filter-row spend-filters" role="group" aria-label="Spend filters">
@@ -25,10 +33,14 @@ export default function SpendFilterBar({
         <span>Category</span>
         <select
           value={categoryId ?? ''}
-          onChange={e => onCategoryChange(e.target.value || undefined)}
+          onChange={(e) => onCategoryChange(e.target.value || undefined)}
         >
           <option value="">All categories</option>
-          {categories.map(c => <option key={c.id} value={c.id}>{c.displayName}</option>)}
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.displayName}
+            </option>
+          ))}
         </select>
       </label>
 
@@ -36,10 +48,14 @@ export default function SpendFilterBar({
         <span>Vendor</span>
         <select
           value={vendorId ?? ''}
-          onChange={e => onVendorChange(e.target.value || undefined)}
+          onChange={(e) => onVendorChange(e.target.value || undefined)}
         >
           <option value="">All vendors</option>
-          {vendors.map(v => <option key={v.id} value={v.id}>{v.displayName}</option>)}
+          {vendors.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.displayName}
+            </option>
+          ))}
         </select>
       </label>
 

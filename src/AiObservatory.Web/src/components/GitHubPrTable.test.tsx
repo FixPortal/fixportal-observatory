@@ -4,8 +4,28 @@ import GitHubPrTable from './GitHubPrTable'
 import type { GitHubPr } from '../api/client'
 
 const prs: GitHubPr[] = [
-  { repo: 'fix-portal/a', number: 1, title: 'Add feature', author: 'chris', state: 'open', createdAt: '2026-07-01T09:00:00Z', mergedAt: null, reviewCount: 2, turnaroundHours: 3.5 },
-  { repo: 'fix-portal/b', number: 2, title: 'Fix bug', author: 'chris', state: 'merged', createdAt: '2026-07-02T09:00:00Z', mergedAt: '2026-07-02T12:00:00Z', reviewCount: 0, turnaroundHours: null },
+  {
+    repo: 'fix-portal/a',
+    number: 1,
+    title: 'Add feature',
+    author: 'chris',
+    state: 'open',
+    createdAt: '2026-07-01T09:00:00Z',
+    mergedAt: null,
+    reviewCount: 2,
+    turnaroundHours: 3.5,
+  },
+  {
+    repo: 'fix-portal/b',
+    number: 2,
+    title: 'Fix bug',
+    author: 'chris',
+    state: 'merged',
+    createdAt: '2026-07-02T09:00:00Z',
+    mergedAt: '2026-07-02T12:00:00Z',
+    reviewCount: 0,
+    turnaroundHours: null,
+  },
 ]
 
 describe('GitHubPrTable', () => {
@@ -41,7 +61,9 @@ describe('GitHubPrTable', () => {
     render(<GitHubPrTable prs={prs} />)
     const mergedRow = screen.getByText(/Fix bug/).closest('tr')!
     const openRow = screen.getByText(/Add feature/).closest('tr')!
-    expect(within(mergedRow).getAllByRole('cell')[5]).toHaveTextContent(new Date(prs[1].mergedAt!).toLocaleDateString())
+    expect(within(mergedRow).getAllByRole('cell')[5]).toHaveTextContent(
+      new Date(prs[1].mergedAt!).toLocaleDateString(),
+    )
     expect(within(openRow).getAllByRole('cell')[5]).toHaveTextContent('—')
   })
 })

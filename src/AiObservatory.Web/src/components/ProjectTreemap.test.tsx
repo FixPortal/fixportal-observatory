@@ -17,20 +17,30 @@ test('renders a block per project', () => {
 
 test('clicking a block selects that project', () => {
   const onSelectProject = vi.fn()
-  render(<ProjectTreemap projects={projects} selectedProject={null} onSelectProject={onSelectProject} />)
+  render(
+    <ProjectTreemap projects={projects} selectedProject={null} onSelectProject={onSelectProject} />,
+  )
   fireEvent.click(screen.getByRole('button', { name: /Training/ }))
   expect(onSelectProject).toHaveBeenCalledWith('Training')
 })
 
 test('clicking the already-selected block deselects it', () => {
   const onSelectProject = vi.fn()
-  render(<ProjectTreemap projects={projects} selectedProject="Training" onSelectProject={onSelectProject} />)
+  render(
+    <ProjectTreemap
+      projects={projects}
+      selectedProject="Training"
+      onSelectProject={onSelectProject}
+    />,
+  )
   fireEvent.click(screen.getByRole('button', { name: /Training/ }))
   expect(onSelectProject).toHaveBeenCalledWith(null)
 })
 
 test('shows a loading skeleton instead of the empty state while the fetch is pending', () => {
-  render(<ProjectTreemap projects={[]} selectedProject={null} onSelectProject={vi.fn()} isLoading />)
+  render(
+    <ProjectTreemap projects={[]} selectedProject={null} onSelectProject={vi.fn()} isLoading />,
+  )
   expect(screen.queryByText('No activity data for this period.')).not.toBeInTheDocument()
   expect(screen.queryByRole('group', { name: 'Project share treemap' })).not.toBeInTheDocument()
 })
@@ -48,7 +58,11 @@ test('uses the project palette for the overflow bucket', () => {
     sharePercent: 0,
   }))
 
-  render(<ProjectTreemap projects={manyProjects} selectedProject={null} onSelectProject={vi.fn()} />)
+  render(
+    <ProjectTreemap projects={manyProjects} selectedProject={null} onSelectProject={vi.fn()} />,
+  )
 
-  expect(screen.getByRole('button', { name: /Other/ })).toHaveStyle({ background: 'var(--project-other)' })
+  expect(screen.getByRole('button', { name: /Other/ })).toHaveStyle({
+    background: 'var(--project-other)',
+  })
 })

@@ -2,8 +2,26 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import SpendFilterBar from './SpendFilterBar'
 
-const categories = [{ id: 'c1', key: 'credits', displayName: 'Credits', colorVar: '', sortOrder: 1, archivedAt: null }]
-const vendors = [{ id: 'v1', key: 'anthropic', displayName: 'Anthropic', provider: 'anthropic', defaultCategoryId: 'c1', archivedAt: null }]
+const categories = [
+  {
+    id: 'c1',
+    key: 'credits',
+    displayName: 'Credits',
+    colorVar: '',
+    sortOrder: 1,
+    archivedAt: null,
+  },
+]
+const vendors = [
+  {
+    id: 'v1',
+    key: 'anthropic',
+    displayName: 'Anthropic',
+    provider: 'anthropic',
+    defaultCategoryId: 'c1',
+    archivedAt: null,
+  },
+]
 
 function renderBar(canEdit: boolean, onManageCatalog = vi.fn(), onAddEntry = vi.fn()) {
   return render(
@@ -30,8 +48,11 @@ describe('SpendFilterBar', () => {
   it('shows a "Manage catalog" button beside "Add entry" when the viewer can edit', () => {
     renderBar(true)
     const actions = screen.getByRole('group', { name: /spend actions/i })
-    expect(within(actions).getAllByRole('button').map(button => button.textContent))
-      .toEqual(['Manage catalog', 'Add entry'])
+    expect(
+      within(actions)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Manage catalog', 'Add entry'])
   })
 
   it('calls onManageCatalog when clicked', () => {

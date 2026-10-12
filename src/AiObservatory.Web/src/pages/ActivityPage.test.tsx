@@ -30,5 +30,8 @@ test('offers the same selected and comparison period controls as Spend', () => {
 
   expect(screen.getByLabelText('Selected from')).toBeInTheDocument()
   expect(screen.getByLabelText('Compare from')).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Previous period' })).toHaveAttribute('class', expect.stringContaining('active'))
+  expect(screen.getByRole('button', { name: 'Previous period' })).toHaveAttribute(
+    'class',
+    expect.stringContaining('active'),
+  )
 })

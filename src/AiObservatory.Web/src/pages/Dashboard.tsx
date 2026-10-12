@@ -18,7 +18,8 @@ import { ApiError } from '../api/client'
 import { authEnabled, isReadonly, signIn, TokenAcquisitionTimeoutError } from '../auth/msal'
 import { useTheme } from '../theme/useTheme'
 
-type DashboardTab = 'overview' | 'adversarial-review' | 'reporting' | 'activity' | 'github' | 'spend'
+type DashboardTab =
+  'overview' | 'adversarial-review' | 'reporting' | 'activity' | 'github' | 'spend'
 
 const TABS: { id: DashboardTab; label: string; readonlyHidden?: boolean }[] = [
   { id: 'overview', label: 'Overview' },
@@ -34,9 +35,20 @@ const TABS: { id: DashboardTab; label: string; readonlyHidden?: boolean }[] = [
 const SpendChart = lazy(() => import('../components/SpendChart'))
 const ProviderSplit = lazy(() => import('../components/ProviderSplit'))
 
-function ErrorBanner({ error, isRetrying, isAutomaticallyRetrying, onRetry }: { error: unknown; isRetrying: boolean; isAutomaticallyRetrying: boolean; onRetry: () => Promise<void> }) {
-  const isAuthError = error instanceof TokenAcquisitionTimeoutError
-    || (error instanceof ApiError && (error.status === 401 || error.status === 403))
+function ErrorBanner({
+  error,
+  isRetrying,
+  isAutomaticallyRetrying,
+  onRetry,
+}: {
+  error: unknown
+  isRetrying: boolean
+  isAutomaticallyRetrying: boolean
+  onRetry: () => Promise<void>
+}) {
+  const isAuthError =
+    error instanceof TokenAcquisitionTimeoutError ||
+    (error instanceof ApiError && (error.status === 401 || error.status === 403))
   if (isAuthError) {
     return (
       <div className="error-banner" role="alert">
@@ -53,7 +65,14 @@ function ErrorBanner({ error, isRetrying, isAutomaticallyRetrying, onRetry }: { 
     <div className="error-banner">
       <span role="alert">Couldn’t reach the API — data may be unavailable.</span>{' '}
       {isAutomaticallyRetrying && <span role="status">Retrying automatically. </span>}
-      <button type="button" className="error-banner__action" disabled={isRetrying} onClick={() => { void onRetry() }}>
+      <button
+        type="button"
+        className="error-banner__action"
+        disabled={isRetrying}
+        onClick={() => {
+          void onRetry()
+        }}
+      >
         {isRetrying ? 'Retrying…' : 'Retry'}
       </button>
     </div>
@@ -61,10 +80,11 @@ function ErrorBanner({ error, isRetrying, isAutomaticallyRetrying, onRetry }: { 
 }
 
 export default function Dashboard() {
-  const { isError, isLoading, isRetrying, isAutomaticallyRetrying, error, retry } = useDashboardStatus()
+  const { isError, isLoading, isRetrying, isAutomaticallyRetrying, error, retry } =
+    useDashboardStatus()
   const { mode, setMode } = useTheme()
   const [tab, setTab] = useState<DashboardTab>('overview')
-  const visibleTabs = TABS.filter(t => !(t.readonlyHidden && isReadonly))
+  const visibleTabs = TABS.filter((t) => !(t.readonlyHidden && isReadonly))
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   // Tablist arrow-key navigation with roving tabIndex (only the selected tab is in the
@@ -72,7 +92,8 @@ export default function Dashboard() {
   const onTabKeyDown = (e: KeyboardEvent, index: number) => {
     let next: number | null = null
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (index + 1) % visibleTabs.length
-    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (index - 1 + visibleTabs.length) % visibleTabs.length
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+      next = (index - 1 + visibleTabs.length) % visibleTabs.length
     if (next === null) return
     e.preventDefault()
     setTab(visibleTabs[next].id)
@@ -92,7 +113,9 @@ export default function Dashboard() {
         {visibleTabs.map((t, i) => (
           <button
             key={t.id}
-            ref={el => { tabRefs.current[i] = el }}
+            ref={(el) => {
+              tabRefs.current[i] = el
+            }}
             type="button"
             role="tab"
             id={`dashboard-tab-${t.id}`}
@@ -101,61 +124,73 @@ export default function Dashboard() {
             tabIndex={tab === t.id ? 0 : -1}
             className={`page-nav__tab${tab === t.id ? ' page-nav__tab--active' : ''}`}
             onClick={() => setTab(t.id)}
-            onKeyDown={e => onTabKeyDown(e, i)}
+            onKeyDown={(e) => onTabKeyDown(e, i)}
           >
             {t.label}
           </button>
         ))}
       </div>
       <main className="dashboard__main">
-      <div id="dashboard-tabpanel" className="dashboard__tabpanel" role="tabpanel" aria-labelledby={`dashboard-tab-${tab}`}>
-        {isError && <ErrorBanner error={error} isRetrying={isRetrying} isAutomaticallyRetrying={isAutomaticallyRetrying} onRetry={retry} />}
-        {!isError && isLoading && (
-          <output className="loading-banner" aria-live="polite">
-            <span className="loading-banner__spinner" aria-hidden="true" />
-            Loading data — the API may take a moment to wake up on first load…
-          </output>
-        )}
-        {tab === 'overview' && (
-          <>
-            <SummaryCards />
-            <div className="main-grid">
-              <div className="panel">
-                <div className="panel-title">Usage value · last 31 days</div>
-                <Suspense fallback={<div className="chart-skeleton" />}>
-                  <SpendChart />
-                </Suspense>
+        <div
+          id="dashboard-tabpanel"
+          className="dashboard__tabpanel"
+          role="tabpanel"
+          aria-labelledby={`dashboard-tab-${tab}`}
+        >
+          {isError && (
+            <ErrorBanner
+              error={error}
+              isRetrying={isRetrying}
+              isAutomaticallyRetrying={isAutomaticallyRetrying}
+              onRetry={retry}
+            />
+          )}
+          {!isError && isLoading && (
+            <output className="loading-banner" aria-live="polite">
+              <span className="loading-banner__spinner" aria-hidden="true" />
+              Loading data — the API may take a moment to wake up on first load…
+            </output>
+          )}
+          {tab === 'overview' && (
+            <>
+              <SummaryCards />
+              <div className="main-grid">
+                <div className="panel">
+                  <div className="panel-title">Usage value · last 31 days</div>
+                  <Suspense fallback={<div className="chart-skeleton" />}>
+                    <SpendChart />
+                  </Suspense>
+                </div>
+                <div className="panel">
+                  <div className="panel-title">Provider usage share</div>
+                  <Suspense fallback={<div className="chart-skeleton" />}>
+                    <ProviderSplit />
+                  </Suspense>
+                </div>
               </div>
-              <div className="panel">
-                <div className="panel-title">Provider usage share</div>
-                <Suspense fallback={<div className="chart-skeleton" />}>
-                  <ProviderSplit />
-                </Suspense>
+              <div className="collapsible-panel-zone">
+                <CavemanStatsPanel />
               </div>
-            </div>
-            <div className="collapsible-panel-zone">
-              <CavemanStatsPanel />
-            </div>
-            <SubscriptionPanel />
-            <div className="bottom-grid">
-              <div className="panel">
-                <div className="panel-title">Model breakdown</div>
-                <ModelBreakdown />
+              <SubscriptionPanel />
+              <div className="bottom-grid">
+                <div className="panel">
+                  <div className="panel-title">Model breakdown</div>
+                  <ModelBreakdown />
+                </div>
+                <div className="panel">
+                  <div className="panel-title">Insights</div>
+                  <InsightsFeed />
+                </div>
               </div>
-              <div className="panel">
-                <div className="panel-title">Insights</div>
-                <InsightsFeed />
-              </div>
-            </div>
-            <SourceStatusPanel />
-          </>
-        )}
-        {tab === 'adversarial-review' && <AdversarialReviewPanel />}
-        {tab === 'reporting' && <ReportingPage />}
-        {tab === 'activity' && <ActivityPage />}
-        {tab === 'github' && <GitHubPage />}
-        {tab === 'spend' && <SpendPage />}
-      </div>
+              <SourceStatusPanel />
+            </>
+          )}
+          {tab === 'adversarial-review' && <AdversarialReviewPanel />}
+          {tab === 'reporting' && <ReportingPage />}
+          {tab === 'activity' && <ActivityPage />}
+          {tab === 'github' && <GitHubPage />}
+          {tab === 'spend' && <SpendPage />}
+        </div>
       </main>
       <Footer />
     </div>
