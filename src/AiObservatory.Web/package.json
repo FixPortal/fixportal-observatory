@@ -10,10 +10,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
     "format": "prettier --check .",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "gate": "npm run format && npm run lint && npm run build && npm run coverage",
     "doctor": "react-doctor"
   },
   "dependencies": {
