@@ -49,6 +49,7 @@ export function BilledVendorSplit({ data }: Props) {
         />
         <Bar dataKey="amountGbp" name="Billed spend">
           {data.map((entry) => (
+            // eslint-disable-next-line @typescript-eslint/no-deprecated -- recharts marks Cell deprecated; replacing the per-slice colouring is a charting change outside this tooling PR
             <Cell
               key={entry.vendorId}
               fill={

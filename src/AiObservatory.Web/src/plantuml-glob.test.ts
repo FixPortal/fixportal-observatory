@@ -103,7 +103,8 @@ describe('installed PlantUML file parser glob compatibility', () => {
   it('retains its asynchronous callback API', async () => {
     const files = await new Promise<ParsedFile[]>((fulfil, reject) => {
       parser.parseFile(slash(join(absoluteRoot, 'one.puml')), {}, (error, values) => {
-        error ? reject(error) : fulfil(values)
+        if (error) reject(error)
+        else fulfil(values)
       })
     })
     expect(files.map((file) => file.name)).toEqual([

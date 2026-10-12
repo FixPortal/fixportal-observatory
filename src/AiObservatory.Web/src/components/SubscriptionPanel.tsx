@@ -1,3 +1,4 @@
+import { useClock } from '../lib/useClock'
 import { useState, useMemo, useCallback, useRef } from 'react'
 import { InfoPopover } from './InfoPopover'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -19,7 +20,7 @@ const SUBSCRIPTION_AGGREGATES_STALE_MS = 5 * 60_000
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd']
   const v = n % 100
-  return n + (s[(v - 20) % 10] ?? s[v] ?? 'th')
+  return `${n}${s[(v - 20) % 10] ?? s[v] ?? 'th'}`
 }
 
 function usagePresentation(
@@ -61,7 +62,7 @@ function ExtraUsageChip({ sub }: { sub: Subscription }) {
   const patch = useMutation({
     mutationFn: (amount: number | null) => patchExtraUsage(sub.id, amount),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['subscriptions'] })
+      void qc.invalidateQueries({ queryKey: ['subscriptions'] })
       setEditing(false)
     },
     onError: (err: Error) => {
@@ -171,7 +172,8 @@ export function SubscriptionPanel() {
   } = useSubscriptions()
   const rate = useUsdToGbp()
   const [modalOpen, setModalOpen] = useState(false)
-  const today = localDate(new Date())
+  const clock = useClock()
+  const today = localDate(clock.now())
 
   const active = useMemo(
     () =>
@@ -192,24 +194,21 @@ export function SubscriptionPanel() {
     const groups: Record<string, GroupedSubscription> = {}
     for (const sub of active) {
       const key = `${sub.provider.toLowerCase()}|${sub.currency.toUpperCase()}|${sub.billingInterval}|${sub.billingMonth ?? ''}|${sub.billingDay}`
-      if (!groups[key]) {
-        groups[key] = {
-          groupKey: key,
-          provider: sub.provider,
-          name: sub.name,
-          costAmount: 0,
-          extraUsageCost: null,
-          currency: sub.currency,
-          billingInterval: sub.billingInterval,
-          billingMonth: sub.billingMonth,
-          billingDay: sub.billingDay,
-          activeFrom: sub.activeFrom,
-          activeTo: sub.activeTo,
-          originalSubscription: sub,
-          memberCount: 0,
-        }
-      }
-      const g = groups[key]
+      const g = (groups[key] ??= {
+        groupKey: key,
+        provider: sub.provider,
+        name: sub.name,
+        costAmount: 0,
+        extraUsageCost: null,
+        currency: sub.currency,
+        billingInterval: sub.billingInterval,
+        billingMonth: sub.billingMonth,
+        billingDay: sub.billingDay,
+        activeFrom: sub.activeFrom,
+        activeTo: sub.activeTo,
+        originalSubscription: sub,
+        memberCount: 0,
+      })
       g.costAmount += sub.costAmount
       if (sub.extraUsageCost !== null) {
         g.extraUsageCost = (g.extraUsageCost ?? 0) + sub.extraUsageCost

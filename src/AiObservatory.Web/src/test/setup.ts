@@ -21,13 +21,13 @@ afterEach(() => {
 // ponytail: polyfilling the two missing built-in methods directly on the existing
 // prototype is the standard shim pattern; sonarjs wants a whole subclass declaration,
 // which is overkill for patching a browser API jsdom doesn't implement.
-if (!HTMLDialogElement.prototype.showModal) {
+if (!(HTMLDialogElement.prototype as Partial<HTMLDialogElement>).showModal) {
   // eslint-disable-next-line sonarjs/class-prototype
   HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
     this.open = true
   }
 }
-if (!HTMLDialogElement.prototype.close) {
+if (!(HTMLDialogElement.prototype as Partial<HTMLDialogElement>).close) {
   // eslint-disable-next-line sonarjs/class-prototype
   HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
     this.open = false

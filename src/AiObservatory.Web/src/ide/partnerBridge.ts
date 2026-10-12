@@ -1,3 +1,4 @@
+import { systemClock, type Clock } from '../lib/clock'
 export interface HostContext {
   missionId: string | null
   repository: string | null
@@ -18,7 +19,10 @@ export interface EmbeddedBridge {
 
 const partnerId = '753cb584-cd0b-4e16-9f08-6c0ce130a84a'
 
-export function createEmbeddedBridge(port: WebViewPort): EmbeddedBridge {
+export function createEmbeddedBridge(
+  port: WebViewPort,
+  clock: Clock = systemClock,
+): EmbeddedBridge {
   let current: HostContext | null = null
   const subscribers = new Set<(context: HostContext | null) => void>()
   const receive = (event: MessageEvent) => {
@@ -39,7 +43,7 @@ export function createEmbeddedBridge(port: WebViewPort): EmbeddedBridge {
         contractVersion: '1.0',
         kind: 'partner.ready',
         authority: 'workspace',
-        payload: { capabilities: [], connection: 'ready', observedAt: new Date().toISOString() },
+        payload: { capabilities: [], connection: 'ready', observedAt: clock.now().toISOString() },
       })
     },
     subscribe(listener) {

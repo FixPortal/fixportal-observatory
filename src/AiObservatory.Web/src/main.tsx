@@ -15,7 +15,9 @@ const tree = (
 )
 
 async function bootstrap() {
-  const root = createRoot(document.getElementById('root')!)
+  const container = document.getElementById('root')
+  if (!container) throw new Error('index.html is missing the #root element')
+  const root = createRoot(container)
   if (!msalInstance) {
     root.render(tree)
     return

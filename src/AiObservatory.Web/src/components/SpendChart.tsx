@@ -1,3 +1,4 @@
+import { chartLabel } from '../lib/chartLabel'
 import { lazy, Suspense, useMemo, useState } from 'react'
 import type { ValueType } from 'recharts/types/component/DefaultTooltipContent'
 import type { DailyAggregate } from '../api/client'
@@ -110,7 +111,7 @@ const ChartInner = lazy(() =>
             <YAxis
               tick={{ fontSize: 10, fill: TEXT_MUTED }}
               tickFormatter={(value: number) =>
-                tokens ? `${Number(value / 1_000_000).toFixed(1)}M` : `£${value}`
+                tokens ? `${(value / 1_000_000).toFixed(1)}M` : `£${value}`
               }
             />
             <Tooltip
@@ -122,7 +123,7 @@ const ChartInner = lazy(() =>
               }}
               labelStyle={{ color: 'var(--text)' }}
               itemStyle={{ color: TEXT_MUTED }}
-              labelFormatter={(label) => formatShortDate(String(label ?? ''))}
+              labelFormatter={(label) => formatShortDate(chartLabel(label))}
               formatter={(value: ValueType | undefined) => {
                 const amount = Number(Array.isArray(value) ? value[0] : (value ?? 0))
                 return tokens ? `${amount.toLocaleString()} tokens` : gbp(amount, 3)

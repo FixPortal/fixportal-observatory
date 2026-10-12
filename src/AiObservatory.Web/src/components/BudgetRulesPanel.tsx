@@ -284,7 +284,7 @@ export function BudgetRulesPanel() {
       setMutationError(null)
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['budget-rules'] })
+      void qc.invalidateQueries({ queryKey: ['budget-rules'] })
       setConfirmDeleteId(null)
     },
     onError: (e: Error) => {
@@ -303,7 +303,7 @@ export function BudgetRulesPanel() {
       setMutationError(null)
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['budget-rules'] })
+      void qc.invalidateQueries({ queryKey: ['budget-rules'] })
       setPanelOpen(false)
       setProvider('')
       setPeriod('monthly')
@@ -326,7 +326,7 @@ export function BudgetRulesPanel() {
     setPanelOpen(true)
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault()
     const val = parseFloat(threshold)
     if (!Number.isFinite(val) || val <= 0) return

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ThemeContext, type ThemeMode, type ResolvedTheme } from './useTheme'
 import { safeStorage } from '../lib/safeStorage'
 
@@ -12,11 +12,12 @@ function readMode(): ThemeMode {
 
 function resolve(mode: ThemeMode): ResolvedTheme {
   if (mode === 'system') {
-    return typeof window !== 'undefined' &&
-      window.matchMedia &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches
-      ? 'dark'
-      : 'light'
+    // matchMedia is missing in jsdom, so the type is widened to say it may be absent.
+    const media =
+      typeof window === 'undefined'
+        ? undefined
+        : (window as Partial<Window>).matchMedia?.('(prefers-color-scheme: dark)')
+    return media?.matches === true ? 'dark' : 'light'
   }
   return mode
 }
@@ -38,8 +39,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [mode])
 
   useEffect(() => {
-    if (mode !== 'system') return () => {}
-    if (typeof window === 'undefined' || !window.matchMedia) return () => {}
+    if (mode !== 'system') return () => undefined
+    if (typeof window === 'undefined' || !(window as Partial<Window>).matchMedia)
+      return () => undefined
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSystemResolved(mq.matches ? 'dark' : 'light')

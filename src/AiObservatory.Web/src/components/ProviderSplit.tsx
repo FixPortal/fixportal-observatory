@@ -75,7 +75,7 @@ const ChartInner = lazy(() =>
               itemStyle={{ color: 'var(--text-muted)' }}
               formatter={(value: ValueType | undefined, _name, item) => {
                 const amount = Number(Array.isArray(value) ? value[0] : (value ?? 0))
-                const share = Number((item.payload as ProviderSlice | undefined)?.share ?? 0)
+                const share = (item.payload as ProviderSlice | undefined)?.share ?? 0
                 const measured =
                   mode === 'notional'
                     ? amount.toLocaleString(undefined, { style: 'currency', currency: 'USD' })

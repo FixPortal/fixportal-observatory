@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   /** Absolute API base for production (cross-origin); unset in dev (Vite proxy). */
   readonly VITE_API_BASE?: string
+  /** Shared secret sent as X-Observatory-Key when Entra sign-in is disabled. */
+  readonly VITE_API_KEY?: string
   /** Entra app-registration client id. Unset => sign-in disabled (local dev). */
   readonly VITE_AAD_CLIENT_ID?: string
   /** Entra tenant id (directory) the app signs into. */

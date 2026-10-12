@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type SyntheticEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   createSpendCategory,
@@ -42,7 +42,7 @@ export function SpendCategoryCatalog({ categories }: Props) {
   const create = useMutation({
     mutationFn: (body: NewSpendCategory) => createSpendCategory(body),
     onSuccess: () => {
-      invalidate()
+      void invalidate()
       setForm(EMPTY_FORM)
     },
     onError: (err: Error) => {
@@ -54,7 +54,7 @@ export function SpendCategoryCatalog({ categories }: Props) {
     mutationFn: ({ id, body }: { id: string; body: Parameters<typeof patchSpendCategory>[1] }) =>
       patchSpendCategory(id, body),
     onSuccess: () => {
-      invalidate()
+      void invalidate()
       setRenamingId(null)
     },
     onError: (err: Error) => {
@@ -62,7 +62,7 @@ export function SpendCategoryCatalog({ categories }: Props) {
     },
   })
 
-  function submitCreate(e: FormEvent) {
+  function submitCreate(e: SyntheticEvent) {
     e.preventDefault()
     setFormError(null)
     if (!form.key.trim() || !form.displayName.trim()) {

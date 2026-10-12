@@ -230,7 +230,7 @@ describe('getAccessToken', () => {
     const mod = await import('./msal')
     const result = mod.getAccessToken().then(
       () => 'resolved',
-      (error) => (error instanceof Error ? error.message : String(error)),
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
     )
 
     await vi.advanceTimersByTimeAsync(10_000)

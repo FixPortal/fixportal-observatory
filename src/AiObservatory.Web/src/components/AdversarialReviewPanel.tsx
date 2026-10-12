@@ -267,8 +267,8 @@ function RunsList({ groups, isLoading, isError }: RunsListProps) {
   const deleteRun = useMutation({
     mutationFn: deleteAdversarialReviewRun,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['adversarial-review-runs'] })
-      qc.invalidateQueries({ queryKey: ['adversarial-review-stats'] })
+      void qc.invalidateQueries({ queryKey: ['adversarial-review-runs'] })
+      void qc.invalidateQueries({ queryKey: ['adversarial-review-stats'] })
       setConfirmDeleteRunId(null)
     },
   })

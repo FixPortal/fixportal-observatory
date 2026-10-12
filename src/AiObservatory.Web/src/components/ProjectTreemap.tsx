@@ -40,9 +40,9 @@ export function ProjectTreemap({
   const renderCell = (node: TreemapNode) => {
     if (node.depth === 0) return <g />
     const isOther = Boolean(node['isOther'])
-    const project = String(node.name)
+    const project = node.name
     const activeSeconds = Number(node['activeSeconds'])
-    const label = `${project} — ${formatActiveTime(activeSeconds)} (${node['percent']}%)`
+    const label = `${project} — ${formatActiveTime(activeSeconds)} (${String(node['percent'])}%)`
     const select = () => {
       if (!isOther) onSelectProject(project === selectedProject ? null : project)
     }

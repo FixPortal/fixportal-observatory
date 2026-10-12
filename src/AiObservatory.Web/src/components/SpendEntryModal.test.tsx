@@ -1,3 +1,4 @@
+import { systemClock } from '../lib/clock'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -28,7 +29,7 @@ const vendors = [
 
 // Computed relative to "now", like SpendPage's own 90-day window, so the default
 // occurredOn value (today) always falls inside it regardless of when the suite runs.
-const to = new Date()
+const to = systemClock.now()
 const from = new Date(to.getTime() - 90 * 86_400_000)
 
 function renderModal(onClose = vi.fn()) {
@@ -145,7 +146,7 @@ describe('SpendEntryModal', () => {
     const post = vi
       .spyOn(client, 'postSpendEntries')
       .mockResolvedValue([{ id: 'e1', status: 'created', reason: null }])
-    const pastTo = new Date(Date.now() - 10 * 86_400_000)
+    const pastTo = new Date(systemClock.now().getTime() - 10 * 86_400_000)
     const pastFrom = new Date(pastTo.getTime() - 90 * 86_400_000)
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(

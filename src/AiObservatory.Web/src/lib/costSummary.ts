@@ -90,7 +90,7 @@ export function summarizeCosts(
   const { cacheSavingsUsd, unknownCacheSavingsObservations } = accumulateCacheSavings(aggregates)
   let unclassifiedUsd: number | null = null
 
-  for (const entry of spendEntries) billedGbp! += entry.amountGbp
+  if (billedGbp !== null) for (const entry of spendEntries) billedGbp += entry.amountGbp
 
   for (const aggregate of aggregates) {
     unknownCostObservations += aggregate.unknownCostCount

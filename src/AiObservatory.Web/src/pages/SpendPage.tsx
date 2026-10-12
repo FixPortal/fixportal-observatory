@@ -91,7 +91,7 @@ export function SpendPage() {
     mutationFn: deleteSpendEntry,
     onSuccess: () => {
       setDeleteError(null)
-      invalidateSpendData(qc)
+      void invalidateSpendData(qc)
     },
     onError: (err: Error) => {
       setDeleteError(`Failed to delete entry: ${err.message}`)
