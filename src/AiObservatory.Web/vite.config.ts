@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import { visualizer } from 'rollup-plugin-visualizer'
 
 // `ANALYZE=1 npm run build` emits dist/stats.html (treemap of the bundle).
-const analyze = !!process.env.ANALYZE
+const analyze = !!process.env['ANALYZE']
 
 export default defineConfig({
   plugins: [
