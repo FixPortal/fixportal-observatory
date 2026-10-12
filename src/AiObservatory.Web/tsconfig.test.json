@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "esnext",
+    "types": ["vite/client", "node", "@testing-library/jest-dom"],
+    "skipLibCheck": true,
+    "strict": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  // Test sources belong to THIS project, not tsconfig.app.json -- without it they
+  // compile under no project at all and Vitest transpiles them without type-checking,
+  // so `tsc -b` and `npm test` both stay green on a type-broken test file.
+  "include": ["src/**/*.test.*", "src/**/*.spec.*", "src/**/*.archunit.*", "src/test"]
+}
