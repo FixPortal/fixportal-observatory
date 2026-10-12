@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { SpendCategory, SpendVendor } from '../api/client'
-import SpendCategoryCatalog from './SpendCategoryCatalog'
-import SpendVendorCatalog from './SpendVendorCatalog'
+import { SpendCategoryCatalog } from './SpendCategoryCatalog'
+import { SpendVendorCatalog } from './SpendVendorCatalog'
 
 interface Props {
   /** Both incl. archived rows -- SpendPage already loads these via
@@ -20,7 +20,7 @@ type Tab = 'categories' | 'vendors'
  * long scroll for whichever axis the admin isn't touching right now. No new
  * dashboard tab, no routing -- opened from SpendFilterBar, same pattern as
  * SpendEntryModal. */
-export default function SpendCatalogModal({ categories, vendors, onClose }: Props) {
+export function SpendCatalogModal({ categories, vendors, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('categories')
 
   return (

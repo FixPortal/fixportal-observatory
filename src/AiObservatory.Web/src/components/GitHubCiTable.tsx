@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import type { GitHubCiSummary } from '../api/client'
 import { sortCiSummaries } from './githubSort'
 import type { CiSortField, SortDirection } from './githubSort'
-import GitHubSortableHeader from './GitHubSortableHeader'
+import { GitHubSortableHeader } from './GitHubSortableHeader'
 
 const SUCCESS_RATE_WARN_THRESHOLD = 80
 
@@ -27,11 +27,7 @@ interface GitHubCiTableProps {
   isError?: boolean
 }
 
-export default function GitHubCiTable({
-  ci,
-  isLoading = false,
-  isError = false,
-}: GitHubCiTableProps) {
+export function GitHubCiTable({ ci, isLoading = false, isError = false }: GitHubCiTableProps) {
   const [sortField, setSortField] = useState<CiSortField>('successRate')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 

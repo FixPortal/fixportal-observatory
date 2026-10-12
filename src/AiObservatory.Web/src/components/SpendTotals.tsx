@@ -12,7 +12,7 @@ interface Props {
  * Region 2. Every figure here is of the CURRENT filter, not the calendar month —
  * that is what makes "the filtered aggregate" unambiguous.
  */
-export default function SpendTotals({
+export function SpendTotals({
   total,
   entryCount,
   largestCategory,

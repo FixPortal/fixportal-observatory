@@ -1,13 +1,17 @@
 import { useState, lazy, Suspense } from 'react'
-import SpendRangeControls from '../components/SpendRangeControls'
-import ProjectBreakdown from '../components/ProjectBreakdown'
+import { SpendRangeControls } from '../components/SpendRangeControls'
+import { ProjectBreakdown } from '../components/ProjectBreakdown'
 import { useDateRange } from '../lib/dateRange'
 import { useActivityByProject } from '../api/queries'
 
-const ActivityTrendChart = lazy(() => import('../components/ActivityTrendChart'))
-const ProjectTreemap = lazy(() => import('../components/ProjectTreemap'))
+const ActivityTrendChart = lazy(() =>
+  import('../components/ActivityTrendChart').then((m) => ({ default: m.ActivityTrendChart })),
+)
+const ProjectTreemap = lazy(() =>
+  import('../components/ProjectTreemap').then((m) => ({ default: m.ProjectTreemap })),
+)
 
-export default function ActivityPage() {
+export function ActivityPage() {
   const {
     from,
     to,

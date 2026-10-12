@@ -22,7 +22,7 @@ function summaryLine(
   return 'No sessions yet'
 }
 
-export default function CavemanStatsPanel() {
+export function CavemanStatsPanel() {
   const { stats, isError, isLoading } = useCavemanStats()
   const rate = useUsdToGbp()
 

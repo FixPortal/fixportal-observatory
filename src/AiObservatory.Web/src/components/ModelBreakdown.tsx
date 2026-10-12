@@ -8,7 +8,7 @@ import {
   sourceDisplayName,
   usageScopeDisplayName,
 } from '../config/providers'
-import SearchIcon from '../design/SearchIcon'
+import { SearchIcon } from '../design/SearchIcon'
 import { formatGbp, useUsdToGbp } from '../lib/currency'
 import { observedTokens } from '../lib/costSummary'
 import { providerColor } from '../theme/providerColors'
@@ -133,7 +133,7 @@ const providerOrder = (provider: string) => {
   return index < 0 ? Number.MAX_SAFE_INTEGER : index
 }
 
-export default function ModelBreakdown() {
+export function ModelBreakdown() {
   const { aggregates, isLoading: aggregatesLoading } = useAggregates()
   const rate = useUsdToGbp()
   const [searchQuery, setSearchQuery] = useState('')

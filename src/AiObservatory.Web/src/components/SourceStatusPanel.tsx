@@ -104,7 +104,7 @@ const statusPresentation: Record<
   notConfigured: { variant: 'info', label: 'Not connected' },
 }
 
-export default function SourceStatusPanel() {
+export function SourceStatusPanel() {
   const { statuses, isError, isLoading } = useSourceStatuses()
   // A failed fetch must not vanish the panel: it is the only visible surface for
   // /source-statuses, so render the collapsed shell with the failure inline.

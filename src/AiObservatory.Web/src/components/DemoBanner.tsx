@@ -1,7 +1,7 @@
 const PROJECT_URL = 'https://github.com/FixPortal/fixportal-observatory'
 
 // Read inside the component, not at module scope, so a test (or a rebuild) can flip it.
-export default function DemoBanner() {
+export function DemoBanner() {
   if (import.meta.env.VITE_DEMO_BANNER !== 'true') return null
 
   return (

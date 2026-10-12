@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
-import SpendRangeControls from './SpendRangeControls'
+import { SpendRangeControls } from './SpendRangeControls'
 
 test('ignores a cleared date input until the user supplies a valid date', () => {
   const onCustom = vi.fn()

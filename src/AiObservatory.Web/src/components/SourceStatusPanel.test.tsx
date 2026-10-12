@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { SourceStatusResponse } from '../api/client'
-import SourceStatusPanel, { formatLastSuccess, mergeSourceStatuses } from './SourceStatusPanel'
+import { SourceStatusPanel, formatLastSuccess, mergeSourceStatuses } from './SourceStatusPanel'
 
 const data = vi.hoisted(() => ({
   statuses: [] as SourceStatusResponse[],

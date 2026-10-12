@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import type { SpendCategory, SpendEntry, SpendVendor } from '../api/client'
 import { gbp, formatCurrency } from '../lib/currency'
 import { Button } from '../design/Button'
-import GitHubSortableHeader from './GitHubSortableHeader'
+import { GitHubSortableHeader } from './GitHubSortableHeader'
 import type { SortDirection } from './githubSort'
 
 type SortKey = 'occurredOn' | 'vendor' | 'category' | 'amountGbp'
@@ -20,7 +20,7 @@ interface Props {
 }
 
 /** Region 6. Sortable on any column; the rows are already filtered by SpendPage. */
-export default function SpendLedgerTable({
+export function SpendLedgerTable({
   entries,
   categories,
   vendors,

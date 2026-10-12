@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
-import GitHubPrTable from './GitHubPrTable'
+import { GitHubPrTable } from './GitHubPrTable'
 import type { GitHubPr } from '../api/client'
 
 const prs: GitHubPr[] = [

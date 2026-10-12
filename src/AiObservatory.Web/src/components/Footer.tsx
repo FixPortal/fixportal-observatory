@@ -9,7 +9,7 @@ const PROJECT_URL = 'https://github.com/FixPortal/fixportal-observatory'
 const ATTRIBUTION_NAME = import.meta.env.VITE_ATTRIBUTION_NAME
 const ATTRIBUTION_URL = import.meta.env.VITE_ATTRIBUTION_URL
 
-export default function Footer() {
+export function Footer() {
   const attributed = Boolean(ATTRIBUTION_NAME && ATTRIBUTION_URL)
 
   return (

@@ -156,7 +156,7 @@ const MODES: { mode: UsageChartMode; label: string }[] = [
   { mode: 'notional', label: 'Notional' },
 ]
 
-export default function SpendChart({ from, to }: Props) {
+export function SpendChart({ from, to }: Props) {
   const { aggregates, isLoading } = useAggregates(from, to)
   const rate = useUsdToGbp()
   const [mode, setMode] = useState<UsageChartMode>('notional')

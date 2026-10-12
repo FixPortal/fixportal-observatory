@@ -1,16 +1,16 @@
 import { lazy, Suspense, useRef, useState, type KeyboardEvent } from 'react'
-import SummaryCards from '../components/SummaryCards'
-import SourceStatusPanel from '../components/SourceStatusPanel'
-import ModelBreakdown from '../components/ModelBreakdown'
-import InsightsFeed from '../components/InsightsFeed'
-import SubscriptionPanel from '../components/SubscriptionPanel'
-import AdversarialReviewPanel from '../components/AdversarialReviewPanel'
-import CavemanStatsPanel from '../components/CavemanStatsPanel'
-import ReportingPage from './ReportingPage'
-import ActivityPage from './ActivityPage'
-import GitHubPage from './GitHubPage'
-import SpendPage from './SpendPage'
-import Footer from '../components/Footer'
+import { SummaryCards } from '../components/SummaryCards'
+import { SourceStatusPanel } from '../components/SourceStatusPanel'
+import { ModelBreakdown } from '../components/ModelBreakdown'
+import { InsightsFeed } from '../components/InsightsFeed'
+import { SubscriptionPanel } from '../components/SubscriptionPanel'
+import { AdversarialReviewPanel } from '../components/AdversarialReviewPanel'
+import { CavemanStatsPanel } from '../components/CavemanStatsPanel'
+import { ReportingPage } from './ReportingPage'
+import { ActivityPage } from './ActivityPage'
+import { GitHubPage } from './GitHubPage'
+import { SpendPage } from './SpendPage'
+import { Footer } from '../components/Footer'
 import { BrandWordmark } from '../design/BrandWordmark'
 import { ThemeToggle } from '../design/ThemeToggle'
 import { useDashboardStatus } from '../api/queries'
@@ -32,8 +32,12 @@ const TABS: { id: DashboardTab; label: string; readonlyHidden?: boolean }[] = [
 
 // recharts is heavy and the charts sit below the fold — code-split them so the
 // initial payload (nav + summary cards) paints without the chart library.
-const SpendChart = lazy(() => import('../components/SpendChart'))
-const ProviderSplit = lazy(() => import('../components/ProviderSplit'))
+const SpendChart = lazy(() =>
+  import('../components/SpendChart').then((m) => ({ default: m.SpendChart })),
+)
+const ProviderSplit = lazy(() =>
+  import('../components/ProviderSplit').then((m) => ({ default: m.ProviderSplit })),
+)
 
 function ErrorBanner({
   error,
@@ -79,7 +83,7 @@ function ErrorBanner({
   )
 }
 
-export default function Dashboard() {
+export function Dashboard() {
   const { isError, isLoading, isRetrying, isAutomaticallyRetrying, error, retry } =
     useDashboardStatus()
   const { mode, setMode } = useTheme()

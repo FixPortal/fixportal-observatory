@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { expect, test } from 'vitest'
-import ReportingCards from './ReportingCards'
+import { ReportingCards } from './ReportingCards'
 
 test('keeps an incomplete top-vendor projection truthful instead of formatting null as money', () => {
   render(

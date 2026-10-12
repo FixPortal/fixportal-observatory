@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 import type { SpendEntry } from '../api/client'
-import SpendPage from './SpendPage'
+import { SpendPage } from './SpendPage'
 
 const reporting = vi.hoisted(() => {
   const liveCategory = {

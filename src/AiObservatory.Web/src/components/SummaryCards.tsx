@@ -179,7 +179,7 @@ function InsightsCard({ loading, unread }: InsightsCardProps) {
   )
 }
 
-export default function SummaryCards() {
+export function SummaryCards() {
   const range = useMemo(() => dashboardDateRange(), [])
   const { aggregates, isLoading: aggregatesLoading } = useAggregates(range.from, range.to)
   const {

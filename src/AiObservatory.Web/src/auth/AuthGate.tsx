@@ -9,7 +9,7 @@ import { authEnabled, isEmbedded, loginRequest, urlApiKey } from './msal'
  * screen until an account is present, then keeps that account active so silent
  * token acquisition can find it.
  */
-export default function AuthGate({ children }: { children: ReactNode }) {
+export function AuthGate({ children }: { children: ReactNode }) {
   // Viewer share link (?key=...) bypasses Entra sign-in — read-only access for
   // colleagues without an Entra account. The key auths the API directly.
   if (!authEnabled || (urlApiKey && !isEmbedded)) return <>{children}</>

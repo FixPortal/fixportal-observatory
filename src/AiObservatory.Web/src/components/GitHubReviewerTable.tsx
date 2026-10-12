@@ -8,7 +8,7 @@ interface GitHubReviewerTableProps {
   isError?: boolean
 }
 
-export default function GitHubReviewerTable({
+export function GitHubReviewerTable({
   reviewers,
   isLoading = false,
   isError = false,

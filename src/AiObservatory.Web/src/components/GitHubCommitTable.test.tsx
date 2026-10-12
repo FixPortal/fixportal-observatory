@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import GitHubCommitTable from './GitHubCommitTable'
+import { GitHubCommitTable } from './GitHubCommitTable'
 import type { GitHubCommitSummary } from '../api/client'
 
 const summary: GitHubCommitSummary[] = [

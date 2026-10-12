@@ -19,7 +19,7 @@ interface Props {
   isLoading?: boolean
 }
 
-export default function ProjectTreemap({
+export function ProjectTreemap({
   projects,
   selectedProject,
   onSelectProject,

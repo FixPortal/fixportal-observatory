@@ -45,7 +45,7 @@ const withInputDate = (value: string, apply: (date: Date) => void) => {
 }
 const label = (from: Date, to: Date) => `${DATE_FORMAT.format(from)} – ${DATE_FORMAT.format(to)}`
 
-export default function SpendRangeControls({
+export function SpendRangeControls({
   from,
   to,
   preset,

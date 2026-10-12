@@ -15,7 +15,7 @@ interface Props {
 }
 
 /** Region 1. One filter state, lifted to SpendPage, drives every other region. */
-export default function SpendFilterBar({
+export function SpendFilterBar({
   categories,
   vendors,
   categoryId,

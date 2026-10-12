@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import GitHubPrTable from '../components/GitHubPrTable'
-import GitHubCommitTable from '../components/GitHubCommitTable'
-import GitHubCiTable from '../components/GitHubCiTable'
-import GitHubReviewerTable from '../components/GitHubReviewerTable'
-import SpendRangeControls from '../components/SpendRangeControls'
+import { GitHubPrTable } from '../components/GitHubPrTable'
+import { GitHubCommitTable } from '../components/GitHubCommitTable'
+import { GitHubCiTable } from '../components/GitHubCiTable'
+import { GitHubReviewerTable } from '../components/GitHubReviewerTable'
+import { SpendRangeControls } from '../components/SpendRangeControls'
 import { useDateRange } from '../lib/dateRange'
 import {
   useGitHubPrs,
@@ -13,7 +13,7 @@ import {
   localDate,
 } from '../api/queries'
 
-export default function GitHubPage() {
+export function GitHubPage() {
   const [repo, setRepo] = useState('')
   const {
     from,

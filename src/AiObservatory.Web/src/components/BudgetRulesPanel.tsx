@@ -266,7 +266,7 @@ function NotificationSettingsSection() {
   )
 }
 
-export default function BudgetRulesPanel() {
+export function BudgetRulesPanel() {
   const qc = useQueryClient()
   const { rules, isLoading, isError } = useBudgetRules()
   const { insights } = useInsights()

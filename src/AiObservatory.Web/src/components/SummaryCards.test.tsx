@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { BilledReporting, DailyAggregate, Insight } from '../api/client'
-import SummaryCards from './SummaryCards'
+import { SummaryCards } from './SummaryCards'
 
 const data = vi.hoisted(() => ({
   aggregates: [] as DailyAggregate[],

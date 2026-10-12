@@ -17,7 +17,7 @@ const msalMock = vi.hoisted(() => ({
 }))
 vi.mock('./msal', () => msalMock)
 
-import AuthGate from './AuthGate'
+import { AuthGate } from './AuthGate'
 
 describe('AuthGate', () => {
   beforeEach(() => {

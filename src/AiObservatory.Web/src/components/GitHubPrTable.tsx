@@ -2,8 +2,8 @@ import { useState, useMemo } from 'react'
 import type { GitHubPr } from '../api/client'
 import { filterPrs, sortPrs } from './githubSort'
 import type { PrSortField, SortDirection } from './githubSort'
-import SearchIcon from '../design/SearchIcon'
-import GitHubSortableHeader from './GitHubSortableHeader'
+import { SearchIcon } from '../design/SearchIcon'
+import { GitHubSortableHeader } from './GitHubSortableHeader'
 
 interface GitHubPrTableProps {
   prs: GitHubPr[]
@@ -11,11 +11,7 @@ interface GitHubPrTableProps {
   isError?: boolean
 }
 
-export default function GitHubPrTable({
-  prs,
-  isLoading = false,
-  isError = false,
-}: GitHubPrTableProps) {
+export function GitHubPrTable({ prs, isLoading = false, isError = false }: GitHubPrTableProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortField, setSortField] = useState<PrSortField>('createdAt')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')

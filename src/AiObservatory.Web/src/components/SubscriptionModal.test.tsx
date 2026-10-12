@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 // eslint-disable-next-line sonarjs/no-wildcard-import -- vi.spyOn requires the live module namespace
 import * as client from '../api/client'
-import SubscriptionModal from './SubscriptionModal'
+import { SubscriptionModal } from './SubscriptionModal'
 
 vi.mock('../api/queries', () => ({
   useSubscriptions: () => ({ subscriptions: [] }),

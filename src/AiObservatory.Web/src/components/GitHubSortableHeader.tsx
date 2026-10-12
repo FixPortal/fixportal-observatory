@@ -11,7 +11,7 @@ interface SortableHeaderProps<T extends string> {
   className?: string
 }
 
-export default function GitHubSortableHeader<T extends string>({
+export function GitHubSortableHeader<T extends string>({
   field,
   label,
   sortField,

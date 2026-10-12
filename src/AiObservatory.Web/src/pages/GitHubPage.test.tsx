@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import GitHubPage from './GitHubPage'
+import { GitHubPage } from './GitHubPage'
 
 vi.mock('../lib/dateRange', () => ({
   useDateRange: () => ({

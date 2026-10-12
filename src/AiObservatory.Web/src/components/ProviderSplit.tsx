@@ -96,7 +96,7 @@ interface Props {
   to?: Date
 }
 
-export default function ProviderSplit({ from, to }: Props) {
+export function ProviderSplit({ from, to }: Props) {
   const { aggregates, isLoading } = useAggregates(from, to)
   const [mode, setMode] = useState<ProviderSplitMode>('notional')
   const data = useMemo(() => buildProviderSlices(aggregates, mode), [aggregates, mode])

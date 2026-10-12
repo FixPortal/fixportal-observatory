@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import SpendCatalogModal from './SpendCatalogModal'
+import { SpendCatalogModal } from './SpendCatalogModal'
 
 const categories = [
   {

@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import { expect, test, vi } from 'vitest'
-import ProjectBreakdown from './ProjectBreakdown'
+import { ProjectBreakdown } from './ProjectBreakdown'
 
 test('shows project comparison values in a bordered filterable table', () => {
   render(

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import type { GitHubCommitSummary } from '../api/client'
 import { sortCommitSummaries } from './githubSort'
 import type { CommitSortField, SortDirection } from './githubSort'
-import GitHubSortableHeader from './GitHubSortableHeader'
+import { GitHubSortableHeader } from './GitHubSortableHeader'
 
 interface GitHubCommitTableProps {
   summary: GitHubCommitSummary[]
@@ -10,7 +10,7 @@ interface GitHubCommitTableProps {
   isError?: boolean
 }
 
-export default function GitHubCommitTable({
+export function GitHubCommitTable({
   summary,
   isLoading = false,
   isError = false,
