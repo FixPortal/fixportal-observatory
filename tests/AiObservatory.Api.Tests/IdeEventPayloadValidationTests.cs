@@ -107,7 +107,7 @@ public sealed class IdeEventPayloadValidationTests
 
     private static byte[] Envelope(string eventType, string payloadJson)
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "routing.decided.v1.json");
+        var path = Path.GetFullPath("Fixtures/routing.decided.v1.json", AppContext.BaseDirectory);
         var envelope = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
         envelope["eventType"] = eventType;
         envelope["payload"] = JsonNode.Parse(payloadJson);

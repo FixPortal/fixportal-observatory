@@ -87,7 +87,7 @@ public class AnonymousRouteSweepTests(AiObservatoryApiFactory factory)
             }
 
             var path = FillParameters(template);
-            var methods = endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods ?? [];
+            var methods = endpoint.Metadata.GetRequiredMetadata<HttpMethodMetadata>().HttpMethods;
             foreach (var method in methods)
             {
                 routes.Add((method, path));

@@ -1704,7 +1704,7 @@ public class UsageRepositoryTests : IAsyncLifetime
             triggeredAt,
             ct
         );
-        await WaitForBlockedStatementAsync("INSERT INTO \"BudgetAlertClaims\"", ct);
+        await PostgresLockWait.WaitForBlockedStatementAsync(_ctx, "INSERT INTO \"BudgetAlertClaims\"", ct);
         await holderTx.CommitAsync(ct);
         var result = await loser;
 
@@ -1714,38 +1714,6 @@ public class UsageRepositoryTests : IAsyncLifetime
         result.ActualSpendGbp.Should().Be(15m);
         (await _ctx.BudgetAlertClaims.AsNoTracking().CountAsync(ct)).Should().Be(1);
         (await _ctx.Insights.AsNoTracking().CountAsync(ct)).Should().Be(1, "the loser's insight is rolled back");
-    }
-
-    /// <summary>
-    /// Waits until another session is in a PostgreSQL lock wait while running a statement that
-    /// contains <paramref name="statementFragment"/>: the signal that the race has been forced,
-    /// in place of a delay. The fragment must be a literal (no LIKE wildcards, no apostrophes).
-    /// </summary>
-    private async Task WaitForBlockedStatementAsync(string statementFragment, CancellationToken ct)
-    {
-        while (true)
-        {
-            var blocked = await _ctx
-                .Database.SqlQuery<bool>(
-                    $"""
-                    SELECT EXISTS (
-                        SELECT 1
-                        FROM pg_stat_activity
-                        WHERE datname = current_database()
-                            AND pid <> pg_backend_pid()
-                            AND wait_event_type = 'Lock'
-                            AND query LIKE '%' || {statementFragment} || '%'
-                    ) AS "Value"
-                    """
-                )
-                .SingleAsync(ct);
-            if (blocked)
-            {
-                return;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
-        }
     }
 
     private static Insight AlertInsight(LocalDate period, Instant generatedAt) =>
