@@ -64,6 +64,43 @@ public sealed class IdeEventEndpointTests(AiObservatoryApiFactory factory)
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    /// <summary>
+    /// The stream-level cap in ReadBoundedAsync is a separate path from the length check in
+    /// ParseEvent: a POST over the bound is answered 413 before parsing, a POST of exactly the
+    /// bound is accepted. Padding is insignificant JSON whitespace, so the body stays valid
+    /// under the closed contract.
+    /// </summary>
+    [Trait("Category", "Integration")]
+    [Theory]
+    [InlineData(65_536, HttpStatusCode.Created)]
+    [InlineData(65_537, HttpStatusCode.RequestEntityTooLarge)]
+    public async Task BodyIsBoundedAtSixtyFiveThousandFiveHundredThirtySixBytes(int length, HttpStatusCode expected)
+    {
+        var json = await File.ReadAllTextAsync(
+            Path.GetFullPath(Path.Combine("Fixtures", "routing.decided.v1.json"), AppContext.BaseDirectory),
+            TestContext.Current.CancellationToken
+        );
+        var unique = json.Replace(
+            "routing:11111111-1111-1111-1111-111111111111",
+            $"routing:bound-{Guid.NewGuid():N}",
+            StringComparison.Ordinal
+        );
+        var bytes = Encoding.UTF8.GetBytes(unique.TrimEnd());
+        bytes.Length.Should().BeLessThan(length);
+        var padded = new byte[length];
+        Array.Fill(padded, (byte)' ');
+        bytes.CopyTo(padded, 0);
+        using var client = factory.CreateIdeClient();
+
+        var response = await client.PostAsync(
+            "/api/ide/v1/events",
+            Json(padded),
+            TestContext.Current.CancellationToken
+        );
+
+        response.StatusCode.Should().Be(expected);
+    }
+
     private static ByteArrayContent Json(byte[] bytes)
     {
         var content = new ByteArrayContent(bytes);

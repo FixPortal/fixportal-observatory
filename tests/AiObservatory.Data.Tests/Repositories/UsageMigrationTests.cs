@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using NodaTime;
+using NodaTime.Text;
 using Npgsql;
 
 namespace AiObservatory.Data.Tests.Repositories;
@@ -35,6 +36,144 @@ public class UsageMigrationTests : IAsyncLifetime
         await using var db = new AiObservatoryDbContext(_options);
         await db.Database.EnsureDeletedAsync();
     }
+
+    /// <summary>
+    /// The reconcile migration rewrites DailyAggregates from UsageEvents. Migrating to head and
+    /// checking a constraint exists would pass whatever it computes, so this stops at the
+    /// migration before it, seeds events that reach every SUM and CASE arm plus a drifted
+    /// aggregate for the ON CONFLICT branch and an orphan aggregate it must leave alone, runs the
+    /// migration, and asserts the exact column values.
+    /// </summary>
+    [Fact]
+    public async Task ReconcileDailyAggregatesFromEvents_RecomputesDriftedTotalsAndLeavesOrphansAlone()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = new AiObservatoryDbContext(_options);
+        var migrator = db.Database.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260831085032_ConvertBudgetThresholdsToGbpAndTightenGuards", ct);
+        await SeedEventAsync(db, new(1, "2026-08-20T10:00:00Z", "m1", "Billed", 10, 5, 3, 2, 1, 0.50m, 0.10m), ct);
+        await SeedEventAsync(
+            db,
+            new(2, "2026-08-20T11:00:00Z", "m1", "Billed", 20, 7, null, null, null, null, null),
+            ct
+        );
+        // Null model folds to 'unknown'; basis None declares no price applies, so null cost is not unknown.
+        await SeedEventAsync(db, new(3, "2026-08-20T23:30:00Z", null, "None", 4, 4, null, null, null, null, null), ct);
+        // The UTC date boundary: this lands on the next day, not with event 3.
+        await SeedEventAsync(db, new(4, "2026-08-21T00:00:00Z", null, "None", 6, 6, null, null, null, null, null), ct);
+        await SeedEventAsync(
+            db,
+            new(5, "2026-08-22T09:00:00Z", "m3", "Billed", 4, 1, null, null, null, 0.25m, null),
+            ct
+        );
+        await SeedAggregateAsync(db, "2026-08-22", "m3", 999, 999, 9, 9, 9, 5m, 7, 5m, 7, 99, ct);
+        await SeedAggregateAsync(db, "2026-08-23", "m4", 11, 12, 13, 14, 1, 1.5m, 2, 2.5m, 3, 4, ct);
+
+        await migrator.MigrateAsync(cancellationToken: ct);
+
+        var rows = await db.DailyAggregates.AsNoTracking().ToListAsync(ct);
+        rows.Should().HaveCount(5);
+        AssertRow(rows, "2026-08-20", Expected("m1", 30, 12, 3, 2, 1, 0.50m, 1, 0.10m, 1, 2));
+        AssertRow(rows, "2026-08-20", Expected("unknown", 4, 4, 0, 0, 0, 0m, 0, 0m, 0, 1));
+        AssertRow(rows, "2026-08-21", Expected("unknown", 6, 6, 0, 0, 0, 0m, 0, 0m, 0, 1));
+        // The drifted row is overwritten.
+        AssertRow(rows, "2026-08-22", Expected("m3", 4, 1, 0, 0, 0, 0.25m, 0, 0m, 1, 1));
+        // A row with no events is left alone.
+        AssertRow(rows, "2026-08-23", Expected("m4", 11, 12, 13, 14, 1, 1.5m, 2, 2.5m, 3, 4));
+    }
+
+    private static void AssertRow(List<DailyAggregate> rows, string date, DailyAggregate expected) =>
+        rows.Single(r => r.Date == LocalDatePattern.Iso.Parse(date).Value && r.Model == expected.Model)
+            .Should()
+            .BeEquivalentTo(expected, options => options.Excluding(r => r.Date));
+
+    private static DailyAggregate Expected(
+        string model,
+        long input,
+        long output,
+        long cacheRead,
+        long cacheWrite,
+        long cacheWrite1h,
+        decimal cost,
+        int unknownCost,
+        decimal savings,
+        int unknownSavings,
+        int requests
+    ) =>
+        new()
+        {
+            Provider = Provider.OpenAI,
+            Model = model,
+            SourceId = "src-a",
+            SourceKind = SourceKind.Legacy,
+            UsageScope = UsageScope.Unknown,
+            CostBasis = model is "unknown" ? CostBasis.None : CostBasis.Billed,
+            InputTokens = input,
+            OutputTokens = output,
+            CacheReadTokens = cacheRead,
+            CacheWriteTokens = cacheWrite,
+            CacheWrite1hTokens = cacheWrite1h,
+            CostUsd = cost,
+            UnknownCostCount = unknownCost,
+            CacheSavingsUsd = savings,
+            UnknownCacheSavingsCount = unknownSavings,
+            RequestCount = requests,
+        };
+
+    private sealed record SeedEvent(
+        int N,
+        string OccurredAt,
+        string? Model,
+        string CostBasis,
+        long Input,
+        long Output,
+        long? CacheRead,
+        long? CacheWrite,
+        long? CacheWrite1h,
+        decimal? Cost,
+        decimal? Savings
+    );
+
+    private static async Task SeedEventAsync(AiObservatoryDbContext db, SeedEvent e, CancellationToken ct)
+    {
+        var id = Guid.Parse($"20000000-0000-0000-0000-{e.N:D12}");
+        var at = DateTimeOffset.Parse(e.OccurredAt, System.Globalization.CultureInfo.InvariantCulture);
+        const string emptyPayload = "{}";
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO "UsageEvents" ("Id", "Provider", "OccurredAt", "IngestedAt", "ObservedAt", "Model", "SourceId", "SourceKind", "UsageScope", "CostBasis", "RawPayload", "EventKey", "InputTokens", "OutputTokens", "CacheReadTokens", "CacheWriteTokens", "CacheWrite1hTokens", "CostUsd", "CacheSavingsUsd")
+            VALUES ({id}, 'OpenAI', {at}, {at}, {at}, {e.Model}, 'src-a', 'Legacy', 'Unknown', {e.CostBasis}, CAST({emptyPayload} AS jsonb), {$"reconcile-{e.N}"}, {e.Input}, {e.Output}, {e.CacheRead}, {e.CacheWrite}, {e.CacheWrite1h}, {e.Cost}, {e.Savings})
+            """,
+            ct
+        );
+    }
+
+    private static async Task SeedAggregateAsync(
+        AiObservatoryDbContext db,
+        string date,
+        string model,
+        long input,
+        long output,
+        long cacheRead,
+        long cacheWrite,
+        long cacheWrite1h,
+        decimal cost,
+        int unknownCost,
+        decimal savings,
+        int unknownSavings,
+        int requests,
+        CancellationToken ct
+    ) =>
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO "DailyAggregates" ("Date", "Provider", "Model", "SourceId", "SourceKind", "UsageScope", "CostBasis", "InputTokens", "OutputTokens", "CacheReadTokens", "CacheWriteTokens", "CacheWrite1hTokens", "CostUsd", "UnknownCostCount", "CacheSavingsUsd", "UnknownCacheSavingsCount", "RequestCount")
+            VALUES ({DateOnly.Parse(
+                date,
+                System.Globalization.CultureInfo.InvariantCulture
+            )}, 'OpenAI', {model}, 'src-a', 'Legacy', 'Unknown', 'Billed', {input}, {output}, {cacheRead}, {cacheWrite}, {cacheWrite1h}, {cost}, {unknownCost}, {savings}, {unknownSavings}, {requests})
+            """,
+            ct
+        );
 
     [Theory]
     [InlineData(SubscriptionBillingInterval.Annual, 13)]
