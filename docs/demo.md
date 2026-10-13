@@ -76,4 +76,4 @@ The App Service settings array order changed in `infra/main.bicep`; the set of s
 
 ## Cost
 
-The stack is a Free Static Web App, a Burstable `Standard_B1ms` PostgreSQL server with 32 GB, and the App Service plan and Application Insights defined in `infra/`. Check the SKUs against the Azure price calculator before running the script; the database and the App Service plan are the paid parts, and they bill whether or not anyone visits.
+The stack is a Free Static Web App, a Burstable `Standard_B1ms` PostgreSQL server with 32 GB, and the App Service plan and Application Insights defined in `infra/`. Check the SKUs against the Azure price calculator before running the script; the database is the paid part, and it bills whether or not anyone visits. The App Service plan is Free (F1) with Always On off, so the API cold-starts after about 20 minutes idle (each start runs the EF migrations), and F1 stops the app when it exceeds 3 CPU-minutes in any 5 minutes or 60 CPU-minutes in a day, until the quota resets.
