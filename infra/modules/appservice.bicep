@@ -13,10 +13,15 @@ resource kv 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: kvName
 }
 
+// The demo runs on the Free plan: it registers no BackgroundService (Program.cs skips
+// IntelligenceWorkerService in demo mode) and the demo stack deploys no ingest app, so nothing
+// needs the app resident. Always On is not offered below Basic, so it goes off with the plan.
+// Cost: cold starts after idle, and a 60 CPU-minute daily quota past which the app is stopped
+// until it resets. Production keeps B1 and Always On for its resident worker.
 resource plan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: '${appName}-plan'
   location: location
-  sku: { name: 'B1', tier: 'Basic' }
+  sku: demoMode ? { name: 'F1', tier: 'Free' } : { name: 'B1', tier: 'Basic' }
   kind: 'linux'
   properties: { reserved: true }
 }
@@ -57,7 +62,7 @@ resource app 'Microsoft.Web/sites@2023-01-01' = {
     httpsOnly: true
     siteConfig: {
       linuxFxVersion: 'DOTNETCORE|10.0'
-      alwaysOn: true
+      alwaysOn: !demoMode
       appSettings: concat(
         coreSettings,
         demoMode ? [{ name: 'OBSERVATORY_DEMO_MODE', value: 'true' }] : integrationSettings
