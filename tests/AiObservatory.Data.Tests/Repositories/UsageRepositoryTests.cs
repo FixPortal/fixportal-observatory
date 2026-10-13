@@ -1655,6 +1655,99 @@ public class UsageRepositoryTests : IAsyncLifetime
         result.Select(email => email.ClaimId).Should().Equal(deliverable.Take(50).Select(claim => claim.Id));
     }
 
+    /// <summary>
+    /// Forces the overlap the unique-violation arm of GetOrCreateBudgetAlertAsync exists for. A
+    /// second transaction holds an uncommitted claim for the same rule and period, so the
+    /// existence check sees nothing and the repository's claim INSERT parks on the unique index;
+    /// committing the holder then makes that INSERT fail with the RulePeriod violation. A bare
+    /// Task.WhenAll mostly serialises through the existence check and never reaches the catch.
+    /// </summary>
+    [Fact]
+    public async Task Budget_alert_claim_insert_losing_the_unique_index_race_returns_the_winners_claim()
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        var ct = timeout.Token;
+        var rule = new BudgetRule { Period = BillingPeriod.Daily, ThresholdGbp = 10m };
+        _ctx.BudgetRules.Add(rule);
+        await _ctx.SaveChangesAsync(ct);
+        var options = new DbContextOptionsBuilder<AiObservatoryDbContext>()
+            .UseNpgsql(_connStr, o => o.UseNodaTime())
+            .Options;
+        await using var holderContext = new AiObservatoryDbContext(options);
+        await using var loserContext = new AiObservatoryDbContext(options);
+        var period = new LocalDate(2026, 8, 1);
+        var triggeredAt = Instant.FromUtc(2026, 8, 2, 0, 5);
+        var winnerInsight = AlertInsight(period, triggeredAt);
+        var winnerClaim = new BudgetAlertClaim
+        {
+            BudgetRuleId = rule.Id,
+            PeriodStart = period,
+            PeriodEnd = period,
+            InsightId = winnerInsight.Id,
+            ThresholdGbp = 10m,
+            ActualSpendGbp = 15m,
+            CreatedAt = triggeredAt,
+        };
+        await using var holderTx = await holderContext.Database.BeginTransactionAsync(ct);
+        holderContext.Insights.Add(winnerInsight);
+        holderContext.BudgetAlertClaims.Add(winnerClaim);
+        await holderContext.SaveChangesAsync(ct);
+
+        var loser = new BudgetAlertRepository(loserContext).GetOrCreateBudgetAlertAsync(
+            rule.Id,
+            period,
+            period,
+            77m,
+            88m,
+            AlertInsight(period, triggeredAt),
+            triggeredAt,
+            ct
+        );
+        await WaitForBlockedStatementAsync("INSERT INTO \"BudgetAlertClaims\"", ct);
+        await holderTx.CommitAsync(ct);
+        var result = await loser;
+
+        result.Created.Should().BeFalse();
+        result.ClaimId.Should().Be(winnerClaim.Id);
+        result.ThresholdGbp.Should().Be(10m, "the loser reports the winner's claim, not its own arguments");
+        result.ActualSpendGbp.Should().Be(15m);
+        (await _ctx.BudgetAlertClaims.AsNoTracking().CountAsync(ct)).Should().Be(1);
+        (await _ctx.Insights.AsNoTracking().CountAsync(ct)).Should().Be(1, "the loser's insight is rolled back");
+    }
+
+    /// <summary>
+    /// Waits until another session is in a PostgreSQL lock wait while running a statement that
+    /// contains <paramref name="statementFragment"/>: the signal that the race has been forced,
+    /// in place of a delay. The fragment must be a literal (no LIKE wildcards, no apostrophes).
+    /// </summary>
+    private async Task WaitForBlockedStatementAsync(string statementFragment, CancellationToken ct)
+    {
+        while (true)
+        {
+            var blocked = await _ctx
+                .Database.SqlQuery<bool>(
+                    $"""
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM pg_stat_activity
+                        WHERE datname = current_database()
+                            AND pid <> pg_backend_pid()
+                            AND wait_event_type = 'Lock'
+                            AND query LIKE '%' || {statementFragment} || '%'
+                    ) AS "Value"
+                    """
+                )
+                .SingleAsync(ct);
+            if (blocked)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
+        }
+    }
+
     private static Insight AlertInsight(LocalDate period, Instant generatedAt) =>
         new()
         {

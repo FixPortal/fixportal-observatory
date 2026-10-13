@@ -211,7 +211,10 @@ public static class IdeEndpoints
         if (
             eventType == "run.completed"
             && (
-                !properties["durationMilliseconds"].Value.TryGetInt64(out var duration)
+                // TryGetInt64 throws on a non-number token instead of returning false, which
+                // would escape the endpoint's InvalidDataException catch as a 500.
+                properties["durationMilliseconds"].Value.ValueKind != JsonValueKind.Number
+                || !properties["durationMilliseconds"].Value.TryGetInt64(out var duration)
                 || duration < 0
                 || properties["terminalStatus"].Value.GetString() is not ("succeeded" or "failed" or "cancelled")
             )
