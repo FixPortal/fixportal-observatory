@@ -16,8 +16,10 @@ resource kv 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
 // The demo runs on the Free plan: it registers no BackgroundService (Program.cs skips
 // IntelligenceWorkerService in demo mode) and the demo stack deploys no ingest app, so nothing
 // needs the app resident. Always On is not offered below Basic, so it goes off with the plan.
-// Cost: cold starts after idle, and a 60 CPU-minute daily quota past which the app is stopped
-// until it resets. Production keeps B1 and Always On for its resident worker.
+// Cost: cold starts after idle, each of which runs MigrateAsync (Program.cs), plus two CPU
+// quotas, 3 CPU-minutes per 5 minutes (the one a cold start can trip) and 60 CPU-minutes per
+// day; tripping either stops the app until the quota resets. Production keeps B1 and Always On
+// for its resident worker.
 resource plan 'Microsoft.Web/serverfarms@2023-01-01' = {
   name: '${appName}-plan'
   location: location
