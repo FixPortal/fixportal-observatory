@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const msalMock = vi.hoisted(() => ({
@@ -101,7 +104,25 @@ afterEach(() => {
 })
 
 test('spend-source values match the backend enum wire contract', () => {
-  expect(SPEND_SOURCE_VALUES).toEqual(['manual', 'csv', 'portal', 'api'])
+  // Derived from the C# enum the API serializes (camelCase member names), not a literal
+  // compared with itself: adding, renaming or removing a SpendSource member fails here.
+  const source = readFileSync(
+    resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '../../../AiObservatory.Data/Entities/SpendSource.cs',
+    ),
+    'utf8',
+  )
+  const afterEnum = source.slice(source.indexOf('enum SpendSource'))
+  const body = afterEnum.slice(afterEnum.indexOf('{') + 1, afterEnum.indexOf('}'))
+  const wireValues = body
+    .split('\n')
+    .map((line) => line.trim().replace(/,$/, ''))
+    .filter((line) => /^[A-Z]\w*$/.test(line))
+    .map((name) => name.charAt(0).toLowerCase() + name.slice(1))
+
+  expect(wireValues.length).toBeGreaterThan(0)
+  expect([...SPEND_SOURCE_VALUES]).toEqual(wireValues)
 })
 
 test('gets the source-status wire response and preserves unknown source and aggregate strings', async () => {

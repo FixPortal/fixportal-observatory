@@ -43,9 +43,24 @@ public class ProviderPollingWorkerService(
         {
             var through = clock.GetCurrentInstant().InUtc().Date.PlusDays(-1);
             var from = through.PlusDays(-(lookbackDays - 1));
-            await RunPollAsync(from, through, stoppingToken);
-            Interlocked.Exchange(ref _lastCycleCompletedTicks, clock.GetCurrentInstant().ToUnixTimeTicks());
-            Interlocked.Increment(ref _cyclesCompleted);
+            // One transient fault outside the per-source handlers (scope creation, a DI
+            // resolution) must not take the host down -- BackgroundServiceExceptionBehavior
+            // defaults to StopHost. The failed pass retries on the next tick and is not
+            // counted as a completed cycle.
+            try
+            {
+                await RunPollAsync(from, through, stoppingToken);
+                Interlocked.Exchange(ref _lastCycleCompletedTicks, clock.GetCurrentInstant().ToUnixTimeTicks());
+                Interlocked.Increment(ref _cyclesCompleted);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                LogPollPassFailure(exception);
+            }
             await Task.Delay(interval, stoppingToken);
         }
     }
@@ -255,6 +270,9 @@ public class ProviderPollingWorkerService(
             error,
             SanitizeError(exception.Message)
         );
+
+    private void LogPollPassFailure(Exception exception) =>
+        logger.LogError("Provider polling pass failed: {Error}", SanitizeError(exception.Message));
 
     private void LogStateWriteFailure(string sourceId, Exception exception) =>
         logger.LogError(

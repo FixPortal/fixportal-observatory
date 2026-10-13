@@ -10,7 +10,9 @@ using AiObservatory.Data.Entities;
 using AiObservatory.Data.Pricing;
 using AiObservatory.Data.Spend;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
 using NodaTime;
@@ -65,14 +67,9 @@ builder.Services.AddTransient<SmtpMailSender>();
 builder.Services.AddKeyedTransient<IAlertNotifier, EmailAlertNotifier>("email");
 builder.Services.AddScoped<SourceHealthDigestService>();
 
-// The webhook URL is the credential (its path is the whole auth), so this client's
-// HttpClientFactory logging handlers are removed -- otherwise every budget alert writes the
-// full URL to the logs and App Insights. Matches the Ingest secret-carrying registrations.
-builder
-    .Services.AddHttpClient<SlackAlertNotifier>()
-    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10))
-    .RemoveAllLoggers();
-builder.Services.AddKeyedTransient<IAlertNotifier>("slack", (sp, _) => sp.GetRequiredService<SlackAlertNotifier>());
+// See SlackAlertNotifierRegistration: the webhook URL is the credential, so the typed client
+// has its logging handlers removed.
+builder.Services.AddSlackAlertNotifier();
 builder.Services.AddTransient<IAlertNotifier, CompositeAlertNotifier>();
 builder.Services.AddScoped<BudgetAlertService>();
 builder.Services.AddScoped<AdversarialReviewService>();
@@ -114,26 +111,7 @@ if (!demoMode)
 // read so a config reload still applies to newly-seen client partitions.
 Program.ValidateRateLimitPermitLimit(builder);
 
-builder.Services.AddRateLimiter(o =>
-{
-    o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    o.AddPolicy(
-        "api",
-        ctx =>
-        {
-            var partitionKey = ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
-            return RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey,
-                _ => new FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = builder.Configuration.GetValue("RateLimiting:ApiPermitLimit", 120),
-                    Window = TimeSpan.FromMinutes(1),
-                    QueueLimit = 0,
-                }
-            );
-        }
-    );
-});
+builder.Services.AddRateLimiter(o => Program.ConfigureApiRateLimiter(o, builder.Configuration));
 
 // Honour X-Forwarded-For from a trusted reverse proxy (the nginx sidecar in the
 // Docker self-host topology) so the rate limiter partitions by the real client IP
@@ -141,13 +119,7 @@ builder.Services.AddRateLimiter(o =>
 // private networks are trusted, so a public client cannot spoof the header.
 builder.Services.Configure<ForwardedHeadersOptions>(Program.ConfigureForwardedHeaders);
 
-builder.Services.AddCors(o =>
-    o.AddDefaultPolicy(p =>
-        p.WithOrigins(builder.Configuration["SWA_ORIGIN"] ?? "https://fpaiobs-swa.azurestaticapps.net")
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-    )
-);
+builder.Services.AddCors(o => Program.ConfigureCors(o, builder.Configuration));
 
 // Entra (Azure AD) JWT bearer auth for human callers. Only wired when configured —
 // local dev runs without AzureAd settings, so the app starts and the API-key path
@@ -290,6 +262,37 @@ public partial class Program
                 "OBSERVATORY_IDE_API_KEY must be different from the existing API keys."
             );
         }
+    }
+
+    // Extracted (behaviour unchanged) so the single allowed origin is testable on a bare TestHost.
+    internal static void ConfigureCors(CorsOptions o, IConfiguration configuration) =>
+        o.AddDefaultPolicy(p =>
+            p.WithOrigins(configuration["SWA_ORIGIN"] ?? "https://fpaiobs-swa.azurestaticapps.net")
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+        );
+
+    // Extracted (behaviour unchanged) so the 429 and the per-IP partitioning are testable on a
+    // bare TestHost, as ConfigureForwardedHeaders is.
+    internal static void ConfigureApiRateLimiter(RateLimiterOptions o, IConfiguration configuration)
+    {
+        o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+        o.AddPolicy(
+            "api",
+            ctx =>
+            {
+                var partitionKey = ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+                return RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey,
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = configuration.GetValue("RateLimiting:ApiPermitLimit", 120),
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0,
+                    }
+                );
+            }
+        );
     }
 
     internal static void ValidateRateLimitPermitLimit(WebApplicationBuilder builder)

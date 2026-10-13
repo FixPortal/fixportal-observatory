@@ -17,11 +17,22 @@ public class AnthropicIntelligenceClient
     public bool IsConfigured => _client is not null;
 
     public AnthropicIntelligenceClient(IConfiguration configuration, ILogger<AnthropicIntelligenceClient> logger)
+        : this(configuration, logger, httpClient: null) { }
+
+    // Test seam (internal, so DI never sees it): lets a test drive the real method bodies
+    // through the SDK's HTTP layer with a stub handler instead of overriding them.
+    internal AnthropicIntelligenceClient(
+        IConfiguration configuration,
+        ILogger<AnthropicIntelligenceClient> logger,
+        HttpClient? httpClient
+    )
     {
         var apiKey = configuration["ANTHROPIC_API_KEY"];
         // Whitespace/empty key means "disabled", same as unset — otherwise an empty-string
         // env var makes IsConfigured true and every worker cycle calls the API and 401s.
-        _client = !string.IsNullOrWhiteSpace(apiKey) ? new AnthropicClient(new APIAuthentication(apiKey)) : null;
+        _client = !string.IsNullOrWhiteSpace(apiKey)
+            ? new AnthropicClient(new APIAuthentication(apiKey), httpClient)
+            : null;
         _logger = logger;
         if (!IsConfigured)
         {
