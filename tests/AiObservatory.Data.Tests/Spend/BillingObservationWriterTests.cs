@@ -319,8 +319,8 @@ public sealed class BillingObservationWriterTests : IAsyncLifetime
         try
         {
             // The gate's victim is mid-INSERT; the sibling is mid-advisory-lock — both overlapped.
-            await WaitForBlockedStatementAsync("INSERT INTO \"BillingObservations\"", ct);
-            await WaitForBlockedStatementAsync("pg_advisory_xact_lock", ct);
+            await PostgresLockWait.WaitForBlockedStatementAsync(_db, "INSERT INTO \"BillingObservations\"", ct);
+            await PostgresLockWait.WaitForBlockedStatementAsync(_db, "pg_advisory_xact_lock", ct);
         }
         finally
         {
@@ -346,42 +346,6 @@ public sealed class BillingObservationWriterTests : IAsyncLifetime
         results.Should().ContainSingle(result => result == BillingWriteDisposition.Unchanged);
         (await _db.BillingObservations.AsNoTracking().CountAsync(ct)).Should().Be(1);
         (await _db.SpendEntries.AsNoTracking().CountAsync(ct)).Should().Be(1);
-    }
-
-    /// <summary>
-    /// Waits until another session is in a PostgreSQL heavyweight-lock wait while executing a
-    /// statement whose text contains <paramref name="statementFragment"/> — the deterministic
-    /// replacement for "delay N ms and assert the task had not finished". The fragment must be
-    /// a literal (no LIKE wildcards, no apostrophes).
-    /// </summary>
-    private async Task WaitForBlockedStatementAsync(string statementFragment, CancellationToken ct)
-    {
-        // 600 x 50 ms = 30 s, the same budget the other contention helpers in this suite use.
-        for (var attempt = 0; attempt < 600; attempt++)
-        {
-            var blocked = await _db
-                .Database.SqlQuery<bool>(
-                    $"""
-                    SELECT EXISTS (
-                        SELECT 1
-                        FROM pg_stat_activity
-                        WHERE datname = current_database()
-                            AND pid <> pg_backend_pid()
-                            AND wait_event_type = 'Lock'
-                            AND query LIKE '%' || {statementFragment} || '%'
-                    ) AS "Value"
-                    """
-                )
-                .SingleAsync(ct);
-            if (blocked)
-            {
-                return;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
-        }
-
-        throw new TimeoutException($"No session reached the expected PostgreSQL lock wait for '{statementFragment}'.");
     }
 
     [Fact]

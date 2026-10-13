@@ -77,14 +77,11 @@ public sealed class IdeEventEndpointTests(AiObservatoryApiFactory factory)
     public async Task BodyIsBoundedAtSixtyFiveThousandFiveHundredThirtySixBytes(int length, HttpStatusCode expected)
     {
         var json = await File.ReadAllTextAsync(
-            Path.GetFullPath(Path.Combine("Fixtures", "routing.decided.v1.json"), AppContext.BaseDirectory),
+            Path.GetFullPath("Fixtures/routing.decided.v1.json", AppContext.BaseDirectory),
             TestContext.Current.CancellationToken
         );
-        var unique = json.Replace(
-            "routing:11111111-1111-1111-1111-111111111111",
-            $"routing:bound-{Guid.NewGuid():N}",
-            StringComparison.Ordinal
-        );
+        var key = $"routing:bound-{Guid.NewGuid():N}";
+        var unique = json.Replace("routing:11111111-1111-1111-1111-111111111111", key, StringComparison.Ordinal);
         var bytes = Encoding.UTF8.GetBytes(unique.TrimEnd());
         bytes.Length.Should().BeLessThan(length);
         var padded = new byte[length];
@@ -92,13 +89,24 @@ public sealed class IdeEventEndpointTests(AiObservatoryApiFactory factory)
         bytes.CopyTo(padded, 0);
         using var client = factory.CreateIdeClient();
 
-        var response = await client.PostAsync(
-            "/api/ide/v1/events",
-            Json(padded),
-            TestContext.Current.CancellationToken
-        );
+        try
+        {
+            var response = await client.PostAsync(
+                "/api/ide/v1/events",
+                Json(padded),
+                TestContext.Current.CancellationToken
+            );
 
-        response.StatusCode.Should().Be(expected);
+            response.StatusCode.Should().Be(expected);
+        }
+        finally
+        {
+            // The collection shares one database and the replay test counts every IDE event row,
+            // so this test removes the row it created.
+            await using var scope = factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+            await db.IdeEvents.Where(row => row.IdempotencyKey == key).ExecuteDeleteAsync(CancellationToken.None);
+        }
     }
 
     private static ByteArrayContent Json(byte[] bytes)
