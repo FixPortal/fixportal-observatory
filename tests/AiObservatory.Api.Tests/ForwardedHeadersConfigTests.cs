@@ -33,7 +33,12 @@ public class ForwardedHeadersConfigTests
         options.ForwardedHeaders.Should().Be(ForwardedHeaders.XForwardedFor);
         options.ForwardLimit.Should().Be(1);
         options.KnownProxies.Should().BeEmpty();
-        options.KnownIPNetworks.Should().HaveCount(3);
+        // The exact RFC1918 ranges, not just a count: widening one (say 10.0.0.0/8 to /7) keeps
+        // the count at 3 while letting a public peer spoof X-Forwarded-For.
+        options
+            .KnownIPNetworks.Select(network => $"{network.BaseAddress}/{network.PrefixLength}")
+            .Should()
+            .BeEquivalentTo("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16");
     }
 
     [Fact]

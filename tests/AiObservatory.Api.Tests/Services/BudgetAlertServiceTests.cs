@@ -55,6 +55,33 @@ public class BudgetAlertServiceTests
             );
     }
 
+    [Theory]
+    [InlineData(BillingPeriod.Daily)]
+    [InlineData(BillingPeriod.Monthly)]
+    public async Task CheckAndAlert_does_not_alert_when_billed_spend_equals_the_threshold(BillingPeriod period)
+    {
+        // "Exceeded" is strictly greater than: spend of exactly the threshold (10) is within budget.
+        var rule = Rule(period);
+        StubRules(rule);
+        StubBilledSpend(rule, rule.ThresholdGbp);
+
+        await Sut().CheckAndAlertAsync(TestContext.Current.CancellationToken);
+
+        await _notifier.DidNotReceive().NotifyAsync(Arg.Any<AlertMessage>(), Arg.Any<CancellationToken>());
+        await _budgetAlerts
+            .DidNotReceive()
+            .GetOrCreateBudgetAlertAsync(
+                Arg.Any<Guid>(),
+                Arg.Any<LocalDate>(),
+                Arg.Any<LocalDate>(),
+                Arg.Any<decimal>(),
+                Arg.Any<decimal>(),
+                Arg.Any<Insight>(),
+                Arg.Any<Instant>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     [Fact]
     public async Task CheckAndAlert_does_not_alert_when_billed_spend_is_below_threshold_despite_higher_estimates()
     {

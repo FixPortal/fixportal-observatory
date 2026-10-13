@@ -63,11 +63,8 @@ public class SlackNotifierDiCompositionTests
         services.AddSingleton(Substitute.For<IUsageRepository>());
         services.AddSingleton(Substitute.For<IBudgetAlertRepository>());
         services.AddSingleton<IClock>(SystemClock.Instance);
-        services
-            .AddHttpClient<SlackAlertNotifier>()
-            .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10))
-            .RemoveAllLoggers();
-        services.AddKeyedTransient<IAlertNotifier>("slack", (sp, _) => sp.GetRequiredService<SlackAlertNotifier>());
+        // The registration Program.cs calls, not a hand-copied one: changing it must fail here.
+        services.AddSlackAlertNotifier();
         return services;
     }
 

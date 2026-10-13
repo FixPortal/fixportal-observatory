@@ -146,7 +146,7 @@ public static class IdeEndpoints
         }
     }
 
-    private static async Task<byte[]?> ReadBoundedAsync(Stream stream, CancellationToken cancellationToken)
+    internal static async Task<byte[]?> ReadBoundedAsync(Stream stream, CancellationToken cancellationToken)
     {
         using var body = new MemoryStream();
         var buffer = new byte[8192];
