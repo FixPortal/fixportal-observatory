@@ -31,7 +31,8 @@
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL.NodaTime" Version="10.0.3" />
     <PackageVersion Include="Npgsql.NodaTime" Version="10.0.3" />
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.10" />
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.13" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
     <!-- API -->
     <PackageVersion Include="Anthropic.SDK" Version="5.10.0" />
     <PackageVersion Include="Microsoft.ApplicationInsights.AspNetCore" Version="3.2.0" />
