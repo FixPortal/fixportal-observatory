@@ -13,9 +13,12 @@ namespace AiObservatory.Api.IntegrationTests;
 /// WebApplicationFactory end-to-end — this endpoint had zero test coverage at any level.
 /// </summary>
 [Trait("Category", "Integration")]
-[Collection("ApiFactory")]
-public class CavemanEndpointsWafTests(AiObservatoryApiFactory factory)
+[Collection("FixedClockApiFactory")]
+public class CavemanEndpointsWafTests(FixedClockApiFactory fixture)
 {
+    private AiObservatoryApiFactory Factory => fixture.Factory;
+    private static DateTimeOffset Now => FixedClockApiFactory.Now.ToDateTimeOffset();
+
     private static object Session(string sessionId, DateTimeOffset occurredAtUtc, long outputTokens = 100) =>
         new
         {
@@ -31,10 +34,10 @@ public class CavemanEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostSessions_WhenBatchExceeds1000_ReturnsBadRequest()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var sessions = Enumerable
             .Range(0, 1001)
-            .Select(i => Session($"batch-cap-{i}-{Guid.NewGuid():N}", DateTimeOffset.UtcNow))
+            .Select(i => Session($"batch-cap-{i}-{Guid.NewGuid():N}", Now))
             .ToList();
 
         var response = await client.PostAsJsonAsync(
@@ -49,13 +52,9 @@ public class CavemanEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostSessions_WhenBatchHasInBatchDuplicateSessionId_ReturnsBadRequest()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var sharedId = $"dup-{Guid.NewGuid():N}";
-        var sessions = new[]
-        {
-            Session(sharedId, DateTimeOffset.UtcNow.AddMinutes(-5)),
-            Session(sharedId, DateTimeOffset.UtcNow),
-        };
+        var sessions = new[] { Session(sharedId, Now.AddMinutes(-5)), Session(sharedId, Now) };
 
         var response = await client.PostAsJsonAsync(
             "/api/caveman-sessions",
@@ -69,8 +68,8 @@ public class CavemanEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostSessions_WhenFutureOccurredAt_ReturnsBadRequest()
     {
-        using var client = factory.CreateAdminClient();
-        var sessions = new[] { Session($"future-{Guid.NewGuid():N}", DateTimeOffset.UtcNow.AddHours(1)) };
+        using var client = Factory.CreateAdminClient();
+        var sessions = new[] { Session($"future-{Guid.NewGuid():N}", Now.AddHours(1)) };
 
         var response = await client.PostAsJsonAsync(
             "/api/caveman-sessions",
@@ -84,12 +83,12 @@ public class CavemanEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostSessions_WhenReplayIsOlderThanStoredSnapshot_IsSkippedAndSnapshotUnchanged()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var sessionId = $"stale-{Guid.NewGuid():N}";
         // Whole-second precision: Postgres timestamptz round-trips to microseconds, so a
-        // sub-microsecond DateTimeOffset.UtcNow tick component would make the post-round-trip
+        // sub-microsecond Now tick component would make the post-round-trip
         // equality check below flaky.
-        var newer = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeSeconds());
+        var newer = DateTimeOffset.FromUnixTimeSeconds(Now.AddMinutes(-1).ToUnixTimeSeconds());
         var older = newer.AddMinutes(-10);
 
         var first = await client.PostAsJsonAsync(
@@ -107,7 +106,7 @@ public class CavemanEndpointsWafTests(AiObservatoryApiFactory factory)
         );
         replay.EnsureSuccessStatusCode();
 
-        using var scope = factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
         var stored = db.CavemanSessions.Single(s => s.SessionId == sessionId);
         stored.OutputTokens.Should().Be(500, "the stale replay must not regress the newer snapshot's fields");
@@ -117,10 +116,10 @@ public class CavemanEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostSessions_WhenNewerReplayArrives_UpdatesSnapshot()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var sessionId = $"fresh-{Guid.NewGuid():N}";
-        var first = DateTimeOffset.UtcNow.AddMinutes(-10);
-        var newer = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var first = Now.AddMinutes(-10);
+        var newer = Now.AddMinutes(-1);
 
         var seed = await client.PostAsJsonAsync(
             "/api/caveman-sessions",
@@ -136,7 +135,7 @@ public class CavemanEndpointsWafTests(AiObservatoryApiFactory factory)
         );
         response.EnsureSuccessStatusCode();
 
-        using var scope = factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
         var stored = db.CavemanSessions.Single(s => s.SessionId == sessionId);
         stored.OutputTokens.Should().Be(999);

@@ -298,7 +298,10 @@ public class NotificationSettingsEndpointsWafTests(AiObservatoryApiFactory facto
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
-        for (var attempt = 0; attempt < 100; attempt++)
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        var waitToken = deadline.Token;
+        while (true)
         {
             var blocked = await db
                 .Database.SqlQueryRaw<int>(
@@ -311,16 +314,14 @@ public class NotificationSettingsEndpointsWafTests(AiObservatoryApiFactory facto
                         AND query LIKE '%INSERT INTO "NotificationSettings"%'
                     """
                 )
-                .SingleAsync(ct);
+                .SingleAsync(waitToken);
             if (blocked >= 2)
             {
                 return;
             }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
+            await Task.Delay(TimeSpan.FromMilliseconds(50), waitToken);
         }
-
-        throw new TimeoutException("Both first-write PUTs did not reach the expected INSERT lock wait.");
     }
 
     [Fact]

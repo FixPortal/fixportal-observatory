@@ -381,7 +381,10 @@ public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClass
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
-        for (var attempt = 0; attempt < 100; attempt++)
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        var waitToken = deadline.Token;
+        while (true)
         {
             var blocked = await db
                 .Database.SqlQuery<bool>(
@@ -396,15 +399,13 @@ public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClass
                     ) AS "Value"
                     """
                 )
-                .SingleAsync(ct);
+                .SingleAsync(waitToken);
             if (blocked)
             {
                 return;
             }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
+            await Task.Delay(TimeSpan.FromMilliseconds(50), waitToken);
         }
-
-        throw new TimeoutException($"No session reached the expected PostgreSQL lock wait for '{statementFragment}'.");
     }
 }

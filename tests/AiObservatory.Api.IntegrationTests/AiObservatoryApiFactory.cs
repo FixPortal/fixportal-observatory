@@ -4,7 +4,10 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using NodaTime;
+using NodaTime.Testing;
 using Npgsql;
 
 namespace AiObservatory.Api.IntegrationTests;
@@ -32,6 +35,7 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
 
     public string Environment { get; set; } = Environments.Development;
     public string? ApiKeyOverride { get; set; } = AdminKey;
+    public IClock? ClockOverride { get; init; }
 
     /// <summary>Sets OBSERVATORY_DEMO_MODE for the host (Production-style startup, demo routes).</summary>
     public bool DemoMode { get; set; }
@@ -89,6 +93,14 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
         // process environment variables instead.
         builder.UseEnvironment(Environment);
         builder.ConfigureAppConfiguration(config => config.AddInMemoryCollection(ConfigurationOverrides));
+        if (ClockOverride is { } clock)
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IClock>();
+                services.AddSingleton(clock);
+            });
+        }
     }
 
     protected override IHost CreateHost(IHostBuilder builder)
@@ -179,3 +191,16 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
 /// </summary>
 [CollectionDefinition("ApiFactory")]
 public class ApiFactoryCollection : ICollectionFixture<AiObservatoryApiFactory>;
+
+public sealed class FixedClockApiFactory : IAsyncLifetime
+{
+    public static readonly Instant Now = Instant.FromUtc(2030, 1, 15, 12, 0);
+    public AiObservatoryApiFactory Factory { get; } = new() { ClockOverride = new FakeClock(Now) };
+
+    public ValueTask InitializeAsync() => Factory.InitializeAsync();
+
+    public ValueTask DisposeAsync() => Factory.DisposeAsync();
+}
+
+[CollectionDefinition("FixedClockApiFactory")]
+public class FixedClockApiFactoryCollection : ICollectionFixture<FixedClockApiFactory>;
