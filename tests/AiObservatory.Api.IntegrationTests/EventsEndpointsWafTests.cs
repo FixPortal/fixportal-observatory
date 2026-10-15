@@ -17,9 +17,12 @@ namespace AiObservatory.Api.IntegrationTests;
 /// live in the minimal-API handler itself, unreachable from a unit test.
 /// </summary>
 [Trait("Category", "Integration")]
-[Collection("ApiFactory")]
-public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
+[Collection("FixedClockApiFactory")]
+public class EventsEndpointsWafTests(FixedClockApiFactory fixture)
 {
+    private AiObservatoryApiFactory Factory => fixture.Factory;
+    private static DateTimeOffset Now => FixedClockApiFactory.Now.ToDateTimeOffset();
+
     private static object NewEventBody(string? eventKey = null, DateTimeOffset? occurredAtUtc = null) =>
         new
         {
@@ -42,8 +45,8 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenOccurredAtIsInTheFuture_ReturnsBadRequest()
     {
-        using var client = factory.CreateAdminClient();
-        var body = NewEventBody(occurredAtUtc: DateTimeOffset.UtcNow.AddHours(1));
+        using var client = Factory.CreateAdminClient();
+        var body = NewEventBody(occurredAtUtc: Now.AddHours(1));
 
         var response = await client.PostAsJsonAsync("/api/events", body, TestContext.Current.CancellationToken);
 
@@ -53,7 +56,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenRawPayloadIsNotValidJson_ReturnsBadRequest()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var raw =
             """{"Provider":"anthropic","Model":"m","InputTokens":1,"OutputTokens":1,"CacheReadTokens":0,"CacheWriteTokens":0,"CostUsd":0.01,"RawPayload":"not json","SourceId":"anthropic-usage-api","SourceKind":"providerApi","UsageScope":"api","CostBasis":"unknown"}""";
 
@@ -66,7 +69,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenRawPayloadHasDuplicateProperties_ReturnsBadRequest()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var body = new
         {
             Provider = "openai",
@@ -89,7 +92,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenUnknownProvider_ReturnsBadRequest()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var raw =
             """{"Provider":"not-a-real-provider","Model":"m","InputTokens":1,"OutputTokens":1,"CacheReadTokens":0,"CacheWriteTokens":0,"CostUsd":0.01,"RawPayload":"{}"}""";
 
@@ -104,7 +107,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [InlineData(0, -1)]
     public async Task PostEvent_WhenTokenCountsNegative_ReturnsBadRequest(long inputTokens, long outputTokens)
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var body = new
         {
             Provider = "anthropic",
@@ -129,7 +132,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenGenuinelyNew_ReturnsCreatedWithLocation()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var body = NewEventBody(eventKey: $"waf-test-new-{Guid.NewGuid():N}");
 
         var response = await client.PostAsJsonAsync("/api/events", body, TestContext.Current.CancellationToken);
@@ -141,7 +144,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenEventKeyAlreadyRecorded_ReturnsOkWithDuplicateFlag()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var key = $"waf-test-dup-{Guid.NewGuid():N}";
         var body = NewEventBody(eventKey: key, occurredAtUtc: new DateTimeOffset(2026, 8, 1, 12, 0, 0, TimeSpan.Zero));
 
@@ -159,7 +162,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_with_maximum_key_preserves_the_provider_namespace()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var key = new string('x', 200);
         var response = await client.PostAsJsonAsync(
             "/api/events",
@@ -194,7 +197,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task Legacy_post_and_patch_treat_an_already_prefixed_key_as_the_stored_form()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var rawKey = $"waf-legacy-prefixed-{Guid.NewGuid():N}";
         var occurredAtUtc = new DateTimeOffset(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
         var rows = new Dictionary<(string Provider, string EventKey), Guid>();
@@ -279,7 +282,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
                 .Be(HttpStatusCode.OK);
         }
 
-        await using var scope = factory.Services.CreateAsyncScope();
+        await using var scope = Factory.Services.CreateAsyncScope();
         var storedCosts = await scope
             .ServiceProvider.GetRequiredService<AiObservatoryDbContext>()
             .UsageEvents.AsNoTracking()
@@ -295,7 +298,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenProvenanceIsOmitted_RejectsTheWrite()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var response = await client.PostAsJsonAsync(
             "/api/events",
             new
@@ -320,7 +323,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenProvenanceIsExplicit_NormalizesAndRoundTripsIt()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var observedAt = new DateTimeOffset(2026, 8, 24, 12, 0, 0, TimeSpan.Zero);
         var body = new
         {
@@ -359,10 +362,10 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_ZeroLocalCorrectionStoresKnownZeroWithoutPricingDimensions()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var model = $"removed-snapshot-{Guid.NewGuid():N}";
         var eventKey = $"codex:tombstone:{Guid.NewGuid():N}";
-        var occurredAt = factory
+        var occurredAt = Factory
             .Services.GetRequiredService<NodaTime.IClock>()
             .GetCurrentInstant()
             .Minus(NodaTime.Duration.FromMinutes(1))
@@ -392,7 +395,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
         );
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        await using var scope = factory.Services.CreateAsyncScope();
+        await using var scope = Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
         var stored = await db
             .UsageEvents.AsNoTracking()
@@ -414,7 +417,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [InlineData("CostBasis", "not-a-basis")]
     public async Task PostEvent_WhenAProvenanceEnumIsInvalid_ReturnsBadRequest(string field, string value)
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var body = new Dictionary<string, object?>
         {
             ["Provider"] = "openai",
@@ -437,7 +440,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenSourceIdExceedsStorageBoundary_ReturnsBadRequest()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var body = new
         {
             Provider = "openai",
@@ -459,8 +462,8 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenObservedAtIsInTheFuture_ReturnsBadRequest()
     {
-        using var client = factory.CreateAdminClient();
-        var now = factory.Services.GetRequiredService<NodaTime.IClock>().GetCurrentInstant();
+        using var client = Factory.CreateAdminClient();
+        var now = Factory.Services.GetRequiredService<NodaTime.IClock>().GetCurrentInstant();
         var body = new
         {
             Provider = "openai",
@@ -483,7 +486,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenSnapshotChanges_ReturnsCorrectedWithoutDuplicate()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var key = $"waf-corrected-{Guid.NewGuid():N}";
         var first = new
         {
@@ -526,7 +529,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostLocalTelemetry_RefreshesSourceStateForCreatedCorrectedAndUnchangedSnapshots()
     {
-        await using (var cleanupScope = factory.Services.CreateAsyncScope())
+        await using (var cleanupScope = Factory.Services.CreateAsyncScope())
         {
             await cleanupScope
                 .ServiceProvider.GetRequiredService<AiObservatoryDbContext>()
@@ -534,10 +537,10 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
                 .ExecuteDeleteAsync(TestContext.Current.CancellationToken);
         }
 
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var key = $"codex:2026-08-24:gpt-5.4:{Guid.NewGuid():N}";
         var now = NodaTime.Instant.FromUnixTimeSeconds(
-            factory.Services.GetRequiredService<NodaTime.IClock>().GetCurrentInstant().ToUnixTimeSeconds()
+            Factory.Services.GetRequiredService<NodaTime.IClock>().GetCurrentInstant().ToUnixTimeSeconds()
         );
         object Snapshot(long inputTokens, NodaTime.Instant observedAt) =>
             new
@@ -588,7 +591,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
             .Should()
             .BeTrue();
 
-        await using var scope = factory.Services.CreateAsyncScope();
+        await using var scope = Factory.Services.CreateAsyncScope();
         var state = await scope
             .ServiceProvider.GetRequiredService<AiObservatoryDbContext>()
             .SourceSyncStates.AsNoTracking()
@@ -603,7 +606,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PatchEventCost_WhenSourceIdIsSupplied_UpdatesOnlyThatSourceIdentity()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var key = $"waf-source-patch-{Guid.NewGuid():N}";
         async Task<Guid> Post(string? sourceId)
         {
@@ -655,7 +658,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
         // AR-7: the PATCH lookup is source-scoped and an omitted sourceId defaults to the
         // legacy source identity, so omitting it for a non-legacy event is a 404 miss —
         // never a patch of the row that happens to share the eventKey.
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var key = $"waf-source-patch-miss-{Guid.NewGuid():N}";
         var created = await client.PostAsJsonAsync(
             "/api/events",
@@ -697,7 +700,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenLegacyProvenanceIsExplicit_PreservesClientCost()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var key = $"waf-test-cost-{Guid.NewGuid():N}";
 
         var body = new
@@ -736,7 +739,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenEstimateCannotBeResolved_IgnoresClientCostAndStoresUnknown()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var key = $"waf-test-cost-1h-{Guid.NewGuid():N}";
 
         var body = new
@@ -777,7 +780,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenExplicitlyBilled_RequiresTheSpendPath()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var body = new
         {
             Provider = "openai",
@@ -807,7 +810,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenCacheWrite1hExceedsCacheWrite_IsRejected()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
 
         var body = new
         {
@@ -840,7 +843,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenCostBasisIsUnknown_KeepsSuppliedCost()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var key = $"waf-test-cost-other-{Guid.NewGuid():N}";
 
         var body = new
@@ -877,7 +880,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_PersistsTelemetryIdentityThoughtsAndUnknownCost()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var body = new
         {
             Provider = "openai",
@@ -932,7 +935,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenThoughtTokensAreNegative_ReturnsBadRequest()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var body = new
         {
             Provider = "openai",
@@ -963,7 +966,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [InlineData(101, HttpStatusCode.BadRequest)]
     public async Task PostEvent_EnforcesTheRuntimeStorageBoundary(int runtimeLength, HttpStatusCode expectedStatus)
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var body = new
         {
             Provider = "openai",
@@ -993,7 +996,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_RejectsOneHourCacheWriteWithoutATotalCacheWrite()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var body = new
         {
             Provider = "anthropic",
@@ -1019,7 +1022,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task GetLocalSnapshots_ReturnsOnlyTheExactSourceWithoutRawPayload()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var key = $"codex:2026-08-24:gpt-5.4:{Guid.NewGuid():N}";
         var occurredAt = new DateTimeOffset(2026, 8, 24, 12, 0, 0, TimeSpan.Zero);
 
@@ -1190,7 +1193,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenNoneBasisCarriesPositiveCost_ReturnsBadRequest()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var response = await client.PostAsJsonAsync(
             "/api/events",
             new
@@ -1216,7 +1219,7 @@ public class EventsEndpointsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task PostEvent_WhenNoneBasisCarriesNoCost_IsAccepted()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var response = await client.PostAsJsonAsync(
             "/api/events",
             new

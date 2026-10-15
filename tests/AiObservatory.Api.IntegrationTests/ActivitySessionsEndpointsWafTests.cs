@@ -15,9 +15,12 @@ namespace AiObservatory.Api.IntegrationTests;
 /// a genuinely concurrent first write of the same SessionId.
 /// </summary>
 [Trait("Category", "Integration")]
-[Collection("ApiFactory")]
-public class ActivitySessionsEndpointsWafTests(AiObservatoryApiFactory factory)
+[Collection("FixedClockApiFactory")]
+public class ActivitySessionsEndpointsWafTests(FixedClockApiFactory fixture)
 {
+    private AiObservatoryApiFactory Factory => fixture.Factory;
+    private static DateTimeOffset Now => FixedClockApiFactory.Now.ToDateTimeOffset();
+
     private static object Session(
         string sessionId,
         string project = "FixPortal/example",
@@ -29,8 +32,8 @@ public class ActivitySessionsEndpointsWafTests(AiObservatoryApiFactory factory)
         {
             SessionId = sessionId,
             Project = project,
-            StartedAtUtc = startedAtUtc ?? DateTimeOffset.UtcNow.AddHours(-2),
-            LastSeenAtUtc = lastSeenAtUtc ?? DateTimeOffset.UtcNow.AddHours(-1),
+            StartedAtUtc = startedAtUtc ?? Now.AddHours(-2),
+            LastSeenAtUtc = lastSeenAtUtc ?? Now.AddHours(-1),
             ActiveSeconds = activeSeconds,
         };
 
@@ -41,7 +44,7 @@ public class ActivitySessionsEndpointsWafTests(AiObservatoryApiFactory factory)
     public async Task PostActivitySessions_WithAnEmptyBatch_ReturnsZeroUpserted()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
 
         var response = await client.PostAsJsonAsync(
             "/api/activity/sessions",
@@ -57,7 +60,7 @@ public class ActivitySessionsEndpointsWafTests(AiObservatoryApiFactory factory)
     public async Task PostActivitySessions_EnforcesThe1000RowCap()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var batchId = Guid.NewGuid().ToString("N");
         var overCap = Enumerable.Range(0, 1001).Select(index => Session($"cap-{batchId}-{index}")).ToArray();
 
@@ -87,21 +90,17 @@ public class ActivitySessionsEndpointsWafTests(AiObservatoryApiFactory factory)
     public async Task PostActivitySessions_RejectsAnInvalidRowWithASpecificMessage(string scenario, string message)
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var sessionId = $"invalid-{scenario}-{Guid.NewGuid():N}";
         var session = scenario switch
         {
             "negative-active" => Session(sessionId, activeSeconds: -1),
-            "seen-before-start" => Session(
-                sessionId,
-                startedAtUtc: DateTimeOffset.UtcNow.AddHours(-1),
-                lastSeenAtUtc: DateTimeOffset.UtcNow.AddHours(-2)
-            ),
-            "future" => Session(sessionId, lastSeenAtUtc: DateTimeOffset.UtcNow.AddHours(1)),
+            "seen-before-start" => Session(sessionId, startedAtUtc: Now.AddHours(-1), lastSeenAtUtc: Now.AddHours(-2)),
+            "future" => Session(sessionId, lastSeenAtUtc: Now.AddHours(1)),
             "active-exceeds-elapsed" => Session(
                 sessionId,
-                startedAtUtc: DateTimeOffset.UtcNow.AddHours(-1),
-                lastSeenAtUtc: DateTimeOffset.UtcNow,
+                startedAtUtc: Now.AddHours(-1),
+                lastSeenAtUtc: Now,
                 activeSeconds: 3601
             ),
             "blank-session-id" => Session(""),
@@ -119,7 +118,7 @@ public class ActivitySessionsEndpointsWafTests(AiObservatoryApiFactory factory)
     public async Task PostActivitySessions_RejectsADuplicateSessionIdWithinTheBatch()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var sessionId = $"dup-{Guid.NewGuid():N}";
 
         var response = await client.PostAsJsonAsync(
@@ -136,12 +135,12 @@ public class ActivitySessionsEndpointsWafTests(AiObservatoryApiFactory factory)
     public async Task PostActivitySessions_MergesMonotonicallyAndNeverRegressesAStoredRow()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var sessionId = $"merge-{Guid.NewGuid():N}";
-        var started = WholeMicroseconds(DateTimeOffset.UtcNow.AddHours(-4));
-        var t1 = WholeMicroseconds(DateTimeOffset.UtcNow.AddHours(-3));
-        var t2 = WholeMicroseconds(DateTimeOffset.UtcNow.AddHours(-2));
-        var t3 = WholeMicroseconds(DateTimeOffset.UtcNow.AddHours(-1));
+        var started = WholeMicroseconds(Now.AddHours(-4));
+        var t1 = WholeMicroseconds(Now.AddHours(-3));
+        var t2 = WholeMicroseconds(Now.AddHours(-2));
+        var t3 = WholeMicroseconds(Now.AddHours(-1));
 
         var created = await client.PostAsJsonAsync(
             "/api/activity/sessions",
@@ -186,7 +185,7 @@ public class ActivitySessionsEndpointsWafTests(AiObservatoryApiFactory factory)
         );
         (await UpsertedAsync(newerSeen, ct)).Should().Be(1);
 
-        await using var scope = factory.Services.CreateAsyncScope();
+        await using var scope = Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
         var row = await db.ClaudeActivitySessions.AsNoTracking().SingleAsync(s => s.SessionId == sessionId, ct);
         row.ActiveSeconds.Should().Be(150, "each field takes the maximum ever seen");
@@ -198,15 +197,15 @@ public class ActivitySessionsEndpointsWafTests(AiObservatoryApiFactory factory)
     {
         var ct = TestContext.Current.CancellationToken;
         var sessionId = $"race-{Guid.NewGuid():N}";
-        using var firstClient = factory.CreateAdminClient();
-        using var secondClient = factory.CreateAdminClient();
+        using var firstClient = Factory.CreateAdminClient();
+        using var secondClient = Factory.CreateAdminClient();
 
         // Force the race the endpoint's 409 arm exists for: a SHARE table lock lets both
         // requests' existence SELECTs through (both see no row and stage an insert) while
         // blocking both INSERTs, so both are parked past the existence check before either can
         // write. Releasing the lock serializes them: one commits, the other unique-violates.
         HttpResponseMessage[] responses;
-        await using (var lockScope = factory.Services.CreateAsyncScope())
+        await using (var lockScope = Factory.Services.CreateAsyncScope())
         {
             var lockDb = lockScope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
             await using var tableLock = await lockDb.Database.BeginTransactionAsync(ct);
@@ -236,7 +235,7 @@ public class ActivitySessionsEndpointsWafTests(AiObservatoryApiFactory factory)
         var winner = responses.Should().ContainSingle(response => response.StatusCode == HttpStatusCode.OK).Which;
         (await UpsertedAsync(winner, ct)).Should().Be(1);
 
-        await using var scope = factory.Services.CreateAsyncScope();
+        await using var scope = Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
         var rows = await db.ClaudeActivitySessions.AsNoTracking().Where(s => s.SessionId == sessionId).ToListAsync(ct);
         rows.Should().ContainSingle("the monotonic merge converges on one row; the loser is told to retry");
@@ -248,9 +247,12 @@ public class ActivitySessionsEndpointsWafTests(AiObservatoryApiFactory factory)
     /// </summary>
     private async Task WaitForBothInsertsBlockedAsync(CancellationToken ct)
     {
-        await using var scope = factory.Services.CreateAsyncScope();
+        await using var scope = Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
-        for (var attempt = 0; attempt < 100; attempt++)
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        var waitToken = deadline.Token;
+        while (true)
         {
             var blocked = await db
                 .Database.SqlQueryRaw<int>(
@@ -263,16 +265,14 @@ public class ActivitySessionsEndpointsWafTests(AiObservatoryApiFactory factory)
                         AND query LIKE '%INSERT INTO "ClaudeActivitySessions"%'
                     """
                 )
-                .SingleAsync(ct);
+                .SingleAsync(waitToken);
             if (blocked >= 2)
             {
                 return;
             }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
+            await Task.Delay(TimeSpan.FromMilliseconds(50), waitToken);
         }
-
-        throw new TimeoutException("Both racing session upserts did not reach the expected INSERT lock wait.");
     }
 
     // PostgreSQL timestamps are microsecond-precision; trim the sub-microsecond ticks off
