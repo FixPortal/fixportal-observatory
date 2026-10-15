@@ -30,7 +30,7 @@ public class ProviderPollingWorkerService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        LogEnabledArms();
+        var loggedEnabledArms = false;
 
         var interval = options.Value.PollingInterval;
         var lookbackDays = Math.Max(1, options.Value.LookbackDays);
@@ -41,14 +41,19 @@ public class ProviderPollingWorkerService(
         );
         while (!stoppingToken.IsCancellationRequested)
         {
-            var through = clock.GetCurrentInstant().InUtc().Date.PlusDays(-1);
-            var from = through.PlusDays(-(lookbackDays - 1));
             // One transient fault outside the per-source handlers (scope creation, a DI
             // resolution) must not take the host down -- BackgroundServiceExceptionBehavior
             // defaults to StopHost. The failed pass retries on the next tick and is not
             // counted as a completed cycle.
             try
             {
+                if (!loggedEnabledArms)
+                {
+                    LogEnabledArms();
+                    loggedEnabledArms = true;
+                }
+                var through = clock.GetCurrentInstant().InUtc().Date.PlusDays(-1);
+                var from = through.PlusDays(-(lookbackDays - 1));
                 await RunPollAsync(from, through, stoppingToken);
                 Interlocked.Exchange(ref _lastCycleCompletedTicks, clock.GetCurrentInstant().ToUnixTimeTicks());
                 Interlocked.Increment(ref _cyclesCompleted);
