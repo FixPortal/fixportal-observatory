@@ -1,0 +1,9 @@
+version: 2
+
+secret:
+  # Placeholder credentials (Username=u;Password=p) in demo-mode guard tests and the plan
+  # that specifies them. The tests need the real hostname to prove the guard rejects it.
+  ignored_paths:
+    - tests/AiObservatory.Api.Tests/DemoModeTests.cs
+    - tests/AiObservatory.Api.IntegrationTests/StartupGuardsTests.cs
+    - docs/superpowers/plans/2026-10-10-demo-instance.md
