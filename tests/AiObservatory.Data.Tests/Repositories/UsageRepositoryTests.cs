@@ -55,6 +55,59 @@ public class UsageRepositoryTests : IAsyncLifetime
         }
     }
 
+    [Theory]
+    [InlineData(InsightType.Summary)]
+    [InlineData(InsightType.Efficiency)]
+    [InlineData(InsightType.Anomaly)]
+    [InlineData(InsightType.Recommendation)]
+    public async Task Latest_insight_period_ignores_a_strictly_later_budget_alert(InsightType analysisType)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        var ct = deadline.Token;
+        var latestAnalysisPeriod = new LocalDate(2026, 7, 30);
+        _ctx.Insights.AddRange(
+            PeriodInsight(InsightType.Summary, latestAnalysisPeriod.PlusDays(-2), Instant.FromUtc(2026, 8, 4, 12, 0)),
+            PeriodInsight(analysisType, latestAnalysisPeriod, Instant.FromUtc(2026, 7, 31, 12, 0)),
+            PeriodInsight(InsightType.BudgetAlert, latestAnalysisPeriod.PlusDays(1), Instant.FromUtc(2026, 8, 2, 12, 0))
+        );
+        await _ctx.SaveChangesAsync(ct);
+        _ctx.ChangeTracker.Clear();
+        (await _ctx.Insights.CountAsync(ct)).Should().Be(3);
+
+        var latest = await _repo.GetLatestInsightPeriodEndAsync(ct);
+
+        latest
+            .Should()
+            .Be(latestAnalysisPeriod, "budget notifications must not advance the completed-analysis watermark");
+    }
+
+    [Fact]
+    public async Task Latest_insight_period_is_null_when_only_budget_alerts_have_been_persisted()
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        var ct = deadline.Token;
+        (await _repo.GetLatestInsightPeriodEndAsync(ct)).Should().BeNull();
+        var acknowledged = PeriodInsight(
+            InsightType.BudgetAlert,
+            new LocalDate(2026, 7, 31),
+            Instant.FromUtc(2026, 7, 31, 12, 0)
+        );
+        acknowledged.AcknowledgedAt = Instant.FromUtc(2026, 7, 31, 13, 0);
+        _ctx.Insights.AddRange(
+            acknowledged,
+            PeriodInsight(InsightType.BudgetAlert, new LocalDate(2026, 8, 1), Instant.FromUtc(2026, 8, 1, 12, 0))
+        );
+        await _ctx.SaveChangesAsync(ct);
+        _ctx.ChangeTracker.Clear();
+        (await _ctx.Insights.CountAsync(ct)).Should().Be(2);
+
+        (await _repo.GetLatestInsightPeriodEndAsync(ct))
+            .Should()
+            .BeNull("neither acknowledged nor pending budget alerts analyze a completed day");
+    }
+
     [Fact]
     public async Task RecordEvent_with_same_eventKey_records_and_aggregates_once()
     {
@@ -1715,6 +1768,17 @@ public class UsageRepositoryTests : IAsyncLifetime
         (await _ctx.BudgetAlertClaims.AsNoTracking().CountAsync(ct)).Should().Be(1);
         (await _ctx.Insights.AsNoTracking().CountAsync(ct)).Should().Be(1, "the loser's insight is rolled back");
     }
+
+    private static Insight PeriodInsight(InsightType type, LocalDate period, Instant generatedAt) =>
+        new()
+        {
+            InsightType = type,
+            PeriodStart = period,
+            PeriodEnd = period,
+            GeneratedAt = generatedAt,
+            Title = "Watermark fixture",
+            Body = "Persisted insight for the repository query.",
+        };
 
     private static Insight AlertInsight(LocalDate period, Instant generatedAt) =>
         new()
