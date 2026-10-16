@@ -82,6 +82,169 @@ public class AdversarialReviewRepositoryTests : IAsyncLifetime
         };
 
     [Fact]
+    public async Task Losing_a_confirmed_insert_race_corrects_the_winner_and_keeps_the_context_usable()
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        var ct = deadline.Token;
+        var options = new DbContextOptionsBuilder<AiObservatoryDbContext>()
+            .UseNpgsql(_connStr, o => o.UseNodaTime())
+            .Options;
+        await using var winnerContext = new AiObservatoryDbContext(options);
+        await using var loserContext = new AiObservatoryDbContext(options);
+        await winnerContext.Database.OpenConnectionAsync(ct);
+        await loserContext.Database.OpenConnectionAsync(ct);
+        var winnerPid = await winnerContext
+            .Database.SqlQuery<int>($"SELECT pg_backend_pid() AS \"Value\"")
+            .SingleAsync(ct);
+        var loserPid = await loserContext
+            .Database.SqlQuery<int>($"SELECT pg_backend_pid() AS \"Value\"")
+            .SingleAsync(ct);
+        var runId = $"race-{Guid.NewGuid():N}";
+        var recordedAt = Instant.FromUtc(2026, 6, 27, 12, 0);
+        var winner = new AdversarialReviewRun
+        {
+            RunId = runId,
+            Reviewer = "race-reviewer",
+            Role = "reviewer",
+            Model = "initial-model",
+            Repo = "initial-repo",
+            Summary = "initial-summary",
+            InputTokens = 10,
+            OutputTokens = 20,
+            CostUsd = 0.25m,
+            ReviewDurationMs = 100,
+            IssuesRaised = 1,
+            IssuesAccepted = 0,
+            CostPerAcceptedFinding = null,
+            ChunkCount = null,
+            RecordedAt = recordedAt,
+        };
+        var loser = new AdversarialReviewRun
+        {
+            RunId = runId,
+            Reviewer = winner.Reviewer,
+            Role = winner.Role,
+            Model = "corrected-model",
+            Repo = "corrected-repo",
+            Summary = "corrected-summary",
+            InputTokens = 111,
+            OutputTokens = 222,
+            CostUsd = 12m,
+            ReviewDurationMs = 3333,
+            IssuesRaised = 8,
+            IssuesAccepted = 4,
+            CostPerAcceptedFinding = 3m,
+            ChunkCount = 7,
+            RecordedAt = recordedAt + Duration.FromDays(1),
+        };
+        winner.Id.Should().NotBe(loser.Id);
+        var loserRepository = new AdversarialReviewRepository(loserContext);
+        var transaction = await winnerContext.Database.BeginTransactionAsync(ct);
+        Task<(Guid Id, bool Existed)>? competing = null;
+        try
+        {
+            var inserted = await new AdversarialReviewRepository(winnerContext).RecordRunAsync(winner, ct);
+            inserted.Should().Be((winner.Id, false));
+            (await _repo.GetRunsAsync(runId, ct)).Should().BeEmpty("the winner is still uncommitted");
+            competing = loserRepository.RecordRunAsync(loser, ct);
+            await WaitForInsertBlockedByAsync(winnerPid, loserPid, ct);
+            await transaction.CommitAsync(ct);
+            (Guid Id, bool Existed) result = default;
+            var finish = async () =>
+            {
+                result = await competing;
+            };
+            await finish.Should().NotThrowAsync("the unique-insert loser must recover after the winner commits");
+            result.Existed.Should().BeTrue();
+            result.Id.Should().Be(winner.Id);
+            result.Id.Should().NotBe(loser.Id);
+            var row = (await _repo.GetRunsAsync(runId, ct)).Should().ContainSingle().Which;
+            row.Id.Should().Be(winner.Id);
+            row.RecordedAt.Should().Be(recordedAt);
+            row.Should()
+                .BeEquivalentTo(
+                    new
+                    {
+                        loser.Model,
+                        loser.Repo,
+                        loser.Summary,
+                        loser.InputTokens,
+                        loser.OutputTokens,
+                        loser.CostUsd,
+                        loser.ReviewDurationMs,
+                        loser.IssuesRaised,
+                        loser.IssuesAccepted,
+                        loser.CostPerAcceptedFinding,
+                        loser.ChunkCount,
+                    }
+                );
+
+            // A stale Added loser would be inserted again by this public save, poisoning the same context.
+            var next = Run(runId + "-after", winner.Reviewer, winner.Role, "next-model", recordedAt: recordedAt);
+            (Guid Id, bool Existed) nextResult = default;
+            var saveNext = async () =>
+            {
+                nextResult = await loserRepository.RecordRunAsync(next, ct);
+            };
+            await saveNext.Should().NotThrowAsync("the recovered context must not retry its failed Added participant");
+            nextResult.Should().Be((next.Id, false));
+            (await _repo.GetRunsAsync(next.RunId, ct)).Should().ContainSingle().Which.Id.Should().Be(next.Id);
+            (await _repo.GetRunsAsync(runId, ct)).Should().ContainSingle().Which.Id.Should().Be(winner.Id);
+        }
+        finally
+        {
+            // Release the blocker before draining the competing command, including failed setup/assertions.
+            await transaction.DisposeAsync();
+            await deadline.CancelAsync();
+            if (competing is not null)
+            {
+                try
+                {
+                    await competing.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+                }
+                catch (Exception exception) when (deadline.IsCancellationRequested)
+                {
+                    Console.WriteLine($"Cancelled loser cleanup: {exception.GetType().Name}");
+                }
+            }
+        }
+    }
+
+    private async Task WaitForInsertBlockedByAsync(int winnerPid, int loserPid, CancellationToken ct)
+    {
+        const string insert = "INSERT INTO \"AdversarialReviewRuns\"";
+        while (true)
+        {
+            var blocked = await _ctx
+                .Database.SqlQuery<bool>(
+                    $"""
+                    SELECT EXISTS (
+                        SELECT 1 FROM pg_stat_activity
+                        WHERE datname = current_database() AND pid = {loserPid}
+                            AND wait_event_type = 'Lock'
+                            AND query LIKE '%' || {insert} || '%'
+                            AND {winnerPid} = ANY(pg_blocking_pids({loserPid}))
+                            AND EXISTS (
+                                SELECT 1 FROM pg_locks
+                                WHERE pid = {loserPid} AND locktype = 'transactionid' AND NOT granted
+                            )
+                    ) AS "Value"
+                    """
+                )
+                .SingleAsync(ct);
+            if (blocked)
+            {
+                Console.WriteLine(
+                    $"Observed PostgreSQL loser INSERT {loserPid} blocked by uncommitted winner {winnerPid} in {_ctx.Database.GetDbConnection().Database}."
+                );
+                return;
+            }
+            await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
+        }
+    }
+
+    [Fact]
     public async Task Four_participants_sharing_one_runId_all_persist()
     {
         var ct = TestContext.Current.CancellationToken;
