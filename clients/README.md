@@ -50,7 +50,7 @@ Stable source-scoped keys make resubmission safe. Source ids carry a per-machine
 > [!WARNING]
 > Set `OBSERVATORY_LOCAL_SOURCES` without `claude` when `claude-code-usage-api` covers the same account/activity. The two lanes do not cross-deduplicate.
 
-Dormant lanes (`kimi`, `grok`, `pi`) are off by default. Re-enable one by naming it in `OBSERVATORY_LOCAL_SOURCES`; the machine-local `sweep.env` is where the deployed value lives. A Codex session whose provider cannot be placed is not reported; the run prints `UNPLACED <tool> model=<model> sessions=<n>` to stderr (counts only, no paths or content) and still exits 0.
+Dormant lanes (`kimi`, `grok`, `pi`) are off by default. Re-enable one by naming it in `OBSERVATORY_LOCAL_SOURCES`; the machine-local `sweep.env` is where the deployed value lives. A machine that leaves `OBSERVATORY_LOCAL_SOURCES` unset stops collecting `kimi`, `grok` and `pi` after upgrading; set it explicitly to keep them. A Codex session whose provider cannot be placed is not reported; the run prints `UNPLACED <tool> model=<model> sessions=<n>` to stderr (counts only, no paths or content) and still exits 0.
 
 ## Measured cost, and the Grok tick scale
 
