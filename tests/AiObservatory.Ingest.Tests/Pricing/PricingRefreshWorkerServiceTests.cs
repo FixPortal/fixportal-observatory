@@ -358,6 +358,8 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
                 "gemini-developer-api.json",
                 "xai.json",
                 "meta.json",
+                "zai.json",
+                "deepseek.json",
             }
         )
         {

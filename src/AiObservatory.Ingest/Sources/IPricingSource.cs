@@ -62,6 +62,12 @@ internal static class PricingCandidate
             case MetaPriceCatalog meta:
                 meta.Validate();
                 break;
+            case ZaiPriceCatalog zai:
+                zai.Validate();
+                break;
+            case DeepSeekPriceCatalog deepSeek:
+                deepSeek.Validate();
+                break;
             default:
                 throw new ArgumentException("Unknown pricing catalog type.", nameof(catalog));
         }
