@@ -79,7 +79,7 @@ const group = (overrides: Partial<RunGroup>): RunGroup => ({
   summary: null,
   recordedAt: '2026-07-01T09:00:00Z',
   participants: [],
-  totals: { raised: 1, accepted: 1, costUsd: 1, durationMs: 1000 },
+  totals: { raised: 1, accepted: 1, costUsd: 1, unknownCostRuns: 0, durationMs: 1000 },
   isComplete: true,
   statusReason: 'complete',
   isValid: true,
@@ -147,13 +147,32 @@ describe('sortRunGroups', () => {
   it('sorts by total cost', () => {
     const cheap = group({
       runId: 'R1',
-      totals: { raised: 1, accepted: 1, costUsd: 0.1, durationMs: 1000 },
+      totals: { raised: 1, accepted: 1, costUsd: 0.1, unknownCostRuns: 0, durationMs: 1000 },
     })
     const pricey = group({
       runId: 'R2',
-      totals: { raised: 1, accepted: 1, costUsd: 5, durationMs: 1000 },
+      totals: { raised: 1, accepted: 1, costUsd: 5, unknownCostRuns: 0, durationMs: 1000 },
     })
     expect(sortRunGroups([cheap, pricey], 'costUsd', 'desc')[0]!.runId).toBe('R2')
+  })
+
+  it('sorts unknown total cost last in both directions', () => {
+    const unknown = group({
+      runId: 'R0',
+      totals: { raised: 1, accepted: 1, costUsd: null, unknownCostRuns: 1, durationMs: 1000 },
+    })
+    const cheap = group({
+      runId: 'R1',
+      totals: { raised: 1, accepted: 1, costUsd: 0.1, unknownCostRuns: 0, durationMs: 1000 },
+    })
+    const pricey = group({
+      runId: 'R2',
+      totals: { raised: 1, accepted: 1, costUsd: 5, unknownCostRuns: 0, durationMs: 1000 },
+    })
+    for (const dir of ['asc', 'desc'] as const) {
+      const ids = sortRunGroups([unknown, pricey, cheap], 'costUsd', dir).map((g) => g.runId)
+      expect(ids[2]).toBe('R0')
+    }
   })
 
   it('treats a null repo as sorting first', () => {

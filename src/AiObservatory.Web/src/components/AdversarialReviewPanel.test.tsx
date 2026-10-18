@@ -48,6 +48,7 @@ function run(p: Partial<AdversarialReviewRun>): AdversarialReviewRun {
     issuesRaised: 2,
     issuesAccepted: 1,
     costPerAcceptedFinding: 1,
+    costUnknown: false,
     chunkCount: null,
     runId: 'R1',
     recordedAt: '2026-08-27T12:00:00Z',
@@ -64,6 +65,7 @@ function renderPanel() {
 }
 
 beforeEach(() => {
+  localStorage.clear() // run cards persist their expanded state
   data.stats = []
   data.statsError = false
   data.statsLoading = false
@@ -101,6 +103,26 @@ describe('AdversarialReviewPanel unknown cost', () => {
     renderPanel()
 
     expect(screen.getAllByText('$2.00 (1 unknown excluded)')).toHaveLength(2)
+  })
+})
+
+describe('AdversarialReviewPanel runs list unknown cost', () => {
+  test('an unknown-cost participant renders Unknown and the run total is flagged partial', () => {
+    data.runs = [
+      run({ id: 'a', reviewer: 'anthropic', costUsd: 1, summary: 'Partial cost run' }),
+      run({
+        id: 'z',
+        reviewer: 'zai',
+        costUsd: 0,
+        costUnknown: true,
+        costPerAcceptedFinding: null,
+      }),
+    ]
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: /Partial cost run/ }))
+
+    expect(screen.getByText(/\+ 1 unknown/)).toBeInTheDocument()
+    expect(screen.getAllByText('Unknown').length).toBeGreaterThan(0)
   })
 })
 

@@ -17,6 +17,7 @@ function run(p: Partial<AdversarialReviewRun>): AdversarialReviewRun {
     issuesRaised: 0,
     issuesAccepted: 0,
     costPerAcceptedFinding: null,
+    costUnknown: false,
     chunkCount: null,
     runId: 'R1',
     recordedAt: '2026-06-27T12:00:00Z',
@@ -54,7 +55,13 @@ test('sums per-column totals across participants', () => {
       reviewDurationMs: 2000,
     }),
   ])
-  expect(groups[0]!.totals).toEqual({ raised: 9, accepted: 7, costUsd: 0.6, durationMs: 3000 })
+  expect(groups[0]!.totals).toEqual({
+    raised: 9,
+    accepted: 7,
+    costUsd: 0.6,
+    unknownCostRuns: 0,
+    durationMs: 3000,
+  })
 })
 
 test('flags incomplete when fewer than 4 reviewer vendors', () => {
@@ -198,4 +205,19 @@ test('bankersRound rounds half to even', () => {
   expect(bankersRound(4.24, 0)).toBe(4) // normal round down
   expect(bankersRound(4.6, 0)).toBe(5) // normal round up
   expect(bankersRound(0.03019, 2)).toBeCloseTo(0.03)
+})
+
+test('excludes unknown-cost participants from the total and counts them', () => {
+  const groups = groupRuns([
+    run({ runId: 'R1', reviewer: 'anthropic', costUsd: 0.2 }),
+    run({ runId: 'R1', reviewer: 'zai', costUsd: 0, costUnknown: true }),
+  ])
+  expect(groups[0]!.totals.costUsd).toBe(0.2)
+  expect(groups[0]!.totals.unknownCostRuns).toBe(1)
+})
+
+test('total cost is null when every participant cost is unknown', () => {
+  const groups = groupRuns([run({ runId: 'R1', reviewer: 'zai', costUnknown: true })])
+  expect(groups[0]!.totals.costUsd).toBeNull()
+  expect(groups[0]!.totals.unknownCostRuns).toBe(1)
 })

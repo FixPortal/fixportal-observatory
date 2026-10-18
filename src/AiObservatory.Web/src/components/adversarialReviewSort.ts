@@ -104,12 +104,17 @@ export function sortRunGroups(
   direction: SortDirection,
 ): RunGroup[] {
   return groups.toSorted((a, b) => {
+    // Unknown total cost sorts last in both directions (not as 0, which would read as cheapest).
+    if (field === 'costUsd' && (a.totals.costUsd == null || b.totals.costUsd == null)) {
+      if (a.totals.costUsd == null && b.totals.costUsd == null) return 0
+      return a.totals.costUsd == null ? 1 : -1
+    }
     let comparison: number
     if (field === 'recordedAt') comparison = a.recordedAt.localeCompare(b.recordedAt)
     else if (field === 'repo') comparison = (a.repo ?? '').localeCompare(b.repo ?? '')
     else if (field === 'raised') comparison = a.totals.raised - b.totals.raised
     else if (field === 'accepted') comparison = a.totals.accepted - b.totals.accepted
-    else if (field === 'costUsd') comparison = a.totals.costUsd - b.totals.costUsd
+    else if (field === 'costUsd') comparison = (a.totals.costUsd ?? 0) - (b.totals.costUsd ?? 0)
     else comparison = a.totals.durationMs - b.totals.durationMs
     return direction === 'asc' ? comparison : -comparison
   })

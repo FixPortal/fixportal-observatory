@@ -33,6 +33,7 @@ public static class AdversarialReviewEndpoints
                         r.InputTokens,
                         r.OutputTokens,
                         r.CostUsd,
+                        r.CostUnknown,
                         r.ReviewDurationMs,
                         r.IssuesRaised,
                         r.IssuesAccepted,
