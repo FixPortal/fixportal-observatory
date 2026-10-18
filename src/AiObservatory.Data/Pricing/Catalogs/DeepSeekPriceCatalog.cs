@@ -5,7 +5,9 @@ namespace AiObservatory.Data.Pricing.Catalogs;
 /// <summary>
 /// DeepSeek list prices from its public pricing page. Bundled only: the page is not a
 /// machine-readable feed, so the catalog is refreshed by editing <c>Bundled/deepseek.json</c>.
-/// Every rate is published twice, peak and off-peak.
+/// Rates are the STANDARD (peak) tier, so a figure priced from this catalog is an UPPER BOUND:
+/// the vendor halves every rate off-peak and on Chinese public holidays, which a daily
+/// cumulative snapshot cannot express. The off-peak rates are deliberately not stored.
 /// </summary>
 public sealed record DeepSeekPriceCatalog(
     string Currency,
@@ -39,10 +41,6 @@ public sealed record DeepSeekPriceCatalog(
                 || entry.Output <= 0
                 || entry.CacheRead <= 0
                 || entry.CacheRead > entry.Input
-                || entry.OffPeakInput <= 0
-                || entry.OffPeakOutput <= 0
-                || entry.OffPeakCacheRead <= 0
-                || entry.OffPeakCacheRead > entry.OffPeakInput
             )
             {
                 throw new InvalidDataException("DeepSeek pricing contains an incomplete or non-positive entry.");
@@ -75,15 +73,12 @@ public sealed record DeepSeekPriceCatalog(
     }
 }
 
-/// <summary>Rates per million tokens. <c>CacheRead</c> is the cache-hit input rate.</summary>
+/// <summary>Standard-tier rates per million tokens. <c>CacheRead</c> is the cache-hit input rate.</summary>
 public sealed record DeepSeekPriceEntry(
     string Model,
     LocalDate EffectiveFrom,
     bool EffectiveDateIsProviderDeclared,
     decimal Input,
     decimal Output,
-    decimal CacheRead,
-    decimal OffPeakInput,
-    decimal OffPeakOutput,
-    decimal OffPeakCacheRead
+    decimal CacheRead
 );

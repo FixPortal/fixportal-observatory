@@ -10,18 +10,18 @@ public sealed class DeepSeekPriceCalculatorTests
 {
     private static readonly LocalDate EffectiveFrom = new(2026, 10, 18);
 
-    // 2026-10-19 is a Monday, 2026-10-24 a Saturday.
+    // The standard rate applies whatever the instant: 2026-10-19 is a Monday (07:00 is peak,
+    // 04:00 and 10:00 are the window edges, 12:00 is off-peak) and 2026-10-24 a Saturday.
     [Theory]
     [InlineData("deepseek-flash", "2026-10-19T07:00:00Z", 1.506, 0.294)]
-    [InlineData("deepseek-flash", "2026-10-19T01:00:00Z", 1.506, 0.294)]
-    [InlineData("deepseek-flash", "2026-10-19T09:59:59Z", 1.506, 0.294)]
-    [InlineData("deepseek-flash", "2026-10-19T12:00:00Z", 0.753, 0.147)]
-    [InlineData("deepseek-flash", "2026-10-19T04:00:00Z", 0.753, 0.147)]
-    [InlineData("deepseek-flash", "2026-10-19T10:00:00Z", 0.753, 0.147)]
-    [InlineData("deepseek-flash", "2026-10-24T07:00:00Z", 0.753, 0.147)]
+    [InlineData("deepseek-flash", "2026-10-19T04:00:00Z", 1.506, 0.294)]
+    [InlineData("deepseek-flash", "2026-10-19T10:00:00Z", 1.506, 0.294)]
+    [InlineData("deepseek-flash", "2026-10-19T12:00:00Z", 1.506, 0.294)]
+    [InlineData("deepseek-flash", "2026-10-24T07:00:00Z", 1.506, 0.294)]
     [InlineData("deepseek-v4-pro", "2026-10-19T07:00:00Z", 5.324, 1.276)]
-    [InlineData("deepseek-v4-pro", "2026-10-24T07:00:00Z", 2.662, 0.638)]
-    public void PricesPeakAndOffPeakWindowsFromTheEventTimestamp(
+    [InlineData("deepseek-v4-pro", "2026-10-19T04:00:00Z", 5.324, 1.276)]
+    [InlineData("deepseek-v4-pro", "2026-10-24T07:00:00Z", 5.324, 1.276)]
+    public void PricesAtTheStandardRateRegardlessOfTheEventTimestamp(
         string model,
         string at,
         double expectedCost,
@@ -45,7 +45,7 @@ public sealed class DeepSeekPriceCalculatorTests
     {
         var notional = Event("deepseek-flash", "2026-09-14T12:00:00Z", CostBasis.Notional);
 
-        new DeepSeekPriceCalculator().Calculate(notional, Catalog())!.CostUsd.Should().Be(0.753m);
+        new DeepSeekPriceCalculator().Calculate(notional, Catalog())!.CostUsd.Should().Be(1.506m);
     }
 
     private static string Catalog() =>
@@ -55,28 +55,8 @@ public sealed class DeepSeekPriceCalculatorTests
                 "https://api-docs.deepseek.com/quick_start/pricing",
                 EffectiveFrom.AtMidnight().InUtc().ToInstant(),
                 [
-                    new DeepSeekPriceEntry(
-                        "deepseek-flash",
-                        EffectiveFrom,
-                        false,
-                        0.3m,
-                        1.2m,
-                        0.006m,
-                        0.15m,
-                        0.6m,
-                        0.003m
-                    ),
-                    new DeepSeekPriceEntry(
-                        "deepseek-v4-pro",
-                        EffectiveFrom,
-                        false,
-                        1.32m,
-                        3.96m,
-                        0.044m,
-                        0.66m,
-                        1.98m,
-                        0.022m
-                    ),
+                    new DeepSeekPriceEntry("deepseek-flash", EffectiveFrom, false, 0.3m, 1.2m, 0.006m),
+                    new DeepSeekPriceEntry("deepseek-v4-pro", EffectiveFrom, false, 1.32m, 3.96m, 0.044m),
                 ]
             )
         );
