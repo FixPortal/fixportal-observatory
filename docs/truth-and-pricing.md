@@ -38,6 +38,10 @@ Occurrence/usage time says when consumption happened. `ObservedAt` says when Obs
 
 Stored provider estimates, list-price estimates, and notional values use USD catalogs. Google Cloud Billing export starts in its native export currency and follows the existing historical FX path for GBP presentation. Tokens are counts. Missing tokens or money are `Not reported`, never zero.
 
+## Unknown review cost
+
+An adversarial-review run whose panel cost could not be established is stored with `CostUnknown = true` and `CostUsd = 0`. The zero is a placeholder, not a measurement. Unknown runs are excluded from average-cost figures (`avgCostPerRun` is null when no run has a known cost, and `unknownCostRuns` counts the excluded ones), and the UI shows them as `Unknown`, never `0.00`.
+
 ## Pricing renewal and safety
 
 Pricing refreshes daily and shortly after startup when the last successful refresh is over a day old. Fetched runtime inputs:
@@ -47,6 +51,8 @@ Pricing refreshes daily and shortly after startup when the last successful refre
 - [Kimi documentation](https://platform.kimi.ai/docs/llms.txt)
 
 The Gemini Developer API catalog is bundled rather than fetched: `gemini-developer-api-pricing` loads from the shipped catalog at startup and is unaffected by fetch outages.
+
+The z.AI and DeepSeek list-price catalogs are also bundled only: they have no fetcher, so they load from the shipped catalog at startup and a fetch outage cannot affect them. Both price against the occurrence date; unknown models resolve to `null`. DeepSeek publishes a peak and an off-peak rate. The peak window (01:00-04:00 and 06:00-10:00 UTC, Monday to Friday) is derived from the event's `OccurredAt` in UTC. No Chinese public-holiday calendar is bundled, so an in-window weekday that was a holiday is priced at the peak rate: a `ListPriceEstimate` is then an upper bound, not an exact figure.
 
 The [Google Cloud Billing Catalog API](https://docs.cloud.google.com/billing/v1/how-tos/catalog-api) is the planned official authority, but is currently unfetched and unavailable: `GooglePricingSource.VerifiedMappings` is empty, so its source definition remains not configured during pricing checks.
 
