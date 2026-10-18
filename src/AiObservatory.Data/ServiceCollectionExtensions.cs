@@ -28,6 +28,8 @@ public static class ServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IProviderPriceCalculator, GooglePriceCalculator>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IProviderPriceCalculator, XaiPriceCalculator>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IProviderPriceCalculator, MetaPriceCalculator>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IProviderPriceCalculator, ZaiPriceCalculator>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IProviderPriceCalculator, DeepSeekPriceCalculator>());
         services.AddScoped<UsagePriceResolver>();
         services.AddScoped<PricingRepricingService>();
         return services;

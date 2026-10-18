@@ -1,0 +1,29 @@
+{
+  "currency": "USD",
+  "sourceUrl": "https://api-docs.deepseek.com/quick_start/pricing",
+  "retrievedAt": "2026-10-18T12:00:00Z",
+  "entries": [
+    {
+      "model": "deepseek-flash",
+      "effectiveFrom": "2026-10-18",
+      "effectiveDateIsProviderDeclared": false,
+      "input": 0.3,
+      "output": 1.2,
+      "cacheRead": 0.006,
+      "offPeakInput": 0.15,
+      "offPeakOutput": 0.6,
+      "offPeakCacheRead": 0.003
+    },
+    {
+      "model": "deepseek-v4-pro",
+      "effectiveFrom": "2026-10-18",
+      "effectiveDateIsProviderDeclared": false,
+      "input": 1.32,
+      "output": 3.96,
+      "cacheRead": 0.044,
+      "offPeakInput": 0.66,
+      "offPeakOutput": 1.98,
+      "offPeakCacheRead": 0.022
+    }
+  ]
+}
