@@ -35,6 +35,11 @@ namespace AiObservatory.Data.Migrations
                     b.Property<decimal?>("CostPerAcceptedFinding")
                         .HasColumnType("numeric");
 
+                    b.Property<bool>("CostUnknown")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<decimal>("CostUsd")
                         .HasColumnType("numeric");
 

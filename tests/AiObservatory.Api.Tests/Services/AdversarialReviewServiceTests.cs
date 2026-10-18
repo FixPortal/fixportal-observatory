@@ -68,6 +68,30 @@ public class AdversarialReviewServiceTests
     }
 
     [Fact]
+    public async Task RecordRun_unknown_cost_is_stored_as_unknown_with_no_cost_per_finding()
+    {
+        _repo
+            .RecordRunAsync(Arg.Any<AdversarialReviewRun>(), Arg.Any<CancellationToken>())
+            .Returns((Guid.NewGuid(), Existed: false));
+
+        await CreateSut()
+            .RecordRunAsync(
+                ValidRequest(costUsd: 0m, issuesAccepted: 3) with
+                {
+                    CostUnknown = true,
+                },
+                CancellationToken.None
+            );
+
+        await _repo
+            .Received(1)
+            .RecordRunAsync(
+                Arg.Is<AdversarialReviewRun>(r => r != null && r.CostUnknown && r.CostPerAcceptedFinding == null),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task RecordRun_existing_participant_returns_ok_corrected_in_place()
     {
         var existingId = Guid.NewGuid();
@@ -263,9 +287,10 @@ public class AdversarialReviewServiceTests
     }
 
     [Theory]
-    [InlineData("sonnet", "claude-sonnet-4-6")]
-    [InlineData("opus", "claude-opus-4-8")]
-    [InlineData("claude-sonnet", "claude-sonnet-4-6")]
+    [InlineData("sonnet", "claude-sonnet-5-5")]
+    [InlineData("opus", "claude-opus-5-5")]
+    [InlineData("haiku", "claude-haiku-5-5")]
+    [InlineData("claude-sonnet", "claude-sonnet-5-5")]
     [InlineData("gpt-5.4", "gpt-5.4")] // unknown-to-map passes through
     [InlineData("gemini-2.5-pro", "gemini-2.5-pro")] // passes through
     public async Task RecordRun_normalises_model_id(string input, string expected)

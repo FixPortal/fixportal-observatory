@@ -297,11 +297,12 @@ export interface AdversarialReviewStats {
   model: string
   role: ReviewRole
   runCount: number
-  avgCostPerRun: number
+  avgCostPerRun: number | null
   avgIssuesRaised: number
   avgIssuesAccepted: number
   avgCostPerAcceptedFinding: number | null
   avgDurationMs: number
+  unknownCostRuns: number
 }
 
 export const getAdversarialReviewRuns = () =>

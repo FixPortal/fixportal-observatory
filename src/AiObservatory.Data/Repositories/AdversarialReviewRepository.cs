@@ -64,6 +64,7 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
                         .SetProperty(r => r.InputTokens, run.InputTokens)
                         .SetProperty(r => r.OutputTokens, run.OutputTokens)
                         .SetProperty(r => r.CostUsd, run.CostUsd)
+                        .SetProperty(r => r.CostUnknown, run.CostUnknown)
                         .SetProperty(r => r.ReviewDurationMs, run.ReviewDurationMs)
                         .SetProperty(r => r.IssuesRaised, run.IssuesRaised)
                         .SetProperty(r => r.IssuesAccepted, run.IssuesAccepted)
@@ -97,27 +98,39 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
         var runs = await ctx.AdversarialReviewRuns.AsNoTracking().ToListAsync(ct);
 
         return runs.GroupBy(r => (r.Reviewer, r.Model, r.Role))
-            .Select(g => new AdversarialReviewStats(
-                g.Key.Reviewer,
-                g.Key.Model,
-                g.Key.Role,
-                g.Count(),
-                g.Average(r => r.CostUsd),
-                g.Average(r => (double)r.IssuesRaised),
-                g.Average(r => (double)r.IssuesAccepted),
-                // Ratio of sums (total cost / total accepted), not a mean of each run's own
-                // ratio — the latter weights a 1-finding run the same as a 50-finding run and
-                // reads as inconsistent against avgCostPerRun / avgIssuesAccepted in the same
-                // row. Null only when every run in the group had zero accepted findings.
-                g.Sum(r => r.IssuesAccepted) > 0
-                    ? g.Sum(r => r.CostUsd) / g.Sum(r => r.IssuesAccepted)
-                    : null,
-                g.Average(r => (double)r.ReviewDurationMs)
-            ))
+            .Select(ToStats)
             .OrderBy(s => s.Reviewer)
             .ThenBy(s => s.Model)
             .ThenBy(s => s.Role)
             .ToList();
+    }
+
+    private static AdversarialReviewStats ToStats(
+        IGrouping<(string Reviewer, string Model, string Role), AdversarialReviewRun> g
+    )
+    {
+        // Cost figures use only runs whose cost is known: an unknown cost is stored as 0 and
+        // would otherwise drag the average down and make the reviewer look free.
+        var known = g.Where(r => !r.CostUnknown).ToList();
+        var knownAccepted = known.Sum(r => r.IssuesAccepted);
+        return new AdversarialReviewStats(
+            g.Key.Reviewer,
+            g.Key.Model,
+            g.Key.Role,
+            g.Count(),
+            known.Count > 0 ? known.Average(r => r.CostUsd) : null,
+            g.Average(r => (double)r.IssuesRaised),
+            g.Average(r => (double)r.IssuesAccepted),
+            // Ratio of sums (total cost / total accepted), not a mean of each run's own
+            // ratio — the latter weights a 1-finding run the same as a 50-finding run and
+            // reads as inconsistent against avgCostPerRun / avgIssuesAccepted in the same
+            // row. Null when no known-cost run accepted a finding.
+            knownAccepted > 0
+                ? known.Sum(r => r.CostUsd) / knownAccepted
+                : null,
+            g.Average(r => (double)r.ReviewDurationMs),
+            g.Count(r => r.CostUnknown)
+        );
     }
 
     public Task<int> DeleteAllRunsAsync(CancellationToken ct = default) =>

@@ -21,6 +21,9 @@ public sealed class AdversarialReviewRun
     public long InputTokens { get; init; }
     public long OutputTokens { get; init; }
     public decimal CostUsd { get; init; }
+
+    /// <summary>True when the reviewer's cost could not be measured; CostUsd is then 0 and must not be averaged.</summary>
+    public bool CostUnknown { get; init; }
     public long ReviewDurationMs { get; init; }
     public int IssuesRaised { get; init; }
     public int IssuesAccepted { get; init; }

@@ -28,26 +28,31 @@ export function filterStats(
 // sort last in BOTH directions (same convention as githubSort's turnaroundHours), so this
 // bakes in `direction` itself rather than going through the uniform asc/desc flip below:
 // flipping a "null sorts last" comparison for desc would put nulls first instead.
-function compareNullableCostPerFinding(
+// avgCostPerRun is likewise null when every run in the group had an unknown cost.
+type NullableCostField = 'avgCostPerRun' | 'avgCostPerAcceptedFinding'
+
+function compareNullableCost(
+  field: NullableCostField,
   a: AdversarialReviewStats,
   b: AdversarialReviewStats,
   direction: SortDirection,
 ): number {
-  if (a.avgCostPerAcceptedFinding == null && b.avgCostPerAcceptedFinding == null) return 0
-  if (a.avgCostPerAcceptedFinding == null) return 1
-  if (b.avgCostPerAcceptedFinding == null) return -1
-  const comparison = a.avgCostPerAcceptedFinding - b.avgCostPerAcceptedFinding
+  const x = a[field]
+  const y = b[field]
+  if (x == null && y == null) return 0
+  if (x == null) return 1
+  if (y == null) return -1
+  const comparison = x - y
   return direction === 'asc' ? comparison : -comparison
 }
 
 const STATS_COMPARATORS: Record<
-  Exclude<StatsSortField, 'avgCostPerAcceptedFinding'>,
+  Exclude<StatsSortField, NullableCostField>,
   (a: AdversarialReviewStats, b: AdversarialReviewStats) => number
 > = {
   reviewer: (a, b) => a.reviewer.localeCompare(b.reviewer),
   model: (a, b) => a.model.localeCompare(b.model),
   runCount: (a, b) => a.runCount - b.runCount,
-  avgCostPerRun: (a, b) => a.avgCostPerRun - b.avgCostPerRun,
   avgIssuesRaised: (a, b) => a.avgIssuesRaised - b.avgIssuesRaised,
   avgIssuesAccepted: (a, b) => a.avgIssuesAccepted - b.avgIssuesAccepted,
   avgDurationMs: (a, b) => a.avgDurationMs - b.avgDurationMs,
@@ -58,8 +63,8 @@ export function sortStats(
   field: StatsSortField,
   direction: SortDirection,
 ): AdversarialReviewStats[] {
-  if (field === 'avgCostPerAcceptedFinding') {
-    return stats.toSorted((a, b) => compareNullableCostPerFinding(a, b, direction))
+  if (field === 'avgCostPerAcceptedFinding' || field === 'avgCostPerRun') {
+    return stats.toSorted((a, b) => compareNullableCost(field, a, b, direction))
   }
   const compare = STATS_COMPARATORS[field]
   return stats.toSorted((a, b) => (direction === 'asc' ? compare(a, b) : -compare(a, b)))

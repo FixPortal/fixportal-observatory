@@ -58,6 +58,17 @@ function formatCost(n: number | null | undefined, estimated = false): string {
   if (n == null) return '—'
   return `${estimated ? '~' : ''}$${bankersRound(n, 2).toFixed(2)}`
 }
+// A group with no known-cost run has no cost to show: say so rather than "—" or $0. When some
+// runs were excluded from the average, say how many.
+function formatStatCost(
+  n: number | null | undefined,
+  s: Pick<AdversarialReviewStats, 'runCount' | 'unknownCostRuns'>,
+  estimated = false,
+): string {
+  if (s.unknownCostRuns >= s.runCount) return 'Unknown'
+  const text = formatCost(n, estimated)
+  return s.unknownCostRuns > 0 ? `${text} (${s.unknownCostRuns} unknown excluded)` : text
+}
 function formatCount(n: number | null | undefined): string {
   if (n == null) return '—'
   return `${bankersRound(n, 0)}`
@@ -222,12 +233,16 @@ function StatsTable({ stats, isLoading, isError }: StatsTableProps) {
                   <td>{s.model}</td>
                   <td>{s.runCount}</td>
                   <td title={isPutativeCost(s.reviewer) ? PUTATIVE_NOTE : undefined}>
-                    {formatCost(s.avgCostPerRun, isPutativeCost(s.reviewer))}
+                    {formatStatCost(s.avgCostPerRun, s, isPutativeCost(s.reviewer))}
                   </td>
                   <td>{formatCount(s.avgIssuesRaised)}</td>
                   <td>{formatCount(s.avgIssuesAccepted)}</td>
                   <td title={isPutativeCost(s.reviewer) ? PUTATIVE_NOTE : undefined}>
-                    {formatCost(s.avgCostPerAcceptedFinding, isPutativeCost(s.reviewer))}
+                    {formatStatCost(
+                      s.avgCostPerAcceptedFinding,
+                      s,
+                      isPutativeCost(s.reviewer),
+                    )}
                   </td>
                   <td>{formatMinutes(s.avgDurationMs)}</td>
                 </tr>

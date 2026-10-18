@@ -73,6 +73,37 @@ beforeEach(() => {
   deleteAdversarialReviewRun.mockClear()
 })
 
+describe('AdversarialReviewPanel unknown cost', () => {
+  const stat = (p: Partial<AdversarialReviewStats>): AdversarialReviewStats => ({
+    reviewer: 'zai',
+    model: 'glm',
+    role: 'reviewer',
+    runCount: 3,
+    avgCostPerRun: null,
+    avgIssuesRaised: 2,
+    avgIssuesAccepted: 1,
+    avgCostPerAcceptedFinding: null,
+    avgDurationMs: 1000,
+    unknownCostRuns: 3,
+    ...p,
+  })
+
+  test('an all-unknown group renders Unknown, never $0.00', () => {
+    data.stats = [stat({})]
+    renderPanel()
+
+    expect(screen.getAllByText('Unknown')).toHaveLength(2)
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
+  })
+
+  test('a partly-unknown group shows the excluded run count', () => {
+    data.stats = [stat({ avgCostPerRun: 2, avgCostPerAcceptedFinding: 2, unknownCostRuns: 1 })]
+    renderPanel()
+
+    expect(screen.getAllByText('$2.00 (1 unknown excluded)')).toHaveLength(2)
+  })
+})
+
 describe('AdversarialReviewPanel loading state', () => {
   test('shows loading text instead of the empty-state while queries are pending', () => {
     data.statsLoading = true
