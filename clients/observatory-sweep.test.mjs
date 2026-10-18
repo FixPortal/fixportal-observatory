@@ -118,6 +118,9 @@ for (const [modelProvider, model, expected] of [
   ['openai', 'gpt-6-sol', 'OpenAI'],
   [null, 'gpt-5.4', 'OpenAI'],
   [null, 'mystery-1', null],
+  ['ZAI', 'mystery', 'Zai'],
+  ['ollama', 'gpt-oss', null], // a present but unrecognised provider is never placed by model name
+  ['', 'gpt-5.4', 'OpenAI'],
 ]) {
   test(`codexProvider(${modelProvider}, ${model}) is ${expected}`, () => {
     assert.equal(codexProvider(modelProvider, model), expected)
@@ -134,6 +137,11 @@ test('buildDailySnapshots attributes Codex sessions by model provider and drops 
   assert.deepEqual(
     snapshots.map(s => [s.model, s.provider, s.costBasis]),
     [['deepseek-flash', 'DeepSeek', 'listPriceEstimate'], ['glm-5.3-flash', 'Zai', 'notional'], ['gpt-5.4', 'OpenAI', 'notional']],
+  )
+  // DeepSeek is pay-as-you-go API credit; GLM and Codex stay subscription.
+  assert.deepEqual(
+    snapshots.map(s => [s.provider, s.usageScope]),
+    [['DeepSeek', 'api'], ['Zai', 'subscription'], ['OpenAI', 'subscription']],
   )
   assert.ok(snapshots.every(s => s.sourceId === 'codex-local@test-machine' && s.runtime === 'codex'))
 })

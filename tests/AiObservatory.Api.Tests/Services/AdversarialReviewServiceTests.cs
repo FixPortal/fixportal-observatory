@@ -91,6 +91,33 @@ public class AdversarialReviewServiceTests
             );
     }
 
+    [Theory]
+    [InlineData(0, true, false)] // a zero cost is not a measurement
+    [InlineData(0.5, false, true)] // 0.5 / 3 accepted
+    public async Task RecordRun_treats_a_zero_cost_as_unknown_and_a_positive_cost_as_known(
+        double costRaw,
+        bool expectedUnknown,
+        bool expectPerFinding
+    )
+    {
+        decimal? expectedPerFinding = expectPerFinding ? 0.5m / 3m : null;
+        _repo
+            .RecordRunAsync(Arg.Any<AdversarialReviewRun>(), Arg.Any<CancellationToken>())
+            .Returns((Guid.NewGuid(), Existed: false));
+
+        await CreateSut()
+            .RecordRunAsync(ValidRequest(costUsd: (decimal)costRaw, issuesAccepted: 3), CancellationToken.None);
+
+        await _repo
+            .Received(1)
+            .RecordRunAsync(
+                Arg.Is<AdversarialReviewRun>(r =>
+                    r != null && r.CostUnknown == expectedUnknown && r.CostPerAcceptedFinding == expectedPerFinding
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     [Fact]
     public async Task RecordRun_existing_participant_returns_ok_corrected_in_place()
     {
@@ -287,13 +314,10 @@ public class AdversarialReviewServiceTests
     }
 
     [Theory]
-    [InlineData("sonnet", "claude-sonnet-5-5")]
-    [InlineData("opus", "claude-opus-5-5")]
-    [InlineData("haiku", "claude-haiku-5-5")]
-    [InlineData("claude-sonnet", "claude-sonnet-5-5")]
-    [InlineData("gpt-5.4", "gpt-5.4")] // unknown-to-map passes through
-    [InlineData("gemini-2.5-pro", "gemini-2.5-pro")] // passes through
-    public async Task RecordRun_normalises_model_id(string input, string expected)
+    [InlineData("  claude-sonnet-4-6 ", "claude-sonnet-4-6")]
+    [InlineData("sonnet", "sonnet")] // bare aliases are stored as sent
+    [InlineData("gpt-5.4", "gpt-5.4")]
+    public async Task RecordRun_stores_model_trimmed_as_sent(string input, string expected)
     {
         _repo
             .RecordRunAsync(Arg.Any<AdversarialReviewRun>(), Arg.Any<CancellationToken>())
@@ -305,26 +329,6 @@ public class AdversarialReviewServiceTests
             .Received(1)
             .RecordRunAsync(
                 Arg.Is<AdversarialReviewRun>(r => r != null && r.Model == expected),
-                Arg.Any<CancellationToken>()
-            );
-    }
-
-    [Theory]
-    [InlineData("sonnet")] // non-anthropic reviewer must NOT get the alias resolved
-    [InlineData("opus")]
-    [InlineData("haiku")]
-    public async Task RecordRun_does_not_alias_bare_model_for_non_anthropic_reviewer(string model)
-    {
-        _repo
-            .RecordRunAsync(Arg.Any<AdversarialReviewRun>(), Arg.Any<CancellationToken>())
-            .Returns((Guid.NewGuid(), Existed: false));
-
-        await CreateSut().RecordRunAsync(ValidRequest(reviewer: "openai", model: model), CancellationToken.None);
-
-        await _repo
-            .Received(1)
-            .RecordRunAsync(
-                Arg.Is<AdversarialReviewRun>(r => r != null && r.Model == model),
                 Arg.Any<CancellationToken>()
             );
     }

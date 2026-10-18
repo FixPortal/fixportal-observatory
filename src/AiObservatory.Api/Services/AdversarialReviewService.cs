@@ -10,29 +10,6 @@ namespace AiObservatory.Api.Services;
 
 public class AdversarialReviewService(IAdversarialReviewRepository repo, IClock clock)
 {
-    private static readonly Dictionary<string, string> ModelAliases = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["sonnet"] = "claude-sonnet-5-5",
-        ["claude-sonnet"] = "claude-sonnet-5-5",
-        ["opus"] = "claude-opus-5-5",
-        ["claude-opus"] = "claude-opus-5-5",
-        ["haiku"] = "claude-haiku-5-5",
-        ["claude-haiku"] = "claude-haiku-5-5",
-    };
-
-    // Aliases are Anthropic short-names; only resolve them for the anthropic
-    // reviewer so a non-Anthropic run posting "opus"/"sonnet"/"haiku" is not
-    // silently rewritten to a claude-* model id.
-    private static string NormalizeModel(string model, string reviewer)
-    {
-        var trimmed = model.Trim();
-        if (reviewer != "anthropic")
-        {
-            return trimmed;
-        }
-        return ModelAliases.GetValueOrDefault(trimmed, trimmed);
-    }
-
     private const int SummaryMaxLength = 80;
 
     private static bool IsReviewerSlug(string reviewer) =>
@@ -143,17 +120,19 @@ public class AdversarialReviewService(IAdversarialReviewRepository repo, IClock 
             return Results.BadRequest("ChunkCount must be positive when supplied");
         }
 
+        // A zero cost is not a measurement (subscription or missing telemetry), so it is unknown, not free.
+        var costUnknown = req.CostUnknown || req.CostUsd == 0m;
         decimal? costPerAcceptedFinding =
-            req.IssuesAccepted > 0 && !req.CostUnknown ? req.CostUsd / req.IssuesAccepted : null;
+            req.IssuesAccepted > 0 && !costUnknown ? req.CostUsd / req.IssuesAccepted : null;
 
         var run = new AdversarialReviewRun
         {
             Reviewer = reviewer,
-            Model = NormalizeModel(req.Model, reviewer),
+            Model = req.Model.Trim(),
             InputTokens = req.InputTokens,
             OutputTokens = req.OutputTokens,
             CostUsd = req.CostUsd,
-            CostUnknown = req.CostUnknown,
+            CostUnknown = costUnknown,
             ReviewDurationMs = req.ReviewDurationMs,
             IssuesRaised = req.IssuesRaised,
             IssuesAccepted = req.IssuesAccepted,

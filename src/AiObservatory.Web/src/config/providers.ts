@@ -140,7 +140,7 @@ export const PROVIDERS = [
       color: 'var(--provider-zai)',
       background: 'color-mix(in srgb, var(--provider-zai) 12%, transparent)',
     },
-    sources: [{ id: 'zai-pricing', displayName: 'z.AI pricing', setupHref: SETUP_HREF }],
+    sources: [],
   },
   {
     key: 'deepseek',
@@ -150,7 +150,7 @@ export const PROVIDERS = [
       color: 'var(--provider-deepseek)',
       background: 'color-mix(in srgb, var(--provider-deepseek) 12%, transparent)',
     },
-    sources: [{ id: 'deepseek-pricing', displayName: 'DeepSeek pricing', setupHref: SETUP_HREF }],
+    sources: [],
   },
 ] satisfies ProviderConfig[]
 

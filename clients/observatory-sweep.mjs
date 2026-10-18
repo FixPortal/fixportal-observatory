@@ -510,10 +510,10 @@ const CODEX_MODEL_PREFIXES = [
   ['gpt-', 'OpenAI'], ['o1', 'OpenAI'], ['o3', 'OpenAI'], ['o4', 'OpenAI'], ['codex', 'OpenAI'],
 ]
 
-/** Codex fronts several vendors: trust the session's model_provider, else the model-name prefix. */
+/** Codex fronts several vendors: trust the session's model_provider; use the model-name prefix only when it is absent. */
 export function codexProvider(modelProvider, model) {
-  const byId = CODEX_PROVIDER_IDS[String(modelProvider ?? '').toLowerCase()]
-  if (byId) { return byId }
+  const id = String(modelProvider ?? '').toLowerCase()
+  if (id) { return CODEX_PROVIDER_IDS[id] ?? null }
   const normalized = String(model ?? '').toLowerCase()
   return CODEX_MODEL_PREFIXES.find(([prefix]) => normalized.startsWith(prefix))?.[1] ?? null
 }
@@ -524,7 +524,12 @@ function sourceMetadata(tool, model, machine, modelProvider) {
       const provider = codexProvider(modelProvider, model)
       if (!provider) { return null }
       const costBasis = provider === 'Zai' ? 'notional' : provider === 'DeepSeek' ? 'listPriceEstimate' : undefined
-      return { provider, sourceId: localSourceId('codex', machine), runtime: 'codex', ...(costBasis ? { costBasis } : {}) }
+      // DeepSeek is pay-as-you-go API credit, not a subscription.
+      const usageScope = provider === 'DeepSeek' ? 'api' : undefined
+      return {
+        provider, sourceId: localSourceId('codex', machine), runtime: 'codex',
+        ...(costBasis ? { costBasis } : {}), ...(usageScope ? { usageScope } : {}),
+      }
     }
     case 'copilot': {
       const normalized = model.toLowerCase()

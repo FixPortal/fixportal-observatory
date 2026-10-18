@@ -117,4 +117,18 @@ public class SpendFeedStatusWafTests(AiObservatoryApiFactory factory) : IClassFi
             .Should()
             .NotContain("vendor-name");
     }
+
+    [Fact]
+    public async Task Null_skipped_entry_is_a_400_not_a_500()
+    {
+        using var body = new StringContent(
+            """{"attempted":1,"posted":0,"skipped":[null]}""",
+            System.Text.Encoding.UTF8,
+            "application/json"
+        );
+
+        var response = await factory.CreateAdminClient().PostAsync(Route, body, TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 }
