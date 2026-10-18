@@ -476,6 +476,70 @@ public class SpendCatalogEndpointsWafTests(AiObservatoryApiFactory factory) : IC
         patch.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [Fact]
+    public async Task PatchVendor_WithProvider_LinksIt_AndOmittingItLeavesTheLinkAlone()
+    {
+        using var client = factory.CreateAdminClient();
+        var (vendorId, _) = await CreateVendorWithDefaultCategoryAsync(client);
+
+        var linked = await client.PatchAsJsonAsync(
+            $"/api/spend/vendors/{vendorId}",
+            new { Provider = "zai" },
+            TestContext.Current.CancellationToken
+        );
+        linked.StatusCode.Should().Be(HttpStatusCode.OK);
+        var linkedBody = await linked.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        linkedBody.GetProperty("provider").GetString().Should().BeEquivalentTo("zai");
+
+        var renamed = await client.PatchAsJsonAsync(
+            $"/api/spend/vendors/{vendorId}",
+            new { DisplayName = "Renamed Only" },
+            TestContext.Current.CancellationToken
+        );
+        renamed.StatusCode.Should().Be(HttpStatusCode.OK);
+        var renamedBody = await renamed.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        renamedBody.GetProperty("provider").GetString().Should().BeEquivalentTo("zai");
+    }
+
+    [Fact]
+    public async Task PatchVendor_WithExplicitNullProvider_ClearsIt()
+    {
+        using var client = factory.CreateAdminClient();
+        var (vendorId, _) = await CreateVendorWithDefaultCategoryAsync(client);
+        var linked = await client.PatchAsJsonAsync(
+            $"/api/spend/vendors/{vendorId}",
+            new { Provider = "deepseek" },
+            TestContext.Current.CancellationToken
+        );
+        var linkedBody = await linked.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        linkedBody.GetProperty("provider").GetString().Should().BeEquivalentTo("deepseek");
+
+        var patch = await client.PatchAsJsonAsync(
+            $"/api/spend/vendors/{vendorId}",
+            new { Provider = (string?)null },
+            TestContext.Current.CancellationToken
+        );
+
+        patch.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await patch.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        body.GetProperty("provider").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task PatchVendor_WithUnknownProvider_IsRejected()
+    {
+        using var client = factory.CreateAdminClient();
+        var (vendorId, _) = await CreateVendorWithDefaultCategoryAsync(client);
+
+        var patch = await client.PatchAsJsonAsync(
+            $"/api/spend/vendors/{vendorId}",
+            new { Provider = "nonsense" },
+            TestContext.Current.CancellationToken
+        );
+
+        patch.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     /// <summary>
     /// The seeded catalog must reach a migrated database intact. Asserted through the API
     /// rather than the model so it covers the migrations too — a HasData edit that never
