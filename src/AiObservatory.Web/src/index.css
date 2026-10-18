@@ -54,6 +54,8 @@
      reaching for another warm hue, which openai and judge already hold. */
   --provider-xai: #4b5563;
   --provider-meta: #4338ca;
+  --provider-zai: #0f766e;
+  --provider-deepseek: #a21caf;
   --provider-other: #64748b;
   --provider-judge: #d97706;
 
@@ -78,6 +80,8 @@
   --provider-moonshot: #a3e635;
   --provider-xai: #cbd5e1;
   --provider-meta: #a5b4fc;
+  --provider-zai: #2dd4bf;
+  --provider-deepseek: #e879f9;
   --provider-other: #94a3b8;
   --provider-judge: #fbbf24;
   --project-1: #c4b5fd;

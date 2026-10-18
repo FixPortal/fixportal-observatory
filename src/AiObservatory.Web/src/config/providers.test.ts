@@ -14,7 +14,17 @@ import { providerColor } from '../theme/providerColors'
 // persist must be renderable here — Moonshot shipped in the enum and in the adversarial
 // review grouping but was missing from PROVIDERS, so its usage rows would have rendered
 // as unnamed grey "other". Keep this list in step with the enum.
-const BACKEND_PROVIDERS = ['anthropic', 'copilot', 'google', 'openai', 'moonshot', 'xai', 'meta']
+const BACKEND_PROVIDERS = [
+  'anthropic',
+  'copilot',
+  'google',
+  'openai',
+  'moonshot',
+  'xai',
+  'meta',
+  'zai',
+  'deepseek',
+]
 
 test('every backend provider has a frontend config entry', () => {
   expect([...PROVIDER_ORDER].sort()).toEqual([...BACKEND_PROVIDERS].sort())
@@ -71,6 +81,8 @@ test('declares every current acquisition and pricing source with public setup gu
     ['xai', 'xai-pricing', 'xAI pricing', setupHref],
     ['meta', 'pi-local', 'PI local', setupHref],
     ['meta', 'meta-openrouter-pricing', 'OpenRouter pricing', setupHref],
+    ['zai', 'zai-pricing', 'z.AI pricing', setupHref],
+    ['deepseek', 'deepseek-pricing', 'DeepSeek pricing', setupHref],
   ])
   expect(getSource('openai-usage-api')?.displayName).toBe('Usage API')
   expect(getSource('missing-source')).toBeUndefined()
@@ -85,6 +97,8 @@ test('keeps known ordering closed while arbitrary provider and source slugs stay
     'moonshot',
     'xai',
     'meta',
+    'zai',
+    'deepseek',
   ])
   expect(getProvider('new-oss-provider')).toBeUndefined()
   expect(providerDisplayName('new-oss-provider')).toBe('New oss provider')
