@@ -1,6 +1,5 @@
 using AiObservatory.Data.Entities;
 using AiObservatory.Data.Pricing.Catalogs;
-using NodaTime;
 
 namespace AiObservatory.Data.Pricing;
 
@@ -8,11 +7,12 @@ namespace AiObservatory.Data.Pricing;
 /// Prices DeepSeek usage from the bundled list catalog. The cache-hit input rate is
 /// <c>CacheRead</c>; cache writes bill as ordinary (cache-miss) input.
 /// <para>
-/// DeepSeek publishes a peak and an off-peak rate (off-peak is half). Peak is 01:00-04:00 and
-/// 06:00-10:00 UTC Monday to Friday, excluding Chinese public holidays. The window is derived
-/// from <c>OccurredAt</c> in UTC. Weekends and weekday hours outside the window are off-peak
-/// whatever the holiday calendar says. A weekday hour inside the window is priced at the peak
-/// rate: no holiday calendar is bundled, so on a Chinese public holiday that is an upper bound.
+/// Every figure is priced at the STANDARD (peak) tier and is therefore an UPPER BOUND.
+/// DeepSeek halves its rates off-peak and on Chinese public holidays, but the sweep posts one
+/// cumulative snapshot per (date, model) whose <c>OccurredAt</c> is only the latest session end
+/// of the group, so the time of day cannot be attributed to the day's tokens. Rating by it
+/// would be off by up to 2x in either direction and could understate; a deterministic ceiling
+/// is preferred. Billed invoices are the truth for DeepSeek.
 /// </para>
 /// </summary>
 public sealed class DeepSeekPriceCalculator : IProviderPriceCalculator
@@ -35,30 +35,14 @@ public sealed class DeepSeekPriceCalculator : IProviderPriceCalculator
             return null;
         }
 
-        var peak = IsPeak(usage.OccurredAt);
-        var inputRate = peak ? entry.Input : entry.OffPeakInput;
-        var outputRate = peak ? entry.Output : entry.OffPeakOutput;
-        var cacheRate = peak ? entry.CacheRead : entry.OffPeakCacheRead;
-
         var cacheRead = usage.CacheReadTokens ?? 0;
         var uncached = usage.InputTokens + (usage.CacheWriteTokens ?? 0);
         var cost =
-            PerMillion(uncached, inputRate)
-            + PerMillion(cacheRead, cacheRate)
-            + PerMillion(usage.OutputTokens, outputRate);
-        var savings = PerMillion(cacheRead, inputRate - cacheRate);
+            PerMillion(uncached, entry.Input)
+            + PerMillion(cacheRead, entry.CacheRead)
+            + PerMillion(usage.OutputTokens, entry.Output);
+        var savings = PerMillion(cacheRead, entry.Input - entry.CacheRead);
         return new UsagePriceQuote(cost, savings);
-    }
-
-    private static bool IsPeak(Instant occurredAt)
-    {
-        var utc = occurredAt.InUtc();
-        if (utc.DayOfWeek is IsoDayOfWeek.Saturday or IsoDayOfWeek.Sunday)
-        {
-            return false;
-        }
-
-        return utc.Hour is >= 1 and < 4 or >= 6 and < 10;
     }
 
     private static decimal PerMillion(long tokens, decimal rate) => tokens / 1_000_000m * rate;

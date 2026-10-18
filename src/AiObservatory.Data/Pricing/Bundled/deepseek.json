@@ -9,10 +9,7 @@
       "effectiveDateIsProviderDeclared": false,
       "input": 0.3,
       "output": 1.2,
-      "cacheRead": 0.006,
-      "offPeakInput": 0.15,
-      "offPeakOutput": 0.6,
-      "offPeakCacheRead": 0.003
+      "cacheRead": 0.006
     },
     {
       "model": "deepseek-v4-pro",
@@ -20,10 +17,7 @@
       "effectiveDateIsProviderDeclared": false,
       "input": 1.32,
       "output": 3.96,
-      "cacheRead": 0.044,
-      "offPeakInput": 0.66,
-      "offPeakOutput": 1.98,
-      "offPeakCacheRead": 0.022
+      "cacheRead": 0.044
     }
   ]
 }
