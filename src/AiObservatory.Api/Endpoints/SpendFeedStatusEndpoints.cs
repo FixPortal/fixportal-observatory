@@ -75,6 +75,10 @@ public static class SpendFeedStatusEndpoints
         {
             return $"skipped must have at most {MaxSkipped} entries";
         }
+        if (req.Skipped.Any(s => s is null))
+        {
+            return "skipped entries must not be null";
+        }
         if (req.Skipped.Any(s => s.ExpenseId <= 0))
         {
             return "expenseId must be positive";

@@ -57,6 +57,12 @@ public class SpendFeedStatusTests
     }
 
     [Fact]
+    public void Validate_rejects_a_null_skipped_entry()
+    {
+        SpendFeedStatusEndpoints.Validate(new SpendFeedStatusRequest(1, 0, [null!])).Should().Contain("skipped");
+    }
+
+    [Fact]
     public void DescribeSkips_counts_reasons_largest_first_and_carries_nothing_else()
     {
         var text = SpendFeedStatusEndpoints.DescribeSkips([

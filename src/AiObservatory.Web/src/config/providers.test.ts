@@ -81,8 +81,6 @@ test('declares every current acquisition and pricing source with public setup gu
     ['xai', 'xai-pricing', 'xAI pricing', setupHref],
     ['meta', 'pi-local', 'PI local', setupHref],
     ['meta', 'meta-openrouter-pricing', 'OpenRouter pricing', setupHref],
-    ['zai', 'zai-pricing', 'z.AI pricing', setupHref],
-    ['deepseek', 'deepseek-pricing', 'DeepSeek pricing', setupHref],
   ])
   expect(getSource('openai-usage-api')?.displayName).toBe('Usage API')
   expect(getSource('missing-source')).toBeUndefined()

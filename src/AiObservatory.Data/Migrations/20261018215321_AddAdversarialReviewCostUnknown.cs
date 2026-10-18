@@ -18,9 +18,9 @@ namespace AiObservatory.Data.Migrations
                 defaultValue: false
             );
 
-            // The z.AI wrapper has never produced a real cost; its stored zeros are unknown, not free.
+            // A recorded cost of exactly zero was never a measurement for these runs (subscription or no telemetry): unknown, not free.
             migrationBuilder.Sql(
-                "UPDATE \"AdversarialReviewRuns\" SET \"CostUnknown\" = true, \"CostPerAcceptedFinding\" = NULL WHERE \"Reviewer\" = 'zai';"
+                "UPDATE \"AdversarialReviewRuns\" SET \"CostUnknown\" = true, \"CostPerAcceptedFinding\" = NULL WHERE \"CostUsd\" = 0;"
             );
         }
 

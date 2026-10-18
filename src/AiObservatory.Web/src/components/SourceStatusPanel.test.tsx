@@ -14,6 +14,9 @@ vi.mock('../api/queries', () => ({ useSourceStatuses: () => data }))
 const REGISTRY_SOURCE_COUNT =
   PROVIDERS.reduce((n, provider) => n + provider.sources.length, 0) + NON_PROVIDER_SOURCES.length
 
+// The test supplies five statuses (fresh, configured, stale, failing, unavailable); every other source reads not connected.
+const REPORTING_OR_FLAGGED = 5
+
 const status = (overrides: Partial<SourceStatusResponse>): SourceStatusResponse => ({
   sourceId: 'openai-usage-api',
   status: 'fresh',
@@ -87,7 +90,7 @@ test('maps all statuses, shows failure evidence, and uses native time/details/li
   const panelButton = screen.getByRole('button', { name: /Data sources/ })
   expect(panelButton).toHaveAttribute('aria-expanded', 'false')
   expect(
-    screen.getByText(`1 reporting · ${REGISTRY_SOURCE_COUNT - 5} not connected · 3 need attention`),
+    screen.getByText(`1 reporting · ${REGISTRY_SOURCE_COUNT - REPORTING_OR_FLAGGED} not connected · 3 need attention`),
   ).toBeInTheDocument()
   expect(
     screen.getByText(/Collection health for optional APIs and local telemetry/i),
