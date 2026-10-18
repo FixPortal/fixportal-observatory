@@ -29,7 +29,7 @@ const LOCAL_SOURCE_IDS = {
 // every file. Never bump alone: after the wipe an unreadable file has no cached
 // records, so scanRecords flags its source incomplete and main withholds that
 // source's corrections and tombstones until a complete scan succeeds.
-const PARSE_CACHE_VERSION = 4
+const PARSE_CACHE_VERSION = 5
 // Gemini Developer API standard-tier pricing changes above this documented prompt-token threshold.
 const GEMINI_LONG_CONTEXT_THRESHOLD = 200_000
 // The Grok CLI records each turn's cost as an integer tick count rather than a decimal. The
@@ -118,6 +118,7 @@ export async function observatoryFetch(url, apiKey, options = {}) {
  */
 export function parseCodex(content) {
   let model = null
+  let modelProvider = null
   let total = null
   let reasoning = 0
   let endedAt = null
@@ -127,6 +128,7 @@ export function parseCodex(content) {
     try { row = JSON.parse(line) } catch { continue }
     if (!row || typeof row !== 'object') { continue }
     const payload = row.payload
+    if (row.type === 'session_meta' && typeof payload?.model_provider === 'string') { modelProvider = payload.model_provider }
     if (row.type === 'turn_context' && payload?.model) { model = payload.model }
     if (payload?.type === 'token_count' && payload.info?.total_token_usage && isoTimestamp(row.timestamp)) {
       total = payload.info.total_token_usage
@@ -138,6 +140,7 @@ export function parseCodex(content) {
   const cacheRead = token(total.cached_input_tokens)
   return {
     model: model ?? 'gpt-5',
+    modelProvider,
     cum: {
       input: Math.max(0, token(total.input_tokens) - cacheRead),
       output: token(total.output_tokens),
@@ -499,9 +502,28 @@ function localSourceId(tool, machine) {
   return `${LOCAL_SOURCE_IDS[tool]}@${machineLabel(machine)}`
 }
 
-function sourceMetadata(tool, model, machine) {
+const CODEX_PROVIDER_IDS = { openai: 'OpenAI', zai: 'Zai', deepseek: 'DeepSeek' }
+const CODEX_MODEL_PREFIXES = [
+  ['glm-', 'Zai'], ['deepseek', 'DeepSeek'],
+  ['gpt-', 'OpenAI'], ['o1', 'OpenAI'], ['o3', 'OpenAI'], ['o4', 'OpenAI'], ['codex', 'OpenAI'],
+]
+
+/** Codex fronts several vendors: trust the session's model_provider, else the model-name prefix. */
+export function codexProvider(modelProvider, model) {
+  const byId = CODEX_PROVIDER_IDS[String(modelProvider ?? '').toLowerCase()]
+  if (byId) { return byId }
+  const normalized = String(model ?? '').toLowerCase()
+  return CODEX_MODEL_PREFIXES.find(([prefix]) => normalized.startsWith(prefix))?.[1] ?? null
+}
+
+function sourceMetadata(tool, model, machine, modelProvider) {
   switch (tool) {
-    case 'codex': return { provider: 'OpenAI', sourceId: localSourceId('codex', machine), runtime: 'codex' }
+    case 'codex': {
+      const provider = codexProvider(modelProvider, model)
+      if (!provider) { return null }
+      const costBasis = provider === 'Zai' ? 'notional' : provider === 'DeepSeek' ? 'listPriceEstimate' : undefined
+      return { provider, sourceId: localSourceId('codex', machine), runtime: 'codex', ...(costBasis ? { costBasis } : {}) }
+    }
     case 'copilot': {
       const normalized = model.toLowerCase()
       const provider = ['gpt-5.6-sol', 'gpt-5.4'].some(prefix => normalized.startsWith(prefix))
@@ -579,7 +601,7 @@ function deduplicateClaudeRecords(records) {
 export function buildDailySnapshots(records, machine) {
   const groups = new Map()
   for (const record of deduplicateClaudeRecords(records)) {
-    const metadata = sourceMetadata(record.tool, record.model, machine)
+    const metadata = sourceMetadata(record.tool, record.model, machine, record.modelProvider)
     if (!metadata || !record.date || !record.model) { continue }
 
     const tier = record.serviceTier ?? 'unknown'
@@ -955,6 +977,7 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
         tool: 'codex',
         date: occurredAtUtc.slice(0, 10),
         model: parsed.model,
+        modelProvider: parsed.modelProvider,
         occurredAtUtc,
         cum: parsed.cum,
         thoughtTokens: parsed.reasoning,

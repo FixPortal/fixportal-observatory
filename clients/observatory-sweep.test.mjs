@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import * as sweep from './observatory-sweep.mjs'
 import {
-  parseCodex, parseCopilot, parseClaude, parseKimi, parseGrok, parsePi,
+  parseCodex, codexProvider, parseCopilot, parseClaude, parseKimi, parseGrok, parsePi,
   buildDailySnapshots, updateFileCache, parseLocalSources, listJsonl,
   planSnapshotSubmissions, scanRecords, observatoryUrl, observatoryFetch,
   machineLabel,
@@ -97,6 +97,45 @@ test('parseCodex returns null when no token_count is present', () => {
 test('parseCodex defaults the model when no turn_context carries one', () => {
   const line = JSON.stringify({ timestamp: '2026-08-24T12:00:00Z', type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5 } } } })
   assert.equal(parseCodex(line).model, 'gpt-5')
+})
+
+test('parseCodex reads model_provider from the session_meta row', () => {
+  const lines = [
+    JSON.stringify({ type: 'session_meta', payload: { model_provider: 'ZAI' } }),
+    JSON.stringify({ type: 'turn_context', payload: { model: 'glm-5.3-flash' } }),
+    JSON.stringify({ timestamp: '2026-08-24T12:00:00Z', type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 10, output_tokens: 5 } } } }),
+  ].join('\n')
+
+  assert.equal(parseCodex(lines).modelProvider, 'ZAI')
+  assert.equal(parseCodex(lines.split('\n').slice(1).join('\n')).modelProvider, null)
+})
+
+for (const [modelProvider, model, expected] of [
+  ['ZAI', 'glm-5.3-flash', 'Zai'],
+  ['deepseek', 'deepseek-flash', 'DeepSeek'],
+  [null, 'glm-5.3', 'Zai'],
+  [null, 'deepseek-flash', 'DeepSeek'],
+  ['openai', 'gpt-6-sol', 'OpenAI'],
+  [null, 'gpt-5.4', 'OpenAI'],
+  [null, 'mystery-1', null],
+]) {
+  test(`codexProvider(${modelProvider}, ${model}) is ${expected}`, () => {
+    assert.equal(codexProvider(modelProvider, model), expected)
+  })
+}
+
+test('buildDailySnapshots attributes Codex sessions by model provider and drops unknown ones', () => {
+  const record = (model, modelProvider) => ({ tool: 'codex', date: '2026-08-24', model, modelProvider, occurredAtUtc: '2026-08-24T12:00:00Z', cum: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0 } })
+
+  const snapshots = buildDailySnapshots([
+    record('glm-5.3-flash', 'ZAI'), record('deepseek-flash', 'deepseek'), record('gpt-5.4', 'openai'), record('mystery-1', 'other'),
+  ], TEST_MACHINE)
+
+  assert.deepEqual(
+    snapshots.map(s => [s.model, s.provider, s.costBasis]),
+    [['deepseek-flash', 'DeepSeek', 'listPriceEstimate'], ['glm-5.3-flash', 'Zai', 'notional'], ['gpt-5.4', 'OpenAI', 'notional']],
+  )
+  assert.ok(snapshots.every(s => s.sourceId === 'codex-local@test-machine' && s.runtime === 'codex'))
 })
 
 test('parseCodex ignores valid JSON values that are not telemetry objects', () => {
@@ -521,7 +560,7 @@ test('scanRecords rebuilds an unversioned matching-mtime cache instead of reusin
     const { records } = await scanRecords(cfg, state, new Set(['codex']))
 
     assert.deepEqual(records, [])
-    assert.equal(state.parseCacheVersion, 4)
+    assert.equal(state.parseCacheVersion, 5)
     assert.deepEqual(state.files.codex[path].records, [])
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -582,7 +621,7 @@ test('scanRecords handles transcript histories larger than the engine argument l
   }
   const files = Array.from({ length: 200 }, (_, index) => ({ path: `claude-${index}.jsonl`, mtimeMs: 1 }))
   const state = {
-    parseCacheVersion: 4,
+    parseCacheVersion: 5,
     files: {
       claude: Object.fromEntries(files.map(file => [file.path, {
         mtimeMs: file.mtimeMs,
@@ -1034,7 +1073,7 @@ test('scanRecords reparses a version-2 cache instead of reusing its stale record
 
     assert.deepEqual(records, [])
     assert.deepEqual([...incompleteSources], [])
-    assert.equal(state.parseCacheVersion, 4)
+    assert.equal(state.parseCacheVersion, 5)
     assert.deepEqual(state.files.codex[path].records, [])
   } finally {
     await rm(root, { recursive: true, force: true })
