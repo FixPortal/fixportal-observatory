@@ -12,12 +12,12 @@ public class AdversarialReviewService(IAdversarialReviewRepository repo, IClock 
 {
     private static readonly Dictionary<string, string> ModelAliases = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["sonnet"] = "claude-sonnet-4-6",
-        ["claude-sonnet"] = "claude-sonnet-4-6",
-        ["opus"] = "claude-opus-4-8",
-        ["claude-opus"] = "claude-opus-4-8",
-        ["haiku"] = "claude-haiku-4-5",
-        ["claude-haiku"] = "claude-haiku-4-5",
+        ["sonnet"] = "claude-sonnet-5-5",
+        ["claude-sonnet"] = "claude-sonnet-5-5",
+        ["opus"] = "claude-opus-5-5",
+        ["claude-opus"] = "claude-opus-5-5",
+        ["haiku"] = "claude-haiku-5-5",
+        ["claude-haiku"] = "claude-haiku-5-5",
     };
 
     // Aliases are Anthropic short-names; only resolve them for the anthropic
@@ -143,7 +143,8 @@ public class AdversarialReviewService(IAdversarialReviewRepository repo, IClock 
             return Results.BadRequest("ChunkCount must be positive when supplied");
         }
 
-        decimal? costPerAcceptedFinding = req.IssuesAccepted > 0 ? req.CostUsd / req.IssuesAccepted : null;
+        decimal? costPerAcceptedFinding =
+            req.IssuesAccepted > 0 && !req.CostUnknown ? req.CostUsd / req.IssuesAccepted : null;
 
         var run = new AdversarialReviewRun
         {
@@ -152,6 +153,7 @@ public class AdversarialReviewService(IAdversarialReviewRepository repo, IClock 
             InputTokens = req.InputTokens,
             OutputTokens = req.OutputTokens,
             CostUsd = req.CostUsd,
+            CostUnknown = req.CostUnknown,
             ReviewDurationMs = req.ReviewDurationMs,
             IssuesRaised = req.IssuesRaised,
             IssuesAccepted = req.IssuesAccepted,
@@ -189,5 +191,6 @@ public record AdversarialReviewRunRequest(
     string Role,
     string? Repo,
     string? Summary = null,
-    int? ChunkCount = null
+    int? ChunkCount = null,
+    bool CostUnknown = false
 );

@@ -19,6 +19,7 @@ const stat = (overrides: Partial<AdversarialReviewStats>): AdversarialReviewStat
   avgIssuesAccepted: 1,
   avgCostPerAcceptedFinding: 1,
   avgDurationMs: 1000,
+  unknownCostRuns: 0,
   ...overrides,
 })
 

@@ -65,10 +65,12 @@ public class AdversarialReviewRepositoryTests : IAsyncLifetime
         int raised = 3,
         int accepted = 2,
         int? chunkCount = null,
-        Instant? recordedAt = null
+        Instant? recordedAt = null,
+        bool costUnknown = false
     ) =>
         new()
         {
+            CostUnknown = costUnknown,
             RunId = runId,
             Reviewer = reviewer,
             Role = role,
@@ -350,6 +352,50 @@ public class AdversarialReviewRepositoryTests : IAsyncLifetime
         openai.AvgCostPerAcceptedFinding.Should().Be(12.505m / 5);
         openai.AvgCostPerRun.Should().Be(6.2525m);
         openai.AvgIssuesAccepted.Should().Be(2.5);
+    }
+
+    [Fact]
+    public async Task Stats_exclude_unknown_cost_runs_from_cost_averages_and_count_them()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _repo.RecordRunAsync(Run("U1", "zai", "reviewer", "glm", costUsd: 1m, accepted: 1), ct);
+        await _repo.RecordRunAsync(Run("U2", "zai", "reviewer", "glm", costUsd: 3m, accepted: 1), ct);
+        await _repo.RecordRunAsync(
+            Run("U3", "zai", "reviewer", "glm", costUsd: 0m, accepted: 5, costUnknown: true),
+            ct
+        );
+
+        var zai = (await _repo.GetStatsAsync(ct)).Single(s => s.Reviewer == "zai");
+
+        zai.RunCount.Should().Be(3);
+        zai.AvgCostPerRun.Should().Be(2m);
+        zai.AvgCostPerAcceptedFinding.Should().Be(2m);
+        zai.UnknownCostRuns.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Stats_all_unknown_group_has_null_cost_averages()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _repo.RecordRunAsync(Run("V1", "zai", "reviewer", "glm", costUsd: 0m, costUnknown: true), ct);
+        await _repo.RecordRunAsync(Run("V2", "zai", "reviewer", "glm", costUsd: 0m, costUnknown: true), ct);
+
+        var zai = (await _repo.GetStatsAsync(ct)).Single(s => s.Reviewer == "zai");
+
+        zai.AvgCostPerRun.Should().BeNull();
+        zai.AvgCostPerAcceptedFinding.Should().BeNull();
+        zai.UnknownCostRuns.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task UpdateMetrics_overwrites_cost_unknown_on_existing_participant()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _repo.RecordRunAsync(Run("W1", "zai", "reviewer", "glm", costUsd: 0m, costUnknown: true), ct);
+
+        await _repo.RecordRunAsync(Run("W1", "zai", "reviewer", "glm", costUsd: 0.5m), ct);
+
+        (await _repo.GetRunsAsync("W1", ct)).Should().ContainSingle().Which.CostUnknown.Should().BeFalse();
     }
 
     [Fact]

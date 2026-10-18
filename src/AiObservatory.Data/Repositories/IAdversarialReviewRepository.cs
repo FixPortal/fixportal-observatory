@@ -10,11 +10,12 @@ public record AdversarialReviewStats(
     string Model,
     string Role,
     int RunCount,
-    decimal AvgCostPerRun,
+    decimal? AvgCostPerRun,
     double AvgIssuesRaised,
     double AvgIssuesAccepted,
     decimal? AvgCostPerAcceptedFinding,
-    double AvgDurationMs
+    double AvgDurationMs,
+    int UnknownCostRuns
 );
 
 public interface IAdversarialReviewRepository

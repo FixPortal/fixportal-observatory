@@ -575,6 +575,7 @@ public class AiObservatoryDbContext(DbContextOptions<AiObservatoryDbContext> opt
             b.Property(r => r.Model).HasMaxLength(200).IsRequired();
             b.Property(r => r.Role).HasMaxLength(20).IsRequired().HasDefaultValue("reviewer");
             b.Property(r => r.Repo).HasMaxLength(200);
+            b.Property(r => r.CostUnknown).HasDefaultValue(false);
             b.Property(r => r.Summary).HasMaxLength(80);
             b.Property(r => r.RunId).HasMaxLength(200).IsRequired();
             b.HasIndex(
