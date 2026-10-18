@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { SourceStatusResponse } from '../api/client'
+import { NON_PROVIDER_SOURCES, PROVIDERS } from '../config/providers'
 import { SourceStatusPanel, formatLastSuccess, mergeSourceStatuses } from './SourceStatusPanel'
 
 const data = vi.hoisted(() => ({
@@ -9,6 +10,9 @@ const data = vi.hoisted(() => ({
   isLoading: false,
 }))
 vi.mock('../api/queries', () => ({ useSourceStatuses: () => data }))
+
+const REGISTRY_SOURCE_COUNT =
+  PROVIDERS.reduce((n, provider) => n + provider.sources.length, 0) + NON_PROVIDER_SOURCES.length
 
 const status = (overrides: Partial<SourceStatusResponse>): SourceStatusResponse => ({
   sourceId: 'openai-usage-api',
@@ -82,7 +86,9 @@ test('maps all statuses, shows failure evidence, and uses native time/details/li
   }
   const panelButton = screen.getByRole('button', { name: /Data sources/ })
   expect(panelButton).toHaveAttribute('aria-expanded', 'false')
-  expect(screen.getByText('1 reporting · 16 not connected · 3 need attention')).toBeInTheDocument()
+  expect(
+    screen.getByText(`1 reporting · ${REGISTRY_SOURCE_COUNT - 5} not connected · 3 need attention`),
+  ).toBeInTheDocument()
   expect(
     screen.getByText(/Collection health for optional APIs and local telemetry/i),
   ).toBeInTheDocument()
@@ -125,10 +131,10 @@ test('keeps the registry rows in place while source status is loading', () => {
 
   const panel = screen.getByRole('region', { name: 'Source freshness' })
   expect(panel).toHaveAttribute('aria-busy', 'true')
-  expect(within(panel).getAllByRole('listitem')).toHaveLength(21)
+  expect(within(panel).getAllByRole('listitem')).toHaveLength(REGISTRY_SOURCE_COUNT)
   expect(within(panel).getByText('Repository activity')).toBeInTheDocument()
   expect(within(panel).getByText('GitHub billing')).toBeInTheDocument()
-  expect(within(panel).getAllByText('Loading')).toHaveLength(21)
+  expect(within(panel).getAllByText('Loading')).toHaveLength(REGISTRY_SOURCE_COUNT)
   expect(within(panel).queryByRole('link')).not.toBeInTheDocument()
 })
 
