@@ -257,6 +257,16 @@ public static class SpendCatalogEndpoints
             vendor.DefaultCategoryId = categoryId;
         }
 
+        // Same tri-state as DefaultCategoryId: absent leaves the link, JSON null unlinks.
+        if (req.Provider.ValueKind is not JsonValueKind.Undefined)
+        {
+            if (!TryReadProvider(req.Provider, out var provider))
+            {
+                return Results.BadRequest($"Unknown provider: {req.Provider}");
+            }
+            vendor.Provider = provider;
+        }
+
         if (req.Archived is { } archived)
         {
             vendor.ArchivedAt = archived ? clock.GetCurrentInstant() : null;
@@ -264,6 +274,27 @@ public static class SpendCatalogEndpoints
 
         await db.SaveChangesAsync(ct);
         return Results.Ok(vendor);
+    }
+
+    private static bool TryReadProvider(JsonElement element, out Provider? provider)
+    {
+        provider = null;
+        if (element.ValueKind is JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (
+            element.ValueKind is JsonValueKind.String
+            && Enum.TryParse<Provider>(element.GetString(), ignoreCase: true, out var parsed)
+            && Enum.IsDefined(parsed)
+        )
+        {
+            provider = parsed;
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -334,4 +365,10 @@ public sealed record SpendCatalogPatchRequest(string? DisplayName, string? Color
 /// <see cref="JsonValueKind.Undefined"/> — while an explicit <c>null</c> arrives as
 /// <see cref="JsonValueKind.Null"/>, so the two stay distinguishable.
 /// </param>
-public sealed record SpendVendorPatchRequest(string? DisplayName, JsonElement DefaultCategoryId, bool? Archived);
+/// <param name="Provider">A <see cref="JsonElement"/> for the same tri-state reason as DefaultCategoryId.</param>
+public sealed record SpendVendorPatchRequest(
+    string? DisplayName,
+    JsonElement DefaultCategoryId,
+    JsonElement Provider,
+    bool? Archived
+);
