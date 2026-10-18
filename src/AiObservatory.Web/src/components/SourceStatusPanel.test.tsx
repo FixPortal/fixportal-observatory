@@ -90,7 +90,9 @@ test('maps all statuses, shows failure evidence, and uses native time/details/li
   const panelButton = screen.getByRole('button', { name: /Data sources/ })
   expect(panelButton).toHaveAttribute('aria-expanded', 'false')
   expect(
-    screen.getByText(`1 reporting · ${REGISTRY_SOURCE_COUNT - REPORTING_OR_FLAGGED} not connected · 3 need attention`),
+    screen.getByText(
+      `1 reporting · ${REGISTRY_SOURCE_COUNT - REPORTING_OR_FLAGGED} not connected · 3 need attention`,
+    ),
   ).toBeInTheDocument()
   expect(
     screen.getByText(/Collection health for optional APIs and local telemetry/i),
