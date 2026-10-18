@@ -219,6 +219,7 @@ api.MapBudgetRulesEndpoints();
 api.MapNotificationSettingsEndpoints();
 api.MapSpendCatalogEndpoints();
 api.MapSpendEntriesEndpoints();
+api.MapSpendFeedStatusEndpoints();
 api.MapSourceStatusEndpoints();
 
 await app.RunAsync();

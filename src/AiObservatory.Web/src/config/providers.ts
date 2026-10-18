@@ -157,6 +157,7 @@ export const PROVIDERS = [
 export const NON_PROVIDER_SOURCES = [
   { id: 'github-activity-api', displayName: 'Repository activity', setupHref: SETUP_HREF },
   { id: 'github-billing-api', displayName: 'GitHub billing', setupHref: SETUP_HREF },
+  { id: 'portal-spend-feed', displayName: 'Portal spend feed', setupHref: SETUP_HREF },
 ] satisfies ProviderSource[]
 
 /** Stable display order for provider filter chips and dropdowns. */
