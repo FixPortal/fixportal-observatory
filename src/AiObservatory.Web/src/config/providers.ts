@@ -9,6 +9,8 @@ export const PROVIDER_KEYS = [
   'moonshot',
   'xai',
   'meta',
+  'zai',
+  'deepseek',
 ] as const
 export type ProviderKey = (typeof PROVIDER_KEYS)[number]
 
@@ -129,6 +131,26 @@ export const PROVIDERS = [
       { id: 'pi-local', displayName: 'PI local', setupHref: SETUP_HREF },
       { id: 'meta-openrouter-pricing', displayName: 'OpenRouter pricing', setupHref: SETUP_HREF },
     ],
+  },
+  {
+    key: 'zai',
+    displayName: 'z.AI',
+    colorVar: 'var(--provider-zai)',
+    badgeStyle: {
+      color: 'var(--provider-zai)',
+      background: 'color-mix(in srgb, var(--provider-zai) 12%, transparent)',
+    },
+    sources: [{ id: 'zai-pricing', displayName: 'z.AI pricing', setupHref: SETUP_HREF }],
+  },
+  {
+    key: 'deepseek',
+    displayName: 'DeepSeek',
+    colorVar: 'var(--provider-deepseek)',
+    badgeStyle: {
+      color: 'var(--provider-deepseek)',
+      background: 'color-mix(in srgb, var(--provider-deepseek) 12%, transparent)',
+    },
+    sources: [{ id: 'deepseek-pricing', displayName: 'DeepSeek pricing', setupHref: SETUP_HREF }],
   },
 ] satisfies ProviderConfig[]
 

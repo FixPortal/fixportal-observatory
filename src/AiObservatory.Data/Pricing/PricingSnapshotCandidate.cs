@@ -84,6 +84,8 @@ public static class PricingSourceIds
     public const string GeminiDeveloperApi = "gemini-developer-api-pricing";
     public const string Xai = "xai-pricing";
     public const string MetaOpenRouter = "meta-openrouter-pricing";
+    public const string ZaiList = "zai-pricing";
+    public const string DeepSeekList = "deepseek-pricing";
 }
 
 public enum PricingActivationResult

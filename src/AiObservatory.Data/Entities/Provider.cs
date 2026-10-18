@@ -40,4 +40,13 @@ public enum Provider
     /// (route), and keeps the route visible where it belongs — in the source id.
     /// </remarks>
     Meta,
+
+    Zai,
+
+    /// <remarks>
+    /// The JSON name is pinned lower-case because camel-casing this member gives
+    /// <c>deepSeek</c>, which the frontend's lower-case provider keys do not match.
+    /// </remarks>
+    [JsonStringEnumMemberName("deepseek")]
+    DeepSeek,
 }
