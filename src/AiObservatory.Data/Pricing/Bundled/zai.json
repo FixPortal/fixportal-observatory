@@ -1,0 +1,23 @@
+{
+  "currency": "USD",
+  "sourceUrl": "https://docs.z.ai/guides/overview/pricing",
+  "retrievedAt": "2026-10-18T12:00:00Z",
+  "entries": [
+    {
+      "model": "glm-5.3",
+      "effectiveFrom": "2026-10-18",
+      "effectiveDateIsProviderDeclared": false,
+      "input": 1.4,
+      "output": 4.4,
+      "cacheRead": 0.26
+    },
+    {
+      "model": "glm-5.3-flash",
+      "effectiveFrom": "2026-10-18",
+      "effectiveDateIsProviderDeclared": false,
+      "input": 0.15,
+      "output": 0.5,
+      "cacheRead": 0.03
+    }
+  ]
+}

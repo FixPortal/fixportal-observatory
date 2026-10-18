@@ -179,6 +179,11 @@ public sealed class UsagePriceResolver
                     // OpenRouter's rate is fixed by the model id alone, so there is no dimension
                     // to be missing — an unpriced Meta row is always a catalog gap.
                     break;
+                case Provider.Zai:
+                case Provider.DeepSeek:
+                    // Rate is fixed by the model id (and, for DeepSeek, the event timestamp), so
+                    // an unpriced row is always a catalog gap.
+                    break;
             }
         }
         catch (JsonException)

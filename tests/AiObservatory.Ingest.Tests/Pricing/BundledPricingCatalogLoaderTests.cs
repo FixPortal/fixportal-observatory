@@ -38,7 +38,9 @@ public sealed class BundledPricingCatalogLoaderTests(ProviderPollingDatabase dat
                 PricingSourceIds.GoogleCloudCatalog,
                 PricingSourceIds.GeminiDeveloperApi,
                 PricingSourceIds.Xai,
-                PricingSourceIds.MetaOpenRouter
+                PricingSourceIds.MetaOpenRouter,
+                PricingSourceIds.ZaiList,
+                PricingSourceIds.DeepSeekList
             );
         snapshots.Should().OnlyContain(snapshot => snapshot.IsActive);
         var google = snapshots.Single(snapshot => snapshot.SourceId == PricingSourceIds.GoogleCloudCatalog);

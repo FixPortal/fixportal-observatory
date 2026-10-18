@@ -382,6 +382,14 @@ public sealed class PricingSnapshotStore(AiObservatoryDbContext db)
                 .Deserialize<MetaPriceCatalog>(snapshot.NormalizedCatalog)
                 .Entries.Select(entry => (entry.EffectiveFrom, entry.EffectiveDateIsProviderDeclared))
                 .ToList(),
+            Provider.Zai => PricingCatalogJson
+                .Deserialize<ZaiPriceCatalog>(snapshot.NormalizedCatalog)
+                .Entries.Select(entry => (entry.EffectiveFrom, entry.EffectiveDateIsProviderDeclared))
+                .ToList(),
+            Provider.DeepSeek => PricingCatalogJson
+                .Deserialize<DeepSeekPriceCatalog>(snapshot.NormalizedCatalog)
+                .Entries.Select(entry => (entry.EffectiveFrom, entry.EffectiveDateIsProviderDeclared))
+                .ToList(),
             _ => [],
         };
 
@@ -394,6 +402,8 @@ public sealed class PricingSnapshotStore(AiObservatoryDbContext db)
             Provider.Google => PricingSourceIds.GoogleCloudCatalog,
             Provider.Xai => PricingSourceIds.Xai,
             Provider.Meta => PricingSourceIds.MetaOpenRouter,
+            Provider.Zai => PricingSourceIds.ZaiList,
+            Provider.DeepSeek => PricingSourceIds.DeepSeekList,
             _ => null,
         };
 
@@ -488,6 +498,12 @@ public sealed class PricingSnapshotStore(AiObservatoryDbContext db)
                 Provider.Meta => ValidateAndGetMetadata(
                     PricingCatalogJson.Deserialize<MetaPriceCatalog>(candidate.NormalizedCatalog)
                 ),
+                Provider.Zai => ValidateAndGetMetadata(
+                    PricingCatalogJson.Deserialize<ZaiPriceCatalog>(candidate.NormalizedCatalog)
+                ),
+                Provider.DeepSeek => ValidateAndGetMetadata(
+                    PricingCatalogJson.Deserialize<DeepSeekPriceCatalog>(candidate.NormalizedCatalog)
+                ),
                 _ => throw new UnreachableException(),
             };
             if (!string.Equals(catalogSourceUrl, candidate.SourceUrl, StringComparison.Ordinal))
@@ -541,6 +557,18 @@ public sealed class PricingSnapshotStore(AiObservatoryDbContext db)
     }
 
     private static (string SourceUrl, Instant RetrievedAt) ValidateAndGetMetadata(MetaPriceCatalog catalog)
+    {
+        catalog.Validate();
+        return (catalog.SourceUrl, catalog.RetrievedAt);
+    }
+
+    private static (string SourceUrl, Instant RetrievedAt) ValidateAndGetMetadata(ZaiPriceCatalog catalog)
+    {
+        catalog.Validate();
+        return (catalog.SourceUrl, catalog.RetrievedAt);
+    }
+
+    private static (string SourceUrl, Instant RetrievedAt) ValidateAndGetMetadata(DeepSeekPriceCatalog catalog)
     {
         catalog.Validate();
         return (catalog.SourceUrl, catalog.RetrievedAt);

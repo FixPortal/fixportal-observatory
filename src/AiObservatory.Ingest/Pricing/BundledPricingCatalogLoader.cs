@@ -82,6 +82,24 @@ public sealed class BundledPricingCatalogLoader
             static catalog => catalog.RetrievedAt,
             cancellationToken
         );
+        await LoadAsync<ZaiPriceCatalog>(
+            Provider.Zai,
+            PricingSourceIds.ZaiList,
+            "zai.json",
+            static catalog => catalog.SourceUrl,
+            static catalog => catalog.RetrievedAt,
+            cancellationToken,
+            replaceActive: true
+        );
+        await LoadAsync<DeepSeekPriceCatalog>(
+            Provider.DeepSeek,
+            PricingSourceIds.DeepSeekList,
+            "deepseek.json",
+            static catalog => catalog.SourceUrl,
+            static catalog => catalog.RetrievedAt,
+            cancellationToken,
+            replaceActive: true
+        );
         await LoadAsync<GeminiDeveloperPriceCatalog>(
             Provider.Google,
             PricingSourceIds.GeminiDeveloperApi,
