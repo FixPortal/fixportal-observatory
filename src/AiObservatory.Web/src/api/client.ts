@@ -283,6 +283,7 @@ export interface AdversarialReviewRun {
   inputTokens: number
   outputTokens: number
   costUsd: number
+  costUnknown: boolean
   reviewDurationMs: number
   issuesRaised: number
   issuesAccepted: number

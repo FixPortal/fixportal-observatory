@@ -19,7 +19,14 @@ export interface RunGroup {
   summary: string | null
   recordedAt: string
   participants: AdversarialReviewRun[]
-  totals: { raised: number; accepted: number; costUsd: number; durationMs: number }
+  /** costUsd sums known-cost participants only; null when every participant's cost is unknown. */
+  totals: {
+    raised: number
+    accepted: number
+    costUsd: number | null
+    unknownCostRuns: number
+    durationMs: number
+  }
   isComplete: boolean
   statusReason: string
   /** false when the panel had too few reviewer vendors (< MIN_VALID_REVIEWERS) to trust. */
@@ -94,6 +101,9 @@ export function groupRuns(runs: AdversarialReviewRun[]): RunGroup[] {
       ? 'complete'
       : `${reviewerCount} of ${EXPECTED_REVIEWER_VENDORS} reviewers${hasJudge ? '' : ' · no judge'}`
 
+    const unknownCostRuns = participants.filter((p) => p.costUnknown).length
+    const knownCostTotal = participants.reduce((s, p) => s + (p.costUnknown ? 0 : p.costUsd), 0)
+
     groups.push({
       runId,
       repo: participants.find((p) => p.repo)?.repo ?? null,
@@ -103,7 +113,9 @@ export function groupRuns(runs: AdversarialReviewRun[]): RunGroup[] {
       totals: {
         raised: participants.reduce((s, p) => s + p.issuesRaised, 0),
         accepted: participants.reduce((s, p) => s + p.issuesAccepted, 0),
-        costUsd: Math.round(participants.reduce((s, p) => s + p.costUsd, 0) * 1e6) / 1e6,
+        costUsd:
+          unknownCostRuns === participants.length ? null : Math.round(knownCostTotal * 1e6) / 1e6,
+        unknownCostRuns,
         durationMs: participants.reduce((s, p) => s + p.reviewDurationMs, 0),
       },
       isComplete,

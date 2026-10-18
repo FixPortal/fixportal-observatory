@@ -101,8 +101,11 @@ function RunSummary({ group }: { group: RunGroup }) {
       <span className="adv-run__totals">
         raised <b>{t.raised}</b> · accepted <b>{t.accepted}</b> ·{' '}
         <b title={hasPutativeCost ? PUTATIVE_NOTE : undefined}>
-          {formatCost(t.costUsd, hasPutativeCost)}
+          {t.costUsd == null ? 'Unknown' : formatCost(t.costUsd, hasPutativeCost)}
         </b>{' '}
+        {t.costUsd != null && t.unknownCostRuns > 0 && (
+          <span className="adv-run__meta">+ {t.unknownCostRuns} unknown</span>
+        )}{' '}
         · <b>{formatSeconds(t.durationMs)}</b>
       </span>
     </span>
@@ -238,11 +241,7 @@ function StatsTable({ stats, isLoading, isError }: StatsTableProps) {
                   <td>{formatCount(s.avgIssuesRaised)}</td>
                   <td>{formatCount(s.avgIssuesAccepted)}</td>
                   <td title={isPutativeCost(s.reviewer) ? PUTATIVE_NOTE : undefined}>
-                    {formatStatCost(
-                      s.avgCostPerAcceptedFinding,
-                      s,
-                      isPutativeCost(s.reviewer),
-                    )}
+                    {formatStatCost(s.avgCostPerAcceptedFinding, s, isPutativeCost(s.reviewer))}
                   </td>
                   <td>{formatMinutes(s.avgDurationMs)}</td>
                 </tr>
@@ -437,12 +436,16 @@ function RunsList({ groups, isLoading, isError }: RunsListProps) {
                       <td>{p.role === 'judge' ? '—' : p.issuesRaised}</td>
                       <td>{p.role === 'judge' ? '—' : p.issuesAccepted}</td>
                       <td title={isPutativeCost(p.reviewer) ? PUTATIVE_NOTE : undefined}>
-                        {formatCost(p.costUsd, isPutativeCost(p.reviewer))}
+                        {p.costUnknown
+                          ? 'Unknown'
+                          : formatCost(p.costUsd, isPutativeCost(p.reviewer))}
                       </td>
                       <td title={isPutativeCost(p.reviewer) ? PUTATIVE_NOTE : undefined}>
                         {p.role === 'judge'
                           ? '—'
-                          : formatCost(p.costPerAcceptedFinding, isPutativeCost(p.reviewer))}
+                          : p.costUnknown
+                            ? 'Unknown'
+                            : formatCost(p.costPerAcceptedFinding, isPutativeCost(p.reviewer))}
                       </td>
                       <td>{formatSeconds(p.reviewDurationMs)}</td>
                     </tr>
