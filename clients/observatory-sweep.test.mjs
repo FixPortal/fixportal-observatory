@@ -767,6 +767,19 @@ test('reconciliation corrects a daily snapshot after one transcript is deleted',
   assert.equal(submissions[0].snapshot.inputTokens, 10)
 })
 
+test('a misfiled OpenAI Codex snapshot is replaced in place when the provider changes', () => {
+  const record = { tool: 'codex', date: '2026-10-17', model: 'glm-5.3-flash', occurredAtUtc: '2026-10-17T12:00:00Z', cum: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0 } }
+  const [corrected] = buildDailySnapshots([{ ...record, modelProvider: 'ZAI' }], TEST_MACHINE)
+  const prior = { ...corrected, provider: 'OpenAI' }
+
+  const submissions = planSnapshotSubmissions([corrected], [prior])
+
+  assert.equal(corrected.eventKey, 'codex:2026-10-17:glm-5.3-flash')
+  assert.deepEqual(submissions.map(item => [item.active, item.snapshot.provider, item.snapshot.eventKey]), [
+    [true, 'Zai', 'codex:2026-10-17:glm-5.3-flash'],
+  ])
+})
+
 test('server inventory clears the old Claude dimension key after local state loss', () => {
   const claude = speed => buildDailySnapshots(parseClaude(JSON.stringify({
     type: 'assistant',
