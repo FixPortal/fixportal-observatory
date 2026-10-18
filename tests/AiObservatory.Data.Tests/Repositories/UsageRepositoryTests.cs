@@ -217,6 +217,67 @@ public class UsageRepositoryTests : IAsyncLifetime
         rows.Sum(x => x.CostUsd).Should().Be(2m);
     }
 
+    [Theory]
+    [InlineData(Provider.Zai, "glm-5.3-flash", CostBasis.Notional)]
+    [InlineData(Provider.DeepSeek, "deepseek-flash", CostBasis.ListPriceEstimate)]
+    public async Task RecordEvent_local_snapshot_moving_provider_replaces_the_row_and_leaves_no_old_aggregate(
+        Provider corrected,
+        string model,
+        CostBasis basis
+    )
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var eventKey = $"codex:2026-10-17:{model}";
+        UsageEvent Snapshot(Provider provider, CostBasis costBasis) =>
+            new()
+            {
+                Provider = provider,
+                OccurredAt = Instant.FromUtc(2026, 10, 17, 12, 0),
+                IngestedAt = Instant.FromUtc(2026, 10, 18, 1, 0),
+                ObservedAt = Instant.FromUtc(2026, 10, 18, 1, 0),
+                Model = model,
+                InputTokens = 100,
+                OutputTokens = 50,
+                CostUsd = null,
+                Runtime = "codex",
+                SourceId = "codex-local@test-machine",
+                SourceKind = SourceKind.LocalTelemetry,
+                UsageScope = UsageScope.Subscription,
+                CostBasis = costBasis,
+                EventKey = eventKey,
+            };
+        // A billed row from another source under the same key must never be touched.
+        var billed = NewEvent(model: model, eventKey: eventKey, input: 7);
+        await _repo.RecordEventAsync(billed, ct);
+        var misfiled = await _repo.RecordEventAsync(Snapshot(Provider.OpenAI, CostBasis.Notional), ct);
+
+        var result = await _repo.RecordEventAsync(Snapshot(corrected, basis), ct);
+
+        result.Disposition.Should().Be(RecordEventDisposition.Corrected);
+        result.EventId.Should().Be(misfiled.EventId);
+        (await _ctx.UsageEvents.AsNoTracking().CountAsync(x => x.SourceId == "codex-local@test-machine", ct))
+            .Should()
+            .Be(1);
+        var rows = await _ctx
+            .DailyAggregates.AsNoTracking()
+            .Where(x => x.SourceId == "codex-local@test-machine")
+            .ToListAsync(ct);
+        rows.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Match<DailyAggregate>(x =>
+                x.Provider == corrected && x.CostBasis == basis && x.InputTokens == 100 && x.RequestCount == 1
+            );
+        var billedAggregate = await _ctx
+            .DailyAggregates.AsNoTracking()
+            .SingleAsync(x => x.SourceId == billed.SourceId, ct);
+        billedAggregate.Provider.Should().Be(Provider.OpenAI);
+        billedAggregate.InputTokens.Should().Be(7);
+        (await _repo.RecordEventAsync(Snapshot(corrected, basis), ct))
+            .Disposition.Should()
+            .Be(RecordEventDisposition.Unchanged);
+    }
+
     [Fact]
     public async Task RecordEvent_correction_updates_unknown_cost_and_cache_savings_counts()
     {
