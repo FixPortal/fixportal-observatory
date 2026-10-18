@@ -15,6 +15,8 @@ import { join, dirname, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const ALL_LOCAL_SOURCES = ['codex', 'copilot', 'claude', 'kimi', 'gemini', 'antigravity', 'grok', 'pi']
+// Retired vendor lanes (kimi, grok, pi) stay collectable but are off unless OBSERVATORY_LOCAL_SOURCES names them.
+export const DEFAULT_LOCAL_SOURCES = ['codex', 'copilot', 'claude', 'gemini', 'antigravity']
 const LOCAL_SOURCE_IDS = {
   codex: 'codex-local',
   copilot: 'copilot-local',
@@ -597,6 +599,17 @@ function deduplicateClaudeRecords(records) {
   return deduplicated
 }
 
+/** Records buildDailySnapshots drops for want of a provider, grouped by tool and model. Counts only; no paths or content. */
+export function countUnplaced(records, machine) {
+  const counts = new Map()
+  for (const record of records) {
+    if (!record.date || !record.model || sourceMetadata(record.tool, record.model, machine, record.modelProvider)) { continue }
+    const key = `${record.tool}\n${record.model}`
+    counts.set(key, { tool: record.tool, model: record.model, count: (counts.get(key)?.count ?? 0) + 1 })
+  }
+  return [...counts.values()]
+}
+
 /** Rebuild stable cumulative day/model snapshots from cached per-file records. */
 export function buildDailySnapshots(records, machine) {
   const groups = new Map()
@@ -779,7 +792,7 @@ export async function updateFileCache(files, cache, parse, read = path => readFi
 }
 
 export function parseLocalSources(value) {
-  if (value === undefined) { return new Set(ALL_LOCAL_SOURCES) }
+  if (value === undefined) { return new Set(DEFAULT_LOCAL_SOURCES) }
   const selected = value.split(',').map(x => x.trim().toLowerCase()).filter(Boolean)
   // A typo'd name must abort, not silently shrink the enabled set: an empty or
   // unintended subset changes which sources this run is responsible for.
@@ -1115,6 +1128,9 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   }
   const { records, incompleteSources, emptySources } = await scanRecords(cfg, state, enabled, discover)
   const snapshots = buildDailySnapshots(records, machine)
+  for (const { tool, model, count } of countUnplaced(records, machine)) {
+    console.error(`UNPLACED ${tool} model=${model} sessions=${count}`)
+  }
   const submissions = planSnapshotSubmissions(snapshots, inventory)
   await saveState(statePath, state)
   // A source with any unreadable-and-uncached file this run scanned incompletely:

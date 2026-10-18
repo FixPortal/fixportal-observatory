@@ -50,6 +50,8 @@ Stable source-scoped keys make resubmission safe. Source ids carry a per-machine
 > [!WARNING]
 > Set `OBSERVATORY_LOCAL_SOURCES` without `claude` when `claude-code-usage-api` covers the same account/activity. The two lanes do not cross-deduplicate.
 
+Dormant lanes (`kimi`, `grok`, `pi`) are off by default. Re-enable one by naming it in `OBSERVATORY_LOCAL_SOURCES`; the machine-local `sweep.env` is where the deployed value lives. A Codex session whose provider cannot be placed is not reported; the run prints `UNPLACED <tool> model=<model> sessions=<n>` to stderr (counts only, no paths or content) and still exits 0.
+
 ## Measured cost, and the Grok tick scale
 
 Grok and PI are the only producers that post a cost. Both CLIs record what their vendor
@@ -90,7 +92,7 @@ node clients/observatory-sweep.mjs --dry-run --verbose
 | `OBSERVATORY_API_KEY` | Required | Sent as `X-Observatory-Key`; absent means no post. |
 | `OBSERVATORY_URL` | `http://localhost:5039` | API origin; HTTPS is required except for loopback development. Use `http://localhost:4173` for Compose's frontend proxy. |
 | `OBSERVATORY_STATE` | `~/.ai-observatory/sweep-state.json` | Safe-to-delete parse cache. |
-| `OBSERVATORY_LOCAL_SOURCES` | `codex,copilot,claude,kimi,gemini,antigravity` | Comma-separated collector allowlist. |
+| `OBSERVATORY_LOCAL_SOURCES` | `codex,copilot,claude,gemini,antigravity` | Comma-separated collector allowlist. `kimi`, `grok` and `pi` are dormant and must be named to run. |
 | `OBSERVATORY_MACHINE` | OS hostname | Per-machine source-id suffix (`<tool>-local@<machine>`); slugified to lowercase `[a-z0-9-]`. Set it when the hostname is unstable or shared. |
 | `CODEX_HOME`, `COPILOT_HOME`, `CLAUDE_HOME`, `KIMI_HOME`, `GEMINI_HOME` | Tool homes above | Optional home overrides. |
 

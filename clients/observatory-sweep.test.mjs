@@ -812,9 +812,22 @@ test('replacement plans active snapshots before tombstones in both lexical key d
   }
 })
 
-test('parseLocalSources defaults to every collector and honors an explicit allowlist', () => {
-  assert.deepEqual([...parseLocalSources()].sort(), ['antigravity', 'claude', 'codex', 'copilot', 'gemini', 'grok', 'kimi', 'pi'])
+test('parseLocalSources defaults to the active lanes, and an explicit allowlist re-enables dormant ones', () => {
+  assert.deepEqual([...parseLocalSources()].sort(), [...sweep.DEFAULT_LOCAL_SOURCES].sort())
+  assert.deepEqual([...parseLocalSources()].sort(), ['antigravity', 'claude', 'codex', 'copilot', 'gemini'])
   assert.deepEqual([...parseLocalSources('codex,kimi')].sort(), ['codex', 'kimi'])
+  assert.deepEqual([...parseLocalSources('kimi,grok,pi')].sort(), ['grok', 'kimi', 'pi'])
+})
+
+test('countUnplaced counts dropped Codex sessions by tool and model, ignoring placeable and incomplete records', () => {
+  const record = (model, modelProvider) => ({ tool: 'codex', date: '2026-08-24', model, modelProvider, occurredAtUtc: '2026-08-24T12:00:00Z', cum: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0 } })
+
+  const unplaced = sweep.countUnplaced([
+    record('mystery-1', 'other'), record('mystery-1', 'other'), record('gpt-5.4', 'openai'),
+    { ...record('no-date', 'other'), date: undefined },
+  ], TEST_MACHINE)
+
+  assert.deepEqual(unplaced, [{ tool: 'codex', model: 'mystery-1', count: 2 }])
 })
 
 test('parseLocalSources aborts on unknown names instead of silently shrinking the set', () => {
