@@ -1,6 +1,6 @@
 # Local usage producers
 
-> Machine-local Codex, Copilot, Claude, Kimi, Gemini review, Antigravity, Grok, and PI telemetry guide as of 2026-09-16.
+> Machine-local Codex, Copilot, Claude, Kimi, Gemini review, Antigravity, Grok, and PI telemetry guide as of 2026-10-18.
 
 `observatory-sweep.mjs` reads installed CLI logs and posts cumulative daily/model snapshots to `POST /api/events`. It has no dependencies beyond Node 24+.
 
