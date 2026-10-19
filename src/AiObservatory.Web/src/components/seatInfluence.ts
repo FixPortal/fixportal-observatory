@@ -60,6 +60,9 @@ interface SeatAggregates extends FindingAggregates {
   peerAgreement: number
   knownCostRuns: number
   knownCostUsd: number
+  // Known cost of runs that carry finding detail only: unique catches exist for those runs
+  // alone, so cost per unique catch must not be divided over counts-only runs' spend.
+  detailedKnownCostUsd: number
   unknownCostRuns: number
   countsOnlyRuns: number
   byWeek: Map<string, WeekAggregates>
@@ -107,6 +110,7 @@ function emptySeat(model: string): SeatAggregates {
     runs: 0,
     peerAgreement: 0,
     knownCostUsd: 0,
+    detailedKnownCostUsd: 0,
     unknownCostRuns: 0,
     knownCostRuns: 0,
     countsOnlyRuns: 0,
@@ -152,6 +156,7 @@ function accumulateRun(seat: SeatAggregates, row: RunRow, detailedRunIds: Set<st
   } else {
     seat.knownCostRuns += 1
     seat.knownCostUsd += row.costUsd
+    if (!countsOnly) seat.detailedKnownCostUsd += row.costUsd
   }
 
   const week = weekFor(seat, row.recordedAt)
@@ -274,7 +279,9 @@ export function computeSeatMetrics(
         knownCostUsd: seat.knownCostUsd,
         unknownCostRuns: seat.unknownCostRuns,
         costPerUnique:
-          seat.unique === 0 || seat.knownCostRuns === 0 ? null : seat.knownCostUsd / seat.unique,
+          seat.unique === 0 || seat.detailedKnownCostUsd === 0
+            ? null
+            : seat.detailedKnownCostUsd / seat.unique,
         countsOnlyRuns: seat.countsOnlyRuns,
         smallSample: seat.runs < 5,
         byWeek: [...seat.byWeek.entries()]
