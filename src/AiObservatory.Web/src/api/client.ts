@@ -271,6 +271,48 @@ export const explainInsight = async (id: string): Promise<{ explanation: string 
   return res.json() as Promise<{ explanation: string }>
 }
 
+export interface SuggestionFigure {
+  label: string
+  value: number | string
+  unit: string
+}
+
+export interface SuggestionEvidence {
+  window: { from: string; to: string }
+  sampleSize: number
+  figures: SuggestionFigure[]
+  runIds: string[]
+}
+
+export interface Suggestion {
+  id: string
+  key: string
+  ruleId: string
+  subject: string
+  severity: 'info' | 'attention'
+  title: string
+  status: 'open' | 'dismissed' | 'snoozed' | 'resolved'
+  snoozedUntil: string | null
+  firstSeenAt: string
+  lastSeenAt: string
+  evidence: SuggestionEvidence
+}
+
+export interface SuggestionsResponse {
+  suggestions: Suggestion[]
+  notEvaluated: { ruleId: string; reason: string }[]
+}
+
+export const getSuggestions = () => getJson<SuggestionsResponse>('/suggestions', { status: 'open' })
+
+export const dismissSuggestion = async (id: string): Promise<void> => {
+  await request(`/suggestions/${id}/dismiss`, { method: 'POST' })
+}
+
+export const snoozeSuggestion = async (id: string, days: number): Promise<void> => {
+  await request(`/suggestions/${id}/snooze?days=${days}`, { method: 'POST' })
+}
+
 export type ReviewRole = 'reviewer' | 'judge'
 
 export interface AdversarialReviewRun {

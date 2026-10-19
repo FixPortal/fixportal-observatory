@@ -1119,6 +1119,136 @@ td.budget-rules__actions {
 
 /* Dismiss button — replaced by @fixportal/design Button variant="ghost" size="sm" */
 
+/* ---- Suggestions card ---- */
+/* Sits directly under the summary cards on the Overview; follows the same
+   section rhythm as .main-grid (generous margin between sections). */
+.suggestions-card {
+  width: 100%;
+  margin-top: var(--space-6);
+}
+.suggestions-card__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.suggestion {
+  border: 1px solid var(--border);
+  border-radius: var(--r-chip);
+  background: var(--card-bg);
+  padding: var(--space-3);
+}
+.suggestion--attention {
+  border-left: 3px solid var(--warn-border);
+}
+.suggestion--info {
+  border-left: 3px solid var(--info-border);
+}
+.suggestion__summary {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.suggestion__heading {
+  flex: 1;
+  min-width: min(100%, 16rem);
+}
+.suggestion__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.suggestion__rule {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+}
+.suggestion__evidence {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.suggestion__figures {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.suggestion__figure {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--space-3);
+  font-size: 13px;
+}
+.suggestion__figure-label,
+.suggestion__figure-unit {
+  color: var(--text-muted);
+}
+.suggestion__figure dd {
+  margin: 0;
+}
+.suggestion__meta {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: var(--space-2) 0 0;
+}
+.suggestion__run-ids {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: var(--space-2) 0 0;
+  overflow-wrap: anywhere;
+}
+.suggestion__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+.suggestions-card__not-evaluated {
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.suggestions-card__not-evaluated > summary {
+  width: max-content;
+  margin-top: var(--space-2);
+  border-radius: var(--r-control);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.suggestions-card__not-evaluated > summary:hover {
+  color: var(--brand-text);
+}
+.suggestions-card__not-evaluated > summary:focus-visible {
+  outline: 2px solid var(--brand-ring);
+  outline-offset: 2px;
+  color: var(--brand-text);
+}
+.suggestions-card__not-evaluated-list {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.suggestions-card__not-evaluated-rule {
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+.suggestions-card__not-evaluated-rule::after {
+  content: ' — ';
+  color: var(--text-muted);
+}
+
 /* Canonical footer component supplies structure and typography. */
 .site-footer__attrib a {
   color: var(--brand-text);
