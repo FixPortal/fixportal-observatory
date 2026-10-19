@@ -94,9 +94,14 @@ test('parseCodex returns null when no token_count is present', () => {
   assert.equal(parseCodex(lines), null)
 })
 
-test('parseCodex defaults the model when no turn_context carries one', () => {
+test('parseCodex leaves the model null when no turn_context names one, and the record is unplaced', () => {
   const line = JSON.stringify({ timestamp: '2026-08-24T12:00:00Z', type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5 } } } })
-  assert.equal(parseCodex(line).model, 'gpt-5')
+  const parsed = parseCodex(line)
+  assert.equal(parsed.model, null)
+
+  const record = { tool: 'codex', date: '2026-08-24', model: parsed.model, modelProvider: parsed.modelProvider, occurredAtUtc: parsed.endedAt, cum: parsed.cum }
+  assert.deepEqual(sweep.buildDailySnapshots([record], TEST_MACHINE), [])
+  assert.deepEqual(sweep.countUnplaced([record], TEST_MACHINE), [{ tool: 'codex', model: 'unknown', count: 1 }])
 })
 
 test('parseCodex reads model_provider from the session_meta row', () => {
@@ -568,7 +573,7 @@ test('scanRecords rebuilds an unversioned matching-mtime cache instead of reusin
     const { records } = await scanRecords(cfg, state, new Set(['codex']))
 
     assert.deepEqual(records, [])
-    assert.equal(state.parseCacheVersion, 5)
+    assert.equal(state.parseCacheVersion, 6)
     assert.deepEqual(state.files.codex[path].records, [])
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -629,7 +634,7 @@ test('scanRecords handles transcript histories larger than the engine argument l
   }
   const files = Array.from({ length: 200 }, (_, index) => ({ path: `claude-${index}.jsonl`, mtimeMs: 1 }))
   const state = {
-    parseCacheVersion: 5,
+    parseCacheVersion: 6,
     files: {
       claude: Object.fromEntries(files.map(file => [file.path, {
         mtimeMs: file.mtimeMs,
@@ -1107,7 +1112,7 @@ test('scanRecords reparses a version-2 cache instead of reusing its stale record
 
     assert.deepEqual(records, [])
     assert.deepEqual([...incompleteSources], [])
-    assert.equal(state.parseCacheVersion, 5)
+    assert.equal(state.parseCacheVersion, 6)
     assert.deepEqual(state.files.codex[path].records, [])
   } finally {
     await rm(root, { recursive: true, force: true })

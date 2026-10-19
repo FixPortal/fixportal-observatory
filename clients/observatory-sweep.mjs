@@ -31,7 +31,7 @@ const LOCAL_SOURCE_IDS = {
 // every file. Never bump alone: after the wipe an unreadable file has no cached
 // records, so scanRecords flags its source incomplete and main withholds that
 // source's corrections and tombstones until a complete scan succeeds.
-const PARSE_CACHE_VERSION = 5
+const PARSE_CACHE_VERSION = 6
 // Gemini Developer API standard-tier pricing changes above this documented prompt-token threshold.
 const GEMINI_LONG_CONTEXT_THRESHOLD = 200_000
 // The Grok CLI records each turn's cost as an integer tick count rather than a decimal. The
@@ -141,7 +141,8 @@ export function parseCodex(content) {
   if (!total) { return null }
   const cacheRead = token(total.cached_input_tokens)
   return {
-    model: model ?? 'gpt-5',
+    // No named model means no evidence of a vendor: leave it null so the record is unplaced, not guessed.
+    model,
     modelProvider,
     cum: {
       input: Math.max(0, token(total.input_tokens) - cacheRead),
@@ -608,9 +609,10 @@ function deduplicateClaudeRecords(records) {
 export function countUnplaced(records, machine) {
   const counts = new Map()
   for (const record of records) {
-    if (!record.date || !record.model || sourceMetadata(record.tool, record.model, machine, record.modelProvider)) { continue }
-    const key = `${record.tool}\n${record.model}`
-    counts.set(key, { tool: record.tool, model: record.model, count: (counts.get(key)?.count ?? 0) + 1 })
+    if (!record.date || (record.model && sourceMetadata(record.tool, record.model, machine, record.modelProvider))) { continue }
+    const model = record.model ?? 'unknown'
+    const key = `${record.tool}\n${model}`
+    counts.set(key, { tool: record.tool, model, count: (counts.get(key)?.count ?? 0) + 1 })
   }
   return [...counts.values()]
 }

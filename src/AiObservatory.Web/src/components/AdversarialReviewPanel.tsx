@@ -79,7 +79,10 @@ function capitalize(s: string): string {
 
 function RunSummary({ group }: { group: RunGroup }) {
   const t = group.totals
-  const hasPutativeCost = group.participants.some((p) => isPutativeCost(p.reviewer))
+  // Only participants whose cost is in the total can make it an estimate.
+  const hasPutativeCost = group.participants.some(
+    (p) => !p.costUnknown && isPutativeCost(p.reviewer),
+  )
   return (
     <span className="adv-run__summary">
       {group.summary && <span className="adv-run__meta">{formatRecordedAt(group.recordedAt)}</span>}

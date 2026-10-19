@@ -81,6 +81,96 @@ public class SpendFeedStatusWafTests(AiObservatoryApiFactory factory) : IClassFi
             .Be("fresh");
     }
 
+    private async Task ClearRowAsync()
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+        await db
+            .SourceSyncStates.Where(s => s.SourceId == SourceId)
+            .ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static object Stamped(string reportedAt, params (long Id, string Reason)[] skipped) =>
+        new
+        {
+            attempted = skipped.Length + 1,
+            posted = 1,
+            reportedAt,
+            skipped = skipped.Select(s => new { expenseId = s.Id, reason = s.Reason }).ToArray(),
+        };
+
+    // The row is shared across this class's tests and a future LastAttemptAt would shadow them,
+    // so each reportedAt test starts and ends with the row cleared.
+    [Fact]
+    public async Task Older_skip_delivered_after_a_newer_clean_report_does_not_flip_the_state()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var admin = factory.CreateAdminClient();
+        await ClearRowAsync();
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            (await admin.PostAsJsonAsync(Route, Stamped(now.AddMinutes(-1).ToString("O")), ct))
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent);
+
+            (await admin.PostAsJsonAsync(Route, Stamped(now.AddMinutes(-10).ToString("O"), (1, "no-vendor")), ct))
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent);
+
+            var row = (await RowsAsync()).Should().ContainSingle().Subject;
+            row.IsAvailable.Should().BeTrue();
+            row.LastError.Should().BeNull();
+        }
+        finally
+        {
+            await ClearRowAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Skip_reported_at_the_same_time_is_idempotent_and_a_newer_skip_applies()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var admin = factory.CreateAdminClient();
+        await ClearRowAsync();
+        try
+        {
+            var at = DateTimeOffset.UtcNow.AddMinutes(-2).ToString("O");
+            (await admin.PostAsJsonAsync(Route, Stamped(at, (1, "no-vendor")), ct))
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent);
+            (await admin.PostAsJsonAsync(Route, Stamped(at, (1, "no-vendor")), ct))
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent);
+
+            (await RowsAsync()).Should().ContainSingle().Subject.IsAvailable.Should().BeFalse();
+
+            (await admin.PostAsJsonAsync(Route, Stamped(DateTimeOffset.UtcNow.ToString("O")), ct))
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent);
+            (await RowsAsync()).Should().ContainSingle().Subject.IsAvailable.Should().BeTrue();
+        }
+        finally
+        {
+            await ClearRowAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Reported_at_more_than_five_minutes_ahead_is_a_400_and_writes_nothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ClearRowAsync();
+
+        var response = await factory
+            .CreateAdminClient()
+            .PostAsJsonAsync(Route, Stamped(DateTimeOffset.UtcNow.AddMinutes(10).ToString("O")), ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await RowsAsync()).Should().BeEmpty();
+    }
+
     [Fact]
     public async Task Concurrent_posts_leave_one_row()
     {
