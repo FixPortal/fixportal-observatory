@@ -643,6 +643,25 @@ public class UsageRepository(
         return new PurgeResult(deletedEvents, deletedAggregates);
     }
 
+    public async Task<PurgeResult> PurgeSourceAsync(string sourceId, bool dryRun, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+
+        if (dryRun)
+        {
+            return new PurgeResult(
+                await ctx.UsageEvents.CountAsync(e => e.SourceId == sourceId, ct),
+                await ctx.DailyAggregates.CountAsync(a => a.SourceId == sourceId, ct)
+            );
+        }
+
+        await using var tx = await ctx.Database.BeginTransactionAsync(ct);
+        var deletedEvents = await ctx.UsageEvents.Where(e => e.SourceId == sourceId).ExecuteDeleteAsync(ct);
+        var deletedAggregates = await ctx.DailyAggregates.Where(a => a.SourceId == sourceId).ExecuteDeleteAsync(ct);
+        await tx.CommitAsync(ct);
+        return new PurgeResult(deletedEvents, deletedAggregates);
+    }
+
     public async Task<IReadOnlyList<DailyAggregate>> GetAggregatesAsync(
         LocalDate from,
         LocalDate to,

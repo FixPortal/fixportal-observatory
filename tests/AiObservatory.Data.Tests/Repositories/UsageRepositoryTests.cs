@@ -1321,6 +1321,37 @@ public class UsageRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task PurgeSource_deletes_events_and_aggregates_for_that_exact_source_only()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _repo.RecordEventAsync(NewEvent(sourceId: "claude-local", eventKey: "legacy-a"), ct);
+        await _repo.RecordEventAsync(NewEvent(sourceId: "claude-local", eventKey: "legacy-b", model: "gpt-other"), ct);
+        await _repo.RecordEventAsync(NewEvent(sourceId: "claude-local@its-alive", eventKey: "current"), ct);
+
+        var result = await _repo.PurgeSourceAsync("claude-local", dryRun: false, ct);
+
+        result.DeletedEvents.Should().Be(2);
+        result.DeletedAggregates.Should().Be(2);
+        (await _ctx.UsageEvents.AsNoTracking().SingleAsync(ct)).SourceId.Should().Be("claude-local@its-alive");
+        (await _ctx.DailyAggregates.AsNoTracking().SingleAsync(ct)).SourceId.Should().Be("claude-local@its-alive");
+    }
+
+    [Fact]
+    public async Task PurgeSource_dry_run_reports_the_counts_and_deletes_nothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _repo.RecordEventAsync(NewEvent(sourceId: "codex-local", eventKey: "legacy-a"), ct);
+        await _repo.RecordEventAsync(NewEvent(sourceId: "codex-local", eventKey: "legacy-b", model: "gpt-other"), ct);
+
+        var result = await _repo.PurgeSourceAsync("codex-local", dryRun: true, ct);
+
+        result.DeletedEvents.Should().Be(2);
+        result.DeletedAggregates.Should().Be(2);
+        (await _ctx.UsageEvents.AsNoTracking().CountAsync(ct)).Should().Be(2);
+        (await _ctx.DailyAggregates.AsNoTracking().CountAsync(ct)).Should().Be(2);
+    }
+
+    [Fact]
     public async Task RecordEvent_with_CostBasis_None_counts_as_a_known_zero_not_missing_pricing()
     {
         var ct = TestContext.Current.CancellationToken;

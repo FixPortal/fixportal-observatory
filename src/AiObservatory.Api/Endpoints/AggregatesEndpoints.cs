@@ -78,12 +78,52 @@ public static class AggregatesEndpoints
         return Results.Ok(data);
     }
 
+    // Only the un-suffixed local ids (claude-local, codex-local, ...) can be purged by source: they
+    // are the retired namespace. A per-machine id such as claude-local@host holds live data and is
+    // refused, so a mistyped id cannot wipe the capture that replaced them.
+    private static readonly System.Text.RegularExpressions.Regex LegacyLocalSourceId = new(
+        "^[a-z0-9]+(-[a-z0-9]+)*-local$",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+        TimeSpan.FromSeconds(1)
+    );
+
     private static async Task<IResult> PurgeAggregatesAsync(
         string? provider,
+        string? sourceId,
+        bool? dryRun,
         IUsageRepository repo,
         CancellationToken ct
     )
     {
+        if (!string.IsNullOrWhiteSpace(sourceId))
+        {
+            if (!string.IsNullOrWhiteSpace(provider))
+            {
+                return Results.BadRequest("Pass either provider or sourceId, not both");
+            }
+            if (!LegacyLocalSourceId.IsMatch(sourceId))
+            {
+                return Results.BadRequest("sourceId must be a legacy un-suffixed local id such as claude-local");
+            }
+
+            var preview = dryRun ?? false;
+            var purged = await repo.PurgeSourceAsync(sourceId, preview, ct);
+            return Results.Ok(
+                new
+                {
+                    sourceId,
+                    dryRun = preview,
+                    deletedEvents = purged.DeletedEvents,
+                    deletedAggregates = purged.DeletedAggregates,
+                }
+            );
+        }
+
+        if (dryRun is true)
+        {
+            return Results.BadRequest("dryRun applies to sourceId purges only");
+        }
+
         if (
             string.IsNullOrWhiteSpace(provider)
             || !Enum.TryParse<Provider>(provider, ignoreCase: true, out var parsed)
