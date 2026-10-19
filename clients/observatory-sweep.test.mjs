@@ -880,6 +880,19 @@ test('postSweepStatus posts counts with a server-safe model id and never throws'
   await sweep.postSweepStatus('http://127.0.0.1:1', 'k', 'x', [])
 })
 
+test('sweepStatusEntries sums ids that collide after sanitising and folds overflow into one total', () => {
+  const merged = sweep.sweepStatusEntries([
+    { tool: 'codex', model: 'a b', count: 2 },
+    { tool: 'codex', model: 'a_b', count: 3 },
+  ])
+  assert.deepEqual(merged, [{ tool: 'codex', model: 'a_b', count: 5 }])
+
+  const many = Array.from({ length: 250 }, (_, i) => ({ tool: 'codex', model: `m${i}`, count: 1 }))
+  const capped = sweep.sweepStatusEntries(many)
+  assert.equal(capped.length, 200)
+  assert.equal(capped.reduce((sum, e) => sum + e.count, 0), 250)
+})
+
 test('parseLocalSources aborts on unknown names instead of silently shrinking the set', () => {
   assert.throws(() => parseLocalSources('codxe'), /Unknown OBSERVATORY_LOCAL_SOURCES.*codxe/)
   assert.throws(() => parseLocalSources('codex,nope'), /nope/)

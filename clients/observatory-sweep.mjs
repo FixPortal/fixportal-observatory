@@ -846,17 +846,34 @@ async function postEvent(url, apiKey, body) {
   }
 }
 
+const SWEEP_STATUS_MAX_ENTRIES = 200
+
+/**
+ * Server-safe entries: a model id the server would reject must not suppress the whole report, so
+ * ids are sanitised first and entries that then collide are summed. Beyond the server's cap the
+ * remainder folds into one `other` entry so the total never understates.
+ */
+export function sweepStatusEntries(unplaced) {
+  const merged = new Map()
+  for (const { tool, model, count } of unplaced) {
+    const safe = model.replace(/[^A-Za-z0-9._:/-]/g, '_').slice(0, 80)
+    const key = `${tool}\n${safe}`
+    merged.set(key, { tool, model: safe, count: (merged.get(key)?.count ?? 0) + count })
+  }
+  const entries = [...merged.values()].sort((a, b) => b.count - a.count)
+  if (entries.length <= SWEEP_STATUS_MAX_ENTRIES) { return entries }
+  const kept = entries.slice(0, SWEEP_STATUS_MAX_ENTRIES - 1)
+  const rest = entries.slice(SWEEP_STATUS_MAX_ENTRIES - 1)
+  return [...kept, { tool: 'other', model: 'other', count: rest.reduce((sum, e) => sum + e.count, 0) }]
+}
+
 /** Reports unplaced-session counts so the server can show them as a source warning. Best effort. */
 export async function postSweepStatus(url, apiKey, machine, unplaced) {
   try {
     const response = await observatoryFetch(`${url}/api/sources/sweep-status`, apiKey, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      // A model id the server would reject must not suppress the whole report.
-      body: JSON.stringify({
-        machine: machineLabel(machine).slice(0, 64),
-        unplaced: unplaced.slice(0, 200).map(u => ({ ...u, model: u.model.replace(/[^A-Za-z0-9._:/-]/g, '_').slice(0, 80) })),
-      }),
+      body: JSON.stringify({ machine: machineLabel(machine).slice(0, 64), unplaced: sweepStatusEntries(unplaced) }),
     })
     await response.body?.cancel()
     if (!response.ok) { log(`sweep-status POST ${response.status}`) }
@@ -1158,7 +1175,9 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   for (const { tool, model, count } of unplaced) {
     console.error(`UNPLACED ${tool} model=${model} sessions=${count}`)
   }
-  if (!DRY_RUN) { await postSweepStatus(url, apiKey, machine, unplaced) }
+  // An incomplete scan may be missing the very records that were unplaced; a clean report then
+  // would clear a real warning, so the previous report stands until a complete scan.
+  if (!DRY_RUN && incompleteSources.size === 0) { await postSweepStatus(url, apiKey, machine, unplaced) }
   const submissions = planSnapshotSubmissions(snapshots, inventory)
   await saveState(statePath, state)
   // A source with any unreadable-and-uncached file this run scanned incompletely:
