@@ -2,6 +2,15 @@ import { useCallback, useEffect, useState } from 'react'
 
 export const DOCS_ROOT = '/docs'
 
+/** decodeURIComponent throws on malformed escapes, and the address bar is user input. */
+export function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
 export function isDocsPath(pathname: string): boolean {
   return pathname === DOCS_ROOT || pathname.startsWith(`${DOCS_ROOT}/`)
 }
@@ -9,7 +18,7 @@ export function isDocsPath(pathname: string): boolean {
 /** The chapter slug in a docs path, or null for the bare /docs root. */
 export function slugFromPath(pathname: string): string | null {
   if (!pathname.startsWith(`${DOCS_ROOT}/`)) return null
-  const slug = decodeURIComponent(pathname.slice(DOCS_ROOT.length + 1)).replace(/\/+$/, '')
+  const slug = safeDecode(pathname.slice(DOCS_ROOT.length + 1)).replace(/\/+$/, '')
   return slug.length > 0 ? slug : null
 }
 
@@ -25,7 +34,7 @@ interface Location {
 function readLocation(): Location {
   return {
     pathname: window.location.pathname,
-    hash: decodeURIComponent(window.location.hash.slice(1)),
+    hash: safeDecode(window.location.hash.slice(1)),
   }
 }
 

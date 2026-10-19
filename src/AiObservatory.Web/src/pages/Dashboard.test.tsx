@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { Dashboard } from './Dashboard'
 
@@ -121,4 +122,29 @@ test('places data-source operations after the overview evidence', async () => {
   expect(usageGrid.nextElementSibling).toBe(caveman)
   expect(caveman.nextElementSibling).toBe(subscriptions)
   expect(bottomGrid.nextElementSibling).toBe(sourceZone)
+})
+
+test('arrow-key tab traversal does not add history entries as it crosses into and out of docs', async () => {
+  window.history.replaceState(null, '', '/')
+  const user = userEvent.setup()
+  render(<Dashboard />)
+  const before = window.history.length
+
+  screen.getByRole('tab', { name: 'Overview' }).focus()
+  await user.keyboard('{ArrowLeft}')
+  expect(window.location.pathname).toMatch(/^\/docs/)
+  await user.keyboard('{ArrowRight}')
+  expect(window.location.pathname).toBe('/')
+  expect(window.history.length).toBe(before)
+})
+
+test('a click on the Docs tab adds one history entry', async () => {
+  window.history.replaceState(null, '', '/')
+  const user = userEvent.setup()
+  render(<Dashboard />)
+  const before = window.history.length
+
+  await user.click(screen.getByRole('tab', { name: 'Docs' }))
+  expect(window.location.pathname).toMatch(/^\/docs/)
+  expect(window.history.length).toBe(before + 1)
 })

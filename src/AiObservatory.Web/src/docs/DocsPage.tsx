@@ -11,7 +11,7 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
 import { CHAPTER_GROUPS, CHAPTERS, type Chapter, type ChapterGroup } from './chapters'
-import { DOCS_ROOT, docsHref, slugFromPath, useDocsLocation } from './docsRoute'
+import { DOCS_ROOT, docsHref, safeDecode, slugFromPath, useDocsLocation } from './docsRoute'
 import { rehypeDocs } from './rehypeDocs'
 import { useActiveSection } from './useActiveSection'
 import './docs.css'
@@ -351,7 +351,7 @@ export function DocsPage({
     (href: string) => {
       navigate(href)
       const id = href.split('#')[1]
-      if (id !== undefined) scrollToHash(decodeURIComponent(id))
+      if (id !== undefined) scrollToHash(safeDecode(id))
     },
     [navigate, scrollToHash],
   )
