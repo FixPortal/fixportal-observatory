@@ -101,6 +101,21 @@ public class SpendCatalogValidationTests
     }
 
     [Theory]
+    [InlineData("ZAI", true)]
+    [InlineData("deepseek", true)]
+    [InlineData("OpenAI", true)]
+    [InlineData("0", false)]
+    [InlineData("1", false)]
+    [InlineData("Anthropic,Copilot", false)]
+    [InlineData(" zai ", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void ParsesAProviderOnlyByExactCaseInsensitiveName(string? raw, bool accepted)
+    {
+        SpendCatalogEndpoints.TryParseProvider(raw, out _).Should().Be(accepted);
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("--chart-1")]

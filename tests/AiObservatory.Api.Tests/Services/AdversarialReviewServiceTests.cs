@@ -91,6 +91,32 @@ public class AdversarialReviewServiceTests
             );
     }
 
+    [Fact]
+    public async Task RecordRun_unknown_cost_with_a_positive_amount_stores_zero()
+    {
+        _repo
+            .RecordRunAsync(Arg.Any<AdversarialReviewRun>(), Arg.Any<CancellationToken>())
+            .Returns((Guid.NewGuid(), Existed: false));
+
+        await CreateSut()
+            .RecordRunAsync(
+                ValidRequest(costUsd: 2.5m, issuesAccepted: 3) with
+                {
+                    CostUnknown = true,
+                },
+                CancellationToken.None
+            );
+
+        await _repo
+            .Received(1)
+            .RecordRunAsync(
+                Arg.Is<AdversarialReviewRun>(r =>
+                    r != null && r.CostUnknown && r.CostUsd == 0m && r.CostPerAcceptedFinding == null
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     [Theory]
     [InlineData(0, true, false)] // a zero cost is not a measurement
     [InlineData(0.5, false, true)] // 0.5 / 3 accepted

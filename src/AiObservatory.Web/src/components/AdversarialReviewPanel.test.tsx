@@ -124,6 +124,24 @@ describe('AdversarialReviewPanel runs list unknown cost', () => {
     expect(screen.getByText(/\+ 1 unknown/)).toBeInTheDocument()
     expect(screen.getAllByText('Unknown').length).toBeGreaterThan(0)
   })
+
+  test('an unknown-cost anthropic participant does not mark the known total as putative', () => {
+    data.runs = [
+      run({ id: 'g', reviewer: 'google', costUsd: 1, summary: 'Mixed putative run' }),
+      run({
+        id: 'a',
+        reviewer: 'anthropic',
+        costUsd: 0,
+        costUnknown: true,
+        costPerAcceptedFinding: null,
+      }),
+    ]
+    renderPanel()
+
+    const total = screen.getByText('$1.00', { selector: '.adv-run__totals b' })
+    expect(total).not.toHaveAttribute('title')
+    expect(screen.queryByText('~$1.00')).not.toBeInTheDocument()
+  })
 })
 
 describe('AdversarialReviewPanel loading state', () => {

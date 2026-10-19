@@ -182,7 +182,7 @@ public static class SpendCatalogEndpoints
         Provider? provider = null;
         if (!string.IsNullOrWhiteSpace(req.Provider))
         {
-            if (!Enum.TryParse<Provider>(req.Provider, ignoreCase: true, out var parsed) || !Enum.IsDefined(parsed))
+            if (!TryParseProvider(req.Provider, out var parsed))
             {
                 return Results.BadRequest($"Unknown provider: {req.Provider}");
             }
@@ -284,17 +284,25 @@ public static class SpendCatalogEndpoints
             return true;
         }
 
-        if (
-            element.ValueKind is JsonValueKind.String
-            && Enum.TryParse<Provider>(element.GetString(), ignoreCase: true, out var parsed)
-            && Enum.IsDefined(parsed)
-        )
+        if (element.ValueKind is JsonValueKind.String && TryParseProvider(element.GetString(), out var parsed))
         {
             provider = parsed;
             return true;
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Enum.TryParse also accepts numeric ("0") and comma-list ("Anthropic,Copilot") strings,
+    /// and tolerates surrounding whitespace; only an exact, case-insensitive provider name passes.
+    /// </summary>
+    internal static bool TryParseProvider(string? value, out Provider provider)
+    {
+        provider = default;
+        return value is not null
+            && Enum.GetNames<Provider>().Contains(value, StringComparer.OrdinalIgnoreCase)
+            && Enum.TryParse(value, ignoreCase: true, out provider);
     }
 
     /// <summary>

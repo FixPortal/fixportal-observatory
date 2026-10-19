@@ -40,4 +40,38 @@ public class AdversarialReviewEndpointsTests(AiObservatoryApiFactory factory)
         runs.GetArrayLength().Should().Be(1);
         runs[0].GetProperty("costUnknown").GetBoolean().Should().BeTrue();
     }
+
+    [Fact]
+    public async Task Unknown_cost_with_a_positive_amount_is_stored_as_zero()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = factory.CreateAdminClient();
+        var runId = $"unknown-positive-{Guid.NewGuid():N}";
+        var body = new
+        {
+            EventType = "adversarial-review-run",
+            Reviewer = "zai",
+            Model = "glm",
+            InputTokens = 1,
+            OutputTokens = 1,
+            CostUsd = 2.5m,
+            ReviewDurationMs = 1,
+            IssuesRaised = 2,
+            IssuesAccepted = 1,
+            RunId = runId,
+            Role = "reviewer",
+            Repo = (string?)null,
+            CostUnknown = true,
+        };
+
+        (await client.PostAsJsonAsync("/api/adversarial-review/runs", body, ct))
+            .StatusCode.Should()
+            .Be(HttpStatusCode.Created);
+
+        var runs = await client.GetFromJsonAsync<JsonElement>($"/api/adversarial-review/runs?runId={runId}", ct);
+
+        runs[0].GetProperty("costUnknown").GetBoolean().Should().BeTrue();
+        runs[0].GetProperty("costUsd").GetDecimal().Should().Be(0m);
+        runs[0].GetProperty("costPerAcceptedFinding").ValueKind.Should().Be(JsonValueKind.Null);
+    }
 }

@@ -52,7 +52,10 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
     }
 
     // Overwrite the mutable metric columns of the matched participant row. Does
-    // not touch Id or RecordedAt (identity + chronological anchor).
+    // not touch Id or RecordedAt (identity + chronological anchor). The cost
+    // columns are the exception to last-write-wins: an incoming unknown cost (a
+    // placeholder, cost 0) never replaces a row whose cost is already known, so a
+    // delayed placeholder re-post cannot erase a measured figure.
     private Task<int> UpdateMetricsAsync(AdversarialReviewRun run, CancellationToken ct) =>
         ctx
             .AdversarialReviewRuns.Where(r => r.RunId == run.RunId && r.Reviewer == run.Reviewer && r.Role == run.Role)
@@ -63,12 +66,18 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
                         .SetProperty(r => r.Summary, run.Summary)
                         .SetProperty(r => r.InputTokens, run.InputTokens)
                         .SetProperty(r => r.OutputTokens, run.OutputTokens)
-                        .SetProperty(r => r.CostUsd, run.CostUsd)
-                        .SetProperty(r => r.CostUnknown, run.CostUnknown)
+                        .SetProperty(r => r.CostUsd, r => run.CostUnknown && !r.CostUnknown ? r.CostUsd : run.CostUsd)
+                        .SetProperty(r => r.CostUnknown, r => run.CostUnknown && r.CostUnknown)
                         .SetProperty(r => r.ReviewDurationMs, run.ReviewDurationMs)
                         .SetProperty(r => r.IssuesRaised, run.IssuesRaised)
                         .SetProperty(r => r.IssuesAccepted, run.IssuesAccepted)
-                        .SetProperty(r => r.CostPerAcceptedFinding, run.CostPerAcceptedFinding)
+                        .SetProperty(
+                            r => r.CostPerAcceptedFinding,
+                            r =>
+                                run.CostUnknown && !r.CostUnknown
+                                    ? r.CostPerAcceptedFinding
+                                    : run.CostPerAcceptedFinding
+                        )
                         .SetProperty(r => r.ChunkCount, run.ChunkCount),
                 ct
             );

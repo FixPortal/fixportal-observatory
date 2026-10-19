@@ -22,7 +22,7 @@ public sealed class AdversarialReviewRun
     public long OutputTokens { get; init; }
     public decimal CostUsd { get; init; }
 
-    /// <summary>True when the reviewer's cost could not be measured; CostUsd is then 0 and must not be averaged.</summary>
+    /// <summary>True when the reviewer's cost could not be measured; CostUsd is then always stored as 0 (any amount sent with the flag is discarded) and must not be averaged.</summary>
     public bool CostUnknown { get; init; }
     public long ReviewDurationMs { get; init; }
     public int IssuesRaised { get; init; }

@@ -20,6 +20,8 @@ public static class SpendFeedStatusEndpoints
 
     private const int MaxSkipped = 5000;
 
+    private static readonly Duration MaxClockSkew = Duration.FromMinutes(5);
+
     private static readonly string[] Reasons = ["no-vendor", "no-category", "aged-out", "foreign-unreviewed"];
 
     // ReSharper disable once UnusedMethodReturnValue.Global
@@ -42,15 +44,29 @@ public static class SpendFeedStatusEndpoints
         }
 
         var now = clock.GetCurrentInstant();
+        if (req.ReportedAt is { } claimed && Instant.FromDateTimeOffset(claimed) > now + MaxClockSkew)
+        {
+            return Results.BadRequest("reportedAt must not be in the future");
+        }
+
+        // A delayed report carries its own time so an older skip cannot overwrite a newer clean run.
+        var attemptedAt = req.ReportedAt is { } reported ? Instant.FromDateTimeOffset(reported) : now;
         if (req.Skipped.Count == 0)
         {
-            await states.MarkSuccessAsync(SourceId, ExpectedRefreshInterval, now, null, ct);
+            await states.MarkSuccessAsync(SourceId, ExpectedRefreshInterval, attemptedAt, null, ct);
         }
         else
         {
             // Unavailable (not failing, not stale) is the status that surfaces missing data in
             // the panel and the digest; a clean report flips it back to fresh.
-            await states.MarkUnavailableAsync(SourceId, ExpectedRefreshInterval, now, DescribeSkips(req.Skipped), ct);
+            await states.MarkUnavailableAsync(
+                SourceId,
+                ExpectedRefreshInterval,
+                attemptedAt,
+                DescribeSkips(req.Skipped),
+                ct,
+                onlyIfLatestAttempt: req.ReportedAt is not null
+            );
         }
 
         return Results.NoContent();
@@ -103,6 +119,11 @@ public static class SpendFeedStatusEndpoints
     }
 }
 
-public sealed record SpendFeedStatusRequest(int Attempted, int Posted, IReadOnlyList<SpendFeedSkip> Skipped);
+public sealed record SpendFeedStatusRequest(
+    int Attempted,
+    int Posted,
+    IReadOnlyList<SpendFeedSkip> Skipped,
+    DateTimeOffset? ReportedAt = null
+);
 
 public sealed record SpendFeedSkip(long ExpenseId, string Reason);

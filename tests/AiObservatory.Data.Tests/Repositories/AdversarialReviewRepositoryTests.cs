@@ -66,11 +66,13 @@ public class AdversarialReviewRepositoryTests : IAsyncLifetime
         int accepted = 2,
         int? chunkCount = null,
         Instant? recordedAt = null,
-        bool costUnknown = false
+        bool costUnknown = false,
+        decimal? costPerAcceptedFinding = null
     ) =>
         new()
         {
             CostUnknown = costUnknown,
+            CostPerAcceptedFinding = costPerAcceptedFinding,
             RunId = runId,
             Reviewer = reviewer,
             Role = role,
@@ -396,6 +398,65 @@ public class AdversarialReviewRepositoryTests : IAsyncLifetime
         await _repo.RecordRunAsync(Run("W1", "zai", "reviewer", "glm", costUsd: 0.5m), ct);
 
         (await _repo.GetRunsAsync("W1", ct)).Should().ContainSingle().Which.CostUnknown.Should().BeFalse();
+    }
+
+    // A delayed placeholder re-post (unknown, cost 0) must not erase a measured cost; every other
+    // ordering is last-write-wins.
+    [Theory]
+    [InlineData(false, 2.5, true, 0, false, 2.5)]
+    [InlineData(true, 0, false, 1.5, false, 1.5)]
+    [InlineData(false, 2.5, false, 1.5, false, 1.5)]
+    [InlineData(true, 0, true, 0, true, 0)]
+    public async Task UpdateMetrics_never_lets_an_unknown_cost_overwrite_a_known_one(
+        bool firstUnknown,
+        double firstCost,
+        bool secondUnknown,
+        double secondCost,
+        bool expectedUnknown,
+        double expectedCost
+    )
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var runId = $"K-{firstUnknown}-{secondUnknown}";
+        // The service sends a null per-finding cost for an unknown run; mirror that.
+        await _repo.RecordRunAsync(
+            Run(
+                runId,
+                "zai",
+                "reviewer",
+                "glm",
+                (decimal)firstCost,
+                costUnknown: firstUnknown,
+                costPerAcceptedFinding: firstUnknown ? null : (decimal)firstCost / 2
+            ),
+            ct
+        );
+        await _repo.RecordRunAsync(
+            Run(
+                runId,
+                "zai",
+                "reviewer",
+                "glm",
+                (decimal)secondCost,
+                raised: 7,
+                costUnknown: secondUnknown,
+                costPerAcceptedFinding: secondUnknown ? null : (decimal)secondCost / 2
+            ),
+            ct
+        );
+
+        var row = (await _repo.GetRunsAsync(runId, ct)).Should().ContainSingle().Which;
+        row.CostUnknown.Should().Be(expectedUnknown);
+        row.CostUsd.Should().Be((decimal)expectedCost);
+        row.IssuesRaised.Should().Be(7, "non-cost columns still overwrite");
+        if (expectedUnknown)
+        {
+            row.CostPerAcceptedFinding.Should().BeNull();
+        }
+        else
+        {
+            row.CostPerAcceptedFinding.Should().NotBeNull();
+        }
     }
 
     [Fact]

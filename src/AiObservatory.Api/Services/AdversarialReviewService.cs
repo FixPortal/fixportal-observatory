@@ -131,7 +131,8 @@ public class AdversarialReviewService(IAdversarialReviewRepository repo, IClock 
             Model = req.Model.Trim(),
             InputTokens = req.InputTokens,
             OutputTokens = req.OutputTokens,
-            CostUsd = req.CostUsd,
+            // Unknown means no cost was recorded, so any amount sent alongside the flag is discarded.
+            CostUsd = costUnknown ? 0m : req.CostUsd,
             CostUnknown = costUnknown,
             ReviewDurationMs = req.ReviewDurationMs,
             IssuesRaised = req.IssuesRaised,
