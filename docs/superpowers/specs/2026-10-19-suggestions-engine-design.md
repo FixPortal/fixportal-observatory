@@ -52,22 +52,26 @@ configuration.
 
 | Id | Subject | Fires when | Suggestion |
 |---|---|---|---|
-| `seat.no-unique-catch` | seat group | at least [5] runs with finding rows in the last [60] days and zero unique accepted catches | the seat adds no coverage the others lack; consider replacing it |
-| `seat.high-false-positive` | seat group | at least [10] settled findings in the window and false-positive rate above [0.5] | the seat raises more refuted than accepted findings |
-| `seat.confirmation-only` | seat group | at least [10] accepted catches, all corroborated (none unique) | its accepted findings were always also raised elsewhere |
-| `seat.cost-outlier` | seat group | known-cost cost per unique catch above [3] times the median of the other seats, with at least [3] seats having a value | the seat costs far more per unique catch than its peers |
-| `plan.costs-more-than-use` | subscription | the subscription's provider has notional usage value over the last billing period below [0.5] times the plan's price in the same currency, and at least [10] known-cost requests | the plan costs more than the usage it covered would at list price |
-| `plan.unused` | subscription | active for more than [14] days and zero requests from its provider in the last [30] days | the plan shows no use |
+| `seat.no-unique-catch` | seat group | at least [5] detailed runs (`runs - countsOnlyRuns`: runs that have finding rows) in the last [60] days and `unique == 0` | the seat adds no coverage the others lack; consider replacing it |
+| `seat.high-false-positive` | seat group | at least [10] settled findings (`unique + corroborated + refuted`, finding rows only) in the window and refuted / settled above [0.5] | the seat raises more refuted than accepted findings |
+| `seat.confirmation-only` | seat group | `unique + corroborated` at least [10] (finding rows only) and `unique == 0` | its accepted findings were always also raised elsewhere |
+| `seat.cost-outlier` | seat group | the seat's `costPerUnique` is non-null and above [3] times the median `costPerUnique` of its peers; a peer is another seat group with at least [3] detailed runs and a non-null `costPerUnique`, and at least [3] such peers must exist | the seat costs far more per unique catch than its peers |
+| `plan.costs-more-than-use` | provider | over the trailing [30] complete days, the provider's notional usage value is below [0.5] times the sum of its active subscriptions' monthly GBP prices, with at least [10] known-cost requests | the plans cost more than the usage they covered would at list price |
+| `plan.unused` | provider | every active subscription of the provider has been active more than [14] days and the provider has zero requests (any basis) in the trailing [30] days | the plans show no use |
+
+Counts-only runs (older runs with no finding rows) never count toward any seat floor or
+predicate: every seat rule is stated in terms of detailed runs and finding-row catches, so a
+seat with only counts-only history is `notEvaluated`, not a firing rule.
 
 `seat.*` rules read `computeSeatMetrics`-equivalent aggregates built server-side from
 `AdversarialReviewRun` and `AdversarialReviewFinding` rows (same joins and definitions as
 the Seats tab: `(runId, reviewer)` for cost, reviewer rows only, unknown cost excluded
 from cost rules and counted). `plan.*` rules read `Subscription` and `DailyAggregate`
-rows for the subscription's provider, notional basis only, FX per the existing
-`useUsdToGbp` convention (server uses the configured rate source the insights job uses).
+rows for the provider, notional basis only.
 
-A rule that cannot evaluate (no panel findings yet, no FX rate) returns a "not evaluated"
-record with the reason; the UI shows the count of rules not evaluated, never silence.
+A rule that cannot evaluate (no panel findings yet, no usable FX rate, an unusable
+subscription) returns a "not evaluated" record with the reason; the UI shows the count of
+rules not evaluated, never silence.
 
 ## Contract
 
@@ -115,26 +119,30 @@ state says which rules ran and found nothing.
 
 1. **Several subscriptions per provider.** Plan rules use the provider as the subject
    (`plan.costs-more-than-use:<provider>`) and compare provider usage against the SUM of
-   that provider's active subscription prices, because usage cannot be split between
-   plans. `ExtraUsageCost` is not part of the plan price (it is overage, already visible
-   as usage). `plan.unused` fires per provider when every active subscription of that
-   provider is past its guard period.
+   that provider's active subscriptions' monthly GBP prices (annual price / 12, USD
+   converted), because usage cannot be split between plans. `ExtraUsageCost` is not part
+   of the plan price (it is overage, already visible as usage). If ANY active subscription
+   of the provider cannot be evaluated (unsupported currency, an FX rate needed but
+   unavailable, active for fewer than [14] days), the whole provider is `notEvaluated`
+   with that reason; a plan is never silently dropped from the sum.
 2. **Definitions.** Usage value is the sum of `CostUsd` over `notional` rows with
    `RequestCount > UnknownCostCount`. Known-cost requests are the sum of
    `RequestCount - UnknownCostCount` over those rows. `plan.unused` counts requests of any
    basis and scope for the provider. `UsageScope` is not filtered.
-3. **Billing period.** The current period start comes from a C# port of the web app's
-   `currentBillingPeriodStart` (month-end clamping included), clamped to `ActiveFrom`.
-   `plan.costs-more-than-use` waits until at least half of the period has elapsed, so a
-   partial period is never compared with a full price; before that it is "not evaluated"
-   with the reason. Annual plans use the trailing 30 days against price / 12 and need at
-   least [14] active days, the same guard as `plan.unused`.
+3. **One comparison window for plans.** Every plan rule uses the trailing [30] complete UTC
+   days and each plan normalised to a monthly price. This replaces any billing-period
+   logic: it removes the monthly/annual and differing-billing-day mixing problem, needs no
+   port of the web billing-period function, and never compares a part-used period with a
+   full price. A subscription active for fewer than [14] days makes its provider
+   `notEvaluated` (ruling 1).
 4. **Seat identity.** A seat group is the run row's model string, exactly as the Seats tab
    defines it. The C# implementation is a port, so both implementations run the same
    shared JSON fixture (`docs/superpowers/contracts/seat-metrics/`, input rows and
-   expected metrics) in their own test suites. A seat that is absent from some runs is
-   counted only for the runs where it has a reviewer row. The "others" set for
-   `seat.cost-outlier` is every other seat group with at least [3] runs in the window.
+   expected metrics) in their own test suites; the fixture includes a seat that mixes
+   counts-only and detailed runs. A seat that is absent from some runs is counted only for
+   the runs where it has a reviewer row. Peers for `seat.cost-outlier` are defined in the
+   rule table: at least [3] detailed runs and a non-null `costPerUnique`, and at least [3]
+   of them must exist, otherwise the rule is `notEvaluated`.
 5. **Windows.** One setting, `Suggestions:SeatWindowDays` (default 60), applies to all seat
    rules. The evaluation date is UTC today and the window ends on the last complete day.
    Rates follow the panel finding capture design (false-positive rate is refuted over
@@ -164,10 +172,14 @@ state says which rules ran and found nothing.
     every other v1 rule.
 11. **Evidence.** The same shape for both rule families. `runIds` lists the 20 most recent
     contributing runs for seat rules and is empty for plan rules.
-12. **Currency.** GBP and USD only. A subscription in any other currency makes that
-    subscription's plan rules `notEvaluated` with the reason. Notional USD converts at one
-    rate, the rate on the evaluation date from the same source the insights job uses
-    (`fx.GetUsdToGbpAsync`).
+12. **Currency and FX.** GBP and USD subscriptions only; any other currency makes the
+    provider `notEvaluated` (ruling 1). Notional usage is USD, so plan rules always need a
+    USD to GBP rate. `FxRateProvider.GetUsdToGbpAsync` silently falls back to a fixed
+    0.79 on any outage and returns the latest rate (cached up to 12 hours), not a rate for
+    a date. So this project adds `FxRateProvider.TryGetUsdToGbpAsync`, which returns null
+    on failure instead of falling back, and plan rules treat null as `notEvaluated` with
+    the reason "FX unavailable". The evidence figures include `fxRate` and `fxSource`
+    (`live`) so the converted figure can be reproduced.
 
 ## Constraints
 
@@ -190,5 +202,11 @@ state says which rules ran and found nothing.
 
 - Seat identity when a vendor ran two models in one run follows the Seats tab (the run
   row's model string, labelled mixed) until per-seat run rows exist.
-- UNVERIFIED: that `fx.GetUsdToGbpAsync` is usable outside the insights generator's scope
-  without extra wiring. Refuted if it can be injected into a second service as is.
+- `FxRateProvider` is a concrete class the insights generator already receives by
+  constructor injection (observed in `InsightGenerator`), so a second service can take it
+  the same way; `TryGetUsdToGbpAsync` (ruling 12) is the only change to it.
+- Existing defect found while writing this: the Seats tab's `falsePositiveRate` divides by
+  `accepted + refuted` where `accepted` includes counts-only accepted counts, so a seat
+  with mixed runs gets an understated rate. This project corrects it to the finding-row
+  definition (`unique + corroborated + refuted`) in the TypeScript metrics too, pinned by
+  the shared fixture.
