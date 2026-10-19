@@ -5,6 +5,12 @@ public sealed class SuggestionOptions
 {
     public const string SectionName = "Suggestions";
 
+    /// <summary>
+    /// Whether the daily worker runs. On by default; the integration-test host turns it off so a
+    /// startup evaluation (which fetches a live FX rate) cannot add traffic to unrelated tests.
+    /// </summary>
+    public bool WorkerEnabled { get; set; } = true;
+
     public int SeatWindowDays { get; set; } = 60;
     public int MinDetailedRuns { get; set; } = 5;
     public int MinSettledFindings { get; set; } = 10;

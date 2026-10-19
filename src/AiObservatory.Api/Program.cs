@@ -5,6 +5,7 @@ using AiObservatory.Api.Routing;
 using AiObservatory.Api.Services;
 using AiObservatory.Api.Services.GitHub;
 using AiObservatory.Api.Services.Intelligence;
+using AiObservatory.Api.Services.Suggestions;
 using AiObservatory.Data;
 using AiObservatory.Data.Entities;
 using AiObservatory.Data.Pricing;
@@ -14,6 +15,7 @@ using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.Identity.Web;
 using NodaTime;
 using NodaTime.Serialization.SystemTextJson;
@@ -74,6 +76,20 @@ builder.Services.AddTransient<IAlertNotifier, CompositeAlertNotifier>();
 builder.Services.AddScoped<BudgetAlertService>();
 builder.Services.AddScoped<AdversarialReviewService>();
 builder.Services.AddScoped<AdversarialReviewFindingService>();
+builder
+    .Services.AddOptions<SuggestionOptions>()
+    .Bind(builder.Configuration.GetSection(SuggestionOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<SuggestionOptions>, SuggestionOptionsValidator>();
+builder.Services.AddScoped<SuggestionInputsLoader>();
+builder.Services.AddScoped<SuggestionStore>();
+builder.Services.AddScoped<SuggestionService>();
+builder.Services.AddSingleton<ISuggestionRule, SeatNoUniqueCatchRule>();
+builder.Services.AddSingleton<ISuggestionRule, SeatHighFalsePositiveRule>();
+builder.Services.AddSingleton<ISuggestionRule, SeatConfirmationOnlyRule>();
+builder.Services.AddSingleton<ISuggestionRule, SeatCostOutlierRule>();
+builder.Services.AddSingleton<ISuggestionRule, PlanCostsMoreThanUseRule>();
+builder.Services.AddSingleton<ISuggestionRule, PlanUnusedRule>();
 builder.Services.AddSingleton<AnthropicIntelligenceClient>();
 builder.Services.AddSingleton<PromptBuilder>();
 builder.Services.AddSingleton<InsightResponseParser>();
@@ -98,6 +114,9 @@ builder.Services.AddGitHubBilling(builder.Configuration);
 if (!demoMode)
 {
     builder.Services.AddHostedService<IntelligenceWorkerService>();
+    // Registered unconditionally: the worker reads Suggestions:WorkerEnabled from the bound options,
+    // which see the final configuration (including test overrides) that this builder may not yet.
+    builder.Services.AddHostedService<SuggestionWorkerService>();
 }
 
 // Fixed-window rate limit per client IP on the /api group, so an unauthenticated GET or a
@@ -216,6 +235,7 @@ api.MapAdversarialReviewEndpoints();
 api.MapAggregatesEndpoints();
 api.MapInsightsEndpoints();
 api.MapSubscriptionsEndpoints();
+api.MapSuggestionsEndpoints();
 api.MapBudgetRulesEndpoints();
 api.MapNotificationSettingsEndpoints();
 api.MapSpendCatalogEndpoints();
