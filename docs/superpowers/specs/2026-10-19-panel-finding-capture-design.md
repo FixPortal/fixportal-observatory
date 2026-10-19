@@ -145,7 +145,7 @@ A new "Seats" tab on the adversarial review dashboard.
 3. **Pivot switch.** Unique accepted catches | corroborated accepted catches | all accepted
    | acceptance rate. Default is unique accepted catches per run.
 4. **Table underneath.** Per model: runs, findings raised, accepted, unique, corroborated,
-   peer-agreement received, false-positive rate (refuted over raised), total known cost,
+   peer-agreement received, false-positive rate (refuted / (accepted + refuted)), total known cost,
    cost per unique catch, runs with unknown cost.
 5. **Drill-through.** Click a point or row for that model's findings: id, run, severity,
    outcome, co-raisers. No text (see non-goals).
