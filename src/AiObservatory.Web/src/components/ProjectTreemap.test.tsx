@@ -62,7 +62,8 @@ test('uses the project palette for the overflow bucket', () => {
     <ProjectTreemap projects={manyProjects} selectedProject={null} onSelectProject={vi.fn()} />,
   )
 
-  expect(screen.getByRole('button', { name: /Other/ })).toHaveStyle({
-    background: 'var(--project-other)',
-  })
+  // jsdom 30.1.3 stops surfacing var() shorthand values through getComputedStyle
+  // (toHaveStyle reads computed style); assert the inline style the component sets.
+  const other = screen.getByRole('button', { name: /Other/ })
+  expect(other.style.background).toBe('var(--project-other)')
 })
