@@ -642,6 +642,7 @@ public class IngestHostTests
             "APPLICATIONINSIGHTS_CONNECTION_STRING",
             "GOOGLE_CLOUD_CATALOG_API_KEY",
             "GOOGLE_CLOUD_CATALOG_SERVICE_ID",
+            "PRICING_RETIRED_SOURCES_ENABLED",
         ];
 
         public string? DatabaseConnection { get; init; } = "Host=unused;Database=unused";
