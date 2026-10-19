@@ -170,9 +170,19 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
         );
     }
 
+    // Finding writes are rare (one post per panel run), so every writer takes the same
+    // transaction-scoped lock: concurrent replaces of one run cannot collide on the unique
+    // index, and a delete cannot interleave with a replace and leave orphaned findings.
+    private Task TakeFindingsLockAsync(CancellationToken ct) =>
+        ctx.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtext('adversarial-review-findings'))",
+            ct
+        );
+
     // A post is the whole run's finding set, so the old set goes first, in the same transaction:
-    // a re-aggregation that drops or renumbers findings must leave no stale rows behind.
-    public async Task ReplaceFindingsAsync(
+    // a re-aggregation that drops or renumbers findings must leave no stale rows behind. The run
+    // is re-checked under the lock, so a run deleted after the caller looked cannot be re-populated.
+    public async Task<bool> ReplaceFindingsAsync(
         string runId,
         IReadOnlyList<AdversarialReviewFinding> findings,
         CancellationToken ct = default
@@ -181,10 +191,16 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
         ArgumentNullException.ThrowIfNull(findings);
 
         await using var tx = await ctx.Database.BeginTransactionAsync(ct);
+        await TakeFindingsLockAsync(ct);
+        if (!await ctx.AdversarialReviewRuns.AnyAsync(r => r.RunId == runId, ct))
+        {
+            return false;
+        }
         await ctx.AdversarialReviewFindings.Where(f => f.RunId == runId).ExecuteDeleteAsync(ct);
         ctx.AdversarialReviewFindings.AddRange(findings);
         await ctx.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        return true;
     }
 
     public async Task<IReadOnlyList<AdversarialReviewFinding>> GetFindingsAsync(
@@ -202,14 +218,22 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
 
     public async Task<int> DeleteAllRunsAsync(CancellationToken ct = default)
     {
+        await using var tx = await ctx.Database.BeginTransactionAsync(ct);
+        await TakeFindingsLockAsync(ct);
         await ctx.AdversarialReviewFindings.ExecuteDeleteAsync(ct);
-        return await ctx.AdversarialReviewRuns.ExecuteDeleteAsync(ct);
+        var deleted = await ctx.AdversarialReviewRuns.ExecuteDeleteAsync(ct);
+        await tx.CommitAsync(ct);
+        return deleted;
     }
 
     // Removes every participant row for one sweep (all reviewers + judge sharing RunId), and its findings.
     public async Task<int> DeleteRunAsync(string runId, CancellationToken ct = default)
     {
+        await using var tx = await ctx.Database.BeginTransactionAsync(ct);
+        await TakeFindingsLockAsync(ct);
         await ctx.AdversarialReviewFindings.Where(f => f.RunId == runId).ExecuteDeleteAsync(ct);
-        return await ctx.AdversarialReviewRuns.Where(r => r.RunId == runId).ExecuteDeleteAsync(ct);
+        var deleted = await ctx.AdversarialReviewRuns.Where(r => r.RunId == runId).ExecuteDeleteAsync(ct);
+        await tx.CommitAsync(ct);
+        return deleted;
     }
 }

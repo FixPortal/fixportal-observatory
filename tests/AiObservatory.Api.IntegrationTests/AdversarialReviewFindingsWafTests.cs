@@ -111,6 +111,23 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
         rows[0].GetProperty("assessments").GetArrayLength().Should().Be(2);
     }
 
+    [Fact]
+    public async Task Concurrent_posts_for_one_run_all_succeed_and_leave_one_consistent_set()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = factory.CreateAdminClient();
+        var runId = $"concurrent-{Guid.NewGuid():N}";
+        await SeedRunAsync(client, runId);
+
+        var responses = await Task.WhenAll(
+            Enumerable.Range(0, 8).Select(_ => client.PostAsJsonAsync(FindingsRoute, ValidBody(runId), ct))
+        );
+
+        responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.OK);
+        var rows = await client.GetFromJsonAsync<JsonElement>($"{FindingsRoute}?runId={runId}", ct);
+        rows.GetArrayLength().Should().Be(4);
+    }
+
     [Theory]
     [MemberData(nameof(InvalidCaseNames))]
     public async Task Invalid_bodies_are_a_400_that_never_echoes_input(string name)
