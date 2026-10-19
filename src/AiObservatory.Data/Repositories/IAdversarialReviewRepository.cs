@@ -23,7 +23,9 @@ public interface IAdversarialReviewRepository
     Task<(Guid Id, bool Existed)> RecordRunAsync(AdversarialReviewRun run, CancellationToken ct = default);
     Task<IReadOnlyList<AdversarialReviewRun>> GetRunsAsync(string? runId = null, CancellationToken ct = default);
     Task<IReadOnlyList<AdversarialReviewStats>> GetStatsAsync(CancellationToken ct = default);
-    Task ReplaceFindingsAsync(
+
+    /// <returns>False when the run has no run rows (nothing is written).</returns>
+    Task<bool> ReplaceFindingsAsync(
         string runId,
         IReadOnlyList<AdversarialReviewFinding> findings,
         CancellationToken ct = default

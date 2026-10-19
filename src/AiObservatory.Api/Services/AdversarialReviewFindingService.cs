@@ -136,8 +136,9 @@ public sealed partial class AdversarialReviewFindingService(IAdversarialReviewRe
 
         var now = clock.GetCurrentInstant();
         var rows = req.Findings!.Select(f => ToEntity(runId, f!, now)).ToList();
-        await repo.ReplaceFindingsAsync(runId, rows, ct);
-        return Results.Ok(new { Findings = rows.Count });
+        return await repo.ReplaceFindingsAsync(runId, rows, ct)
+            ? Results.Ok(new { Findings = rows.Count })
+            : Results.NotFound();
     }
 
     private static AdversarialReviewFinding ToEntity(string runId, FindingDto f, Instant now)
