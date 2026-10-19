@@ -112,13 +112,17 @@ function buildChartData(metrics: SeatMetrics[], runs: RunRow[], pivot: Pivot): C
     label: seat.label,
     color: participantColor(reviewers.get(seat.key) ?? 'other', 'reviewer'),
   }))
+  const seriesKeyBySeat = new Map(series.map((item) => [item.seatKey, item.key]))
+  const weeksBySeat = new Map(
+    metrics.map((seat) => [seat.key, new Map(seat.byWeek.map((item) => [item.week, item]))]),
+  )
   const rows = [...weeks]
     .toSorted((a, b) => a.localeCompare(b))
     .map((week) => {
       const row: TrendRow = { week }
       for (const seat of metrics) {
-        const values = seat.byWeek.find((item) => item.week === week)
-        const seriesKey = series.find((item) => item.seatKey === seat.key)?.key
+        const values = weeksBySeat.get(seat.key)?.get(week)
+        const seriesKey = seriesKeyBySeat.get(seat.key)
         if (seriesKey) {
           row[seriesKey] = values?.influence ?? 0
           row[`${seriesKey}-cost`] = values?.costUsd ?? 0
