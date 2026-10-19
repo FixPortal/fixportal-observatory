@@ -846,6 +846,25 @@ async function postEvent(url, apiKey, body) {
   }
 }
 
+/** Reports unplaced-session counts so the server can show them as a source warning. Best effort. */
+export async function postSweepStatus(url, apiKey, machine, unplaced) {
+  try {
+    const response = await observatoryFetch(`${url}/api/sources/sweep-status`, apiKey, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // A model id the server would reject must not suppress the whole report.
+      body: JSON.stringify({
+        machine: machineLabel(machine).slice(0, 64),
+        unplaced: unplaced.slice(0, 200).map(u => ({ ...u, model: u.model.replace(/[^A-Za-z0-9._:/-]/g, '_').slice(0, 80) })),
+      }),
+    })
+    await response.body?.cancel()
+    if (!response.ok) { log(`sweep-status POST ${response.status}`) }
+  } catch (error) {
+    log('sweep-status POST failed:', error.message)
+  }
+}
+
 async function fetchSnapshotInventory(url, apiKey, enabled, machine) {
   const inventory = []
   const failedSources = new Set()
@@ -1135,9 +1154,11 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   }
   const { records, incompleteSources, emptySources } = await scanRecords(cfg, state, enabled, discover)
   const snapshots = buildDailySnapshots(records, machine)
-  for (const { tool, model, count } of countUnplaced(records, machine)) {
+  const unplaced = countUnplaced(records, machine)
+  for (const { tool, model, count } of unplaced) {
     console.error(`UNPLACED ${tool} model=${model} sessions=${count}`)
   }
+  if (!DRY_RUN) { await postSweepStatus(url, apiKey, machine, unplaced) }
   const submissions = planSnapshotSubmissions(snapshots, inventory)
   await saveState(statePath, state)
   // A source with any unreadable-and-uncached file this run scanned incompletely:

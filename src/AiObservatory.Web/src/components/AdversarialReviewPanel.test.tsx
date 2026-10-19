@@ -176,7 +176,8 @@ describe('AdversarialReviewPanel run status filters', () => {
       }),
       run({ id: 'b', runId: 'R1', reviewer: 'google', role: 'reviewer' }),
       run({ id: 'c', runId: 'R1', reviewer: 'openai', role: 'reviewer' }),
-      run({ id: 'd', runId: 'R1', reviewer: 'moonshot', role: 'reviewer' }),
+      run({ id: 'd', runId: 'R1', reviewer: 'zai', role: 'reviewer' }),
+      run({ id: 'g', runId: 'R1', reviewer: 'deepseek', role: 'reviewer' }),
       run({ id: 'e', runId: 'R1', reviewer: 'anthropic', role: 'judge' }),
       run({
         id: 'f',
