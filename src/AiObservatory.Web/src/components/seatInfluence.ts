@@ -260,7 +260,9 @@ export function computeSeatMetrics(
   return [...seats.values()]
     .toSorted((a, b) => a.label.localeCompare(b.label))
     .map((seat) => {
-      const settled = seat.accepted + seat.refuted
+      // Finding rows only: `accepted` also carries counts-only runs' accepted totals, which have
+      // no refuted counterpart and would understate the rate for a seat with older runs.
+      const settled = seat.unique + seat.corroborated + seat.refuted
       return {
         key: seat.key,
         label: seat.label,

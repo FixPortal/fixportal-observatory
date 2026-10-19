@@ -194,6 +194,26 @@ test('excludes unknown-cost runs from cost totals and ratios while counting them
   expect(allUnknown[0]).toMatchObject({ knownCostUsd: 0, unknownCostRuns: 1, costPerUnique: null })
 })
 
+test('the false-positive rate counts finding-row catches only, not counts-only accepted counts', () => {
+  const metrics = computeSeatMetrics(
+    [
+      run({ runId: 'R1', issuesRaised: 5, issuesAccepted: 4 }),
+      run({ id: 'detailed', runId: 'R2', recordedAt: '2026-10-20T12:00:00Z' }),
+    ],
+    [
+      finding({ runId: 'R2', findingId: 'F1' }),
+      finding({ runId: 'R2', findingId: 'F2', outcome: 'refuted' }),
+      finding({ runId: 'R2', findingId: 'F3', outcome: 'refuted' }),
+    ],
+    'unique',
+  )
+
+  expect(metrics[0]).toMatchObject({ accepted: 5, unique: 1, refuted: 2 })
+  // Settled findings are the finding rows only: 1 accepted + 2 refuted. The 4 accepted from
+  // the counts-only run have no refuted counterpart and must not dilute the rate.
+  expect(metrics[0]?.falsePositiveRate).toBeCloseTo(2 / 3, 10)
+})
+
 test('a counts-only run contributes counts to acceptance but not unique or corroborated', () => {
   const metrics = computeSeatMetrics(
     [
