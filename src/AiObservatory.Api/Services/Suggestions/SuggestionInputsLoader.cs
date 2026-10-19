@@ -22,15 +22,13 @@ public class SuggestionInputsLoader(
         var seatWindow = new DateWindow(last.PlusDays(1 - settings.SeatWindowDays), last);
         var planWindow = new DateWindow(last.PlusDays(1 - settings.PlanWindowDays), last);
 
-        var runs = (await reviews.GetRunsAsync(ct: ct))
-            .Where(r =>
-            {
-                var date = r.RecordedAt.InUtc().Date;
-                return date >= seatWindow.From && date <= seatWindow.To;
-            })
-            .ToList();
+        var runs = await reviews.GetRunsRecordedBetweenAsync(
+            seatWindow.From.AtMidnight().InUtc().ToInstant(),
+            today.AtMidnight().InUtc().ToInstant(),
+            ct
+        );
         var runIds = runs.Select(r => r.RunId).ToHashSet(StringComparer.Ordinal);
-        var findings = (await reviews.GetFindingsAsync(ct: ct)).Where(f => runIds.Contains(f.RunId)).ToList();
+        var findings = await reviews.GetFindingsForRunsAsync(runIds, ct);
 
         return new SuggestionInputs(
             seatWindow,

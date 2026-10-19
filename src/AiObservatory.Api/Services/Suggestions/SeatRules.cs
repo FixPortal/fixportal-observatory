@@ -51,12 +51,19 @@ public abstract class SeatRuleBase : ISuggestionRule
 
     protected RuleOutcome Outcome(
         IReadOnlyList<SuggestionCandidate> candidates,
-        int subjectsEvaluated,
+        IReadOnlyCollection<string> judgedSeats,
         string notEvaluatedReason
     ) =>
-        subjectsEvaluated == 0
+        judgedSeats.Count == 0
             ? RuleOutcome.NotEvaluated(RuleId, notEvaluatedReason)
-            : new RuleOutcome(RuleId, candidates, true, null, subjectsEvaluated);
+            : new RuleOutcome(
+                RuleId,
+                candidates,
+                true,
+                null,
+                judgedSeats.Count,
+                judgedSeats.ToHashSet(StringComparer.Ordinal)
+            );
 }
 
 public sealed class SeatNoUniqueCatchRule : SeatRuleBase
@@ -83,7 +90,7 @@ public sealed class SeatNoUniqueCatchRule : SeatRuleBase
             .ToList();
         return Outcome(
             candidates,
-            judged.Count,
+            judged.Select(s => s.Key).ToList(),
             $"No seat has {options.MinDetailedRuns} runs with finding rows in the last {options.SeatWindowDays} days yet"
         );
     }
@@ -118,7 +125,7 @@ public sealed class SeatHighFalsePositiveRule : SeatRuleBase
             .ToList();
         return Outcome(
             candidates,
-            judged.Count,
+            judged.Select(s => s.Key).ToList(),
             $"No seat has {options.MinSettledFindings} settled findings in the last {options.SeatWindowDays} days yet"
         );
     }
@@ -150,7 +157,7 @@ public sealed class SeatConfirmationOnlyRule : SeatRuleBase
             .ToList();
         return Outcome(
             candidates,
-            judged.Count,
+            judged.Select(s => s.Key).ToList(),
             $"No seat has {options.MinCatchesForConfirmationOnly} accepted catches in the last {options.SeatWindowDays} days yet"
         );
     }
@@ -168,7 +175,7 @@ public sealed class SeatCostOutlierRule : SeatRuleBase
             .Where(s => DetailedRuns(s) >= options.CostOutlierMinPeerRuns && s.CostPerUnique is not null)
             .ToList();
         var candidates = new List<SuggestionCandidate>();
-        var judged = 0;
+        var judged = new List<string>();
         foreach (var seat in eligible)
         {
             var peers = eligible.Where(p => p.Key != seat.Key).Select(p => p.CostPerUnique!.Value).Order().ToList();
@@ -176,7 +183,7 @@ public sealed class SeatCostOutlierRule : SeatRuleBase
             {
                 continue;
             }
-            judged++;
+            judged.Add(seat.Key);
             var median = Median(peers);
             if (median > 0 && seat.CostPerUnique > options.CostOutlierMultiple * median)
             {

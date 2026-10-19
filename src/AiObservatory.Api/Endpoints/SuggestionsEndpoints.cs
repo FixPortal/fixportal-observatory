@@ -54,8 +54,14 @@ public static class SuggestionsEndpoints
             snoozedUntil = s.SnoozedUntil?.ToString(),
             firstSeenAt = s.FirstSeenAt.ToString(),
             lastSeenAt = s.LastSeenAt.ToString(),
-            evidence = JsonDocument.Parse(s.EvidenceJson).RootElement.Clone(),
+            evidence = ParseEvidence(s.EvidenceJson),
         };
+
+    private static JsonElement ParseEvidence(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
+    }
 
     private static IResult ToResult(SuggestionChange change) =>
         change switch

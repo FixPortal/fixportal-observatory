@@ -38,13 +38,18 @@ public sealed record SuggestionCandidate(
     string PrimaryFigureLabel
 );
 
-/// <summary>One rule's result. <c>Evaluated</c> is false when no subject could be judged.</summary>
+/// <summary>
+/// One rule's result. <c>Evaluated</c> is false when no subject could be judged. <c>JudgedSubjects</c>
+/// names the subjects the rule actually judged; a subject it skipped keeps its stored row untouched.
+/// Null means every stored subject of the rule was judged.
+/// </summary>
 public sealed record RuleOutcome(
     string RuleId,
     IReadOnlyList<SuggestionCandidate> Candidates,
     bool Evaluated,
     string? Reason,
-    int SubjectsEvaluated
+    int SubjectsEvaluated,
+    IReadOnlySet<string>? JudgedSubjects = null
 )
 {
     public static RuleOutcome NotEvaluated(string ruleId, string reason) => new(ruleId, [], false, reason, 0);

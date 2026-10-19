@@ -1,4 +1,5 @@
 using AiObservatory.Data.Entities;
+using NodaTime;
 
 namespace AiObservatory.Data.Repositories;
 
@@ -23,6 +24,18 @@ public interface IAdversarialReviewRepository
     Task<(Guid Id, bool Existed)> RecordRunAsync(AdversarialReviewRun run, CancellationToken ct = default);
     Task<IReadOnlyList<AdversarialReviewRun>> GetRunsAsync(string? runId = null, CancellationToken ct = default);
     Task<IReadOnlyList<AdversarialReviewStats>> GetStatsAsync(CancellationToken ct = default);
+
+    /// <summary>Runs recorded in [from, toExclusive), so a windowed caller does not read the whole history.</summary>
+    Task<IReadOnlyList<AdversarialReviewRun>> GetRunsRecordedBetweenAsync(
+        Instant from,
+        Instant toExclusive,
+        CancellationToken ct = default
+    );
+
+    Task<IReadOnlyList<AdversarialReviewFinding>> GetFindingsForRunsAsync(
+        IReadOnlyCollection<string> runIds,
+        CancellationToken ct = default
+    );
 
     /// <returns>False when the run has no run rows (nothing is written).</returns>
     Task<bool> ReplaceFindingsAsync(

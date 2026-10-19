@@ -36,10 +36,11 @@ public class SuggestionLifecycleTests
         string status,
         double primary = 10,
         int sample = 10,
-        Instant? snoozedUntil = null
+        Instant? snoozedUntil = null,
+        string subject = "glm-5.3"
     )
     {
-        var candidate = Candidate(primary, sample);
+        var candidate = Candidate(primary, sample, subject);
         var row = SuggestionLifecycle.NewRow(candidate, Now.Plus(Duration.FromDays(-7)));
         row.Status = status;
         row.SnoozedUntil = snoozedUntil;
@@ -84,13 +85,26 @@ public class SuggestionLifecycleTests
     public void A_condition_that_no_longer_holds_resolves_open_and_snoozed_rows_of_an_evaluated_rule()
     {
         var open = Existing("open");
-        var snoozed = Existing("snoozed", snoozedUntil: Now.Plus(Duration.FromDays(5)));
-        snoozed.Key = "seat.no-unique-catch:other";
+        var snoozed = Existing("snoozed", snoozedUntil: Now.Plus(Duration.FromDays(5)), subject: "other");
 
         SuggestionLifecycle.Reconcile([open, snoozed], [Quiet()], Now, Options);
 
         open.Status.Should().Be("resolved");
         snoozed.Status.Should().Be("resolved");
+    }
+
+    [Fact]
+    public void A_subject_the_rule_skipped_keeps_its_row_and_snooze()
+    {
+        var judged = Existing("open");
+        var skipped = Existing("snoozed", snoozedUntil: Now.Plus(Duration.FromDays(5)), subject: "other");
+        var outcome = Quiet() with { JudgedSubjects = new HashSet<string> { "glm-5.3" } };
+
+        SuggestionLifecycle.Reconcile([judged, skipped], [outcome], Now, Options);
+
+        judged.Status.Should().Be("resolved");
+        skipped.Status.Should().Be("snoozed");
+        skipped.LastEvaluatedAt.Should().Be(Now.Plus(Duration.FromDays(-7)));
     }
 
     [Fact]

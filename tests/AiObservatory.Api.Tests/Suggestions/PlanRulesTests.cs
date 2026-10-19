@@ -97,6 +97,18 @@ public class PlanRulesTests
     }
 
     [Fact]
+    public void CostsMoreThanUse_scales_the_window_total_to_a_month_before_comparing_with_the_price()
+    {
+        // $20 over a 60-day window is $10 a month: 7.90 GBP against 20, below half. Unscaled it would be 15.80.
+        var inputs = Inputs([Sub(Provider.OpenAI, 20m)], [Agg(Provider.OpenAI, 20m, 20)]);
+
+        var outcome = new PlanCostsMoreThanUseRule().Evaluate(inputs, new SuggestionOptions { PlanWindowDays = 60 });
+
+        var candidate = outcome.Candidates.Should().ContainSingle().Subject;
+        candidate.Evidence.Figures.Should().Contain(f => f.Label == "Notional usage value" && (decimal)f.Value == 7.9m);
+    }
+
+    [Fact]
     public void CostsMoreThanUse_prices_an_annual_plan_per_month_and_sums_plans_on_one_provider()
     {
         // 240 a year is 20 a month; plus a 10 monthly plan makes 30. $15 is 11.85 GBP: below half of 30.
