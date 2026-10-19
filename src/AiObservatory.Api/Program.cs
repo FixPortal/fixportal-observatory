@@ -73,6 +73,7 @@ builder.Services.AddSlackAlertNotifier();
 builder.Services.AddTransient<IAlertNotifier, CompositeAlertNotifier>();
 builder.Services.AddScoped<BudgetAlertService>();
 builder.Services.AddScoped<AdversarialReviewService>();
+builder.Services.AddScoped<AdversarialReviewFindingService>();
 builder.Services.AddSingleton<AnthropicIntelligenceClient>();
 builder.Services.AddSingleton<PromptBuilder>();
 builder.Services.AddSingleton<InsightResponseParser>();

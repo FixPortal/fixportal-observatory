@@ -170,10 +170,46 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
         );
     }
 
-    public Task<int> DeleteAllRunsAsync(CancellationToken ct = default) =>
-        ctx.AdversarialReviewRuns.ExecuteDeleteAsync(ct);
+    // A post is the whole run's finding set, so the old set goes first, in the same transaction:
+    // a re-aggregation that drops or renumbers findings must leave no stale rows behind.
+    public async Task ReplaceFindingsAsync(
+        string runId,
+        IReadOnlyList<AdversarialReviewFinding> findings,
+        CancellationToken ct = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(findings);
 
-    // Removes every participant row for one sweep (all reviewers + judge sharing RunId).
-    public Task<int> DeleteRunAsync(string runId, CancellationToken ct = default) =>
-        ctx.AdversarialReviewRuns.Where(r => r.RunId == runId).ExecuteDeleteAsync(ct);
+        await using var tx = await ctx.Database.BeginTransactionAsync(ct);
+        await ctx.AdversarialReviewFindings.Where(f => f.RunId == runId).ExecuteDeleteAsync(ct);
+        ctx.AdversarialReviewFindings.AddRange(findings);
+        await ctx.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<AdversarialReviewFinding>> GetFindingsAsync(
+        string? runId = null,
+        CancellationToken ct = default
+    )
+    {
+        var query = ctx.AdversarialReviewFindings.AsNoTracking().Include(f => f.Participants).AsQueryable();
+        if (runId is not null)
+        {
+            query = query.Where(f => f.RunId == runId);
+        }
+        return await query.OrderBy(f => f.RunId).ThenBy(f => f.ChunkId).ThenBy(f => f.FindingId).ToListAsync(ct);
+    }
+
+    public async Task<int> DeleteAllRunsAsync(CancellationToken ct = default)
+    {
+        await ctx.AdversarialReviewFindings.ExecuteDeleteAsync(ct);
+        return await ctx.AdversarialReviewRuns.ExecuteDeleteAsync(ct);
+    }
+
+    // Removes every participant row for one sweep (all reviewers + judge sharing RunId), and its findings.
+    public async Task<int> DeleteRunAsync(string runId, CancellationToken ct = default)
+    {
+        await ctx.AdversarialReviewFindings.Where(f => f.RunId == runId).ExecuteDeleteAsync(ct);
+        return await ctx.AdversarialReviewRuns.Where(r => r.RunId == runId).ExecuteDeleteAsync(ct);
+    }
 }
