@@ -221,6 +221,7 @@ api.MapSpendCatalogEndpoints();
 api.MapSpendEntriesEndpoints();
 api.MapSpendFeedStatusEndpoints();
 api.MapSourceStatusEndpoints();
+api.MapSweepStatusEndpoints();
 
 await app.RunAsync();
 

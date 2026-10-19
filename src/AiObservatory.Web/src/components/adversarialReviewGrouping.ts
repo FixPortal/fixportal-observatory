@@ -1,12 +1,18 @@
 import type { AdversarialReviewRun } from '../api/client'
 
-const REVIEWER_ORDER = ['anthropic', 'google', 'openai', 'moonshot']
+// The vendors on the panel today. Mirror of the enabled seats in the
+// adversarial-review skill's reviewers.json; update both together when a seat is swapped.
+const ACTIVE_REVIEWER_VENDORS = ['anthropic', 'google', 'openai', 'zai', 'deepseek']
 
-// A "complete" panel is one reviewer per vendor across the full cross-vendor
-// roster, plus the adjudicating judge. The v2 panel spans four vendors
-// (Anthropic, Google, OpenAI, Moonshot); pre-Moonshot runs therefore read as
-// "N of 4".
-const EXPECTED_REVIEWER_VENDORS = REVIEWER_ORDER.length
+// Seats retired from the panel. Their historical runs still sort among the reviewers but
+// do not count toward a complete panel.
+const RETIRED_REVIEWER_VENDORS = ['moonshot']
+
+const REVIEWER_ORDER = [...ACTIVE_REVIEWER_VENDORS, ...RETIRED_REVIEWER_VENDORS]
+
+// A "complete" panel is one reviewer per active vendor, plus the adjudicating judge.
+// Runs from before a seat joined therefore read as "N of M".
+const EXPECTED_REVIEWER_VENDORS = ACTIVE_REVIEWER_VENDORS.length
 
 // A run below this reviewer-vendor count is too thin to carry cross-vendor signal at
 // all — distinct from "incomplete" (missing one vendor off the full roster, still a
@@ -95,7 +101,9 @@ export function groupRuns(runs: AdversarialReviewRun[]): RunGroup[] {
       participants.flatMap((p) => (p.role === 'reviewer' ? [p.reviewer] : [])),
     )
     const hasJudge = participants.some((p) => p.role === 'judge')
-    const reviewerCount = REVIEWER_ORDER.filter((vendor) => reviewerVendors.has(vendor)).length
+    const reviewerCount = ACTIVE_REVIEWER_VENDORS.filter((vendor) =>
+      reviewerVendors.has(vendor),
+    ).length
     const isComplete = reviewerCount === EXPECTED_REVIEWER_VENDORS && hasJudge
     const statusReason = isComplete
       ? 'complete'

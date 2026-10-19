@@ -856,6 +856,30 @@ test('countUnplaced counts dropped Codex sessions by tool and model, ignoring pl
   assert.deepEqual(unplaced, [{ tool: 'codex', model: 'mystery-1', count: 2 }])
 })
 
+test('postSweepStatus posts counts with a server-safe model id and never throws', async () => {
+  let received
+  const server = createServer((request, response) => {
+    let body = ''
+    request.on('data', chunk => { body += chunk })
+    request.on('end', () => {
+      received = { url: request.url, key: request.headers['x-observatory-key'], body: JSON.parse(body) }
+      response.statusCode = 204
+      response.end()
+    })
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`
+    await sweep.postSweepStatus(base, 'k', 'Test Box', [{ tool: 'codex', model: 'has space/ok', count: 2 }])
+    assert.equal(received.url, '/api/sources/sweep-status')
+    assert.equal(received.key, 'k')
+    assert.deepEqual(received.body, { machine: 'test-box', unplaced: [{ tool: 'codex', model: 'has_space/ok', count: 2 }] })
+  } finally {
+    await new Promise(resolve => server.close(resolve))
+  }
+  await sweep.postSweepStatus('http://127.0.0.1:1', 'k', 'x', [])
+})
+
 test('parseLocalSources aborts on unknown names instead of silently shrinking the set', () => {
   assert.throws(() => parseLocalSources('codxe'), /Unknown OBSERVATORY_LOCAL_SOURCES.*codxe/)
   assert.throws(() => parseLocalSources('codex,nope'), /nope/)

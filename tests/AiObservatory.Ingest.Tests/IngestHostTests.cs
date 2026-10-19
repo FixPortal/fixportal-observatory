@@ -524,6 +524,29 @@ public class IngestHostTests
             .BeFalse();
     }
 
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("false", false)]
+    [InlineData("true", true)]
+    public async Task RetiredPricingSourcesAreDormantUnlessOptedIn(string? setting, bool expected)
+    {
+        await using var factory = new IngestFactory();
+        if (setting is not null)
+        {
+            factory.Settings["PRICING_RETIRED_SOURCES_ENABLED"] = setting;
+        }
+        using var scope = factory.Services.CreateScope();
+
+        var definitions = scope.ServiceProvider.GetServices<PricingSourceDefinition>().ToList();
+
+        foreach (var id in new[] { PricingSourceIds.Kimi, PricingSourceIds.Xai, PricingSourceIds.MetaOpenRouter })
+        {
+            definitions.Single(d => d.SourceId == id).IsConfigured.Should().Be(expected);
+        }
+        definitions.Single(d => d.SourceId == PricingSourceIds.OpenAi).IsConfigured.Should().BeTrue();
+        definitions.Single(d => d.SourceId == PricingSourceIds.Claude).IsConfigured.Should().BeTrue();
+    }
+
     [Fact]
     public async Task DoesNotRegisterGooglePricingWithoutVerifiedMappingsEvenWhenCredentialsExist()
     {

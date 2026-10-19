@@ -331,9 +331,19 @@ static void RegisterPricingSources(IServiceCollection services, IConfiguration c
     var refreshInterval = Duration.FromDays(1);
     services.AddSingleton(new PricingSourceDefinition(PricingSourceIds.OpenAi, true, refreshInterval));
     services.AddSingleton(new PricingSourceDefinition(PricingSourceIds.Claude, true, refreshInterval));
-    services.AddSingleton(new PricingSourceDefinition(PricingSourceIds.Kimi, true, refreshInterval));
-    services.AddSingleton(new PricingSourceDefinition(PricingSourceIds.Xai, true, refreshInterval));
-    services.AddSingleton(new PricingSourceDefinition(PricingSourceIds.MetaOpenRouter, true, refreshInterval));
+    // Retired lanes (Kimi, xAI, Meta) are dormant by default: no daily fetch, status reads
+    // notConfigured, and the last stored snapshot keeps pricing their history. Opt back in with
+    // PRICING_RETIRED_SOURCES_ENABLED=true.
+    var retiredEnabled = string.Equals(
+        configuration["PRICING_RETIRED_SOURCES_ENABLED"],
+        "true",
+        StringComparison.OrdinalIgnoreCase
+    );
+    services.AddSingleton(new PricingSourceDefinition(PricingSourceIds.Kimi, retiredEnabled, refreshInterval));
+    services.AddSingleton(new PricingSourceDefinition(PricingSourceIds.Xai, retiredEnabled, refreshInterval));
+    services.AddSingleton(
+        new PricingSourceDefinition(PricingSourceIds.MetaOpenRouter, retiredEnabled, refreshInterval)
+    );
     services.TryAddEnumerable(ServiceDescriptor.Scoped<IPricingSource, OpenAiPricingSource>());
     services.TryAddEnumerable(ServiceDescriptor.Scoped<IPricingSource, ClaudePricingSource>());
     services.TryAddEnumerable(ServiceDescriptor.Scoped<IPricingSource, KimiPricingSource>());
