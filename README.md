@@ -87,6 +87,7 @@ dotnet run --project src/AiObservatory.Ingest
 | --- | --- |
 | `Activity__ProjectOwners` | The Activity and GitHub tabs show every project and repository that was ingested. Set it to a comma-separated list of GitHub account names to narrow them to those owners. |
 | `VITE_ATTRIBUTION_NAME`, `VITE_ATTRIBUTION_URL` | The footer shows only a link to this project. Set both to credit whoever runs your instance. |
+| `Suggestions__*` | Suggestion rules use their built-in thresholds and the daily worker runs. Every threshold and the worker switch are listed in [Suggestions](docs/suggestions.md#settings). |
 | `BUDGET_ALERT_MESSAGE_ID_DOMAIN` | Budget alert `Message-Id` headers use the domain of your configured sender address, or `observatory.local` if no sender is configured. |
 
 Use neutral placeholders such as `<observatory-api-key>` outside your secret store. See [Provider setup](docs/provider-setup.md) for acquisition settings; public pricing catalogs require no credentials. Google Cloud SKU pricing remains unavailable until verified mappings exist, independently of the bundled Gemini Developer API rates.
@@ -117,6 +118,7 @@ Requests use `X-Observatory-Key` when API keys are configured. The most useful e
 | `POST` | `/api/spend/feed-status` | Admin key only. Receives the tax portal's spend-feed report of expense ids it skipped, by reason code; only counts are kept. Nothing posts to it yet: the portal has not been changed to call it |
 | `GET` | `/api/subscriptions` | Subscription ledger records |
 | `GET` | `/api/insights` | Generated insights |
+| `GET` | `/api/suggestions` | Rule-based suggestions about review-panel seats and subscription plans, with their evidence. See [Suggestions](docs/suggestions.md) |
 
 Import the [Postman collection](docs/observatory.postman_collection.json), set `base_url` and `api_key`, and use its source-aware event examples. It is a representative collection, not an exhaustive API specification.
 
