@@ -99,7 +99,13 @@ public static class SuggestionLifecycle
             }
         }
 
-        foreach (var row in existing.Where(s => s.RuleId == outcome.RuleId && !firing.Contains(s.Key)))
+        foreach (
+            var row in existing.Where(s =>
+                s.RuleId == outcome.RuleId
+                && !firing.Contains(s.Key)
+                && (outcome.JudgedSubjects is null || outcome.JudgedSubjects.Contains(s.Subject))
+            )
+        )
         {
             row.LastEvaluatedAt = now;
             if (row.Status is "open" or "snoozed" or "dismissed")

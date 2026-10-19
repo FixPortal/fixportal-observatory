@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using AiObservatory.Data.Entities;
 using Microsoft.EntityFrameworkCore;
+using NodaTime;
 using Npgsql;
 
 namespace AiObservatory.Data.Repositories;
@@ -122,6 +123,30 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
         }
         return await query.OrderByDescending(r => r.RecordedAt).ToListAsync(ct);
     }
+
+    public async Task<IReadOnlyList<AdversarialReviewRun>> GetRunsRecordedBetweenAsync(
+        Instant from,
+        Instant toExclusive,
+        CancellationToken ct = default
+    ) =>
+        await ctx
+            .AdversarialReviewRuns.AsNoTracking()
+            .Where(r => r.RecordedAt >= from && r.RecordedAt < toExclusive)
+            .OrderByDescending(r => r.RecordedAt)
+            .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<AdversarialReviewFinding>> GetFindingsForRunsAsync(
+        IReadOnlyCollection<string> runIds,
+        CancellationToken ct = default
+    ) =>
+        await ctx
+            .AdversarialReviewFindings.AsNoTracking()
+            .Include(f => f.Participants)
+            .Where(f => runIds.Contains(f.RunId))
+            .OrderBy(f => f.RunId)
+            .ThenBy(f => f.ChunkId)
+            .ThenBy(f => f.FindingId)
+            .ToListAsync(ct);
 
     public async Task<IReadOnlyList<AdversarialReviewStats>> GetStatsAsync(CancellationToken ct = default)
     {

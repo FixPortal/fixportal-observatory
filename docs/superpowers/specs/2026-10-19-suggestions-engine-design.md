@@ -102,6 +102,9 @@ and on `POST /api/suggestions/refresh` (admin key). For each rule and subject:
 - condition no longer holds, row `open`, `snoozed` or `dismissed`: mark `resolved` (kept for history).
   A dismissed row resolves too, so a condition that clears and later returns reopens instead of
   being compared against a stale baseline.
+- A rule resolves only the subjects it judged in this run (`RuleOutcome.JudgedSubjects`); a subject it
+  skipped, for example a seat under a floor, keeps its row and its snooze untouched.
+- Plan usage is scaled from the window to a 30-day month before it is compared with the monthly price.
 - `dismiss` and `snooze` on a `resolved` row answer 409: the owner never saw it as open.
 
 ### Endpoints (under `/api`; GET needs the read key or a signed-in user, others per ruling 7)

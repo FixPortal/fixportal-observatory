@@ -60,7 +60,7 @@ public sealed class PlanCostsMoreThanUseRule : PlanRuleBase
     {
         var candidates = new List<SuggestionCandidate>();
         var skipped = new List<string>();
-        var judged = 0;
+        var judged = new HashSet<string>(StringComparer.Ordinal);
         var any = false;
 
         foreach (var plans in ActiveByProvider(inputs))
@@ -94,8 +94,13 @@ public sealed class PlanCostsMoreThanUseRule : PlanRuleBase
                 continue;
             }
 
-            judged++;
-            var usageGbp = notional.Where(a => a.RequestCount > a.UnknownCostCount).Sum(a => a.CostUsd) * rate;
+            judged.Add(plans.Key.ToString());
+            // The window total is scaled to a 30-day month so it compares with a monthly price at any window length.
+            var usageGbp =
+                notional.Where(a => a.RequestCount > a.UnknownCostCount).Sum(a => a.CostUsd)
+                * rate
+                * 30m
+                / options.PlanWindowDays;
             var priceGbp = plans.Sum(p => MonthlyGbp(p, rate));
             if (priceGbp <= 0 || (double)(usageGbp / priceGbp) >= options.PlanUsageRatio)
             {
@@ -126,14 +131,14 @@ public sealed class PlanCostsMoreThanUseRule : PlanRuleBase
             );
         }
 
-        if (judged == 0)
+        if (judged.Count == 0)
         {
             return RuleOutcome.NotEvaluated(
                 RuleId,
                 Reasons(skipped, any ? "No provider could be judged" : "No active subscriptions")
             );
         }
-        return new RuleOutcome(RuleId, candidates, true, null, judged);
+        return new RuleOutcome(RuleId, candidates, true, null, judged.Count, judged);
     }
 
     // Annual prices are spread over twelve months; USD prices use the same live rate as the usage.
@@ -154,7 +159,7 @@ public sealed class PlanUnusedRule : PlanRuleBase
     {
         var candidates = new List<SuggestionCandidate>();
         var skipped = new List<string>();
-        var judged = 0;
+        var judged = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var plans in ActiveByProvider(inputs))
         {
@@ -165,7 +170,7 @@ public sealed class PlanUnusedRule : PlanRuleBase
                 continue;
             }
 
-            judged++;
+            judged.Add(plans.Key.ToString());
             var requests = inputs
                 .Aggregates.Where(a =>
                     a.Provider == plans.Key && a.Date >= inputs.PlanWindow.From && a.Date <= inputs.PlanWindow.To
@@ -196,10 +201,10 @@ public sealed class PlanUnusedRule : PlanRuleBase
             );
         }
 
-        if (judged == 0)
+        if (judged.Count == 0)
         {
             return RuleOutcome.NotEvaluated(RuleId, Reasons(skipped, "No active subscriptions"));
         }
-        return new RuleOutcome(RuleId, candidates, true, null, judged);
+        return new RuleOutcome(RuleId, candidates, true, null, judged.Count, judged);
     }
 }
