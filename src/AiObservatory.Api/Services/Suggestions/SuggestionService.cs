@@ -13,11 +13,17 @@ public class SuggestionService(
     /// <summary>Loads the inputs, runs every rule and applies the results. Returns the outcomes for logging.</summary>
     public virtual async Task<IReadOnlyList<RuleOutcome>> EvaluateAsync(CancellationToken ct = default)
     {
-        var inputs = await loader.LoadAsync(ct);
         var settings = options.Value;
-        var outcomes = rules.Select(rule => Run(rule, inputs, settings)).ToList();
-        await store.SaveEvaluationAsync(outcomes, settings, ct);
-        return outcomes;
+        // The store takes its lock before this runs, so the inputs are never older than the stored state.
+        return await store.EvaluateAndSaveAsync(
+            async token =>
+            {
+                var inputs = await loader.LoadAsync(token);
+                return rules.Select(rule => Run(rule, inputs, settings)).ToList();
+            },
+            settings,
+            ct
+        );
     }
 
     // One failing rule must not hide the others: it is recorded as not evaluated with its error class.

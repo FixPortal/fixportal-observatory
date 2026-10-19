@@ -105,16 +105,6 @@ public class SuggestionLifecycleTests
     }
 
     [Fact]
-    public void A_dismissed_row_whose_condition_vanishes_stays_dismissed()
-    {
-        var dismissed = Existing("dismissed");
-
-        SuggestionLifecycle.Reconcile([dismissed], [Quiet()], Now, Options);
-
-        dismissed.Status.Should().Be("dismissed");
-    }
-
-    [Fact]
     public void A_resolved_row_that_fires_again_reopens_with_a_reset_first_seen_time_and_baseline()
     {
         var resolved = Existing("resolved");
@@ -180,6 +170,18 @@ public class SuggestionLifecycleTests
         SuggestionLifecycle.Snooze(other, 7, Now);
         other.Status.Should().Be("snoozed");
         other.SnoozedUntil.Should().Be(Now.Plus(Duration.FromDays(7)));
+    }
+
+    [Fact]
+    public void A_dismissed_row_that_stops_firing_resolves_so_a_return_reopens_it()
+    {
+        var row = Existing("dismissed", primary: 10, sample: 10);
+
+        SuggestionLifecycle.Reconcile([row], [Quiet()], Now, Options);
+        row.Status.Should().Be("resolved");
+
+        SuggestionLifecycle.Reconcile([row], [Fires(Candidate(primary: 10, sample: 10))], Now, Options);
+        row.Status.Should().Be("open");
     }
 
     [Fact]
