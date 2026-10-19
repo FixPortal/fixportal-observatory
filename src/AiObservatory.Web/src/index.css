@@ -135,6 +135,9 @@ body {
   padding-inline: var(--space-6);
   overflow-x: clip;
 }
+.dashboard__tabpanel--wide {
+  max-width: none;
+}
 .summary-cards,
 .source-status,
 .sub-panel,
