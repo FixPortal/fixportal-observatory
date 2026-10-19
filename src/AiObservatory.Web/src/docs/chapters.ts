@@ -13,10 +13,39 @@ export interface ChapterGroup {
 /**
  * Reading order and grouping. A chapter file is content/<slug>.md, titled by its first
  * `# ` heading; the docs tests fail if a file is missing from this list or listed here
- * without a file.
+ * without a file. Add the slug here when you add a chapter.
  */
 export const CHAPTER_GROUPS: readonly ChapterGroup[] = [
-  { title: 'Getting started', slugs: ['introduction'] },
+  { title: 'Getting started', slugs: ['introduction', 'concepts', 'access'] },
+  {
+    title: 'Using the dashboard',
+    slugs: [
+      'overview',
+      'subscriptions',
+      'usage-insights',
+      'data-sources',
+      'suggestions',
+      'adversarial-review',
+      'reporting',
+      'spend',
+      'activity',
+      'github',
+    ],
+  },
+  {
+    title: 'Setup and operations',
+    slugs: [
+      'providers',
+      'local-producers',
+      'pricing',
+      'configuration',
+      'authentication',
+      'api',
+      'deployment',
+      'troubleshooting',
+      'glossary',
+    ],
+  },
 ]
 
 const FILES = import.meta.glob<string>('./content/*.md', {
