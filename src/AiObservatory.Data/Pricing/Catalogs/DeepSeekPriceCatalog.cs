@@ -5,7 +5,9 @@ namespace AiObservatory.Data.Pricing.Catalogs;
 /// <summary>
 /// DeepSeek list prices from its public pricing page. Bundled only: the page is not a
 /// machine-readable feed, so the catalog is refreshed by editing <c>Bundled/deepseek.json</c>.
-/// Rates are the STANDARD (peak) tier, so a figure priced from this catalog is an UPPER BOUND:
+/// Rates are the STANDARD (peak) tier, so a figure priced from this catalog is an UPPER BOUND
+/// for token charges only (per-request Search and Fetch billing from 2026-11-01 is not in token
+/// telemetry, so a total can still be understated):
 /// the vendor halves every rate off-peak and on Chinese public holidays, which a daily
 /// cumulative snapshot cannot express. The off-peak rates are deliberately not stored.
 /// </summary>

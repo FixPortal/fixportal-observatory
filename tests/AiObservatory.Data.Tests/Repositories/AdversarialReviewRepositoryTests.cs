@@ -67,10 +67,13 @@ public class AdversarialReviewRepositoryTests : IAsyncLifetime
         int? chunkCount = null,
         Instant? recordedAt = null,
         bool costUnknown = false,
-        decimal? costPerAcceptedFinding = null
+        decimal? costPerAcceptedFinding = null,
+        long tokens = 0
     ) =>
         new()
         {
+            InputTokens = tokens,
+            OutputTokens = tokens,
             CostUnknown = costUnknown,
             CostPerAcceptedFinding = costPerAcceptedFinding,
             RunId = runId,
@@ -457,6 +460,53 @@ public class AdversarialReviewRepositoryTests : IAsyncLifetime
         {
             row.CostPerAcceptedFinding.Should().NotBeNull();
         }
+    }
+
+    [Theory]
+    [InlineData(5, 0.50)]
+    [InlineData(0, null)]
+    public async Task UpdateMetrics_keeps_the_preserved_cost_with_its_model_and_tokens(
+        int secondAccepted,
+        double? expectedPerFinding
+    )
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var runId = $"B-{secondAccepted}";
+        var first = Run(
+            runId,
+            "zai",
+            "reviewer",
+            "model-a",
+            2.5m,
+            accepted: 2,
+            costPerAcceptedFinding: 1.25m,
+            tokens: 700
+        );
+        await _repo.RecordRunAsync(first, ct);
+        var second = Run(
+            runId,
+            "zai",
+            "reviewer",
+            "model-b",
+            0m,
+            raised: 9,
+            accepted: secondAccepted,
+            costUnknown: true
+        );
+        await _repo.RecordRunAsync(second, ct);
+
+        var row = (await _repo.GetRunsAsync(runId, ct)).Should().ContainSingle().Which;
+        row.CostUsd.Should().Be(2.5m);
+        row.CostUnknown.Should().BeFalse();
+        row.Model.Should().Be("model-a");
+        row.InputTokens.Should().Be(first.InputTokens);
+        row.OutputTokens.Should().Be(first.OutputTokens);
+        row.IssuesRaised.Should().Be(9);
+        row.IssuesAccepted.Should().Be(secondAccepted);
+        row.CostPerAcceptedFinding.Should().Be((decimal?)expectedPerFinding);
+
+        var stats = (await _repo.GetStatsAsync(ct)).Where(s => s.Reviewer == "zai").ToList();
+        stats.Should().ContainSingle().Which.Model.Should().Be("model-a");
     }
 
     [Fact]
