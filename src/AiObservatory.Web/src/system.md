@@ -56,3 +56,13 @@ Lead with billed spend, followed by daily average, 30-day run rate, and top vend
 Every Reporting figure must reconcile to the same signed ledger aggregate: headline total, daily-series sum, and vendor-series sum agree. A non-empty ledger that nets to zero displays `£0.00`; an empty ledger displays an em dash. Fill missing chart dates with zero-valued slots so sparse periods retain their true time scale, and collapse duplicate chart empty states into one message when both periods are empty.
 
 Use provider identity colours and end labels in the vendor chart; keep refunds semantic red only where their negative direction needs emphasis. Budget rules show `current / limit` plus `Within limit` or `Over limit`; over-limit status is strictly `current > threshold`, matching alert evaluation. Destructive rule actions use the shared danger button. At narrow widths, render each rule as a stacked two-column card with current spend, status, last-fired time, and action visible without horizontal scrolling.
+
+## Documentation
+
+The Docs tab implements the shared FixPortal documentation standard (`fixportal-assets/docs/documentation-standard.md`). Chapters are markdown files in `src/docs/content/`, listed and grouped in `src/docs/chapters.ts`; a test fails when a file and its entry disagree. The reader lives at `/docs/:slug`, with a heading hash for deep links, through the History API; nginx already falls back to `index.html`. The docs bundle is lazy-loaded so the markdown does not reach the first paint.
+
+Headings `h2`-`h4` get stable unique ids from `rehypeDocs`, which runs after `rehype-sanitize` (sanitising would otherwise prefix the ids). The same plugin wraps a `References` or `Sources` section in a disclosure that starts collapsed. A citation link or deep link into a collapsed disclosure opens it, and print opens every disclosure for the duration of the print.
+
+The right rail's active section follows the standard's contract in `useActiveSection.ts`: a 96 px reading line, last heading to reach it wins, and at the bottom of a scrolled page the first section still below the line wins when its heading is on screen. A rail click holds its selection until the reader scrolls by wheel, touch or key. The scroll container is the window, so the rail and the chapter list are sticky.
+
+Deliberate local choices: the rail and chapter list collapse to labelled disclosures above the article under 1100 px and 820 px, and the docs tab removes the 1200 px cap that other tabs keep. Footnote syntax is not used; sources go in the References section.
