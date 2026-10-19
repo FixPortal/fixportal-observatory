@@ -108,6 +108,14 @@ public interface IUsageRepository
     /// </summary>
     Task<PurgeResult> PurgeProviderAsync(Provider provider, CancellationToken ct = default);
 
+    /// <summary>
+    /// Deletes (or, with <paramref name="dryRun"/>, only counts) the raw events and daily
+    /// aggregates of ONE exact source id. Used to clear a retired source namespace, such as
+    /// the un-suffixed local ids whose events were tombstoned to zero tokens but still count
+    /// as requests. Both deletes run in one transaction.
+    /// </summary>
+    Task<PurgeResult> PurgeSourceAsync(string sourceId, bool dryRun, CancellationToken ct = default);
+
     Task<IReadOnlyList<DailyAggregate>> GetAggregatesAsync(
         LocalDate from,
         LocalDate to,
