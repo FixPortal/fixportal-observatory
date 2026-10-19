@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { expect, test } from 'vitest'
 import type { AdversarialReviewRun } from '../api/client'
 import { computeSeatMetrics, type FindingRow, type Pivot, type RunRow } from './seatInfluence'
@@ -192,6 +194,20 @@ test('excludes unknown-cost runs from cost totals and ratios while counting them
     'unique',
   )
   expect(allUnknown[0]).toMatchObject({ knownCostUsd: 0, unknownCostRuns: 1, costPerUnique: null })
+})
+
+// The server computes the same metrics in C# (suggestion rules); both implementations are held
+// to this one fixture so they cannot drift apart. Change it only with the C# test beside it.
+test('matches the shared seat-metrics contract fixture', () => {
+  // vitest runs with the web project as its root (jsdom has no file: import.meta.url).
+  const dir = resolve(process.cwd(), '../../docs/superpowers/contracts/seat-metrics')
+  const input = JSON.parse(readFileSync(resolve(dir, 'input.json'), 'utf8')) as {
+    runs: RunRow[]
+    findings: FindingRow[]
+  }
+  const expected: unknown = JSON.parse(readFileSync(resolve(dir, 'expected.json'), 'utf8'))
+
+  expect(computeSeatMetrics(input.runs, input.findings, 'unique')).toEqual(expected)
 })
 
 test('the false-positive rate counts finding-row catches only, not counts-only accepted counts', () => {
