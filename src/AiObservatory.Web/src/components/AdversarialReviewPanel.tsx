@@ -29,6 +29,7 @@ import type {
 } from './adversarialReviewSort'
 import { GitHubSortableHeader } from './GitHubSortableHeader'
 import { SearchIcon } from '../design/SearchIcon'
+import { SeatsTab } from './SeatsTab'
 
 const PUTATIVE_NOTE =
   '~ putative cost — estimated from a combined token count (subscription model, no exact per-call billing)'
@@ -467,18 +468,64 @@ export function AdversarialReviewPanel() {
   const { stats, isError: statsError, isLoading: statsLoading } = useAdversarialReviewStats()
   const { runs, isError: runsError, isLoading: runsLoading } = useAdversarialReviewRuns()
   const groups = useMemo(() => groupRuns(runs), [runs])
+  const [view, setView] = useState<'overview' | 'seats'>('overview')
 
   return (
     <div className="adv-review-panel">
-      <div className="panel">
-        <div className="panel-title">Stats by reviewer &amp; model</div>
-        <StatsTable stats={stats} isLoading={statsLoading} isError={statsError} />
+      <div className="fpds-tab-list" role="tablist" aria-label="Adversarial review views">
+        <button
+          type="button"
+          role="tab"
+          id="adversarial-review-tab-overview"
+          aria-selected={view === 'overview'}
+          aria-controls="adversarial-review-panel-overview"
+          className="fpds-tab"
+          onClick={() => {
+            setView('overview')
+          }}
+        >
+          Overview
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="adversarial-review-tab-seats"
+          aria-selected={view === 'seats'}
+          aria-controls="adversarial-review-panel-seats"
+          className="fpds-tab"
+          onClick={() => {
+            setView('seats')
+          }}
+        >
+          Seats
+        </button>
       </div>
 
-      <div className="panel">
-        <div className="panel-title">Recent runs</div>
-        <RunsList groups={groups} isLoading={runsLoading} isError={runsError} />
-      </div>
+      {view === 'overview' ? (
+        <div
+          id="adversarial-review-panel-overview"
+          role="tabpanel"
+          aria-labelledby="adversarial-review-tab-overview"
+        >
+          <div className="panel">
+            <div className="panel-title">Stats by reviewer &amp; model</div>
+            <StatsTable stats={stats} isLoading={statsLoading} isError={statsError} />
+          </div>
+
+          <div className="panel">
+            <div className="panel-title">Recent runs</div>
+            <RunsList groups={groups} isLoading={runsLoading} isError={runsError} />
+          </div>
+        </div>
+      ) : (
+        <div
+          id="adversarial-review-panel-seats"
+          role="tabpanel"
+          aria-labelledby="adversarial-review-tab-seats"
+        >
+          <SeatsTab runs={runs} runsLoading={runsLoading} runsError={runsError} />
+        </div>
+      )}
       {(stats.some((s) => isPutativeCost(s.reviewer)) ||
         groups.some((g) => g.participants.some((p) => isPutativeCost(p.reviewer)))) && (
         <p className="panel-note">{PUTATIVE_NOTE}</p>

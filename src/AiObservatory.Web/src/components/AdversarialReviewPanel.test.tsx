@@ -25,6 +25,10 @@ vi.mock('../api/queries', () => ({
   }),
 }))
 
+vi.mock('../api/useAdversarialFindings', () => ({
+  useAdversarialFindings: () => ({ findings: [], isError: false, isLoading: false }),
+}))
+
 const deleteAdversarialReviewRun = vi.hoisted(() => vi.fn(() => Promise.resolve()))
 vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
@@ -227,4 +231,12 @@ describe('AdversarialReviewPanel sweep removal', () => {
       expect(deleteAdversarialReviewRun).toHaveBeenCalledWith('R1', expect.anything())
     })
   })
+})
+
+test('AdversarialReviewPanel exposes the Seats view as a tab', () => {
+  renderPanel()
+
+  fireEvent.click(screen.getByRole('tab', { name: 'Seats' }))
+
+  expect(screen.getByRole('tabpanel', { name: 'Seats' })).toBeInTheDocument()
 })
