@@ -13,7 +13,8 @@
 ## Global Constraints
 
 - Rule ids, exact: `seat.no-unique-catch`, `seat.high-false-positive`, `seat.confirmation-only`, `seat.cost-outlier`, `plan.costs-more-than-use`, `plan.unused`. Severity: `info` for `seat.confirmation-only`, `attention` for the rest. Status: `open | dismissed | snoozed | resolved`. Key: `<ruleId>:<subject>`.
-- Defaults bind from `Suggestions:*` configuration and are validated at startup: SeatWindowDays 60, MinRuns 5, MinSettledFindings 10, FalsePositiveThreshold 0.5, MinAcceptedForConfirmationOnly 10, CostOutlierMultiple 3, CostOutlierMinPeers 3 (seat groups with at least 3 runs), PlanUsageRatio 0.5, PlanMinKnownCostRequests 10, PlanUnusedGraceDays 14, PlanUnusedWindowDays 30, ReopenChangeFraction 0.25.
+- Defaults bind from `Suggestions:*` configuration and are validated at startup: SeatWindowDays 60, MinDetailedRuns 5, MinSettledFindings 10, FalsePositiveThreshold 0.5, MinCatchesForConfirmationOnly 10, CostOutlierMultiple 3, CostOutlierMinPeerRuns 3, CostOutlierMinPeers 3, PlanWindowDays 30, PlanUsageRatio 0.5, PlanMinKnownCostRequests 10, PlanMinActiveDays 14, ReopenChangeFraction 0.25.
+- Every seat rule is stated in detailed runs (`runs - countsOnlyRuns`) and finding-row catches (`unique + corroborated`); counts-only history never counts toward a floor or predicate.
 - Time through `IClock` only. NodaTime for dates; BCL types at the EF boundary. The window ends on the last complete UTC day.
 - Evidence is `{ window: {from, to}, sampleSize, figures: [{label, value, unit}], runIds: [..<=20] }`. No finding text anywhere.
 - No emoji. One push per branch at the end after the full local gate. Rebase-merge only. `gh pr create --repo FixPortal/fixportal-observatory`.
@@ -23,10 +24,11 @@
 
 ## Review Focus
 
-- A seat rule never fires from counts-only runs; with no findings every seat rule is `notEvaluated` with a reason.
+- A seat rule never fires from counts-only runs, including a seat that mixes counts-only and detailed runs; with no findings every seat rule is `notEvaluated` with a reason.
+- `seat.cost-outlier` is `notEvaluated` when the subject has no `costPerUnique`, and null-valued peers are excluded from the median.
 - A dismissed suggestion does not reopen on a day-to-day wobble below 25%.
-- A plan mid-period (under half elapsed) is `notEvaluated`, never compared against the full price.
-- A subscription in a currency other than GBP or USD is `notEvaluated`, not mis-converted.
+- A provider with one unevaluable active subscription (unsupported currency, active under 14 days) is `notEvaluated` as a whole, never summed without it.
+- An FX outage makes plan rules `notEvaluated` ("FX unavailable"), never a comparison against the 0.79 fallback.
 - Two concurrent evaluations (daily run plus refresh) produce one consistent set and no 500.
 - The C# seat metrics and the TypeScript seat metrics agree on the shared fixture.
 
@@ -36,20 +38,22 @@
 
 **Files:**
 - Create: `docs/superpowers/contracts/suggestions/get-response.json`, `docs/superpowers/contracts/seat-metrics/input.json`, `docs/superpowers/contracts/seat-metrics/expected.json`
-- Modify: `src/AiObservatory.Web/src/components/seatInfluence.test.ts` (add one parity test)
+- Modify: `src/AiObservatory.Web/src/components/seatInfluence.ts` (false-positive rate fix), `seatInfluence.test.ts` (regression test and one parity test)
 
 **Interfaces:**
-- Produces: `get-response.json` is `{ suggestions: [...], notEvaluated: [{ruleId, reason}] }`; each suggestion `{ id, key, ruleId, subject, severity, title, status, snoozedUntil, firstSeenAt, lastSeenAt, evidence: {...} }` with at least one seat suggestion, one plan suggestion and two notEvaluated entries. `seat-metrics/input.json` is `{ runs: RunRow[], findings: FindingRow[] }` covering a mixed `a+b` model row, an unknown-cost run, a counts-only run, and a unique plus a corroborated finding; `expected.json` is the `SeatMetrics[]` for pivot `unique` (the fields of `SeatMetrics` in `seatInfluence.ts`, `byWeek` included).
+- Produces: `get-response.json` is `{ suggestions: [...], notEvaluated: [{ruleId, reason}] }`; each suggestion `{ id, key, ruleId, subject, severity, title, status, snoozedUntil, firstSeenAt, lastSeenAt, evidence: {...} }` with at least one seat suggestion, one plan suggestion (evidence figures include `fxRate` and `fxSource`) and two notEvaluated entries. `seat-metrics/input.json` is `{ runs: RunRow[], findings: FindingRow[] }` covering a mixed `a+b` model row, an unknown-cost run, a counts-only run, a unique plus a corroborated finding, AND a seat whose history mixes counts-only and detailed runs; `expected.json` is the `SeatMetrics[]` for pivot `unique` (the fields of `SeatMetrics` in `seatInfluence.ts`, `byWeek` included).
 
-- [ ] **Step 1:** Write the three fixtures by running the existing TS `computeSeatMetrics` over `input.json` once (a throwaway node/vitest call) and saving its output as `expected.json`; check the numbers by hand for the mixed, unknown-cost and counts-only cases.
-- [ ] **Step 2:** Add `test('matches the shared seat-metrics fixture', ...)` that loads both JSON files and asserts `computeSeatMetrics(input.runs, input.findings, 'unique')` equals `expected.json`. Run it; expect PASS.
-- [ ] **Step 3:** Commit `docs: suggestions and seat-metrics contract fixtures`.
+- [ ] **Step 1: Write the failing regression test** in `seatInfluence.test.ts`: a seat with one counts-only run (`issuesAccepted: 4`) and one detailed run with two refuted findings and one unique accepted finding has `falsePositiveRate === 2 / 3` (refuted over `unique + corroborated + refuted`), not `2 / 7`. Run it; expect FAIL.
+- [ ] **Step 2:** Fix `falsePositiveRate` in `seatInfluence.ts` to use the finding-row accepted count (`unique + corroborated`) in the denominator. Run the test; expect PASS.
+- [ ] **Step 3:** Write the three fixtures by running the corrected TS `computeSeatMetrics` over `input.json` once (a throwaway call) and saving its output as `expected.json`; check the numbers by hand for the mixed, unknown-cost, counts-only and mixed-history cases.
+- [ ] **Step 4:** Add `test('matches the shared seat-metrics fixture', ...)` that loads both JSON files and asserts `computeSeatMetrics(input.runs, input.findings, 'unique')` equals `expected.json`. Run it, then the web gate; expect PASS.
+- [ ] **Step 5:** Commit `fix(web): false-positive rate counts finding-row catches only` and `docs: suggestions and seat-metrics contract fixtures`.
 
 ### Task 2: Pure rules, calculator and billing period (Claude)
 
 **Files:**
-- Create under `src/AiObservatory.Api/Services/Suggestions/`: `SuggestionOptions.cs`, `SuggestionInputs.cs`, `SuggestionResult.cs`, `SeatMetricsCalculator.cs`, `BillingPeriod.cs`, `ISuggestionRule.cs`, `SeatRules.cs`, `PlanRules.cs`
-- Test: `tests/AiObservatory.Api.Tests/Suggestions/SeatMetricsCalculatorTests.cs`, `SeatRulesTests.cs`, `PlanRulesTests.cs`, `BillingPeriodTests.cs`
+- Create under `src/AiObservatory.Api/Services/Suggestions/`: `SuggestionOptions.cs`, `SuggestionInputs.cs`, `SuggestionResult.cs`, `SeatMetricsCalculator.cs`, `ISuggestionRule.cs`, `SeatRules.cs`, `PlanRules.cs`
+- Test: `tests/AiObservatory.Api.Tests/Suggestions/SeatMetricsCalculatorTests.cs`, `SeatRulesTests.cs`, `PlanRulesTests.cs`
 
 **Interfaces:**
 - Produces:
@@ -57,13 +61,12 @@
   - `record SuggestionCandidate(string RuleId, string Subject, string Severity, string Title, SuggestionEvidence Evidence, string PrimaryFigureLabel)` and `record RuleOutcome(string RuleId, IReadOnlyList<SuggestionCandidate> Candidates, bool Evaluated, string? Reason, int SubjectsEvaluated)`
   - `interface ISuggestionRule { string RuleId { get; } RuleOutcome Evaluate(SuggestionInputs inputs, SuggestionOptions options); }`
   - `static class SeatMetricsCalculator { IReadOnlyList<SeatMetrics> Compute(IReadOnlyList<AdversarialReviewRun> runs, IReadOnlyList<AdversarialReviewFinding> findings); }` where `SeatMetrics` mirrors the TS fields (key, label, mixed, runs, raised, accepted, unique, corroborated, peerAgreement, refuted, dropped, indeterminate, falsePositiveRate, acceptanceRate, knownCostUsd, unknownCostRuns, costPerUnique, countsOnlyRuns, smallSample, byWeek).
-  - `static class BillingPeriod { LocalDate CurrentStart(int billingDay, LocalDate today, SubscriptionBillingInterval interval, int? billingMonth); }` (month-end clamp, same results as the web `currentBillingPeriodStart`).
+  - `SuggestionInputs` carries `decimal? UsdToGbp` (null means FX unavailable) and the FX source label.
 
 - [ ] **Step 1: Write failing tests.**
-  - `SeatMetricsCalculatorTests`: one `[Fact]` loads `docs/superpowers/contracts/seat-metrics/input.json` and `expected.json` (walk up from `AppContext.BaseDirectory` as the WAF findings tests do) and asserts the C# output equals `expected.json` field for field with a numeric tolerance of 1e-9.
-  - `BillingPeriodTests`: a `[Theory]` with the web test's cases (billing day 31 in February, billing day 29 in a non-leap February, annual before and after the renewal, January wrap).
-  - `SeatRulesTests`: one `[Fact]` per rule for fires, below-floor-emits-nothing, and no-findings gives `Evaluated=false` with a reason; cost-outlier uses a peer set of exactly 3 and 2.
-  - `PlanRulesTests`: fires; under half the period elapsed gives not evaluated; two subscriptions on one provider sum; a EUR subscription gives not evaluated; `plan.unused` respects the grace days and counts requests of any basis.
+  - `SeatMetricsCalculatorTests`: one `[Fact]` loads `docs/superpowers/contracts/seat-metrics/input.json` and `expected.json` (walk up from `AppContext.BaseDirectory` as the WAF findings tests do) and asserts the C# output equals `expected.json` field for field with a numeric tolerance of 1e-9. The fixture's mixed-history seat pins the finding-row false-positive rate.
+  - `SeatRulesTests`: one `[Fact]` per rule for fires, below-floor-emits-nothing, and no-findings gives `Evaluated=false` with a reason; a counts-only-only seat and a mixed-history seat with fewer than 5 detailed runs never fire `seat.no-unique-catch` or `seat.confirmation-only`; `seat.cost-outlier`: a peer set of exactly 3 and 2 (with a value), a null-valued subject gives not evaluated, null-valued peers are excluded from the median.
+  - `PlanRulesTests`: fires; two subscriptions on one provider sum (annual / 12); a EUR subscription makes the provider not evaluated; one subscription active under 14 days makes the provider not evaluated; `UsdToGbp == null` gives not evaluated with the reason "FX unavailable"; `plan.unused` counts requests of any basis; evidence figures include `fxRate` and `fxSource`.
 - [ ] **Step 2:** Run `dotnet test --filter FullyQualifiedName~Suggestions`; expect FAIL (types missing).
 - [ ] **Step 3: Implement** per the signatures above. Rules read `SuggestionOptions`; no static now; `SeatMetricsCalculator` keys by the run row's model string joined on `(runId, reviewer)`, reviewer rows only, as `seatInfluence.ts` does. Titles are fixed templates filled from the figures (for example "Seat {label} added no unique accepted catch in {n} runs").
 - [ ] **Step 4:** Run the filter again; expect PASS. Run the full gate. Commit `feat: suggestion rules and seat metrics calculator`.
@@ -72,8 +75,8 @@
 
 **Files:**
 - Create: `src/AiObservatory.Data/Entities/Suggestion.cs`, `SuggestionRuleRun.cs`, migration `AddSuggestions`, `src/AiObservatory.Data/Repositories/ISuggestionRepository.cs`, `SuggestionRepository.cs`, `src/AiObservatory.Api/Services/Suggestions/SuggestionService.cs`, `SuggestionInputsLoader.cs`
-- Modify: `AiObservatoryDbContext.cs`, `ServiceCollectionExtensions.cs` (repository), `src/AiObservatory.Api/Program.cs` (DI)
-- Test: `tests/AiObservatory.Data.Tests/Repositories/SuggestionRepositoryTests.cs`, `tests/AiObservatory.Api.IntegrationTests/SuggestionLifecycleTests.cs`
+- Modify: `AiObservatoryDbContext.cs`, `ServiceCollectionExtensions.cs` (repository), `src/AiObservatory.Api/Program.cs` (DI), `src/AiObservatory.Data/Spend/FxRateProvider.cs` (add `TryGetUsdToGbpAsync`, returns null on failure, no fallback, same 12-hour cache; `GetUsdToGbpAsync` is unchanged)
+- Test: `tests/AiObservatory.Data.Tests/Repositories/SuggestionRepositoryTests.cs`, `tests/AiObservatory.Api.IntegrationTests/SuggestionLifecycleTests.cs`, and the existing `FxRateProvider` test file (new cases: success, failure returns null and is not cached, cached value reused)
 
 **Interfaces:**
 - Consumes: Task 2 types.
@@ -81,7 +84,7 @@
 
 - [ ] **Step 1: Write failing tests** for the lifecycle: insert on first fire; update on second fire (one row); condition gone resolves; resolved row reopens and resets `FirstSeenAt`; dismissed stays dismissed under a 10% move and reopens at 30% or at double the sample; expired snooze reopens; a rule with no subject at the floor records `notEvaluated`; eight concurrent `SaveEvaluationAsync` calls yield one row per key and no exception.
 - [ ] **Step 2:** Run; expect FAIL.
-- [ ] **Step 3: Implement** entities, mapping (`Key` max 200, `RuleId` 60, `Subject` 200, `Title` 300, jsonb columns), migration via `dotnet ef migrations add AddSuggestions` (install `dotnet-ef` 10.0.13 with `--tool-path` in the scratchpad; do not edit the tool manifest), repository, loader (window = last `SeatWindowDays` complete days; aggregates for the plan window; `FxRateProvider` for the rate; runs and findings via the adversarial repository) and service. Dismiss and snooze set `BaselineFiguresJson` to the current evidence figures.
+- [ ] **Step 3: Implement** entities, mapping (`Key` max 200, `RuleId` 60, `Subject` 200, `Title` 300, jsonb columns), migration via `dotnet ef migrations add AddSuggestions` (install `dotnet-ef` 10.0.13 with `--tool-path` in the scratchpad; do not edit the tool manifest), repository, loader (window = last `SeatWindowDays` complete days; aggregates for the plan window; `FxRateProvider.TryGetUsdToGbpAsync` for the rate, null meaning unavailable; runs and findings via the adversarial repository) and service. Dismiss and snooze set `BaselineFiguresJson` to the current evidence figures.
 - [ ] **Step 4:** Run the new tests, then the full gate and the AI-smell scan (`pwsh -File .github/ai-smells/pr-detect.ps1 -RepoPath . -Base origin/main -Head HEAD -OutFile <scratch>.json`). Commit `feat: persist suggestions and apply their lifecycle`.
 
 ### Task 4: Endpoints, worker and configuration (Claude)
