@@ -232,6 +232,51 @@ public sealed class FxRateProviderTests : IDisposable
     }
 
     [Fact]
+    public async Task TryLatestRateReturnsTheLiveRateAndCachesIt()
+    {
+        var handler = new StubHttpMessageHandler(HttpStatusCode.OK, """{"rates":{"GBP":0.7412}}""");
+        var sut = Create(handler);
+
+        var first = await sut.TryGetUsdToGbpAsync(TestContext.Current.CancellationToken);
+        var second = await sut.TryGetUsdToGbpAsync(TestContext.Current.CancellationToken);
+
+        first.Should().Be(0.7412m);
+        second.Should().Be(0.7412m);
+        handler.Requested.Should().ContainSingle();
+    }
+
+    /// <summary>
+    /// The suggestion rules compare against this rate, so an outage must read as "no rate", never
+    /// as the static fallback that GetUsdToGbpAsync substitutes.
+    /// </summary>
+    [Fact]
+    public async Task TryLatestRateIsNullOnAnOutageAndIsNotCached()
+    {
+        var handler = new StubHttpMessageHandler(HttpStatusCode.ServiceUnavailable, "");
+        var sut = Create(handler);
+
+        var first = await sut.TryGetUsdToGbpAsync(TestContext.Current.CancellationToken);
+        var second = await sut.TryGetUsdToGbpAsync(TestContext.Current.CancellationToken);
+
+        first.Should().BeNull();
+        second.Should().BeNull();
+        handler.Requested.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task TryLatestRateSharesTheCacheWithTheFallbackingAccessor()
+    {
+        var handler = new StubHttpMessageHandler(HttpStatusCode.OK, """{"rates":{"GBP":0.7412}}""");
+        var sut = Create(handler);
+
+        await sut.GetUsdToGbpAsync(TestContext.Current.CancellationToken);
+        var rate = await sut.TryGetUsdToGbpAsync(TestContext.Current.CancellationToken);
+
+        rate.Should().Be(0.7412m);
+        handler.Requested.Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task LatestRateDoesNotCacheTheFallback()
     {
         var handler = new StubHttpMessageHandler(HttpStatusCode.ServiceUnavailable, "");
