@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using AiObservatory.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -55,32 +56,59 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
     // not touch Id or RecordedAt (identity + chronological anchor). The cost
     // columns are the exception to last-write-wins: an incoming unknown cost (a
     // placeholder, cost 0) never replaces a row whose cost is already known, so a
-    // delayed placeholder re-post cannot erase a measured figure.
-    private Task<int> UpdateMetricsAsync(AdversarialReviewRun run, CancellationToken ct) =>
-        ctx
+    // delayed placeholder re-post cannot erase a measured figure. The cost travels
+    // with the model and token counts it was measured for, and the per-finding
+    // ratio is recomputed against the incoming accepted count.
+#pragma warning disable S3776 // One atomic UPDATE: the conditional SET expressions must stay together.
+    private Task<int> UpdateMetricsAsync(AdversarialReviewRun run, CancellationToken ct)
+    {
+        // Branch on the incoming run here so every CASE pairs a NULL with the typed column, never
+        // with an untyped null parameter (Postgres would infer text and reject the assignment).
+        var perFinding = PerFindingExpression(run);
+        return ctx
             .AdversarialReviewRuns.Where(r => r.RunId == run.RunId && r.Reviewer == run.Reviewer && r.Role == run.Role)
             .ExecuteUpdateAsync(
                 s =>
-                    s.SetProperty(r => r.Model, run.Model)
+                    s.SetProperty(r => r.Model, r => run.CostUnknown && !r.CostUnknown ? r.Model : run.Model)
                         .SetProperty(r => r.Repo, run.Repo)
                         .SetProperty(r => r.Summary, run.Summary)
-                        .SetProperty(r => r.InputTokens, run.InputTokens)
-                        .SetProperty(r => r.OutputTokens, run.OutputTokens)
+                        .SetProperty(
+                            r => r.InputTokens,
+                            r => run.CostUnknown && !r.CostUnknown ? r.InputTokens : run.InputTokens
+                        )
+                        .SetProperty(
+                            r => r.OutputTokens,
+                            r => run.CostUnknown && !r.CostUnknown ? r.OutputTokens : run.OutputTokens
+                        )
                         .SetProperty(r => r.CostUsd, r => run.CostUnknown && !r.CostUnknown ? r.CostUsd : run.CostUsd)
                         .SetProperty(r => r.CostUnknown, r => run.CostUnknown && r.CostUnknown)
                         .SetProperty(r => r.ReviewDurationMs, run.ReviewDurationMs)
                         .SetProperty(r => r.IssuesRaised, run.IssuesRaised)
                         .SetProperty(r => r.IssuesAccepted, run.IssuesAccepted)
-                        .SetProperty(
-                            r => r.CostPerAcceptedFinding,
-                            r =>
-                                run.CostUnknown && !r.CostUnknown
-                                    ? r.CostPerAcceptedFinding
-                                    : run.CostPerAcceptedFinding
-                        )
+                        .SetProperty(r => r.CostPerAcceptedFinding, perFinding)
                         .SetProperty(r => r.ChunkCount, run.ChunkCount),
                 ct
             );
+    }
+#pragma warning restore S3776
+
+    // Incoming unknown over a known row: recompute against the incoming accepted count (null when
+    // none). Incoming unknown over an unknown row keeps the stored null.
+    private static Expression<Func<AdversarialReviewRun, decimal?>> PerFindingExpression(AdversarialReviewRun run)
+    {
+        var accepted = run.IssuesAccepted;
+        if (!run.CostUnknown)
+        {
+            return r => run.CostPerAcceptedFinding;
+        }
+
+        if (accepted > 0)
+        {
+            return r => !r.CostUnknown ? r.CostUsd / accepted : r.CostPerAcceptedFinding;
+        }
+
+        return r => !r.CostUnknown ? null : r.CostPerAcceptedFinding;
+    }
 
     public async Task<IReadOnlyList<AdversarialReviewRun>> GetRunsAsync(
         string? runId = null,
