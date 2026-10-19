@@ -20,6 +20,24 @@ public class FxRateProvider(HttpClient http, IMemoryCache cache, ILogger<FxRateP
 
     public virtual async Task<decimal> GetUsdToGbpAsync(CancellationToken ct = default)
     {
+        var rate = await TryGetUsdToGbpAsync(ct);
+        if (rate is { } live)
+        {
+            return live;
+        }
+
+        logger.LogWarning("FX USD->GBP unavailable; using fallback {Fallback}", Fallback);
+        return Fallback; // not cached — allow a retry on the next call
+    }
+
+    /// <summary>
+    /// The latest USD-&gt;GBP rate, or null when it cannot be fetched. Unlike
+    /// <see cref="GetUsdToGbpAsync"/> it never substitutes the static fallback, for callers
+    /// (the suggestion rules) that must not compare against a made-up rate. Shares the 12-hour
+    /// cache with <see cref="GetUsdToGbpAsync"/>; a failure is not cached.
+    /// </summary>
+    public virtual async Task<decimal?> TryGetUsdToGbpAsync(CancellationToken ct = default)
+    {
         if (cache.TryGetValue(CacheKey, out decimal cached))
         {
             return cached;
@@ -30,11 +48,9 @@ public class FxRateProvider(HttpClient http, IMemoryCache cache, ILogger<FxRateP
             "USD->GBP",
             ct
         );
-
         if (rate <= 0m)
         {
-            logger.LogWarning("FX USD->GBP unavailable; using fallback {Fallback}", Fallback);
-            return Fallback; // not cached — allow a retry on the next call
+            return null;
         }
 
         cache.Set(CacheKey, rate, TimeSpan.FromHours(12));

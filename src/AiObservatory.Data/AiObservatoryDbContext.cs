@@ -41,6 +41,8 @@ public class AiObservatoryDbContext(DbContextOptions<AiObservatoryDbContext> opt
     public DbSet<AdversarialReviewFinding> AdversarialReviewFindings => Set<AdversarialReviewFinding>();
     public DbSet<AdversarialReviewFindingParticipant> AdversarialReviewFindingParticipants =>
         Set<AdversarialReviewFindingParticipant>();
+    public DbSet<Suggestion> Suggestions => Set<Suggestion>();
+    public DbSet<SuggestionRuleRun> SuggestionRuleRuns => Set<SuggestionRuleRun>();
     public DbSet<CavemanSession> CavemanSessions => Set<CavemanSession>();
     public DbSet<ClaudeActivitySession> ClaudeActivitySessions => Set<ClaudeActivitySession>();
     public DbSet<GitHubPullRequest> GitHubPullRequests => Set<GitHubPullRequest>();
@@ -597,6 +599,28 @@ public class AiObservatoryDbContext(DbContextOptions<AiObservatoryDbContext> opt
                 t.HasCheckConstraint("CK_AdversarialReviewRun_IssuesRaised_NonNegative", "\"IssuesRaised\" >= 0");
                 t.HasCheckConstraint("CK_AdversarialReviewRun_IssuesAccepted_NonNegative", "\"IssuesAccepted\" >= 0");
             });
+        });
+
+        modelBuilder.Entity<Suggestion>(b =>
+        {
+            b.Property(s => s.Key).HasMaxLength(300).IsRequired();
+            b.Property(s => s.RuleId).HasMaxLength(60).IsRequired();
+            b.Property(s => s.Subject).HasMaxLength(200).IsRequired();
+            b.Property(s => s.Severity).HasMaxLength(20).IsRequired();
+            b.Property(s => s.Title).HasMaxLength(300).IsRequired();
+            b.Property(s => s.Status).HasMaxLength(20).IsRequired();
+            b.Property(s => s.EvidenceJson).HasColumnType("jsonb").IsRequired();
+            b.Property(s => s.BaselineFiguresJson).HasColumnType("jsonb").IsRequired();
+            b.HasIndex(s => s.Key).IsUnique();
+            b.HasIndex(s => s.Status);
+        });
+
+        modelBuilder.Entity<SuggestionRuleRun>(b =>
+        {
+            b.HasKey(r => r.RuleId);
+            b.Property(r => r.RuleId).HasMaxLength(60);
+            b.Property(r => r.Status).HasMaxLength(20).IsRequired();
+            b.Property(r => r.Reason).HasMaxLength(500);
         });
 
         modelBuilder.Entity<AdversarialReviewFinding>(b =>
