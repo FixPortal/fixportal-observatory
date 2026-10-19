@@ -68,10 +68,11 @@ public class SuggestionsEndpointsWafTests(AiObservatoryApiFactory factory)
 
         var suggestion = Find(await GetAsync(client), UnusedKey);
         suggestion.Should().NotBeNull();
-        suggestion.Value.GetProperty("ruleId").GetString().Should().Be("plan.unused");
-        suggestion.Value.GetProperty("severity").GetString().Should().Be("attention");
-        suggestion.Value.GetProperty("status").GetString().Should().Be("open");
-        var evidence = suggestion.Value.GetProperty("evidence");
+        var found = suggestion.Value;
+        found.GetProperty("ruleId").GetString().Should().Be("plan.unused");
+        found.GetProperty("severity").GetString().Should().Be("attention");
+        found.GetProperty("status").GetString().Should().Be("open");
+        var evidence = found.GetProperty("evidence");
         evidence.GetProperty("window").GetProperty("from").GetString().Should().MatchRegex(@"^\d{4}-\d{2}-\d{2}$");
         evidence.GetProperty("figures").GetArrayLength().Should().BeGreaterThan(0);
     }

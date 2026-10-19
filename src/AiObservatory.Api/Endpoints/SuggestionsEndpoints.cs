@@ -57,8 +57,16 @@ public static class SuggestionsEndpoints
             evidence = JsonDocument.Parse(s.EvidenceJson).RootElement.Clone(),
         };
 
+    private static IResult ToResult(SuggestionChange change) =>
+        change switch
+        {
+            SuggestionChange.Changed => Results.NoContent(),
+            SuggestionChange.Resolved => Results.Conflict("A resolved suggestion cannot be dismissed or snoozed"),
+            _ => Results.NotFound(),
+        };
+
     private static async Task<IResult> DismissAsync(Guid id, SuggestionStore store, CancellationToken ct) =>
-        await store.ChangeAsync(id, SuggestionLifecycle.Dismiss, ct) ? Results.NoContent() : Results.NotFound();
+        ToResult(await store.ChangeAsync(id, SuggestionLifecycle.Dismiss, ct));
 
     private static async Task<IResult> SnoozeAsync(
         Guid id,
@@ -70,15 +78,13 @@ public static class SuggestionsEndpoints
     {
         // Optional in the signature so that a missing value is a 400 from here, after authorisation:
         // a required parameter that fails to bind answers 400 before the key filter can answer 401.
-        if (days is not (>= 1 and <= 90))
+        if (days is not int count || count < 1 || count > 90)
         {
             return Results.BadRequest("days must be between 1 and 90");
         }
 
         var now = clock.GetCurrentInstant();
-        return await store.ChangeAsync(id, s => SuggestionLifecycle.Snooze(s, days.Value, now), ct)
-            ? Results.NoContent()
-            : Results.NotFound();
+        return ToResult(await store.ChangeAsync(id, s => SuggestionLifecycle.Snooze(s, count, now), ct));
     }
 
     private static async Task<IResult> RefreshAsync(SuggestionService service, CancellationToken ct)

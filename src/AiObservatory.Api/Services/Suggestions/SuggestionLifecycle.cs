@@ -17,6 +17,8 @@ public static class SuggestionLifecycle
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    private const double ZeroTolerance = 1e-12;
+
     private sealed record Baseline(string Label, double Primary, int SampleSize);
 
     public static string KeyOf(string ruleId, string subject) => $"{ruleId}:{subject}";
@@ -100,7 +102,7 @@ public static class SuggestionLifecycle
         foreach (var row in existing.Where(s => s.RuleId == outcome.RuleId && !firing.Contains(s.Key)))
         {
             row.LastEvaluatedAt = now;
-            if (row.Status is "open" or "snoozed")
+            if (row.Status is "open" or "snoozed" or "dismissed")
             {
                 row.Status = "resolved";
             }
@@ -167,8 +169,8 @@ public static class SuggestionLifecycle
         }
         var primary = PrimaryOf(candidate.Evidence, candidate.PrimaryFigureLabel);
         var primaryMoved =
-            baseline.Primary == 0
-                ? primary != 0
+            Math.Abs(baseline.Primary) < ZeroTolerance
+                ? Math.Abs(primary) >= ZeroTolerance
                 : Math.Abs(primary - baseline.Primary) > fraction * Math.Abs(baseline.Primary);
         var sampleDoubled = baseline.SampleSize > 0 && candidate.Evidence.SampleSize >= 2 * baseline.SampleSize;
         return primaryMoved || sampleDoubled;
@@ -200,15 +202,16 @@ public static class SuggestionLifecycle
         var primary = 0d;
         if (evidence.RootElement.TryGetProperty("figures", out var figures))
         {
-            foreach (var figure in figures.EnumerateArray())
+            foreach (
+                var figure in figures
+                    .EnumerateArray()
+                    .Where(f =>
+                        f.GetProperty("label").GetString() == label
+                        && f.GetProperty("value").ValueKind == JsonValueKind.Number
+                    )
+            )
             {
-                if (
-                    figure.GetProperty("label").GetString() == label
-                    && figure.GetProperty("value").ValueKind == JsonValueKind.Number
-                )
-                {
-                    primary = figure.GetProperty("value").GetDouble();
-                }
+                primary = figure.GetProperty("value").GetDouble();
             }
         }
         var sample = evidence.RootElement.TryGetProperty("sampleSize", out var s) ? s.GetInt32() : 0;

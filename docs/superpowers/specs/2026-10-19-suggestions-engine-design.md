@@ -99,7 +99,10 @@ and on `POST /api/suggestions/refresh` (admin key). For each rule and subject:
   `LastSeenAt`.
 - condition holds, row `dismissed`: stay dismissed unless the evidence fingerprint changed
   materially (a figure moved by more than [25%] or the sample size doubled), then reopen.
-- condition no longer holds, row `open` or `snoozed`: mark `resolved` (kept for history).
+- condition no longer holds, row `open`, `snoozed` or `dismissed`: mark `resolved` (kept for history).
+  A dismissed row resolves too, so a condition that clears and later returns reopens instead of
+  being compared against a stale baseline.
+- `dismiss` and `snooze` on a `resolved` row answer 409: the owner never saw it as open.
 
 ### Endpoints (under `/api`; GET needs the read key or a signed-in user, others per ruling 7)
 

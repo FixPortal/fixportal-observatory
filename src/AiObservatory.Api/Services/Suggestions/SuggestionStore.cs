@@ -5,6 +5,13 @@ using NodaTime;
 
 namespace AiObservatory.Api.Services.Suggestions;
 
+public enum SuggestionChange
+{
+    Changed,
+    NotFound,
+    Resolved,
+}
+
 /// <summary>
 /// Persists suggestions. Every writer takes the same transaction-scoped advisory lock, so the daily
 /// run, a manual refresh and a dismiss or snooze serialise instead of racing on the unique key.
@@ -14,8 +21,12 @@ public class SuggestionStore(AiObservatoryDbContext db, IClock clock)
     private Task LockAsync(CancellationToken ct) =>
         db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext('suggestions'))", ct);
 
-    public virtual async Task SaveEvaluationAsync(
-        IReadOnlyList<RuleOutcome> outcomes,
+    /// <summary>
+    /// Takes the lock first, then produces the outcomes and applies them, so an evaluation that loaded
+    /// its inputs earlier cannot overwrite a newer one. Returns the outcomes it applied.
+    /// </summary>
+    public virtual async Task<IReadOnlyList<RuleOutcome>> EvaluateAndSaveAsync(
+        Func<CancellationToken, Task<IReadOnlyList<RuleOutcome>>> evaluate,
         SuggestionOptions options,
         CancellationToken ct = default
     )
@@ -23,6 +34,7 @@ public class SuggestionStore(AiObservatoryDbContext db, IClock clock)
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         await LockAsync(ct);
 
+        var outcomes = await evaluate(ct);
         var existing = await db.Suggestions.ToListAsync(ct);
         var result = SuggestionLifecycle.Reconcile(existing, outcomes, clock.GetCurrentInstant(), options);
         db.Suggestions.AddRange(result.Inserts);
@@ -46,6 +58,7 @@ public class SuggestionStore(AiObservatoryDbContext db, IClock clock)
 
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        return outcomes;
     }
 
     public async Task<IReadOnlyList<Suggestion>> ListAsync(string? status, CancellationToken ct = default)
@@ -61,8 +74,11 @@ public class SuggestionStore(AiObservatoryDbContext db, IClock clock)
     public async Task<IReadOnlyList<SuggestionRuleRun>> ListRuleRunsAsync(CancellationToken ct = default) =>
         await db.SuggestionRuleRuns.AsNoTracking().OrderBy(r => r.RuleId).ToListAsync(ct);
 
-    /// <summary>Applies a dismiss or snooze under the lock; false when the id is unknown.</summary>
-    public async Task<bool> ChangeAsync(Guid id, Action<Suggestion> change, CancellationToken ct = default)
+    /// <summary>
+    /// Applies a dismiss or snooze under the lock. A resolved row is not changed: the owner never saw
+    /// it as open, and dismissing it would hide the condition when it next fires.
+    /// </summary>
+    public async Task<SuggestionChange> ChangeAsync(Guid id, Action<Suggestion> change, CancellationToken ct = default)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         await LockAsync(ct);
@@ -70,11 +86,15 @@ public class SuggestionStore(AiObservatoryDbContext db, IClock clock)
         var row = await db.Suggestions.FirstOrDefaultAsync(s => s.Id == id, ct);
         if (row is null)
         {
-            return false;
+            return SuggestionChange.NotFound;
+        }
+        if (row.Status == "resolved")
+        {
+            return SuggestionChange.Resolved;
         }
         change(row);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        return true;
+        return SuggestionChange.Changed;
     }
 }

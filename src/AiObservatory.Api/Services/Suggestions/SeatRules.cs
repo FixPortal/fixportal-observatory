@@ -104,9 +104,13 @@ public sealed class SeatHighFalsePositiveRule : SeatRuleBase
                 Candidate(
                     inputs,
                     s,
-                    $"Seat {s.Label} has a {Fixed(s.FalsePositiveRate!.Value * 100, "0")}% false-positive rate over {s.Unique + s.Corroborated + s.Refuted} settled findings",
+                    $"Seat {s.Label} has a {Fixed(s.FalsePositiveRate.GetValueOrDefault() * 100, "0")}% false-positive rate over {s.Unique + s.Corroborated + s.Refuted} settled findings",
                     "False-positive rate",
-                    new SuggestionFigure("False-positive rate", Math.Round(s.FalsePositiveRate.Value, 4), "ratio"),
+                    new SuggestionFigure(
+                        "False-positive rate",
+                        Math.Round(s.FalsePositiveRate.GetValueOrDefault(), 4),
+                        "ratio"
+                    ),
                     new SuggestionFigure("Refuted findings", s.Refuted, "findings"),
                     new SuggestionFigure("Accepted findings", s.Unique + s.Corroborated, "findings")
                 )
