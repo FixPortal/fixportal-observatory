@@ -21,13 +21,18 @@ public sealed partial class AdversarialReviewFindingService(IAdversarialReviewRe
         "abstained",
     ];
 
-    [GeneratedRegex("^[A-Za-z0-9._-]{1,40}$")]
+    // \z, not $: in .NET $ also matches before a final newline, so "F1\n" would pass.
+    [GeneratedRegex(@"^[A-Za-z0-9._-]{1,40}\z")]
     private static partial Regex IdPattern();
+
+    // The run endpoint trims and lowercases a reviewer before its slug check; do the same here so a
+    // reviewer that was accepted on a run row is accepted on its findings.
+    private static string NormalizeReviewer(string reviewer) => reviewer.Trim().ToLowerInvariant();
 
     private static bool ValidParticipant(string? reviewer, string? model) =>
         reviewer is not null
-        && AdversarialReviewService.IsReviewerSlug(reviewer)
-        && reviewer.Length <= 100
+        && AdversarialReviewService.IsReviewerSlug(NormalizeReviewer(reviewer))
+        && NormalizeReviewer(reviewer).Length <= 100
         && !string.IsNullOrWhiteSpace(model)
         && model.Trim().Length <= 200;
 
@@ -100,6 +105,15 @@ public sealed partial class AdversarialReviewFindingService(IAdversarialReviewRe
         {
             return "raisedBy entries need a reviewer slug and a model of 200 characters or fewer";
         }
+        // Two entries for one seat would read as two independent raisers and turn a unique catch
+        // into a corroborated one. A vendor with two different models is two seats and stays valid.
+        if (
+            finding.RaisedBy.Select(r => (NormalizeReviewer(r!.Reviewer!), r.Model!.Trim())).Distinct().Count()
+            != finding.RaisedBy.Count
+        )
+        {
+            return "raisedBy must not repeat a reviewer and model";
+        }
         if (
             assessments.Any(a =>
                 a is null
@@ -128,8 +142,9 @@ public sealed partial class AdversarialReviewFindingService(IAdversarialReviewRe
         {
             return Results.NotFound();
         }
-        var runRepos = runs.Where(r => r.Repo is not null).Select(r => r.Repo!).Distinct().ToList();
-        if (req.Repo is not null && runRepos.Count > 0 && !runRepos.Contains(req.Repo.Trim()))
+        // Every run row that names a repo must agree with the submitted one; rows for different
+        // reviewers are posted separately, so a disagreement among them is a real mismatch.
+        if (req.Repo is not null && runs.Any(r => r.Repo is not null && r.Repo != req.Repo.Trim()))
         {
             return Results.BadRequest("Repo does not match the run");
         }

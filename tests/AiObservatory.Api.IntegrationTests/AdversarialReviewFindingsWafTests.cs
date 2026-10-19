@@ -47,12 +47,17 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
         return data;
     }
 
-    private async Task SeedRunAsync(HttpClient client, string runId, string repo = "example-app")
+    private async Task SeedRunAsync(
+        HttpClient client,
+        string runId,
+        string repo = "example-app",
+        string reviewer = "zai"
+    )
     {
         var body = new
         {
             EventType = "adversarial-review-run",
-            Reviewer = "zai",
+            Reviewer = reviewer,
             Model = "glm-5.3",
             InputTokens = 1,
             OutputTokens = 1,
@@ -212,6 +217,59 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
         var response = await client.PostAsJsonAsync(FindingsRoute, ValidBody(runId, "another-app"), ct);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Run_rows_that_disagree_on_repo_reject_a_post_matching_only_one()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = factory.CreateAdminClient();
+        var runId = $"splitrepo-{Guid.NewGuid():N}";
+        await SeedRunAsync(client, runId, "repo-a", "zai");
+        await SeedRunAsync(client, runId, "repo-b", "openai");
+
+        var response = await client.PostAsJsonAsync(FindingsRoute, ValidBody(runId, "repo-a"), ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task A_mixed_case_reviewer_is_accepted_and_stored_lowercase()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = factory.CreateAdminClient();
+        var runId = $"case-{Guid.NewGuid():N}";
+        await SeedRunAsync(client, runId, reviewer: "OpenAI");
+        var body = ValidBody(runId);
+        body["findings"]![0]!["raisedBy"]![0]!["reviewer"] = "OpenAI";
+
+        (await client.PostAsJsonAsync(FindingsRoute, body, ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var rows = await client.GetFromJsonAsync<JsonElement>($"{FindingsRoute}?runId={runId}", ct);
+        rows.EnumerateArray()
+            .Single(r => r.GetProperty("findingId").GetString() == "F1" && r.GetProperty("chunkId").GetString() == "C1")
+            .GetProperty("raisedBy")[0]
+            .GetProperty("reviewer")
+            .GetString()
+            .Should()
+            .Be("openai");
+    }
+
+    [Fact]
+    public async Task One_vendor_with_two_models_is_two_independent_raisers()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = factory.CreateAdminClient();
+        var runId = $"twoseats-{Guid.NewGuid():N}";
+        await SeedRunAsync(client, runId);
+        var body = ValidBody(runId);
+        body["findings"] = new JsonArray(
+            JsonNode.Parse(
+                """{"chunkId":"single","findingId":"F1","severity":"high","outcome":"accepted","raisedBy":[{"reviewer":"anthropic","model":"claude-opus-5-5"},{"reviewer":"anthropic","model":"claude-sonnet-5-5"}],"assessments":[]}"""
+            )
+        );
+
+        (await client.PostAsJsonAsync(FindingsRoute, body, ct)).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]

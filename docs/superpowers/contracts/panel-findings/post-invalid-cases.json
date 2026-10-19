@@ -31,6 +31,16 @@
       { "chunkId": "single", "findingId": "F 1; drop", "severity": "high", "outcome": "accepted", "raisedBy": [{ "reviewer": "openai", "model": "m" }], "assessments": [] } ] }
   },
   {
+    "name": "finding id with a trailing newline",
+    "body": { "runId": "r1", "repo": "x", "findings": [
+      { "chunkId": "single", "findingId": "F1\n", "severity": "high", "outcome": "accepted", "raisedBy": [{ "reviewer": "openai", "model": "m" }], "assessments": [] } ] }
+  },
+  {
+    "name": "duplicate raiser (same reviewer and model)",
+    "body": { "runId": "r1", "repo": "x", "findings": [
+      { "chunkId": "single", "findingId": "F1", "severity": "high", "outcome": "accepted", "raisedBy": [{ "reviewer": "openai", "model": "m" }, { "reviewer": "OpenAI", "model": "m" }], "assessments": [] } ] }
+  },
+  {
     "name": "bad reviewer slug",
     "body": { "runId": "r1", "repo": "x", "findings": [
       { "chunkId": "single", "findingId": "F1", "severity": "high", "outcome": "accepted", "raisedBy": [{ "reviewer": "Open AI", "model": "m" }], "assessments": [] } ] }
