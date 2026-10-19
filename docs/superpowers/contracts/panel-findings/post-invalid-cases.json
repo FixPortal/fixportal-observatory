@@ -1,0 +1,61 @@
+[
+  {
+    "name": "empty raisedBy",
+    "body": { "runId": "r1", "repo": "x", "findings": [
+      { "chunkId": "single", "findingId": "F1", "severity": "high", "outcome": "accepted", "raisedBy": [], "assessments": [] } ] }
+  },
+  {
+    "name": "bad severity",
+    "body": { "runId": "r1", "repo": "x", "findings": [
+      { "chunkId": "single", "findingId": "F1", "severity": "severe", "outcome": "accepted", "raisedBy": [{ "reviewer": "openai", "model": "m" }], "assessments": [] } ] }
+  },
+  {
+    "name": "bad outcome",
+    "body": { "runId": "r1", "repo": "x", "findings": [
+      { "chunkId": "single", "findingId": "F1", "severity": "high", "outcome": "maybe", "raisedBy": [{ "reviewer": "openai", "model": "m" }], "assessments": [] } ] }
+  },
+  {
+    "name": "bad verdict",
+    "body": { "runId": "r1", "repo": "x", "findings": [
+      { "chunkId": "single", "findingId": "F1", "severity": "high", "outcome": "accepted", "raisedBy": [{ "reviewer": "openai", "model": "m" }], "assessments": [{ "reviewer": "zai", "model": "m", "verdict": "yes" }] } ] }
+  },
+  {
+    "name": "duplicate chunk and finding id",
+    "body": { "runId": "r1", "repo": "x", "findings": [
+      { "chunkId": "C1", "findingId": "F1", "severity": "high", "outcome": "accepted", "raisedBy": [{ "reviewer": "openai", "model": "m" }], "assessments": [] },
+      { "chunkId": "C1", "findingId": "F1", "severity": "low", "outcome": "refuted", "raisedBy": [{ "reviewer": "zai", "model": "m" }], "assessments": [] } ] }
+  },
+  {
+    "name": "bad finding id pattern",
+    "body": { "runId": "r1", "repo": "x", "findings": [
+      { "chunkId": "single", "findingId": "F 1; drop", "severity": "high", "outcome": "accepted", "raisedBy": [{ "reviewer": "openai", "model": "m" }], "assessments": [] } ] }
+  },
+  {
+    "name": "bad reviewer slug",
+    "body": { "runId": "r1", "repo": "x", "findings": [
+      { "chunkId": "single", "findingId": "F1", "severity": "high", "outcome": "accepted", "raisedBy": [{ "reviewer": "Open AI", "model": "m" }], "assessments": [] } ] }
+  },
+  {
+    "name": "over 12 participants",
+    "body": { "runId": "r1", "repo": "x", "findings": [
+      { "chunkId": "single", "findingId": "F1", "severity": "high", "outcome": "accepted",
+        "raisedBy": [{ "reviewer": "a1", "model": "m" }],
+        "assessments": [
+          { "reviewer": "b1", "model": "m", "verdict": "agree" }, { "reviewer": "b2", "model": "m", "verdict": "agree" },
+          { "reviewer": "b3", "model": "m", "verdict": "agree" }, { "reviewer": "b4", "model": "m", "verdict": "agree" },
+          { "reviewer": "b5", "model": "m", "verdict": "agree" }, { "reviewer": "b6", "model": "m", "verdict": "agree" },
+          { "reviewer": "b7", "model": "m", "verdict": "agree" }, { "reviewer": "b8", "model": "m", "verdict": "agree" },
+          { "reviewer": "b9", "model": "m", "verdict": "agree" }, { "reviewer": "b10", "model": "m", "verdict": "agree" },
+          { "reviewer": "b11", "model": "m", "verdict": "agree" }, { "reviewer": "b12", "model": "m", "verdict": "agree" } ] } ] }
+  },
+  {
+    "name": "model over 200 chars (generate 201 'm' characters at test time)",
+    "generated": true,
+    "body": null
+  },
+  {
+    "name": "over 2000 findings (generate 2001 distinct findings at test time)",
+    "generated": true,
+    "body": null
+  }
+]
