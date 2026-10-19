@@ -225,6 +225,9 @@ test('a counts-only run contributes counts to acceptance but not unique or corro
     unique: 1,
     corroborated: 0,
     acceptanceRate: 4 / 5,
+    knownCostUsd: 10,
+    // Only the detailed run's spend (2) is divided by its one unique catch, not the 8 spent on the counts-only run.
+    costPerUnique: 2,
   })
   expect(metrics[0]?.byWeek.map((week) => [week.week, week.influence])).toEqual([
     ['2026-W42', 1],
