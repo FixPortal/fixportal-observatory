@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CHAPTER_FILES, CHAPTER_GROUPS, CHAPTERS, buildChapters, fileSlugs } from './chapters'
 import { DocsPage } from './DocsPage'
-import { isDocsPath, slugFromPath } from './docsRoute'
+import { isDocsPath, safeDecode, slugFromPath } from './docsRoute'
 import { slugify } from './rehypeDocs'
 import { READING_LINE, pickActiveIndex } from './useActiveSection'
 
@@ -66,6 +66,12 @@ describe('docs paths', () => {
   ])('%s', (path, docs, slug) => {
     expect(isDocsPath(path)).toBe(docs)
     expect(slugFromPath(path)).toBe(slug)
+  })
+
+  it('survives malformed percent-escapes in the address', () => {
+    expect(slugFromPath('/docs/%E0%A4%A')).toBe('%E0%A4%A')
+    expect(safeDecode('%zz')).toBe('%zz')
+    expect(safeDecode('a%20b')).toBe('a b')
   })
 
   it('slugifies headings', () => {

@@ -112,11 +112,12 @@ export function Dashboard() {
     }
   }, [])
 
-  const selectTab = (next: DashboardTab) => {
+  // Arrow-key roving replaces the entry: only a deliberate click adds history.
+  const selectTab = (next: DashboardTab, replace = false) => {
     if (next === 'docs' && !isDocsPath(window.location.pathname)) {
-      window.history.pushState(null, '', DOCS_ROOT)
+      history[replace ? 'replaceState' : 'pushState'](null, '', DOCS_ROOT)
     } else if (next !== 'docs' && isDocsPath(window.location.pathname)) {
-      window.history.pushState(null, '', '/')
+      history[replace ? 'replaceState' : 'pushState'](null, '', '/')
     }
     setTab(next)
   }
@@ -131,7 +132,7 @@ export function Dashboard() {
     if (next === null) return
     e.preventDefault()
     const tab = visibleTabs[next]
-    if (tab !== undefined) selectTab(tab.id)
+    if (tab !== undefined) selectTab(tab.id, true)
     tabRefs.current[next]?.focus()
   }
 
