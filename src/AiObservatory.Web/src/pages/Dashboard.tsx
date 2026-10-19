@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef, useState, type KeyboardEvent } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { SummaryCards } from '../components/SummaryCards'
 import { SuggestionsCard } from '../components/SuggestionsCard'
 import { SourceStatusPanel } from '../components/SourceStatusPanel'
@@ -18,9 +18,10 @@ import { useDashboardStatus } from '../api/queries'
 import { ApiError } from '../api/client'
 import { authEnabled, isReadonly, signIn, TokenAcquisitionTimeoutError } from '../auth/msal'
 import { useTheme } from '../theme/useTheme'
+import { DOCS_ROOT, isDocsPath } from '../docs/docsRoute'
 
 type DashboardTab =
-  'overview' | 'adversarial-review' | 'reporting' | 'activity' | 'github' | 'spend'
+  'overview' | 'adversarial-review' | 'reporting' | 'activity' | 'github' | 'spend' | 'docs'
 
 const TABS: { id: DashboardTab; label: string; readonlyHidden?: boolean }[] = [
   { id: 'overview', label: 'Overview' },
@@ -29,10 +30,12 @@ const TABS: { id: DashboardTab; label: string; readonlyHidden?: boolean }[] = [
   { id: 'activity', label: 'Activity', readonlyHidden: true },
   { id: 'github', label: 'GitHub', readonlyHidden: true },
   { id: 'spend', label: 'Spend', readonlyHidden: true },
+  { id: 'docs', label: 'Docs' },
 ]
 
 // recharts is heavy and the charts sit below the fold — code-split them so the
 // initial payload (nav + summary cards) paints without the chart library.
+const DocsPage = lazy(() => import('../docs/DocsPage').then((m) => ({ default: m.DocsPage })))
 const SpendChart = lazy(() =>
   import('../components/SpendChart').then((m) => ({ default: m.SpendChart })),
 )
@@ -88,9 +91,35 @@ export function Dashboard() {
   const { isError, isLoading, isRetrying, isAutomaticallyRetrying, error, retry } =
     useDashboardStatus()
   const { mode, setMode } = useTheme()
-  const [tab, setTab] = useState<DashboardTab>('overview')
+  const [tab, setTab] = useState<DashboardTab>(() =>
+    isDocsPath(window.location.pathname) ? 'docs' : 'overview',
+  )
   const visibleTabs = TABS.filter((t) => !(t.readonlyHidden && isReadonly))
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+
+  // The docs reader owns /docs/*; every other tab lives at the root path. Back and forward
+  // between the two keep the tab in step with the address bar.
+  useEffect(() => {
+    const onPopState = () => {
+      setTab((current) => {
+        if (isDocsPath(window.location.pathname)) return 'docs'
+        return current === 'docs' ? 'overview' : current
+      })
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => {
+      window.removeEventListener('popstate', onPopState)
+    }
+  }, [])
+
+  const selectTab = (next: DashboardTab) => {
+    if (next === 'docs' && !isDocsPath(window.location.pathname)) {
+      window.history.pushState(null, '', DOCS_ROOT)
+    } else if (next !== 'docs' && isDocsPath(window.location.pathname)) {
+      window.history.pushState(null, '', '/')
+    }
+    setTab(next)
+  }
 
   // Tablist arrow-key navigation with roving tabIndex (only the selected tab is in the
   // tab order; arrows move focus + selection between the rest).
@@ -102,7 +131,7 @@ export function Dashboard() {
     if (next === null) return
     e.preventDefault()
     const tab = visibleTabs[next]
-    if (tab !== undefined) setTab(tab.id)
+    if (tab !== undefined) selectTab(tab.id)
     tabRefs.current[next]?.focus()
   }
 
@@ -130,7 +159,7 @@ export function Dashboard() {
             tabIndex={tab === t.id ? 0 : -1}
             className={`page-nav__tab${tab === t.id ? ' page-nav__tab--active' : ''}`}
             onClick={() => {
-              setTab(t.id)
+              selectTab(t.id)
             }}
             onKeyDown={(e) => {
               onTabKeyDown(e, i)
@@ -143,7 +172,7 @@ export function Dashboard() {
       <main className="dashboard__main">
         <div
           id="dashboard-tabpanel"
-          className="dashboard__tabpanel"
+          className={`dashboard__tabpanel${tab === 'docs' ? ' dashboard__tabpanel--wide' : ''}`}
           role="tabpanel"
           aria-labelledby={`dashboard-tab-${tab}`}
         >
@@ -201,6 +230,11 @@ export function Dashboard() {
           {tab === 'activity' && <ActivityPage />}
           {tab === 'github' && <GitHubPage />}
           {tab === 'spend' && <SpendPage />}
+          {tab === 'docs' && (
+            <Suspense fallback={<div className="chart-skeleton" />}>
+              <DocsPage />
+            </Suspense>
+          )}
         </div>
       </main>
       <Footer />
