@@ -18,10 +18,89 @@ namespace AiObservatory.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.13")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+            modelBuilder.Entity("AiObservatory.Data.Entities.AdversarialReviewFinding", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ChunkId")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("FindingId")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Instant>("RecordedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RunId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId", "ChunkId", "FindingId")
+                        .IsUnique();
+
+                    b.ToTable("AdversarialReviewFindings");
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Entities.AdversarialReviewFindingParticipant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("FindingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Reviewer")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Verdict")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FindingId");
+
+                    b.HasIndex("Reviewer", "Model");
+
+                    b.ToTable("AdversarialReviewFindingParticipants");
+                });
 
             modelBuilder.Entity("AiObservatory.Data.Entities.AdversarialReviewRun", b =>
                 {
@@ -1446,6 +1525,15 @@ namespace AiObservatory.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("AiObservatory.Data.Entities.AdversarialReviewFindingParticipant", b =>
+                {
+                    b.HasOne("AiObservatory.Data.Entities.AdversarialReviewFinding", null)
+                        .WithMany("Participants")
+                        .HasForeignKey("FindingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("AiObservatory.Data.Entities.BudgetAlertClaim", b =>
                 {
                     b.HasOne("AiObservatory.Data.Entities.BudgetRule", null)
@@ -1482,6 +1570,11 @@ namespace AiObservatory.Data.Migrations
                         .WithMany()
                         .HasForeignKey("DefaultCategoryId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Entities.AdversarialReviewFinding", b =>
+                {
+                    b.Navigation("Participants");
                 });
 #pragma warning restore 612, 618
         }

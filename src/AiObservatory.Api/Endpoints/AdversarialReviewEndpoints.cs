@@ -46,6 +46,47 @@ public static class AdversarialReviewEndpoints
             }
         );
 
+        app.MapPost(
+                "/adversarial-review/findings",
+                (AdversarialReviewFindingsRequest req, AdversarialReviewFindingService svc, HttpContext ctx) =>
+                    svc.RecordFindingsAsync(req, ctx.RequestAborted)
+            )
+            .WithName("RecordAdversarialReviewFindings");
+
+        app.MapGet(
+            "/adversarial-review/findings",
+            async (string? runId, IAdversarialReviewRepository repo, HttpContext ctx) =>
+            {
+                var findings = await repo.GetFindingsAsync(runId, ctx.RequestAborted);
+                var repos = (await repo.GetRunsAsync(runId, ctx.RequestAborted))
+                    .Where(r => r.Repo is not null)
+                    .GroupBy(r => r.RunId)
+                    .ToDictionary(g => g.Key, g => g.First().Repo);
+                return Results.Ok(
+                    findings.Select(f => new
+                    {
+                        f.RunId,
+                        repo = repos.GetValueOrDefault(f.RunId),
+                        f.ChunkId,
+                        f.FindingId,
+                        f.Severity,
+                        f.Outcome,
+                        raisedBy = f
+                            .Participants.Where(p => p.Kind == "raiser")
+                            .Select(p => new { p.Reviewer, p.Model }),
+                        assessments = f
+                            .Participants.Where(p => p.Kind == "assessor")
+                            .Select(p => new
+                            {
+                                p.Reviewer,
+                                p.Model,
+                                p.Verdict,
+                            }),
+                    })
+                );
+            }
+        );
+
         app.MapGet(
             "/adversarial-review/stats",
             async (IAdversarialReviewRepository repo, HttpContext ctx) =>

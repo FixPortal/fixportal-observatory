@@ -23,6 +23,15 @@ public interface IAdversarialReviewRepository
     Task<(Guid Id, bool Existed)> RecordRunAsync(AdversarialReviewRun run, CancellationToken ct = default);
     Task<IReadOnlyList<AdversarialReviewRun>> GetRunsAsync(string? runId = null, CancellationToken ct = default);
     Task<IReadOnlyList<AdversarialReviewStats>> GetStatsAsync(CancellationToken ct = default);
+    Task ReplaceFindingsAsync(
+        string runId,
+        IReadOnlyList<AdversarialReviewFinding> findings,
+        CancellationToken ct = default
+    );
+    Task<IReadOnlyList<AdversarialReviewFinding>> GetFindingsAsync(
+        string? runId = null,
+        CancellationToken ct = default
+    );
     Task<int> DeleteAllRunsAsync(CancellationToken ct = default);
     Task<int> DeleteRunAsync(string runId, CancellationToken ct = default);
 }

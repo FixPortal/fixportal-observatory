@@ -12,7 +12,7 @@ public class AdversarialReviewService(IAdversarialReviewRepository repo, IClock 
 {
     private const int SummaryMaxLength = 80;
 
-    private static bool IsReviewerSlug(string reviewer) =>
+    internal static bool IsReviewerSlug(string reviewer) =>
         reviewer.Length > 0
         && reviewer[0] is >= 'a' and <= 'z'
         && reviewer.All(character => character is >= 'a' and <= 'z' or >= '0' and <= '9' or '-');

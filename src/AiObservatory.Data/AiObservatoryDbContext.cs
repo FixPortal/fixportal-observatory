@@ -38,6 +38,9 @@ public class AiObservatoryDbContext(DbContextOptions<AiObservatoryDbContext> opt
     public DbSet<BudgetAlertClaim> BudgetAlertClaims => Set<BudgetAlertClaim>();
     public DbSet<NotificationSettings> NotificationSettings => Set<NotificationSettings>();
     public DbSet<AdversarialReviewRun> AdversarialReviewRuns => Set<AdversarialReviewRun>();
+    public DbSet<AdversarialReviewFinding> AdversarialReviewFindings => Set<AdversarialReviewFinding>();
+    public DbSet<AdversarialReviewFindingParticipant> AdversarialReviewFindingParticipants =>
+        Set<AdversarialReviewFindingParticipant>();
     public DbSet<CavemanSession> CavemanSessions => Set<CavemanSession>();
     public DbSet<ClaudeActivitySession> ClaudeActivitySessions => Set<ClaudeActivitySession>();
     public DbSet<GitHubPullRequest> GitHubPullRequests => Set<GitHubPullRequest>();
@@ -594,6 +597,32 @@ public class AiObservatoryDbContext(DbContextOptions<AiObservatoryDbContext> opt
                 t.HasCheckConstraint("CK_AdversarialReviewRun_IssuesRaised_NonNegative", "\"IssuesRaised\" >= 0");
                 t.HasCheckConstraint("CK_AdversarialReviewRun_IssuesAccepted_NonNegative", "\"IssuesAccepted\" >= 0");
             });
+        });
+
+        modelBuilder.Entity<AdversarialReviewFinding>(b =>
+        {
+            b.Property(f => f.RunId).HasMaxLength(200).IsRequired();
+            b.Property(f => f.ChunkId).HasMaxLength(40).IsRequired();
+            b.Property(f => f.FindingId).HasMaxLength(40).IsRequired();
+            b.Property(f => f.Severity).HasMaxLength(20).IsRequired();
+            b.Property(f => f.Outcome).HasMaxLength(20).IsRequired();
+            b.HasIndex(f => new
+                {
+                    f.RunId,
+                    f.ChunkId,
+                    f.FindingId,
+                })
+                .IsUnique();
+            b.HasMany(f => f.Participants).WithOne().HasForeignKey(p => p.FindingId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AdversarialReviewFindingParticipant>(b =>
+        {
+            b.Property(p => p.Reviewer).HasMaxLength(100).IsRequired();
+            b.Property(p => p.Model).HasMaxLength(200).IsRequired();
+            b.Property(p => p.Kind).HasMaxLength(10).IsRequired();
+            b.Property(p => p.Verdict).HasMaxLength(20);
+            b.HasIndex(p => new { p.Reviewer, p.Model });
         });
 
         modelBuilder.Entity<IdeEvent>(b =>
