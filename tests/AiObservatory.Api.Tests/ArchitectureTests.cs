@@ -34,6 +34,8 @@ public class ArchitectureTests
         .ResideInNamespace("AiObservatory.Api.Services.GitHub")
         .Or()
         .ResideInNamespace("AiObservatory.Api.Services.Intelligence")
+        .Or()
+        .ResideInNamespace("AiObservatory.Api.Services.Suggestions")
         .As("Api types");
 
     private static readonly IObjectProvider<IType> IngestTypes = Types()
