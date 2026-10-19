@@ -1,0 +1,76 @@
+{
+  "suggestions": [
+    {
+      "id": "6f0b3c64-1f5e-4a43-9d3b-0a1f4d1f0a01",
+      "key": "seat.no-unique-catch:claude-sonnet-5-5+claude-opus-5-5",
+      "ruleId": "seat.no-unique-catch",
+      "subject": "claude-sonnet-5-5+claude-opus-5-5",
+      "severity": "attention",
+      "title": "Seat mixed: claude-sonnet-5-5+claude-opus-5-5 added no unique accepted catch in 7 runs",
+      "status": "open",
+      "snoozedUntil": null,
+      "firstSeenAt": "2026-10-12T00:05:00Z",
+      "lastSeenAt": "2026-10-19T00:05:00Z",
+      "evidence": {
+        "window": { "from": "2026-08-21", "to": "2026-10-18" },
+        "sampleSize": 7,
+        "figures": [
+          { "label": "Detailed runs", "value": 7, "unit": "runs" },
+          { "label": "Unique accepted catches", "value": 0, "unit": "findings" },
+          { "label": "Corroborated accepted catches", "value": 4, "unit": "findings" },
+          { "label": "Known cost", "value": 31.5, "unit": "USD" }
+        ],
+        "runIds": ["20261018T101500Z", "20261015T180348Z", "20261013T093929Z"]
+      }
+    },
+    {
+      "id": "6f0b3c64-1f5e-4a43-9d3b-0a1f4d1f0a02",
+      "key": "plan.costs-more-than-use:OpenAI",
+      "ruleId": "plan.costs-more-than-use",
+      "subject": "OpenAI",
+      "severity": "attention",
+      "title": "OpenAI plans cost more than the usage they covered (0.31 of the monthly price)",
+      "status": "open",
+      "snoozedUntil": null,
+      "firstSeenAt": "2026-10-19T00:05:00Z",
+      "lastSeenAt": "2026-10-19T00:05:00Z",
+      "evidence": {
+        "window": { "from": "2026-09-19", "to": "2026-10-18" },
+        "sampleSize": 80,
+        "figures": [
+          { "label": "Notional usage value", "value": 17.2, "unit": "GBP" },
+          { "label": "Monthly plan price", "value": 55, "unit": "GBP" },
+          { "label": "Usage to price ratio", "value": 0.31, "unit": "ratio" },
+          { "label": "fxRate", "value": 0.79, "unit": "GBP per USD" },
+          { "label": "fxSource", "value": "live", "unit": "text" }
+        ],
+        "runIds": []
+      }
+    },
+    {
+      "id": "6f0b3c64-1f5e-4a43-9d3b-0a1f4d1f0a03",
+      "key": "seat.confirmation-only:gpt-6-astra",
+      "ruleId": "seat.confirmation-only",
+      "subject": "gpt-6-astra",
+      "severity": "info",
+      "title": "Seat gpt-6-astra's accepted catches were always also raised elsewhere (12 of 12)",
+      "status": "snoozed",
+      "snoozedUntil": "2026-11-18T00:00:00Z",
+      "firstSeenAt": "2026-10-05T00:05:00Z",
+      "lastSeenAt": "2026-10-19T00:05:00Z",
+      "evidence": {
+        "window": { "from": "2026-08-21", "to": "2026-10-18" },
+        "sampleSize": 12,
+        "figures": [
+          { "label": "Corroborated accepted catches", "value": 12, "unit": "findings" },
+          { "label": "Unique accepted catches", "value": 0, "unit": "findings" }
+        ],
+        "runIds": ["20261018T101500Z"]
+      }
+    }
+  ],
+  "notEvaluated": [
+    { "ruleId": "seat.high-false-positive", "reason": "No seat has 10 settled findings in the window yet" },
+    { "ruleId": "seat.cost-outlier", "reason": "Fewer than 3 peer seats have a cost per unique catch" }
+  ]
+}
