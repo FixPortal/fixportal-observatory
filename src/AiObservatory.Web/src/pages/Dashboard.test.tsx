@@ -22,6 +22,9 @@ vi.mock('../auth/msal', () => ({ authEnabled: true, isReadonly: false, ...authMo
 vi.mock('../components/SummaryCards', () => ({
   SummaryCards: () => <section aria-label="Summary evidence">Summary</section>,
 }))
+vi.mock('../components/SuggestionsCard', () => ({
+  SuggestionsCard: () => <section aria-label="Suggestions evidence" />,
+}))
 vi.mock('../components/SourceStatusPanel', () => ({
   SourceStatusPanel: () => (
     <div className="source-status-zone">

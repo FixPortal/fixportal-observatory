@@ -1,5 +1,6 @@
 import { lazy, Suspense, useRef, useState, type KeyboardEvent } from 'react'
 import { SummaryCards } from '../components/SummaryCards'
+import { SuggestionsCard } from '../components/SuggestionsCard'
 import { SourceStatusPanel } from '../components/SourceStatusPanel'
 import { ModelBreakdown } from '../components/ModelBreakdown'
 import { InsightsFeed } from '../components/InsightsFeed'
@@ -163,6 +164,7 @@ export function Dashboard() {
           {tab === 'overview' && (
             <>
               <SummaryCards />
+              <SuggestionsCard />
               <div className="main-grid">
                 <div className="panel">
                   <div className="panel-title">Usage value · last 31 days</div>
