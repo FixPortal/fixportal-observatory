@@ -58,7 +58,13 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
     // integration suite finishes in under a minute in CI and trips it (429s with no test-level
     // fault). No test here exercises the limiter itself, so raising it in tests only is safe.
     public Dictionary<string, string?> ConfigurationOverrides { get; } =
-        new() { ["RateLimiting:ApiPermitLimit"] = "100000" };
+        new()
+        {
+            ["RateLimiting:ApiPermitLimit"] = "100000",
+            // The daily suggestion worker evaluates at startup and fetches a live FX rate, which
+            // would show up in tests that count outbound FX requests.
+            ["Suggestions:WorkerEnabled"] = "false",
+        };
 
     private string? _dbConnectionOverride;
     private bool _dbConnectionOverrideSet;
