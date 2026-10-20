@@ -196,7 +196,7 @@ These are read when the web app is built. Changing one means rebuilding and rede
 | `VITE_DEMO_BANNER`                              | empty   | Exactly `true` shows the synthetic-data banner and also puts the app in read-only viewer mode. `TRUE` or `1` do nothing.                                                                                                                             |
 | `ANALYZE`                                       | unset   | Any non-empty value at build time writes `dist/stats.html`, a bundle size treemap. Not a runtime setting.                                                                                                                                            |
 
-The Docker image build clears `VITE_API_BASE` and the three `VITE_AAD_*` variables on purpose (nginx serves the app and proxies `/api` on the same origin, with no sign-in gate), and takes `VITE_API_KEY` from a build argument.
+The Docker image build clears `VITE_API_BASE` and the three `VITE_AAD_*` variables on purpose (nginx serves the app and proxies `/api` on the same origin, with no sign-in gate), and also blanks `VITE_API_KEY`. The Compose stack authenticates through the nginx proxy instead, which adds `OBSERVATORY_API_KEY` from the container environment at start.
 
 ## Local sweeper variables
 
@@ -215,15 +215,15 @@ The sweeper reads these from its own process environment. It also accepts the co
 
 `docker-compose.yml` maps host variables onto the settings above. Anything unset becomes an empty value.
 
-| Host variable                                                                                                       | Maps to                                                                           |
-| ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `OBSERVATORY_API_KEY` (default `change-me`)                                                                         | API `OBSERVATORY_API_KEY`, and the `VITE_API_KEY` build argument of the web image |
-| `GITHUB_TOKEN`, `GITHUB_BILLING_ORG`                                                                                | API `GITHUB_TOKEN`, `GITHUB_BILLING_ORG`                                          |
-| `OBSERVATORY_PROJECT_OWNERS`                                                                                        | API `Activity__ProjectOwners`                                                     |
-| `ANTHROPIC_BILLING_KEY`, `CLAUDE_CODE_USAGE_ENABLED`, `OPENAI_ADMIN_KEY`, `GITHUB_TOKEN`, `COPILOT_ORG`, `GOOGLE_*` | The ingest worker settings of the same name                                       |
-| `INGEST_GITHUB_REPO_ALLOWLIST`                                                                                      | Ingest `Ingest__GitHubRepoAllowlist`                                              |
-| `INGEST_POLLING_INTERVAL_MINUTES` (default 60)                                                                      | Ingest `Ingest__PollingIntervalMinutes`                                           |
-| `INGEST_LOOKBACK_DAYS` (default 3)                                                                                  | Ingest `Ingest__LookbackDays`                                                     |
+| Host variable                                                                                                       | Maps to                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `OBSERVATORY_API_KEY` (default `change-me`)                                                                         | API `OBSERVATORY_API_KEY`, and the `OBSERVATORY_API_KEY` environment of the web container |
+| `GITHUB_TOKEN`, `GITHUB_BILLING_ORG`                                                                                | API `GITHUB_TOKEN`, `GITHUB_BILLING_ORG`                                                  |
+| `OBSERVATORY_PROJECT_OWNERS`                                                                                        | API `Activity__ProjectOwners`                                                             |
+| `ANTHROPIC_BILLING_KEY`, `CLAUDE_CODE_USAGE_ENABLED`, `OPENAI_ADMIN_KEY`, `GITHUB_TOKEN`, `COPILOT_ORG`, `GOOGLE_*` | The ingest worker settings of the same name                                               |
+| `INGEST_GITHUB_REPO_ALLOWLIST`                                                                                      | Ingest `Ingest__GitHubRepoAllowlist`                                                      |
+| `INGEST_POLLING_INTERVAL_MINUTES` (default 60)                                                                      | Ingest `Ingest__PollingIntervalMinutes`                                                   |
+| `INGEST_LOOKBACK_DAYS` (default 3)                                                                                  | Ingest `Ingest__LookbackDays`                                                             |
 
 The compose file does not pass `ANTHROPIC_API_KEY` (it appears only as a commented-out example), the SMTP settings or `SLACK_WEBHOOK_PROTECTION_KEY` to the API, and does not pass `GITHUB_ACTIVITY_ORG` or `GITHUB_BILLING_ORG` to the ingest worker. To use those, add them to the relevant service in a compose override. In compose, GitHub activity polling therefore needs `INGEST_GITHUB_REPO_ALLOWLIST`.
 
