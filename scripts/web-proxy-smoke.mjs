@@ -63,8 +63,9 @@ try {
 } finally {
   try {
     run(['rm', '-f', name])
-  } catch {
-    // already gone
+  } catch (e) {
+    // The container is --rm and may already be gone; anything else is worth seeing.
+    if (!/No such container/i.test(String(e.stderr))) console.error('cleanup failed: ' + e.stderr)
   }
 }
 
