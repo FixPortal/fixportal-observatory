@@ -149,7 +149,7 @@ When a check raises an alert it:
 
 ### Alert History
 
-The **Alert History** panel lists budget-alert insights, newest first, up to ten, with title, body and the time generated. It reads `No budget alerts triggered.` when there are none. The panel is built from the insights list, which holds only the 50 most recent insights of all types, so older alerts can drop out of this list even though they were sent. Clearing all insights also clears the alert records, which allows the same windows to alert again.
+The **Alert History** panel lists budget-alert insights, newest first, up to ten, with title, body and the time generated. It reads `No budget alerts triggered.` when there are none. The panel is built from the insights list, which holds the 50 newest insights of all types plus every unread one, so an older alert you have already dismissed can drop out of this list even though it was sent. Clearing all insights also clears the alert records, which allows the same windows to alert again.
 
 ## Notifications
 

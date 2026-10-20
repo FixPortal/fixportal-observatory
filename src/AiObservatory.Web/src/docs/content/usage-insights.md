@@ -65,7 +65,7 @@ Each insight shows a type, a title and a body written in Markdown. The body is s
 | `recommendation` | `Recommendation` | Plain text |
 | `budgetalert`    | `Budget alert`   | Amber      |
 
-Only unread insights are shown. The five newest appear first, and a `Show N older insight(s)` disclosure holds the rest. `No unread insights.` means there are none. The feed reads the latest 50 insights the API returns, so older ones are not visible in the dashboard even if unread.
+Only unread insights are shown. The five newest appear first, and a `Show N older insight(s)` disclosure holds the rest. `No unread insights.` means there are none. The feed reads the 50 newest insights plus every unread one, up to 500, so an unread insight stays visible however old it is until you dismiss it.
 
 ### Actions
 

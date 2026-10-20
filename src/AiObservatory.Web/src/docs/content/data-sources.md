@@ -58,12 +58,12 @@ What each source provides and needs is in [Providers](/docs/providers).
 
 ### Per-machine local sources
 
-Local producers add the machine name to their source id, for example `codex-local@my-machine`. The panel matches built-in rows by exact id. As a result:
+Local producers add the machine name to their source id, for example `codex-local@my-machine`, so that machines never overwrite each other. The panel shows this in two places:
 
-- the built-in `Codex local` row, which has no machine suffix, shows `Not connected` unless data was posted under the plain id, and
-- each machine appears as its own additional row, with a name such as `Codex local@my-machine`.
+- The built-in row (`Codex local`) stands for the tool as a whole. When nothing is posted under the plain id, it takes the state of the machine that reported most recently, so a tool that is posting reads `Fresh` rather than `Not connected`. If data is posted under the plain id, that exact row is used instead.
+- Each machine also appears as its own additional row, with a name such as `Codex local@my-machine`, so you can see which machine is stale or failing.
 
-So a machine that is posting correctly can appear as an extra row while the built-in local row still says `Not connected`. Judge a local tool by its per-machine row. See [Local producers](/docs/local-producers).
+The per-machine rows are detail under the built-in row. The summary counts (`N reporting`, `N not connected`, `N need attention`) leave them out, so one tool is never counted twice. A laptop that has been off shows `Stale` on its own row while the built-in row stays `Fresh` as long as another machine is reporting. See [Local producers](/docs/local-producers).
 
 ## The six states
 
@@ -105,12 +105,12 @@ For local telemetry, any posted event from that source counts as a success, incl
 
 ### Not connected
 
-Observatory has nothing for this source. Either the credential or setting is missing, or, for a local tool, no machine has posted under the plain id.
+Observatory has nothing for this source. Either the credential or setting is missing, or, for a local tool, no machine has posted at all.
 
 - Select `Setup` to open the setup guide for the source.
 - Some sources are off by default. The Kimi, xAI and OpenRouter pricing sources do not poll unless `PRICING_RETIRED_SOURCES_ENABLED` is `true`, so they normally read `Not connected`.
 - The Claude Code usage source needs both an organization Admin API key and `CLAUDE_CODE_USAGE_ENABLED=true`.
-- For a local tool, check the machine's own row first. See [Per-machine local sources](/docs/data-sources#per-machine-local-sources).
+- For a local tool, the built-in row reflects the most recent machine. Check the per-machine rows for the others. See [Per-machine local sources](/docs/data-sources#per-machine-local-sources).
 
 You do not need to connect every source. Connect the ones that cover your real usage. See [Providers](/docs/providers).
 

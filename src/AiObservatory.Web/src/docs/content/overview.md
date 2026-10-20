@@ -69,7 +69,7 @@ Observed input tokens are plain input tokens plus cache-read tokens plus cache-w
 
 ### New insights
 
-The count of insights you have not dismissed. It counts from the latest 50 insights the API returns. See [Usage and insights](/docs/usage-insights).
+The count of insights you have not dismissed. It counts every unread insight the API returns, up to 500. See [Usage and insights](/docs/usage-insights).
 
 ### Unclassified cost note
 
