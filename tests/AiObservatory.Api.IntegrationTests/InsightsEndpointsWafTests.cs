@@ -348,6 +348,59 @@ public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClass
         }
     }
 
+    [Fact]
+    public async Task GetInsights_returns_every_unread_insight_even_when_newer_acknowledged_ones_fill_the_window()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var period = new LocalDate(2030, 1, 1);
+        var start = Instant.FromUtc(2030, 1, 1, 0, 0);
+        var unread = Enumerable
+            .Range(0, 3)
+            .Select(i => Insight(period, start.Plus(Duration.FromMinutes(i)), $"Unread {i}"))
+            .ToList();
+        var acknowledged = Enumerable
+            .Range(0, 55)
+            .Select(i =>
+            {
+                var row = Insight(period, start.Plus(Duration.FromDays(1)).Plus(Duration.FromMinutes(i)), $"Acked {i}");
+                row.AcknowledgedAt = start.Plus(Duration.FromDays(2));
+                return row;
+            })
+            .ToList();
+        var seeded = unread.Concat(acknowledged).Select(row => row.Id).ToList();
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+            db.Insights.AddRange(unread);
+            db.Insights.AddRange(acknowledged);
+            await db.SaveChangesAsync(ct);
+        }
+
+        try
+        {
+            using var client = factory.CreateAdminClient();
+            var response = await client.GetAsync("/api/insights", ct);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var returned = (await response.Content.ReadFromJsonAsync<JsonElement>(ct))
+                .EnumerateArray()
+                .Select(item => item.GetProperty("id").GetGuid())
+                .ToHashSet();
+            returned.Should().Contain(unread.Select(row => row.Id));
+            // The window itself is unchanged: the newest 50 rows, so the oldest acknowledged
+            // rows stay out and the feed does not grow without bound.
+            returned.Should().Contain(acknowledged[^1].Id);
+            returned.Should().NotContain(acknowledged[0].Id);
+        }
+        finally
+        {
+            using var cleanupScope = factory.Services.CreateScope();
+            var cleanupDb = cleanupScope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+            await cleanupDb.Insights.Where(row => seeded.Contains(row.Id)).ExecuteDeleteAsync(CancellationToken.None);
+        }
+    }
+
     private static Insight Insight(LocalDate period, Instant generatedAt, string title) =>
         new()
         {

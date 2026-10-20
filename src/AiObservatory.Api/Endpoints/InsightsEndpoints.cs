@@ -9,6 +9,9 @@ namespace AiObservatory.Api.Endpoints;
 
 public static class InsightsEndpoints
 {
+    private const int NewestInsights = 50;
+    private const int MaxInsights = 500;
+
     // Returning the builder is the standard fluent endpoint-mapping convention.
     // ReSharper disable once UnusedMethodReturnValue.Global
     public static IEndpointRouteBuilder MapInsightsEndpoints(this IEndpointRouteBuilder app)
@@ -17,10 +20,15 @@ public static class InsightsEndpoints
             "/insights",
             async (AiObservatoryDbContext db) =>
             {
+                // The newest rows, plus every unread one. The feed shows unread insights only, so a
+                // plain "newest 50" let acknowledged rows push older unread ones out of the window
+                // and out of the "New insights" count. MaxInsights bounds the unread tail.
+                var newest = db.Insights.OrderByDescending(i => i.GeneratedAt).Take(NewestInsights).Select(i => i.Id);
                 var data = await db
                     .Insights.AsNoTracking()
+                    .Where(i => i.AcknowledgedAt == null || newest.Contains(i.Id))
                     .OrderByDescending(i => i.GeneratedAt)
-                    .Take(50)
+                    .Take(MaxInsights)
                     .Select(i => new
                     {
                         i.Id,
