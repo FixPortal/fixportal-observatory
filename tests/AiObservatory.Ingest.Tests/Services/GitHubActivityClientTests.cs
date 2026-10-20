@@ -128,7 +128,7 @@ public sealed class GitHubActivityClientTests : IDisposable
     }
 
     [Fact]
-    public async Task ListOrganizationRepositoriesAsync_StopsWhenTheRateLimitFloorIsReached()
+    public async Task ListOrganizationRepositoriesAsync_ThrowsWhenTheRateLimitFloorIsReached()
     {
         var handler = new StubHandler(_ => JsonResponse("[]", rateLimitRemaining: 10));
         var sut = CreateSut(handler);
