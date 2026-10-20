@@ -57,7 +57,15 @@ public sealed class GoogleBillingExportClientTests
         query
             .Sql.Should()
             .Contain("AND _PARTITIONDATE >= DATE_SUB(LEAST(DATE(@from), DATE(@changes_since)), INTERVAL 1 DAY)");
-        query.Sql.Should().NotContain("OR export_time > @changes_since AND _PARTITIONDATE");
+        // Rendered SQL breaks the clause over a line, so a single-line negative needle never
+        // matches. Pin the parenthesised predicate instead: dropping the outer parentheses
+        // binds the _PARTITIONDATE prune to the export_time arm alone and the usage-date arm
+        // loses partition pruning.
+        query
+            .Sql.Should()
+            .Contain(
+                "WHERE ((usage_start_time >= @from AND usage_start_time < @through_exclusive) OR export_time > @changes_since)"
+            );
         query.Sql.Should().Contain("FROM `project.dataset.table` AS source");
         query.Sql.Should().Contain("UNNEST(source.credits)");
         query.Sql.Should().Contain("CAST(source.cost * 1000000 AS INT64)");
@@ -334,7 +342,11 @@ public sealed class GoogleBillingExportClientTests
         query
             .Sql.Should()
             .Contain("AND _PARTITIONDATE >= DATE_SUB(LEAST(DATE(@from), DATE(@changes_since)), INTERVAL 1 DAY)");
-        query.Sql.Should().NotContain("OR export_time > @changes_since AND _PARTITIONDATE");
+        query
+            .Sql.Should()
+            .Contain(
+                "WHERE ((usage_start_time >= @from AND usage_start_time < @through_exclusive) OR export_time > @changes_since)"
+            );
         query.Sql.Should().NotContain("INTERVAL 32 DAY");
         query.Sql.Should().Contain("FROM `project.dataset.table`");
         query.Sql.Should().NotContain("line_items");
