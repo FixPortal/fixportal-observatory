@@ -7,15 +7,15 @@
 # The key is added only to requests the SPA itself made. A cross-site page can send a CORS-simple
 # POST (a form, or fetch with mode no-cors) with no preflight, so injecting for every keyless
 # request would let it drive admin POSTs. Browsers that send Sec-Fetch-Site are trusted on
-# same-origin/none; older ones fall back to an Origin equal to this server's own Host. A request
-# with neither header is not a browser and is trusted. A request that already carries a key (a
-# ?key= viewer link) keeps it.
-map "$http_sec_fetch_site|$http_origin|http://$http_host" $same_origin_request {
+# same-origin/none; older ones fall back to an Origin equal to this server's own Host (either
+# scheme, so a TLS-terminating proxy in front still works). A request with neither header is not
+# a browser and is trusted. A request that already carries a key (a ?key= viewer link) keeps it.
+map "$http_sec_fetch_site|$http_origin|$http_host" $same_origin_request {
     default                0;
     "~^same-origin\|"      1;
     "~^none\|"             1;
     "~^\|\|"               1;
-    "~^\|(.*)\|\1$"       1;
+    "~^\|https?://(.*)\|\1$"  1;
 }
 
 map "$same_origin_request|$http_x_observatory_key" $observatory_key {

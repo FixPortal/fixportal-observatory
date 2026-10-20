@@ -59,6 +59,7 @@ try {
   expect('same-site', await post({ 'Sec-Fetch-Site': 'same-site' }), 'key=[]')
   expect('old browser, foreign Origin', await post({ Origin: 'http://evil.example' }), 'key=[]')
   expect('old browser, own Origin', await post({ Origin: 'http://localhost:' + port }), 'key=[sekret]')
+  expect('old browser, own Origin over TLS', await post({ Origin: 'https://localhost:' + port }), 'key=[sekret]')
   expect('caller key kept', await post({ 'Sec-Fetch-Site': 'cross-site', 'X-Observatory-Key': 'viewer' }), 'key=[viewer]')
 } finally {
   try {
