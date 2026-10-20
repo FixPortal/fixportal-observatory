@@ -15,7 +15,10 @@ public sealed class KimiPricingSourceTests
     private static readonly Instant RetrievedAt = Instant.FromUtc(2026, 8, 24, 12, 0);
     private static readonly LocalDate ObservedOn = new(2026, 8, 24);
 
-    // Rates as published on 2026-09-19. kimi-k2.5 is deliberately absent: Moonshot retired it
+    // The live fixtures were captured on 2026-09-19, but the rates they pin are the ones the
+    // bundled catalogue carries, and the bundle keeps the shared 2026-08-24 fetch stamp:
+    // EffectiveWindow treats an undeclared EffectiveFrom as that capture date, not a
+    // provider publication date. kimi-k2.5 is deliberately absent: Moonshot retired it
     // when it consolidated four per-model pages into chat.md, and this source no longer pins
     // an exact roster. No kimi-k2.5 usage was ever recorded in this Observatory.
     [Theory]
