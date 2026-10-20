@@ -59,6 +59,53 @@ describe('source status helpers', () => {
     expect(rows.slice(-2).map((row) => row.sourceId)).toEqual(['a-new-source', 'z-new-source'])
   })
 
+  test('rolls per-machine rows up into the built-in row using the most recent success', () => {
+    const rows = mergeSourceStatuses([
+      status({
+        sourceId: 'codex-local@laptop',
+        status: 'stale',
+        lastSuccessAt: '2026-08-20T09:00:00Z',
+      }),
+      status({
+        sourceId: 'codex-local@desktop',
+        status: 'fresh',
+        lastSuccessAt: '2026-08-25T11:30:00Z',
+      }),
+    ])
+
+    expect(rows.find((row) => row.sourceId === 'codex-local')).toMatchObject({
+      status: 'fresh',
+      isConfigured: true,
+      lastSuccessAt: '2026-08-25T11:30:00Z',
+      displayName: 'Codex local',
+    })
+    // The machine rows stay for per-machine detail, marked so they are not counted twice.
+    expect(
+      rows.filter((row) => row.machineOf === 'codex-local').map((row) => row.sourceId),
+    ).toEqual(['codex-local@desktop', 'codex-local@laptop'])
+  })
+
+  test('an exact built-in id still wins over its machine rows', () => {
+    const rows = mergeSourceStatuses([
+      status({ sourceId: 'codex-local', status: 'failing', consecutiveFailureCount: 4 }),
+      status({ sourceId: 'codex-local@desktop', status: 'fresh' }),
+    ])
+
+    expect(rows.find((row) => row.sourceId === 'codex-local')).toMatchObject({
+      status: 'failing',
+      consecutiveFailureCount: 4,
+    })
+  })
+
+  test('only an @-suffixed id rolls up, not a source that merely shares the prefix', () => {
+    const rows = mergeSourceStatuses([status({ sourceId: 'codex-localish@desktop' })])
+
+    expect(rows.find((row) => row.sourceId === 'codex-local')).toMatchObject({
+      status: 'notConfigured',
+    })
+    expect(rows.find((row) => row.sourceId === 'codex-localish@desktop')?.machineOf).toBeUndefined()
+  })
+
   test('formats deterministic relative and absolute success evidence and preserves null', () => {
     expect(formatLastSuccess(null, new Date('2026-08-25T12:00:00Z'))).toBeNull()
     expect(formatLastSuccess('2026-08-25T11:00:00Z', new Date('2026-08-25T12:00:00Z'))).toEqual({
@@ -112,6 +159,21 @@ test('maps all statuses, shows failure evidence, and uses native time/details/li
   setup.focus()
   expect(setup).toHaveFocus()
   expect(setup).toHaveAttribute('href', expect.stringContaining('docs/provider-setup.md'))
+})
+
+test('counts a tool once in the summary however many machines report it', () => {
+  data.statuses = [
+    status({ sourceId: 'codex-local@desktop', status: 'fresh' }),
+    status({ sourceId: 'codex-local@laptop', status: 'fresh' }),
+  ]
+  render(<SourceStatusPanel />)
+
+  expect(
+    screen.getByText(`1 reporting · ${REGISTRY_SOURCE_COUNT - 1} not connected`),
+  ).toBeInTheDocument()
+  // The built-in row is no longer offered a setup link it does not need.
+  fireEvent.click(screen.getByRole('button', { name: /Data sources/ }))
+  expect(screen.queryByRole('link', { name: 'Setup: Codex local' })).not.toBeInTheDocument()
 })
 
 test('shows readable API-only sources without inventing setup links and does not mask query errors', () => {

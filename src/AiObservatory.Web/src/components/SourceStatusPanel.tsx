@@ -15,9 +15,11 @@ import { CollapsiblePanel } from './CollapsiblePanel'
 /* eslint-disable react-refresh/only-export-components -- focused tests exercise deterministic merge and time formatting helpers */
 
 export interface SourceStatusRow extends SourceStatusResponse {
-  provider?: string
+  provider?: string | undefined
   displayName: string
-  setupHref?: string
+  setupHref?: string | undefined
+  /** Set on a per-machine row (`codex-local@host`): the built-in source it belongs to. */
+  machineOf?: string | undefined
 }
 
 const registrySources: (ProviderSource & { provider?: string })[] = [
@@ -38,17 +40,46 @@ const missingStatus = (sourceId: string): SourceStatusResponse => ({
   lastError: null,
 })
 
+const timeOf = (value: string | null) => {
+  const ms = value ? Date.parse(value) : Number.NaN
+  return Number.isNaN(ms) ? -1 : ms
+}
+
+// Local producers report under `<source>@<machine>`, so the built-in row never has an id of its
+// own. It stands for the tool as a whole: take the machine that reported most recently.
+function rollUpMachines(
+  sourceId: string,
+  statuses: SourceStatusResponse[],
+): SourceStatusResponse | undefined {
+  const machines = statuses.filter((status) => status.sourceId.startsWith(`${sourceId}@`))
+  const latest = machines.toSorted(
+    (a, b) =>
+      timeOf(b.lastSuccessAt) - timeOf(a.lastSuccessAt) ||
+      timeOf(b.lastAttemptAt) - timeOf(a.lastAttemptAt),
+  )[0]
+  return latest && { ...latest, sourceId }
+}
+
 export function mergeSourceStatuses(statuses: SourceStatusResponse[]): SourceStatusRow[] {
   const api = new Map(statuses.map((status) => [status.sourceId, status]))
   const known = registrySources.map((source) => ({
-    ...(api.get(source.id) ?? missingStatus(source.id)),
+    ...(api.get(source.id) ?? rollUpMachines(source.id, statuses) ?? missingStatus(source.id)),
     provider: source.provider,
     displayName: source.displayName,
     setupHref: source.setupHref,
   }))
   const unknown = statuses
     .filter((status) => !getSource(status.sourceId))
-    .map((status) => ({ ...status, displayName: sourceDisplayName(status.sourceId) }))
+    .map((status) => {
+      const machineOf = registrySources.find((source) =>
+        status.sourceId.startsWith(`${source.id}@`),
+      )?.id
+      return {
+        ...status,
+        displayName: sourceDisplayName(status.sourceId),
+        ...(machineOf ? { machineOf } : {}),
+      }
+    })
     .toSorted(
       (a, b) => a.displayName.localeCompare(b.displayName) || a.sourceId.localeCompare(b.sourceId),
     )
@@ -123,9 +154,12 @@ export function SourceStatusPanel() {
     )
   }
   const rows = mergeSourceStatuses(statuses)
-  const reporting = rows.filter((row) => row.status === 'fresh').length
-  const notConnected = rows.filter((row) => row.status === 'notConfigured').length
-  const attention = rows.filter((row) =>
+  // A per-machine row is detail under its built-in row, which already carries the roll-up,
+  // so counting both would report one tool twice.
+  const counted = rows.filter((row) => !row.machineOf)
+  const reporting = counted.filter((row) => row.status === 'fresh').length
+  const notConnected = counted.filter((row) => row.status === 'notConfigured').length
+  const attention = counted.filter((row) =>
     ['stale', 'failing', 'unavailable'].includes(row.status),
   ).length
   const summary = isLoading
