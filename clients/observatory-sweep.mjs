@@ -923,10 +923,13 @@ async function fetchSnapshotInventory(url, apiKey, enabled, machine) {
 // first post-upgrade run would otherwise double all pre-upgrade history beside the new
 // series. Tombstone every legacy key once and record completion in the state file; a
 // failed fetch or post leaves the marker unset so the next run retries.
-async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc) {
+async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc, replacementVerified) {
   state.legacySourceMigration ??= {}
   for (const tool of enabled) {
     if (state.legacySourceMigration[tool]) { continue }
+    // The legacy series is zeroed only once this machine's replacement is verified: its
+    // active posts succeeded, or a clean scan proved an empty local history.
+    if (!replacementVerified(tool)) { continue }
     const legacyId = LOCAL_SOURCE_IDS[tool]
     let legacyInventory
     try {
@@ -1107,6 +1110,10 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
         files.push({ ...file, transcriptPath, cacheKey: `${file.mtimeMs}:${transcript.mtimeMs}` })
       } catch (error) {
         if (error?.code !== 'ENOENT') { throw error }
+        // A database whose transcript is gone is not an absent conversation: keep it in
+        // the scan under a key that never matches the cache, so the parse's read fails and
+        // updateFileCache reuses the cached records or flags the source incomplete.
+        files.push({ ...file, transcriptPath, cacheKey: `${file.mtimeMs}:no-transcript` })
       }
     }
     const result = await updateFileCache(
@@ -1166,9 +1173,6 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   const { inventory, failedSources } = DRY_RUN
     ? { inventory: [], failedSources: new Set() }
     : await fetchSnapshotInventory(url, apiKey, enabled, machine)
-  if (!DRY_RUN) {
-    await migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc)
-  }
   const { records, incompleteSources, emptySources } = await scanRecords(cfg, state, enabled, discover)
   const snapshots = buildDailySnapshots(records, machine)
   const unplaced = countUnplaced(records, machine)
@@ -1238,6 +1242,14 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     if (await postEvent(url, apiKey, { ...submission.snapshot, observedAtUtc })) {
       posted++
     }
+  }
+
+  if (!DRY_RUN) {
+    await migrateLegacySourceIds(
+      url, apiKey, enabled, state, observedAtUtc,
+      tool => activeSucceeded.get(localSourceId(tool, machine)) === true,
+    )
+    await saveState(statePath, state)
   }
 
   log(`Sweep complete: ${posted} event(s) ${DRY_RUN ? 'would be ' : ''}posted.`)

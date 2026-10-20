@@ -30,7 +30,17 @@ foreach ($h in $pick.Post) {
     if ($LASTEXITCODE -ne 0) { $failed++; Write-Warning "could not post $($h.smell) at $($h.file):$($h.line)" }
 }
 if ($pick.Overflow.Count) {
-    gh pr comment $Pr -R $Repo --body "ai-smells: $($pick.Overflow.Count) further hit(s) beyond the $Cap-thread cap. They are listed in this run's job summary and will be posted on the next push." | Out-Null
+    # One marked notice per PR: later pushes edit it rather than adding another.
+    $marker = '<!-- ai-smell:overflow -->'
+    $notice = "ai-smells: $($pick.Overflow.Count) further hit(s) beyond the $Cap-thread cap. They are listed in this run's job summary and will be posted on the next push.`n`n$marker"
+    $existingId = @(gh api "repos/$Repo/issues/$Pr/comments" --paginate --jq ".[] | select(.body | contains(`"$marker`")) | .id")
+    if ($LASTEXITCODE -ne 0) { $existingId = @(); Write-Warning 'could not list PR comments; posting a new overflow notice' }
+    if ($existingId.Count) {
+        gh api -X PATCH "repos/$Repo/issues/comments/$($existingId[0])" -f body="$notice" | Out-Null
+    }
+    else {
+        gh pr comment $Pr -R $Repo --body $notice | Out-Null
+    }
     if ($LASTEXITCODE -ne 0) { Write-Warning 'could not post the overflow comment' }
 }
 

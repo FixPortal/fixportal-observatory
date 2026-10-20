@@ -85,3 +85,43 @@ def test_local_docker_action_building_own_dockerfile_passes(tmp_path, monkeypatc
     (tmp_path / ref / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
     failed, _ = hygiene.check_local_action("job", ref, "origin.yml", 0, set())
     assert not failed
+
+
+# N02 C4: `@sha256:` is a container-image pin. A step `uses:` ref is an action, which pins
+# to a 40-hex commit, so a digest there names no revision and must fail the pin check.
+DIGEST = "sha256:" + "a" * 64
+
+
+def test_step_uses_with_sha256_digest_is_refused():
+    document = {"jobs": {"j": {"steps": [{"uses": "owner/repo@" + DIGEST}]}}}
+    assert hygiene.digest_pinned_uses(document) == ["owner/repo@" + DIGEST]
+
+
+def test_job_level_reusable_workflow_with_digest_is_refused():
+    document = {"jobs": {"j": {"uses": "owner/repo/.github/workflows/x.yml@" + DIGEST}}}
+    assert len(hygiene.digest_pinned_uses(document)) == 1
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"jobs": {"j": {"container": "postgres@" + DIGEST}}},
+        {"jobs": {"j": {"services": {"db": {"image": "bitnami/postgresql@" + DIGEST}}}}},
+        {"jobs": {"j": {"steps": [{"uses": "docker://alpine@" + DIGEST}]}}},
+        {"jobs": {"j": {"steps": [{"uses": "actions/checkout@" + "a" * 40}]}}},
+    ],
+)
+def test_digest_on_an_image_or_commit_sha_is_not_flagged(document):
+    assert hygiene.digest_pinned_uses(document) == []
+
+
+def test_composite_step_with_sha256_digest_is_refused(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    action_dir = tmp_path / "local-composite"
+    action_dir.mkdir()
+    (action_dir / "action.yml").write_text(
+        "name: c\nruns:\n  using: composite\n  steps:\n    - uses: owner/repo@" + DIGEST + "\n",
+        encoding="utf-8",
+    )
+    failed, _ = hygiene.check_local_action("job", "./local-composite", "origin.yml", 0, set())
+    assert failed

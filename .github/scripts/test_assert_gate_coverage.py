@@ -200,3 +200,16 @@ def test_missing_explicit_status_override_is_refused(tmp_path):
     condition = "contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')"
     with pytest.raises(SystemExit, match="explicit status override"):
         check(write_workflow(tmp_path, condition))
+
+
+# N01 F6: the closed extension set missed gate languages, so a script in one of them was
+# never required to be HIGH tier.
+@pytest.mark.parametrize("name", ["gate.psm1", "gate.cjs", "gate.ts", "gate.bash", "Gate.PSM1"])
+def test_gate_script_recognises_extension(name):
+    match = gate.GATE_SCRIPT.search(f"run: ./scripts/{name}")
+    assert match is not None and match.group(1) == f"scripts/{name}"
+
+
+@pytest.mark.parametrize("name", ["gate.tsx", "gate.jsx", "gate.psm1x"])
+def test_gate_script_still_rejects_lookalike_extension(name):
+    assert gate.GATE_SCRIPT.search(f"run: ./scripts/{name}") is None

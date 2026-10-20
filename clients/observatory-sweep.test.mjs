@@ -1259,8 +1259,9 @@ test('main fetches inventory only for enabled per-machine sources and never tomb
 
     // Only this run's enabled source is inventoried, under this machine's
     // namespace -- the other five sources and other machines are never read.
-    // The one-shot legacy migration reads the un-suffixed id for the same tool.
-    assert.deepEqual(gets.map(request => request.sourceId), ['codex-local@test-machine', 'codex-local'])
+    // The one-shot legacy migration waits for a verified replacement, and the missing
+    // root verifies nothing, so the un-suffixed id is not read either.
+    assert.deepEqual(gets.map(request => request.sourceId), ['codex-local@test-machine'])
     assert.equal(gets.every(request => request.apiKey === 'test-key'), true)
     // Codex's discovery root does not exist here (an unmounted home or a
     // mistyped CODEX_HOME reads the same way), so the empty scan is unverified
@@ -1987,6 +1988,120 @@ test('main tolerates one source inventory failing and still sweeps the rest', as
     assert.match(stderr, /Inventory unavailable for codex-local@test-machine/)
   } finally {
     await new Promise(resolve => server.close(resolve))
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+// N02 A1: the legacy series is zeroed only after this machine's replacement is verified.
+test('main leaves the legacy namespace and its marker alone when the source root is missing', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-legacy-missing-'))
+  const statePath = join(root, 'state', 'sweep.json')
+  const posts = []
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://127.0.0.1')
+    if (request.method === 'GET' && url.pathname === '/api/events/local-snapshots') {
+      const body = url.searchParams.get('sourceId') === 'codex-local'
+        ? [{
+          provider: 'openai', occurredAtUtc: '2026-08-10T12:00:00Z', model: 'gpt-5.5',
+          inputTokens: 40, outputTokens: 9, costUsd: null, runtime: 'codex',
+          sourceId: 'codex-local', sourceKind: 'localTelemetry',
+          usageScope: 'subscription', costBasis: 'notional', eventKey: 'codex:2026-08-10:gpt-5.5',
+        }]
+        : []
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(body))
+      return
+    }
+    if (request.method === 'POST' && url.pathname === '/api/events') {
+      let body = ''
+      for await (const chunk of request) { body += chunk }
+      posts.push(JSON.parse(body))
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end('{}')
+      return
+    }
+    response.writeHead(404).end()
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const envKeys = [
+    'OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES',
+    'OBSERVATORY_MACHINE', 'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME', 'GEMINI_HOME',
+  ]
+  const priorEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]]))
+  Object.assign(process.env, {
+    OBSERVATORY_URL: `http://127.0.0.1:${server.address().port}`,
+    OBSERVATORY_API_KEY: 'test-key',
+    OBSERVATORY_STATE: statePath,
+    OBSERVATORY_LOCAL_SOURCES: 'codex',
+    OBSERVATORY_MACHINE: 'test-machine',
+    // Unmounted home: the sessions directory does not exist.
+    CODEX_HOME: join(root, 'codex'),
+    COPILOT_HOME: join(root, 'copilot'),
+    CLAUDE_HOME: join(root, 'claude'),
+    KIMI_HOME: join(root, 'kimi'),
+    GEMINI_HOME: join(root, 'gemini'),
+  })
+
+  try {
+    await sweep.main()
+    assert.deepEqual(posts.filter(body => body.sourceId === 'codex-local'), [])
+    const state = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(state.legacySourceMigration?.codex, undefined)
+  } finally {
+    for (const key of envKeys) {
+      if (priorEnv[key] === undefined) { delete process.env[key] } else { process.env[key] = priorEnv[key] }
+    }
+    await new Promise(resolve => server.close(resolve))
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+// N02 A2: a conversation database whose transcript is gone keeps its cached usage.
+async function antigravityFixture(root) {
+  const geminiHome = join(root, 'gemini')
+  const conversations = join(geminiHome, 'antigravity-cli', 'conversations')
+  const transcriptDir = join(geminiHome, 'antigravity-cli', 'brain', 'agy-session', '.system_generated', 'logs')
+  await mkdir(conversations, { recursive: true })
+  await mkdir(transcriptDir, { recursive: true })
+  await writeFile(join(transcriptDir, 'transcript.jsonl'), JSON.stringify({
+    created_at: '2026-08-24T12:00:00Z', content: 'Model Selection` from None to Gemini 3.1 Pro (High).',
+  }))
+  const db = new DatabaseSync(join(conversations, 'agy-session.db'))
+  db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB)')
+  db.prepare('INSERT INTO steps VALUES (?, ?, ?)').run(1, 23, antigravityPayload(50, 10))
+  db.close()
+  return {
+    cfg: {
+      codexHome: join(root, 'codex'), copilotHome: join(root, 'copilot'),
+      claudeHome: join(root, 'claude'), kimiHome: join(root, 'kimi'), geminiHome,
+    },
+    brain: join(geminiHome, 'antigravity-cli', 'brain'),
+  }
+}
+
+test('scanRecords reuses cached usage when a conversation database loses its transcript', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'observatory-agy-no-transcript-'))
+  try {
+    const { cfg, brain } = await antigravityFixture(root)
+    const state = {}
+    const first = await scanRecords(cfg, state, new Set(['antigravity']))
+    assert.equal(first.records.length, 1)
+    await rm(brain, { recursive: true, force: true })
+    const second = await scanRecords(cfg, state, new Set(['antigravity']))
+    assert.equal(second.records.length, 1, 'the cached records stay')
+    assert.equal(second.emptySources.has('antigravity'), false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('scanRecords flags a source incomplete, not verified-empty, when no transcript exists and nothing is cached', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'observatory-agy-no-transcript-cold-'))
+  try {
+    const { cfg, brain } = await antigravityFixture(root)
+    await rm(brain, { recursive: true, force: true })
+    const scan = await scanRecords(cfg, {}, new Set(['antigravity']))
+    assert.equal(scan.incompleteSources.has('antigravity'), true)
+    assert.equal(scan.emptySources.has('antigravity'), false)
+  } finally {
     await rm(root, { recursive: true, force: true })
   }
 })
