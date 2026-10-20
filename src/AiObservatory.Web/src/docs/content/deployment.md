@@ -100,6 +100,8 @@ Responses of types JavaScript, JSON, SVG and CSS are gzip-compressed.
 
 The API trusts `X-Forwarded-For` only from private network ranges, so behind this proxy the rate limiter sees the real client address. If you put the API behind a different proxy, make sure it sits in one of `10.0.0.0/8`, `172.16.0.0/12` or `192.168.0.0/16`, otherwise every client shares the proxy's address and its allowance.
 
+On Azure Static Web Apps there is no nginx. The build ships `staticwebapp.config.json`, copied from `public/` into the root of the uploaded files, whose `navigationFallback` serves `index.html` for client-side routes such as `/docs/api`. Requests under `/assets/` and for file types such as `.js`, `.css` and `.png` are excluded, so a missing file is still a 404. Without that file a reload or shared link to a docs chapter answers with the platform's 404 page.
+
 If you serve the web app from a different origin than the API (as the Azure Static Web Apps topology does), set `VITE_API_BASE` at build time to the API's origin and set the API's `SWA_ORIGIN` to the exact origin of the web app, with no trailing slash.
 
 ## Verifying a deployment
@@ -108,6 +110,7 @@ If you serve the web app from a different origin than the API (as the Azure Stat
 | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET <api>/api/aggregates` with no key                                            | 401 from a healthy app that has an API key configured. The repository's pipeline uses exactly this probe, so that no key is needed for a health check. A 200, 3xx, 404 or 5xx is a failure. |
 | `GET <api>/api/aggregates` with the read-only or admin key in `X-Observatory-Key` | 200                                                                                                                                                                                         |
+| `GET <web>/docs/introduction`                                                     | 200 with the app's `index.html`. A 404 from the platform means the client-side route fallback is missing (see [Web server and proxy](#web-server-and-proxy)).                               |
 | `GET <ingest>/healthz`                                                            | 200 with `workerRunning: true`                                                                                                                                                              |
 | `GET <api>/api/sources/status`                                                    | One row per source; a source you configured should leave `notConfigured`. See [Data sources](/docs/data-sources).                                                                           |
 | Worker log line beginning `Intelligence worker arms`                              | Names the alert channels that can deliver and whether GitHub billing is enabled.                                                                                                            |
