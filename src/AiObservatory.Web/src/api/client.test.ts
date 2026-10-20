@@ -25,6 +25,34 @@ import {
 } from './client'
 import type { DailyAggregate } from './client'
 
+// Slices the enum body between the balanced braces that open at bodyStart, skipping line
+// comments, block comments and string literals so a '}' inside any of them cannot end the
+// scan early.
+function csharpEnumBody(text: string, bodyStart: number): string {
+  let depth = 0
+  for (let i = bodyStart; i < text.length; i++) {
+    if (text[i] === '/' && text[i + 1] === '/') {
+      const end = text.indexOf('\n', i)
+      if (end === -1) break
+      i = end
+    } else if (text[i] === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2)
+      if (end === -1) break
+      i = end + 1
+    } else if (text[i] === '"' || text[i] === "'") {
+      const end = text.indexOf(text[i]!, i + 1)
+      if (end === -1) break
+      i = end
+    } else if (text[i] === '{') {
+      depth++
+    } else if (text[i] === '}') {
+      depth--
+      if (depth === 0) return text.slice(bodyStart + 1, i)
+    }
+  }
+  throw new Error('SpendSource enum body is never closed')
+}
+
 function mockFetchOnce(status: number, body: unknown = []) {
   const fetchMock = vi.fn().mockResolvedValue({
     ok: status >= 200 && status < 300,
@@ -106,7 +134,9 @@ afterEach(() => {
 
 test('spend-source values match the backend enum wire contract', () => {
   // Derived from the C# enum the API serializes (camelCase member names), not a literal
-  // compared with itself: adding, renaming or removing a SpendSource member fails here.
+  // compared with itself: adding, renaming or removing a SpendSource member fails here --
+  // including a member line carrying a trailing comment or an explicit value, and any body
+  // line the parser does not recognise fails instead of being silently dropped.
   const source = readFileSync(
     resolve(
       dirname(fileURLToPath(import.meta.url)),
@@ -115,12 +145,21 @@ test('spend-source values match the backend enum wire contract', () => {
     'utf8',
   )
   const afterEnum = source.slice(source.indexOf('enum SpendSource'))
-  const body = afterEnum.slice(afterEnum.indexOf('{') + 1, afterEnum.indexOf('}'))
-  const wireValues = body
-    .split('\n')
-    .map((line) => line.trim().replace(/,$/, ''))
-    .filter((line) => /^[A-Z]\w*$/.test(line))
-    .map((name) => name.charAt(0).toLowerCase() + name.slice(1))
+  const body = csharpEnumBody(afterEnum, afterEnum.indexOf('{'))
+  const wireValues: string[] = []
+  for (const rawLine of body.split('\n')) {
+    const commentStart = rawLine.indexOf('//')
+    const line = (commentStart === -1 ? rawLine : rawLine.slice(0, commentStart)).trim()
+    if (line === '' || line.startsWith('[')) continue
+    const member = line
+      .replace(/=.*/, '')
+      .trim()
+      .replace(/,$/, '')
+    if (!/^[A-Z]\w*$/.test(member)) {
+      throw new Error(`Unparsed SpendSource member line: "${rawLine.trim()}"`)
+    }
+    wireValues.push(member.charAt(0).toLowerCase() + member.slice(1))
+  }
 
   expect(wireValues.length).toBeGreaterThan(0)
   expect([...SPEND_SOURCE_VALUES]).toEqual(wireValues)
