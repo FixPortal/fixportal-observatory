@@ -69,11 +69,22 @@ An empty table reads `No spend recorded for this filter.`
 
 The ledger endpoint returns at most 5,000 entries, newest first. The totals and chart come from a separate aggregate query that has no such limit. When the table holds fewer rows than the card says, a note appears: `Showing the newest N of M entries — narrow the date range to see older ones.` Narrow the period to see the rest.
 
+### Editing an entry
+
+Administrators see an **Edit** button beside **Delete** on each row. It opens the **Edit spend entry** dialog, filled from the entry. The fields are those of the Add dialog: date, vendor, category, amount with the Charge or Refund choice, currency and description. A refund shows as a positive amount with Refund selected.
+
+- Only what you change is sent, so fixing a description never touches the stored exchange rate.
+- Changing the amount, currency or date recalculates the exchange rate and GBP amount at the (possibly new) charge date. See [Correcting an entry](#correcting-an-entry).
+- Changing the vendor does not change the category. The category follows the vendor's default only when you add an entry.
+- A date you leave alone is accepted even if it now falls outside the selected period. A date you change is held to the period, as when adding.
+- Clearing the description removes it.
+- A vendor or category that has since been archived stays selectable on an entry that already uses it, so the entry can be saved without being moved.
+- The entry's source and entry key cannot be changed, so an imported entry stays marked as imported.
+- Saving with no change closes the dialog without a request. A failure shows the server's message and leaves the dialog open.
+
 ### Deleting an entry
 
 Administrators see a **Delete** button on each row. Select it, then **Confirm** (or **Cancel**). Deletion is permanent and removes the entry from every total. A failure shows `Failed to delete entry: <reason>`. While a delete is in progress the buttons are disabled so a double click cannot send a second request.
-
-There is no edit control on the ledger table. The server does support correcting an entry (see [Correcting an entry](#correcting-an-entry)), but to fix an entry in the interface you delete it and add it again.
 
 ## Adding an entry
 

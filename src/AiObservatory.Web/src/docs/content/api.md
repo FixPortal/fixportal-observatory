@@ -179,7 +179,7 @@ Create and replace take `provider`, `name` (required, up to 200 characters), `co
 
 | Method   | Route                            | Auth  | Purpose                                         |
 | -------- | -------------------------------- | ----- | ----------------------------------------------- |
-| `GET`    | `/api/insights`                  | Read  | The 50 most recent insights.                    |
+| `GET`    | `/api/insights`                  | Read  | The 50 newest insights plus every unread one.   |
 | `POST`   | `/api/insights/generate`         | Admin | Generate insights now for the current UTC date. |
 | `POST`   | `/api/insights/{id}/acknowledge` | Admin | Mark an insight acknowledged (204).             |
 | `POST`   | `/api/insights/{id}/explain`     | Admin | Ask the model for implementation guidance.      |
@@ -189,7 +189,7 @@ Create and replace take `provider`, `name` (required, up to 200 characters), `co
 | `POST`   | `/api/suggestions/{id}/snooze`   | Admin | Snooze.                                         |
 | `POST`   | `/api/suggestions/refresh`       | Admin | Run every rule now.                             |
 
-An insight has `id`, `generatedAt`, `insightType` (`summary`, `efficiency`, `anomaly`, `recommendation` or `budgetalert`), `title`, `body`, `data` and `acknowledged`. `POST .../generate` returns `{ generated }`, the number persisted. `POST .../explain` returns `{ explanation }`, 404 for an unknown id, or 503 if `ANTHROPIC_API_KEY` is not configured. `DELETE /api/insights` answers 409 while a budget-alert email delivery is in progress (retry after its lease expires) and otherwise returns `{ deleted }`. See [Usage and insights](/docs/usage-insights).
+An insight has `id`, `generatedAt`, `insightType` (`summary`, `efficiency`, `anomaly`, `recommendation` or `budgetalert`), `title`, `body`, `data` and `acknowledged`. `GET /api/insights` returns them newest first: the 50 newest rows plus every unread one, at most 500 in all. `POST .../generate` returns `{ generated }`, the number persisted. `POST .../explain` returns `{ explanation }`, 404 for an unknown id, or 503 if `ANTHROPIC_API_KEY` is not configured. `DELETE /api/insights` answers 409 while a budget-alert email delivery is in progress (retry after its lease expires) and otherwise returns `{ deleted }`. See [Usage and insights](/docs/usage-insights).
 
 `GET /api/suggestions?status=` takes `open` (default), `dismissed`, `snoozed` or `resolved` (anything else is a 400) and returns `{ suggestions, notEvaluated }`. Each suggestion has `id`, `key`, `ruleId`, `subject`, `severity`, `title`, `status`, `snoozedUntil`, `firstSeenAt`, `lastSeenAt` and `evidence` (rule-specific JSON). `notEvaluated` lists rules that could not run, each with `ruleId` and `reason`. `snooze` needs `?days=` from 1 to 90 (otherwise 400). Dismiss and snooze answer 204, 404 for an unknown id, or 409 for a resolved suggestion. `refresh` returns `{ rules: [{ ruleId, evaluated, reason, suggestions }] }`. See [Suggestions](/docs/suggestions).
 
