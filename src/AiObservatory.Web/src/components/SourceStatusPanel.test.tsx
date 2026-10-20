@@ -171,7 +171,7 @@ test('counts a tool once in the summary however many machines report it', () => 
   expect(
     screen.getByText(`1 reporting · ${REGISTRY_SOURCE_COUNT - 1} not connected`),
   ).toBeInTheDocument()
-  // The built-in row is no longer offered a setup link it does not need.
+  // A built-in row that is reporting has no setup link.
   fireEvent.click(screen.getByRole('button', { name: /Data sources/ }))
   expect(screen.queryByRole('link', { name: 'Setup: Codex local' })).not.toBeInTheDocument()
 })
