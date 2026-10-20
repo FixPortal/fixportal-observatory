@@ -221,33 +221,47 @@ public class AdversarialReviewRepositoryTests : IAsyncLifetime
     private async Task WaitForInsertBlockedByAsync(int winnerPid, int loserPid, CancellationToken ct)
     {
         const string insert = "INSERT INTO \"AdversarialReviewRuns\"";
-        while (true)
+        // The caller's own 30 s deadline owns the test budget; this helper keeps a shorter
+        // one so a wait that never appears fails with a timeout that names the fragment
+        // instead of the caller's bare cancellation.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        var waitToken = deadline.Token;
+        try
         {
-            var blocked = await _ctx
-                .Database.SqlQuery<bool>(
-                    $"""
-                    SELECT EXISTS (
-                        SELECT 1 FROM pg_stat_activity
-                        WHERE datname = current_database() AND pid = {loserPid}
-                            AND wait_event_type = 'Lock'
-                            AND query LIKE '%' || {insert} || '%'
-                            AND {winnerPid} = ANY(pg_blocking_pids({loserPid}))
-                            AND EXISTS (
-                                SELECT 1 FROM pg_locks
-                                WHERE pid = {loserPid} AND locktype = 'transactionid' AND NOT granted
-                            )
-                    ) AS "Value"
-                    """
-                )
-                .SingleAsync(ct);
-            if (blocked)
+            while (true)
             {
-                Console.WriteLine(
-                    $"Observed PostgreSQL loser INSERT {loserPid} blocked by uncommitted winner {winnerPid} in {_ctx.Database.GetDbConnection().Database}."
-                );
-                return;
+                var blocked = await _ctx
+                    .Database.SqlQuery<bool>(
+                        $"""
+                        SELECT EXISTS (
+                            SELECT 1 FROM pg_stat_activity
+                            WHERE datname = current_database() AND pid = {loserPid}
+                                AND wait_event_type = 'Lock'
+                                AND query LIKE '%' || {insert} || '%'
+                                AND {winnerPid} = ANY(pg_blocking_pids({loserPid}))
+                                AND EXISTS (
+                                    SELECT 1 FROM pg_locks
+                                    WHERE pid = {loserPid} AND locktype = 'transactionid' AND NOT granted
+                                )
+                        ) AS "Value"
+                        """
+                    )
+                    .SingleAsync(waitToken);
+                if (blocked)
+                {
+                    Console.WriteLine(
+                        $"Observed PostgreSQL loser INSERT {loserPid} blocked by uncommitted winner {winnerPid} in {_ctx.Database.GetDbConnection().Database}."
+                    );
+                    return;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(50), waitToken);
             }
-            await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw new TimeoutException($"No session reached the expected PostgreSQL lock wait for '{insert}'.");
         }
     }
 

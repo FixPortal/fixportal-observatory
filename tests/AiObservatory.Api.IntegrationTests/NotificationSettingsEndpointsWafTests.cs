@@ -301,26 +301,37 @@ public class NotificationSettingsEndpointsWafTests(AiObservatoryApiFactory facto
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromSeconds(30));
         var waitToken = deadline.Token;
-        while (true)
+        try
         {
-            var blocked = await db
-                .Database.SqlQueryRaw<int>(
-                    """
-                    SELECT COUNT(*)::int AS "Value"
-                    FROM pg_stat_activity
-                    WHERE datname = current_database()
-                        AND pid <> pg_backend_pid()
-                        AND wait_event_type = 'Lock'
-                        AND query LIKE '%INSERT INTO "NotificationSettings"%'
-                    """
-                )
-                .SingleAsync(waitToken);
-            if (blocked >= 2)
+            while (true)
             {
-                return;
-            }
+                var blocked = await db
+                    .Database.SqlQueryRaw<int>(
+                        """
+                        SELECT COUNT(*)::int AS "Value"
+                        FROM pg_stat_activity
+                        WHERE datname = current_database()
+                            AND pid <> pg_backend_pid()
+                            AND wait_event_type = 'Lock'
+                            AND query LIKE '%INSERT INTO "NotificationSettings"%'
+                        """
+                    )
+                    .SingleAsync(waitToken);
+                if (blocked >= 2)
+                {
+                    return;
+                }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(50), waitToken);
+                await Task.Delay(TimeSpan.FromMilliseconds(50), waitToken);
+            }
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            // The expected lock wait never appeared (SQL drift, table rename): name what the
+            // helper waited for instead of surfacing a bare cancellation.
+            throw new TimeoutException(
+                @"No session reached the expected PostgreSQL lock wait for 'INSERT INTO ""NotificationSettings""'."
+            );
         }
     }
 

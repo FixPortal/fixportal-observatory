@@ -437,28 +437,37 @@ public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClass
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromSeconds(30));
         var waitToken = deadline.Token;
-        while (true)
+        try
         {
-            var blocked = await db
-                .Database.SqlQuery<bool>(
-                    $"""
-                    SELECT EXISTS (
-                        SELECT 1
-                        FROM pg_stat_activity
-                        WHERE datname = current_database()
-                            AND pid <> pg_backend_pid()
-                            AND wait_event_type = 'Lock'
-                            AND query LIKE '%' || {statementFragment} || '%'
-                    ) AS "Value"
-                    """
-                )
-                .SingleAsync(waitToken);
-            if (blocked)
+            while (true)
             {
-                return;
-            }
+                var blocked = await db
+                    .Database.SqlQuery<bool>(
+                        $"""
+                        SELECT EXISTS (
+                            SELECT 1
+                            FROM pg_stat_activity
+                            WHERE datname = current_database()
+                                AND pid <> pg_backend_pid()
+                                AND wait_event_type = 'Lock'
+                                AND query LIKE '%' || {statementFragment} || '%'
+                        ) AS "Value"
+                        """
+                    )
+                    .SingleAsync(waitToken);
+                if (blocked)
+                {
+                    return;
+                }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(50), waitToken);
+                await Task.Delay(TimeSpan.FromMilliseconds(50), waitToken);
+            }
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            // The expected lock wait never appeared (SQL drift, table rename): name what the
+            // helper waited for instead of surfacing a bare cancellation.
+            throw new TimeoutException($"No session reached the expected PostgreSQL lock wait for '{statementFragment}'.");
         }
     }
 }
