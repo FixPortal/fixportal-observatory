@@ -236,14 +236,9 @@ test('preserves unknown source and aggregate strings from the wire', async () =>
   ]
   mockFetchOnce(200, response)
 
-  await expect(getAggregates()).resolves.toMatchObject([
-    {
-      sourceId: 'new-source',
-      sourceKind: 'futureSource',
-      usageScope: 'futureScope',
-      costBasis: 'futureBasis',
-    },
-  ])
+  // Full round-trip: getJson must hand the wire response through untouched, so the
+  // assertion compares every DailyAggregate field, not a narrowed projection of four.
+  await expect(getAggregates()).resolves.toEqual(response)
 })
 
 describe('authHeaders precedence: URL viewer key > Entra > self-host key > none', () => {
