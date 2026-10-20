@@ -67,7 +67,7 @@ A link of the form `https://<host>/?key=<read-only key>` opens the dashboard wit
 
 When a build sets `VITE_API_KEY`, the app sends that key on every request and shows no sign-in screen. It takes effect only if Entra is not enabled.
 
-The key is compiled into the JavaScript bundle. Anyone who can load the app can read it. Use this mode only on a network you control, and treat the key as shared with everyone who can reach the page. The Docker Compose file bakes the admin key this way for local use.
+The key is compiled into the JavaScript bundle. Anyone who can load the app can read it. Use this mode only on a network you control, and treat the key as shared with everyone who can reach the page. The Docker Compose stack does not do this: its nginx proxy adds the admin key at runtime, so the key is not in the bundle.
 
 A build whose `VITE_API_KEY` is the read-only key does not turn the interface read-only by itself. The write controls would show, and the API would refuse their requests. Read-only mode is driven by the share link or by the demo build flag.
 

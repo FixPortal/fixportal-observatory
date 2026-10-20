@@ -35,7 +35,7 @@ The stack has five services.
 Things to know about this stack:
 
 - It is for local use. Everything is bound to loopback, the API runs in `Development`, and the default admin key is `change-me`. Set `OBSERVATORY_API_KEY` in your shell before starting to use another value.
-- The web image bakes the admin key into the JavaScript bundle (`VITE_API_KEY`), so anyone who can load the app can read it. Do not publish the image anywhere that must keep the key private.
+- The web image holds no key. The nginx proxy reads `OBSERVATORY_API_KEY` from the container environment at start and adds it to `/api` requests, so the key is in neither the JavaScript bundle nor the image layers. Anyone who can reach the web port can still use the app with the admin key, which is why the port is bound to loopback. Do not put `"`, `\` or `$` in the key: it is written into the proxy configuration as a quoted string.
 - Host variables are mapped onto API and ingest settings. The mapping is listed in [Configuration](/docs/configuration#docker-compose-variables).
 - Local database credentials in the compose file are development defaults. Do not reuse them elsewhere.
 - Removing the stack keeps the data. To start from nothing, remove the volume as well: `docker compose down -v`.
@@ -88,13 +88,13 @@ Notes:
 
 ## Web server and proxy
 
-The web image builds the app and serves it with nginx. The relevant behaviour of `nginx.conf`:
+The web image builds the app and serves it with nginx. The relevant behaviour of `nginx.conf.template`, which the nginx image turns into its configuration at start:
 
-| Path          | Behaviour                                                                                                                                                                             |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/api/`       | Proxied to `http://api:8080/api/`, with `Host`, `X-Real-IP` and `X-Forwarded-For` set. This keeps the browser same-origin, so no CORS and no sign-in are needed in the compose stack. |
-| `/assets/`    | Served with `Cache-Control: public, max-age=31536000, immutable`, because Vite fingerprints the file names.                                                                           |
-| Anything else | Falls back to `index.html`, so client-side routes such as `/docs/api` work on reload.                                                                                                 |
+| Path          | Behaviour                                                                                                                                                                                                                                                                                                 |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/`       | Proxied to `http://api:8080/api/`, with `Host`, `X-Real-IP` and `X-Forwarded-For` set, and `X-Observatory-Key` set to the container's `OBSERVATORY_API_KEY` unless the request already carries one (a `?key=` viewer link). This keeps the browser same-origin, so no CORS, sign-in or key in the bundle. |
+| `/assets/`    | Served with `Cache-Control: public, max-age=31536000, immutable`, because Vite fingerprints the file names.                                                                                                                                                                                               |
+| Anything else | Falls back to `index.html`, so client-side routes such as `/docs/api` work on reload.                                                                                                                                                                                                                     |
 
 Responses of types JavaScript, JSON, SVG and CSS are gzip-compressed.
 
@@ -217,7 +217,7 @@ Operating notes:
 
 ## References
 
-- `docker-compose.yml`, `src/AiObservatory.Api/Dockerfile`, `src/AiObservatory.Ingest/Dockerfile`, `src/AiObservatory.Web/Dockerfile`, `src/AiObservatory.Web/nginx.conf`
+- `docker-compose.yml`, `src/AiObservatory.Api/Dockerfile`, `src/AiObservatory.Ingest/Dockerfile`, `src/AiObservatory.Web/Dockerfile`, `src/AiObservatory.Web/nginx.conf.template`
 - `src/AiObservatory.Api/Program.cs`, `src/AiObservatory.Ingest/Program.cs`, `src/AiObservatory.Api/DemoMode.cs`
 - `infra/main.bicep`, `infra/modules/*.bicep`, `infra/scripts/bootstrap-demo.ps1`, `infra/scripts/setup-entra.ps1`
 - `.github/workflows/deploy.yml`, `.github/workflows/infra.yml`, `.github/workflows/demo-reset.yml`, `.github/workflows/deploy-demo.yml`
