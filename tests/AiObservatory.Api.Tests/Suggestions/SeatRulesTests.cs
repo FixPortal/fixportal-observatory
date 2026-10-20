@@ -211,4 +211,49 @@ public class SeatRulesTests
         // Peers with a null value are excluded from the median, leaving only two peers for each seat.
         outcome.Evaluated.Should().BeFalse();
     }
+
+    [Fact]
+    public void HighFalsePositive_states_its_sample_size_as_settled_findings()
+    {
+        var findings = Enumerable.Range(1, 12).Select(i => Finding("R1", $"X{i}", "refuted", "a"));
+
+        var candidate = new SeatHighFalsePositiveRule()
+            .Evaluate(Inputs(Rows(1, "a"), findings), Options)
+            .Candidates.Should()
+            .ContainSingle()
+            .Subject;
+
+        candidate.Evidence.SampleSize.Should().Be(12);
+    }
+
+    [Fact]
+    public void ConfirmationOnly_states_its_sample_size_as_accepted_catches()
+    {
+        var findings = Enumerable.Range(1, 10).Select(i => Finding("R1", $"F{i}", "accepted", "a", "b"));
+
+        var candidate = new SeatConfirmationOnlyRule()
+            .Evaluate(Inputs(Rows(1, "a", "b"), findings), Options)
+            .Candidates[0];
+
+        candidate.Evidence.SampleSize.Should().Be(10);
+    }
+
+    [Fact]
+    public void Evidence_run_ids_list_only_detailed_runs()
+    {
+        var runs = Rows(5, "a", "b").Append(Run("a", "model-a", "OLD1", raised: 4, accepted: 3));
+        var findings = Enumerable
+            .Range(1, 5)
+            .Select(i => Finding($"R{i}", "F1", "accepted", "a", "b"))
+            .Append(Finding("R1", "F2", "accepted", "b"));
+
+        var candidate = new SeatNoUniqueCatchRule()
+            .Evaluate(Inputs(runs, findings), Options)
+            .Candidates.Should()
+            .ContainSingle()
+            .Subject;
+
+        candidate.Evidence.RunIds.Should().NotContain("OLD1");
+        candidate.Evidence.RunIds.Should().HaveCount(candidate.Evidence.SampleSize);
+    }
 }

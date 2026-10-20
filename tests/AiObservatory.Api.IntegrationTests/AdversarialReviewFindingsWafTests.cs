@@ -167,6 +167,20 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     }
 
     [Fact]
+    public async Task A_repeated_assessor_is_a_400_so_one_assessor_cannot_count_twice()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = factory.CreateAdminClient();
+        var runId = $"dupassess-{Guid.NewGuid():N}";
+        await SeedRunAsync(client, runId);
+        var body = ValidBody(runId);
+        var assessment = JsonNode.Parse("""{"reviewer":"Openai","model":"m","verdict":"agree"}""")!;
+        body["findings"]![0]!["assessments"] = new JsonArray(assessment.DeepClone(), assessment.DeepClone());
+
+        (await client.PostAsJsonAsync(FindingsRoute, body, ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task More_than_2000_findings_is_a_400()
     {
         var ct = TestContext.Current.CancellationToken;

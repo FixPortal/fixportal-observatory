@@ -14,7 +14,13 @@ public class SuggestionInputsLoader(
     IOptions<SuggestionOptions> options
 )
 {
-    public virtual async Task<SuggestionInputs> LoadAsync(CancellationToken ct = default)
+    /// <summary>
+    /// The live USD to GBP rate, fetched by the caller before it takes the store lock: a failed lookup is
+    /// not cached and can run to the HTTP timeout, which must not happen while dismiss and snooze wait.
+    /// </summary>
+    public virtual Task<decimal?> ResolveUsdToGbpAsync(CancellationToken ct = default) => fx.TryGetUsdToGbpAsync(ct);
+
+    public virtual async Task<SuggestionInputs> LoadAsync(decimal? usdToGbp, CancellationToken ct = default)
     {
         var settings = options.Value;
         var today = clock.GetCurrentInstant().InUtc().Date;
@@ -38,7 +44,7 @@ public class SuggestionInputsLoader(
             findings,
             await usage.GetActiveSubscriptionsAsync(today, ct),
             await usage.GetAggregatesAsync(planWindow.From, planWindow.To, ct),
-            await fx.TryGetUsdToGbpAsync(ct)
+            usdToGbp
         );
     }
 }

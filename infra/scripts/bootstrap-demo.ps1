@@ -7,9 +7,10 @@
   worker, demo mode on), Key Vault secrets, and the `demo` GitHub environment with
   its variables and secrets.
 
-  Re-running is safe: existing resources are reused. Keys and the database password
-  are regenerated every run and re-applied everywhere, so the stack stays
-  consistent, and any previously issued demo key stops working.
+  Re-running is safe: existing resources are reused. The three API keys, the database
+  password and the Static Web App deployment token are regenerated every run and
+  re-applied everywhere, so the stack stays consistent, and any previously issued demo
+  key or deployment token stops working.
 
   Nothing secret is printed. Secret values reach GitHub through stdin and Key Vault
   through a short-lived temp file, never through a logged command line. The one
@@ -131,6 +132,12 @@ $existingSwa = az staticwebapp show --resource-group $rg --name $swaName --query
 if (-not ($LASTEXITCODE -eq 0 -and $existingSwa)) {
   az staticwebapp create --resource-group $rg --name $swaName --location $Location --sku Free --output none
   if ($LASTEXITCODE -ne 0) { throw "Failed to create Static Web App $swaName" }
+} else {
+  # A rerun is how an operator contains a leak, so the deployment token rotates too; it is
+  # read and re-published below. No --no-wait: the read must see the new token.
+  Write-Host "Reusing Static Web App $swaName; resetting its deployment token."
+  az staticwebapp secrets reset-api-key --resource-group $rg --name $swaName --output none
+  if ($LASTEXITCODE -ne 0) { throw "Failed to reset the deployment token on $swaName" }
 }
 $swaToken = az staticwebapp secrets list --resource-group $rg --name $swaName --query properties.apiKey --output tsv
 if ($LASTEXITCODE -ne 0 -or -not $swaToken) { throw 'Failed to read the Static Web App deployment token' }

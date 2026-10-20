@@ -62,6 +62,7 @@ public static class SeatMetricsCalculator
         public int PeerAgreement;
         public decimal KnownCostUsd;
         public decimal DetailedKnownCostUsd;
+        public int KnownCostUnique;
         public int UnknownCostRuns;
         public int CountsOnlyRuns;
         public SortedDictionary<string, WeekTally> Weeks { get; } = new(StringComparer.Ordinal);
@@ -117,10 +118,7 @@ public static class SeatMetricsCalculator
             foreach (var (model, target) in targets)
             {
                 var seat = SeatFor(model);
-                AccumulateFinding(seat, finding, raisers.Count);
-                seat.PeerAgreement += finding.Participants.Count(p =>
-                    p.Kind == "assessor" && p.Verdict == "agree" && !target.Reviewers.Contains(p.Reviewer)
-                );
+                AccumulateSeatFinding(seat, finding, raisers.Count, target.Row, target.Reviewers);
                 AccumulateFinding(WeekFor(seat, target.Row.RecordedAt), finding, raisers.Count);
             }
         }
@@ -186,6 +184,25 @@ public static class SeatMetricsCalculator
         }
     }
 
+    private static void AccumulateSeatFinding(
+        SeatTally seat,
+        AdversarialReviewFinding finding,
+        int raiserCount,
+        AdversarialReviewRun row,
+        HashSet<string> seatReviewers
+    )
+    {
+        AccumulateFinding(seat, finding, raiserCount);
+        // Pairs with DetailedKnownCostUsd: a unique catch from an unknown-cost run has no cost in the numerator.
+        if (finding.Outcome == "accepted" && raiserCount == 1 && !row.CostUnknown)
+        {
+            seat.KnownCostUnique++;
+        }
+        seat.PeerAgreement += finding.Participants.Count(p =>
+            p.Kind == "assessor" && p.Verdict == "agree" && !seatReviewers.Contains(p.Reviewer)
+        );
+    }
+
     private static void AccumulateFinding(Tally target, AdversarialReviewFinding finding, int raiserCount)
     {
         target.Raised++;
@@ -236,7 +253,9 @@ public static class SeatMetricsCalculator
             seat.Raised == 0 ? null : (double)seat.Accepted / seat.Raised,
             seat.KnownCostUsd,
             seat.UnknownCostRuns,
-            seat.Unique == 0 || seat.DetailedKnownCostUsd == 0 ? null : seat.DetailedKnownCostUsd / seat.Unique,
+            seat.KnownCostUnique == 0 || seat.DetailedKnownCostUsd == 0
+                ? null
+                : seat.DetailedKnownCostUsd / seat.KnownCostUnique,
             seat.CountsOnlyRuns,
             seat.Runs < SmallSampleRuns,
             [
