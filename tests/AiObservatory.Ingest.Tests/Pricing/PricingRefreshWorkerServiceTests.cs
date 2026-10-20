@@ -231,6 +231,8 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
                 (await harness.LoadActiveAsync(PricingSourceIds.GeminiDeveloperApi)).Should().NotBeNull();
                 (await harness.LoadActiveAsync(PricingSourceIds.Xai)).Should().NotBeNull();
                 (await harness.LoadActiveAsync(PricingSourceIds.MetaOpenRouter)).Should().NotBeNull();
+                (await harness.LoadActiveAsync(PricingSourceIds.ZaiList)).Should().NotBeNull();
+                (await harness.LoadActiveAsync(PricingSourceIds.DeepSeekList)).Should().NotBeNull();
                 (await harness.LoadActiveAsync(PricingSourceIds.OpenAi)).Should().BeNull();
                 (await harness.FindStateAsync(PricingSourceIds.OpenAi)).Should().BeNull();
             }
