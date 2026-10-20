@@ -54,6 +54,23 @@ public class SweepStatusWafTests(AiObservatoryApiFactory factory) : IClassFixtur
         cleared.LastError.Should().BeNull();
     }
 
+    [Fact]
+    public async Task A_report_whose_description_exceeds_the_column_is_recorded_not_a_500()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var entries = Enumerable
+            .Range(1, 5)
+            .Select(i => ("antigravity", $"{new string('m', 79)}{i}", 100 - i))
+            .ToArray();
+
+        var response = await factory.CreateAdminClient().PostAsJsonAsync(Route, Body(entries), ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var row = (await RowsAsync()).Should().ContainSingle().Subject;
+        row.IsAvailable.Should().BeFalse();
+        row.LastError.Should().NotBeNull().And.Subject.Length.Should().BeLessThanOrEqualTo(500);
+    }
+
     [Theory]
     [InlineData("""{"machine":"Bad Box","unplaced":[]}""")]
     [InlineData("""{"machine":"test-box","unplaced":[{"tool":"codex","model":"has space","count":1}]}""")]

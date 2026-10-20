@@ -14,11 +14,12 @@ public class SuggestionService(
     public virtual async Task<IReadOnlyList<RuleOutcome>> EvaluateAsync(CancellationToken ct = default)
     {
         var settings = options.Value;
+        var usdToGbp = await loader.ResolveUsdToGbpAsync(ct);
         // The store takes its lock before this runs, so the inputs are never older than the stored state.
         return await store.EvaluateAndSaveAsync(
             async token =>
             {
-                var inputs = await loader.LoadAsync(token);
+                var inputs = await loader.LoadAsync(usdToGbp, token);
                 return rules.Select(rule => Run(rule, inputs, settings)).ToList();
             },
             settings,

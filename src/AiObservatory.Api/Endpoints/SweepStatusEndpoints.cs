@@ -86,6 +86,8 @@ public static partial class SweepStatusEndpoints
         return null;
     }
 
+    private const int LastErrorMaxLength = 500;
+
     /// <summary>Counts only, e.g. "5 sessions unplaced: codex gpt-x (3), codex unknown (2)".</summary>
     internal static string Describe(IReadOnlyCollection<SweepUnplaced> unplaced)
     {
@@ -97,7 +99,9 @@ public static partial class SweepStatusEndpoints
             .Take(5)
             .Select(u => $"{u.Tool} {u.Model} ({u.Count})");
         var more = unplaced.Count > 5 ? $", +{unplaced.Count - 5} more" : "";
-        return $"{total} {(total == 1 ? "session" : "sessions")} unplaced: {string.Join(", ", parts)}{more}";
+        var text = $"{total} {(total == 1 ? "session" : "sessions")} unplaced: {string.Join(", ", parts)}{more}";
+        // LastError is varchar(500); the total leads, so cutting the tail keeps the part that matters.
+        return text.Length <= LastErrorMaxLength ? text : text[..(LastErrorMaxLength - 3)] + "...";
     }
 
     [GeneratedRegex("^[a-z0-9-]{1,64}$")]

@@ -27,13 +27,15 @@ public abstract class SeatRuleBase : ISuggestionRule
     protected SuggestionCandidate Candidate(
         SuggestionInputs inputs,
         SeatMetrics seat,
+        int sampleSize,
         string title,
         string primaryFigureLabel,
         params SuggestionFigure[] figures
     )
     {
+        var detailedRunIds = inputs.Findings.Select(f => f.RunId).ToHashSet(StringComparer.Ordinal);
         var runIds = inputs
-            .Runs.Where(r => r.Role == "reviewer" && r.Model == seat.Key)
+            .Runs.Where(r => r.Role == "reviewer" && r.Model == seat.Key && detailedRunIds.Contains(r.RunId))
             .OrderByDescending(r => r.RecordedAt)
             .Select(r => r.RunId)
             .Distinct(StringComparer.Ordinal)
@@ -44,7 +46,7 @@ public abstract class SeatRuleBase : ISuggestionRule
             seat.Key,
             Severity,
             title,
-            new SuggestionEvidence(inputs.SeatWindow, DetailedRuns(seat), figures, runIds),
+            new SuggestionEvidence(inputs.SeatWindow, sampleSize, figures, runIds),
             primaryFigureLabel
         );
     }
@@ -79,6 +81,7 @@ public sealed class SeatNoUniqueCatchRule : SeatRuleBase
                 Candidate(
                     inputs,
                     s,
+                    DetailedRuns(s),
                     $"Seat {s.Label} added no unique accepted catch in {DetailedRuns(s)} runs",
                     "Detailed runs",
                     new SuggestionFigure("Detailed runs", DetailedRuns(s), "runs"),
@@ -111,6 +114,7 @@ public sealed class SeatHighFalsePositiveRule : SeatRuleBase
                 Candidate(
                     inputs,
                     s,
+                    s.Unique + s.Corroborated + s.Refuted,
                     $"Seat {s.Label} has a {Fixed(s.FalsePositiveRate.GetValueOrDefault() * 100, "0")}% false-positive rate over {s.Unique + s.Corroborated + s.Refuted} settled findings",
                     "False-positive rate",
                     new SuggestionFigure(
@@ -148,6 +152,7 @@ public sealed class SeatConfirmationOnlyRule : SeatRuleBase
                 Candidate(
                     inputs,
                     s,
+                    s.Unique + s.Corroborated,
                     $"Seat {s.Label}'s accepted catches were all also raised by another seat ({s.Corroborated} of {s.Corroborated})",
                     "Corroborated accepted catches",
                     new SuggestionFigure("Corroborated accepted catches", s.Corroborated, "findings"),
@@ -192,6 +197,7 @@ public sealed class SeatCostOutlierRule : SeatRuleBase
                     Candidate(
                         inputs,
                         seat,
+                        DetailedRuns(seat),
                         $"Seat {seat.Label} costs ${Fixed((double)seat.CostPerUnique.Value)} per unique catch, {Fixed(ratio, "0.#")}x its peers' median",
                         "Cost per unique catch",
                         new SuggestionFigure("Cost per unique catch", Math.Round(seat.CostPerUnique.Value, 4), "USD"),

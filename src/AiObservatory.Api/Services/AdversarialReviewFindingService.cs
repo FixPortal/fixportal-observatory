@@ -114,6 +114,11 @@ public sealed partial class AdversarialReviewFindingService(IAdversarialReviewRe
         {
             return "raisedBy must not repeat a reviewer and model";
         }
+        return ValidateAssessments(assessments);
+    }
+
+    private static string? ValidateAssessments(IReadOnlyList<FindingAssessmentDto?> assessments)
+    {
         if (
             assessments.Any(a =>
                 a is null
@@ -124,6 +129,14 @@ public sealed partial class AdversarialReviewFindingService(IAdversarialReviewRe
         )
         {
             return "assessments entries need a reviewer slug, a model and a known verdict";
+        }
+        // A repeated assessor would add one peer agreement per row in SeatMetricsCalculator.
+        if (
+            assessments.Select(a => (NormalizeReviewer(a!.Reviewer!), a.Model!.Trim())).Distinct().Count()
+            != assessments.Count
+        )
+        {
+            return "assessments must not repeat a reviewer and model";
         }
         return null;
     }

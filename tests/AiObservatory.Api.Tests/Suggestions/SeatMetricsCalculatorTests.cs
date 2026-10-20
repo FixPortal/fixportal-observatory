@@ -221,4 +221,24 @@ public class SeatMetricsCalculatorTests
         seat.Corroborated.Should().Be(0);
         seat.CostPerUnique.Should().BeNull();
     }
+
+    [Fact]
+    public void Cost_per_unique_catch_divides_known_cost_by_catches_of_known_cost_runs_only()
+    {
+        // $10 known-cost run with 1 unique catch, plus an unknown-cost run with 2: $10 per catch, not $3.33.
+        var at = Instant.FromUtc(2026, 10, 1, 12, 0);
+        var runs = new[]
+        {
+            ToRun("a", "m", "reviewer", 10m, false, 0, 0, "K", at),
+            ToRun("a", "m", "reviewer", 0m, true, 0, 0, "U", at),
+        };
+        var findings = new[]
+        {
+            ToFinding("K", "F1", "accepted", [("a", "m")]),
+            ToFinding("U", "F2", "accepted", [("a", "m")]),
+            ToFinding("U", "F3", "accepted", [("a", "m")]),
+        };
+
+        SeatMetricsCalculator.Compute(runs, findings).Single().CostPerUnique.Should().Be(10m);
+    }
 }
