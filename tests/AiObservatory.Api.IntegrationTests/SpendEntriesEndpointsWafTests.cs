@@ -77,13 +77,14 @@ public class SpendEntriesEndpointsWafTests(AiObservatoryApiFactory factory) : IC
         Guid categoryId,
         Guid vendorId,
         decimal amount = 80m,
-        string currency = "GBP"
+        string currency = "GBP",
+        string source = "Manual"
     )
     {
         var ct = TestContext.Current.CancellationToken;
         var response = await client.PostAsJsonAsync(
             "/api/spend/entries",
-            new[] { Entry(categoryId, vendorId, $"k-{Guid.NewGuid():N}", amount, currency) },
+            new[] { Entry(categoryId, vendorId, $"k-{Guid.NewGuid():N}", amount, currency, source) },
             ct
         );
         var result = (await response.Content.ReadFromJsonAsync<JsonElement>(ct)).EnumerateArray().Single();
@@ -513,6 +514,23 @@ public class SpendEntriesEndpointsWafTests(AiObservatoryApiFactory factory) : IC
             ct
         );
         entries.EnumerateArray().Should().ContainSingle(e => e.GetProperty("id").GetGuid() == survivingId);
+    }
+
+    [Theory]
+    [InlineData("Csv")]
+    [InlineData("Portal")]
+    public async Task PatchOfAnImportedEntryMayReclassifyButNotRewriteProviderFacts(string source)
+    {
+        using var client = factory.CreateAdminClient();
+        var ct = TestContext.Current.CancellationToken;
+        var (categoryId, vendorId) = await SeedCatalogAsync(client);
+        var id = await CreateEntryAsync(client, categoryId, vendorId, source: source);
+
+        var rewrite = await client.PatchAsJsonAsync($"/api/spend/entries/{id}", new { Amount = 1m }, ct);
+        var reclassify = await client.PatchAsJsonAsync($"/api/spend/entries/{id}", new { CategoryId = categoryId }, ct);
+
+        rewrite.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        reclassify.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]

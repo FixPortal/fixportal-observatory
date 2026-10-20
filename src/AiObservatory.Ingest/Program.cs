@@ -303,12 +303,23 @@ static bool RegisterGoogleBillingExport(
     // default, which is unlimited unless an administrator set a custom quota.
     var maximumBytesBilled = GoogleBillingMaximumBytesBilled(configuration["GOOGLE_BILLING_EXPORT_MAX_BYTES_BILLED"]);
     var location = configuration["GOOGLE_BILLING_EXPORT_LOCATION"];
-    services.AddSingleton<IGoogleBillingExportClient>(_ => new GoogleBillingExportClient(
-        new Lazy<BigQueryClient>(() => BigQueryClient.Create(projectId!)),
-        table!,
-        maximumBytesBilled,
-        IsConfigured(location) ? location : null
-    ));
+    services.AddSingleton<IGoogleBillingExportClient>(sp =>
+    {
+        // A scan over the cap fails unbilled, so a large export that grows past it stops syncing;
+        // naming the cap here is what lets that failure be traced to the setting.
+        sp.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("GoogleBillingExport")
+            .LogInformation(
+                "Google billing export bytes-billed cap is {MaximumBytesBilled} bytes per job (GOOGLE_BILLING_EXPORT_MAX_BYTES_BILLED)",
+                maximumBytesBilled
+            );
+        return new GoogleBillingExportClient(
+            new Lazy<BigQueryClient>(() => BigQueryClient.Create(projectId!)),
+            table!,
+            maximumBytesBilled,
+            IsConfigured(location) ? location : null
+        );
+    });
     services.TryAddEnumerable(ServiceDescriptor.Scoped<IUsageSource, GoogleBillingExportSource>());
     return true;
 }
