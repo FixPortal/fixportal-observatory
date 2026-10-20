@@ -125,7 +125,7 @@ Outside read-only mode, each expanded run has a **Remove sweep** button. It asks
 
 #### Estimated costs
 
-Costs for the `anthropic` reviewer are treated as estimates: they are derived from a combined token count for a subscription model, with no exact per-call billing. Such costs show a leading `~`, and a footer note appears under the tab: `~ putative cost — estimated from a combined token count (subscription model, no exact per-call billing)`. A run total shows `~` only when at least one known-cost participant is an `anthropic` reviewer. Costs for other vendors are shown without `~`.
+Costs for the `anthropic` reviewer are treated as estimates: they are derived from a combined token count for a subscription model, with no exact per-call billing. Such costs show a leading `~`, and a footer note appears under the tab while at least one displayed figure is such an estimate: `~ putative cost — estimated from a combined token count (subscription model, no exact per-call billing)`. A run total shows `~` only when at least one known-cost participant is an `anthropic` reviewer. An unknown cost shows `Unknown`, never `~`, and carries no estimate tooltip. Costs for other vendors are shown without `~`.
 
 These review costs are a separate record from the billed, estimated and notional figures on the Overview; see [Concepts](/docs/concepts) for why unlike figures are never totalled together.
 

@@ -176,6 +176,41 @@ test('counts a tool once in the summary however many machines report it', () => 
   expect(screen.queryByRole('link', { name: 'Setup: Codex local' })).not.toBeInTheDocument()
 })
 
+test('a failing machine behind a fresh roll-up still needs attention in the collapsed summary', () => {
+  data.statuses = [
+    status({ sourceId: 'codex-local@desktop', status: 'fresh' }),
+    status({
+      sourceId: 'codex-local@laptop',
+      status: 'failing',
+      lastSuccessAt: '2026-08-20T09:00:00Z',
+      consecutiveFailureCount: 3,
+    }),
+  ]
+  render(<SourceStatusPanel />)
+
+  expect(
+    screen.getByText(
+      `1 reporting · ${REGISTRY_SOURCE_COUNT - 1} not connected · 1 needs attention`,
+    ),
+  ).toBeInTheDocument()
+})
+
+test('a merely stale machine behind a fresh roll-up is not counted as needing attention', () => {
+  data.statuses = [
+    status({ sourceId: 'codex-local@desktop', status: 'fresh' }),
+    status({
+      sourceId: 'codex-local@laptop',
+      status: 'stale',
+      lastSuccessAt: '2026-08-20T09:00:00Z',
+    }),
+  ]
+  render(<SourceStatusPanel />)
+
+  expect(
+    screen.getByText(`1 reporting · ${REGISTRY_SOURCE_COUNT - 1} not connected`),
+  ).toBeInTheDocument()
+})
+
 test('shows readable API-only sources without inventing setup links and does not mask query errors', () => {
   data.statuses = [status({ sourceId: 'new-oss-source', status: 'fresh' })]
   const { rerender } = render(<SourceStatusPanel />)

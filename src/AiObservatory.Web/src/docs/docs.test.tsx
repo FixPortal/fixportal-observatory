@@ -1,11 +1,12 @@
+import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, renderHook, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CHAPTER_FILES, CHAPTER_GROUPS, CHAPTERS, buildChapters, fileSlugs } from './chapters'
 import { DocsPage } from './DocsPage'
 import { isDocsPath, safeDecode, slugFromPath } from './docsRoute'
 import { slugify } from './rehypeDocs'
-import { READING_LINE, pickActiveIndex } from './useActiveSection'
+import { READING_LINE, pickActiveIndex, useActiveSection } from './useActiveSection'
 
 const FIXTURE = [
   {
@@ -15,7 +16,7 @@ const FIXTURE = [
     markdown: [
       '# One',
       '',
-      'Intro with a [jump](#second) and a [next](/docs/two) link.',
+      'Intro with a [jump](#second), a [next](/docs/two) and a [dead](/docs/two#nope) link.',
       '',
       '## First',
       '',
@@ -203,9 +204,160 @@ describe('DocsPage', () => {
     expect(window.location.pathname).toBe('/docs/one')
   })
 
+  it('keeps the fragment and query string when redirecting the bare root', () => {
+    window.history.replaceState(null, '', '/docs?embed=fixportal-ide#second')
+    render(<DocsPage chapters={FIXTURE} groups={GROUPS} />)
+    expect(window.location.pathname).toBe('/docs/one')
+    expect(window.location.search).toBe('?embed=fixportal-ide')
+    expect(window.location.hash).toBe('#second')
+  })
+
+  it('keeps the query string on chapter links', async () => {
+    window.history.replaceState(null, '', '/docs/one?embed=fixportal-ide')
+    const user = userEvent.setup()
+    render(<DocsPage chapters={FIXTURE} groups={GROUPS} />)
+    await user.click(
+      within(screen.getByRole('navigation', { name: 'Adjacent chapters' })).getByRole('link'),
+    )
+    expect(window.location.pathname).toBe('/docs/two')
+    expect(window.location.search).toBe('?embed=fixportal-ide')
+  })
+
+  it('returns to the top when a link names a fragment the new chapter lacks', async () => {
+    const user = userEvent.setup()
+    render(<DocsPage chapters={FIXTURE} groups={GROUPS} />)
+    vi.mocked(window.scrollTo).mockClear()
+    await user.click(screen.getByRole('link', { name: 'dead' }))
+    expect(window.location.pathname).toBe('/docs/two')
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 0)
+  })
+
+  it('replaces rather than stacks history when the current chapter is clicked again', async () => {
+    const user = userEvent.setup()
+    render(<DocsPage chapters={FIXTURE} groups={GROUPS} />)
+    const before = window.history.length
+    vi.mocked(window.scrollTo).mockClear()
+    const nav = screen.getByRole('navigation', { name: 'Documentation chapters' })
+    await user.click(within(nav).getByRole('link', { name: 'One' }))
+    expect(window.history.length).toBe(before)
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 0)
+  })
+
+  it('gives a heading whose slug ends in a number a distinct id from a duplicate', () => {
+    window.history.replaceState(null, '', '/docs/dup')
+    const dup = [
+      {
+        slug: 'dup',
+        title: 'Dup',
+        group: 'Basics',
+        markdown: '# Dup\n\n## Base\n\n## Base\n\n## Base 1\n',
+      },
+    ] as const
+    render(<DocsPage chapters={dup} groups={[{ title: 'Basics', slugs: ['dup'] }]} />)
+    const ids = screen.getAllByRole('heading', { level: 2 }).map((h) => h.id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
   it('says so when the chapter does not exist', () => {
     window.history.replaceState(null, '', '/docs/nope')
     render(<DocsPage chapters={FIXTURE} groups={GROUPS} />)
     expect(screen.getByRole('alert')).toHaveTextContent('Page not found')
+  })
+})
+
+describe('useActiveSection', () => {
+  function headingAt(id: string, top: { value: number }) {
+    const h = document.createElement('h2')
+    h.id = id
+    h.getBoundingClientRect = () => ({ top: top.value }) as DOMRect
+    document.body.append(h)
+    return h
+  }
+  afterEach(() => {
+    document.body.replaceChildren()
+  })
+
+  it('does not re-render on wheel input when nothing is held', async () => {
+    const headings = [headingAt('a', { value: 0 }), headingAt('b', { value: 500 })]
+    // Count commits, not function calls: React may re-invoke a component to bail out of an
+    // unchanged state, which re-parses nothing.
+    let renders = 0
+    renderHook(() => {
+      useEffect(() => {
+        renders += 1
+      })
+      return useActiveSection(headings)
+    })
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+    })
+    const settled = renders
+    act(() => {
+      fireEvent.wheel(window)
+      fireEvent.wheel(window)
+      fireEvent.wheel(window)
+    })
+    expect(renders).toBe(settled)
+  })
+
+  it('releases a held selection when the page is scrolled without wheel or keys', () => {
+    const aTop = { value: 0 }
+    const bTop = { value: 500 }
+    const headings = [headingAt('a', aTop), headingAt('b', bTop)]
+    const { result } = renderHook(() => useActiveSection(headings))
+    act(() => {
+      result.current.select('b')
+    })
+    expect(result.current.activeId).toBe('b')
+
+    // A scrollbar drag moves the page: heading b leaves where the click scrolled it.
+    aTop.value = -400
+    bTop.value = 100
+    act(() => {
+      fireEvent.scroll(window)
+    })
+    expect(result.current.activeId).toBe('a')
+  })
+
+  it('keeps a held selection through scroll events that do not move the page', () => {
+    const headings = [headingAt('a', { value: 0 }), headingAt('b', { value: 500 })]
+    const { result } = renderHook(() => useActiveSection(headings))
+    act(() => {
+      result.current.select('b')
+    })
+    act(() => {
+      fireEvent.scroll(window)
+    })
+    expect(result.current.activeId).toBe('b')
+  })
+})
+
+describe('shipped chapters', () => {
+  it('every in-chapter and cross-chapter fragment link resolves to a heading id', () => {
+    window.HTMLElement.prototype.scrollIntoView = vi.fn()
+    window.scrollTo = vi.fn()
+    const ids = new Map<string, Set<string>>()
+    const links: { from: string; href: string }[] = []
+    for (const chapter of CHAPTERS) {
+      window.history.replaceState(null, '', `/docs/${chapter.slug}`)
+      const { container, unmount } = render(<DocsPage />)
+      ids.set(
+        chapter.slug,
+        new Set(Array.from(container.querySelectorAll('.docs-article [id]'), (el) => el.id)),
+      )
+      for (const a of container.querySelectorAll<HTMLAnchorElement>('.docs-article a')) {
+        const href = a.getAttribute('href') ?? ''
+        if (href.startsWith('/docs/') && href.includes('#'))
+          links.push({ from: chapter.slug, href })
+      }
+      unmount()
+    }
+    window.history.replaceState(null, '', '/')
+    expect(links.length).toBeGreaterThan(0)
+    const broken = links.filter(({ href }) => {
+      const [path = '', id = ''] = href.split('#')
+      return !ids.get(decodeURIComponent(path.slice('/docs/'.length)))?.has(decodeURIComponent(id))
+    })
+    expect(broken).toEqual([])
   })
 })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /** Distance below the top of the viewport at which a heading counts as reached. */
 export const READING_LINE = 96
@@ -34,6 +34,9 @@ interface Selection {
   id: string | null
 }
 
+/** Pixels the held heading may drift from where the click left it before the page counts as scrolled. */
+const HOLD_DRIFT = 8
+
 const USER_SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '])
 
 /**
@@ -44,10 +47,26 @@ const USER_SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 
 export function useActiveSection(headings: readonly HTMLElement[]) {
   const [scrolled, setScrolled] = useState<Selection>({ headings, id: null })
   const [explicit, setExplicit] = useState<Selection>({ headings, id: null })
+  const held = useRef<{ id: string; top: number } | null>(null)
 
   useEffect(() => {
     if (headings.length === 0) return undefined
+    // Nothing held means nothing to release: skip the setState so input events stay render-free.
+    const release = () => {
+      if (held.current === null) return
+      held.current = null
+      setExplicit({ headings, id: null })
+    }
     const update = () => {
+      // Scrollbar drags, find-in-page and focus moves scroll without wheel or key events.
+      const hold = held.current
+      const heldHeading = hold && headings.find((h) => h.id === hold.id)
+      if (
+        hold &&
+        heldHeading &&
+        Math.abs(heldHeading.getBoundingClientRect().top - hold.top) > HOLD_DRIFT
+      )
+        release()
       const root = document.documentElement
       const atBottom =
         window.scrollY > 0 && window.scrollY + window.innerHeight >= root.scrollHeight - 1
@@ -60,7 +79,7 @@ export function useActiveSection(headings: readonly HTMLElement[]) {
     }
     const onUserInput = (event: Event) => {
       if (event instanceof KeyboardEvent && !USER_SCROLL_KEYS.has(event.key)) return
-      setExplicit({ headings, id: null })
+      release()
       update()
     }
     const frame = requestAnimationFrame(update)
@@ -86,6 +105,8 @@ export function useActiveSection(headings: readonly HTMLElement[]) {
 
   const select = useCallback(
     (id: string) => {
+      const top = headings.find((h) => h.id === id)?.getBoundingClientRect().top
+      held.current = { id, top: top ?? 0 }
       setExplicit({ headings, id })
     },
     [headings],

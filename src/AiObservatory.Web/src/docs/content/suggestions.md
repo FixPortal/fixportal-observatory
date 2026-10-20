@@ -34,8 +34,8 @@ Evidence, when expanded, shows:
 
 - the figures behind the finding, each with a label, a value and a unit,
 - `Window: <from> to <to>`, the dates the rule read,
-- `Sample size: N`, and
-- `Run ids: ...` for seat rules, the most recent runs of that seat, up to 20.
+- `Sample size: N`, counted per rule: settled findings for the high-false-positive rule and accepted catches for the confirmation-only rule, and
+- `Run ids: ...` for seat rules, the seat's detailed runs, up to 20.
 
 Plan rules that compare costs include two descriptive figures, labelled `fxRate` and `fxSource`, which record the exchange rate used and where it came from.
 

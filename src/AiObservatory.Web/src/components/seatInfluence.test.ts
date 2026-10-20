@@ -344,3 +344,30 @@ test('marks fewer than five runs as a small sample and five runs as sufficient',
   expect(four[0]?.smallSample).toBe(true)
   expect(five[0]?.smallSample).toBe(false)
 })
+
+test('labels the first ISO week of 2027 as W01 whatever the time of day', () => {
+  const metrics = computeSeatMetrics(
+    [
+      run({ runId: 'R1', recordedAt: '2027-01-04T00:00:00Z' }),
+      run({ id: 'late', runId: 'R2', recordedAt: '2027-01-04T18:30:00Z' }),
+      run({ id: 'sun', runId: 'R3', recordedAt: '2027-01-10T23:59:59Z' }),
+    ],
+    [],
+    'unique',
+  )
+
+  expect(metrics[0]?.byWeek.map((week) => week.week)).toEqual(['2027-W01'])
+})
+
+test('divides detailed known cost by unique catches from known-cost runs only', () => {
+  const metrics = computeSeatMetrics(
+    [
+      run({ runId: 'R1', costUsd: 2 }),
+      run({ id: 'unknown', runId: 'R2', costUsd: 0, costUnknown: true }),
+    ],
+    [finding({ runId: 'R1' }), finding({ runId: 'R2', findingId: 'F2' })],
+    'unique',
+  )
+
+  expect(metrics[0]).toMatchObject({ unique: 2, costPerUnique: 2 })
+})

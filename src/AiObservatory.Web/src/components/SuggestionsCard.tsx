@@ -31,17 +31,15 @@ function SuggestionRow({ suggestion }: { suggestion: Suggestion }) {
 
   const dismiss = useMutation({
     mutationFn: dismissSuggestion,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['suggestions'] }),
-    onError: () => {
-      /* silent like the insights feed; isPending clears so the buttons re-enable */
-    },
+    // Settled, not success: a 404/409 means the row was resolved since the list loaded, and only
+    // a refetch drops it. Errors stay silent like the insights feed.
+    onSettled: () => qc.invalidateQueries({ queryKey: ['suggestions'] }),
   })
   const snooze = useMutation({
     mutationFn: ({ id, days }: { id: string; days: number }) => snoozeSuggestion(id, days),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['suggestions'] }),
-    onError: () => {
-      /* silent like the insights feed; isPending clears so the buttons re-enable */
-    },
+    // Settled, not success: a 404/409 means the row was resolved since the list loaded, and only
+    // a refetch drops it. Errors stay silent like the insights feed.
+    onSettled: () => qc.invalidateQueries({ queryKey: ['suggestions'] }),
   })
 
   const evidenceId = `suggestion-evidence-${suggestion.id}`

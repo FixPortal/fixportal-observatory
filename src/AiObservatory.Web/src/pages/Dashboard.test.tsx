@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { Dashboard } from './Dashboard'
@@ -38,6 +38,9 @@ vi.mock('../components/CavemanStatsPanel', () => ({
 }))
 vi.mock('../components/SubscriptionPanel', () => ({
   SubscriptionPanel: () => <section aria-label="Subscriptions" />,
+}))
+vi.mock('../components/AdversarialReviewPanel', () => ({
+  AdversarialReviewPanel: () => <section aria-label="Adversarial review evidence" />,
 }))
 vi.mock('../components/ModelBreakdown', () => ({ ModelBreakdown: () => null }))
 vi.mock('../components/InsightsFeed', () => ({ InsightsFeed: () => null }))
@@ -124,6 +127,20 @@ test('places data-source operations after the overview evidence', async () => {
   expect(bottomGrid.nextElementSibling).toBe(sourceZone)
 })
 
+test('keeps the query string when switching into and out of docs', async () => {
+  window.history.replaceState(null, '', '/?embed=fixportal-ide&x=1')
+  const user = userEvent.setup()
+  render(<Dashboard />)
+
+  await user.click(screen.getByRole('tab', { name: 'Docs' }))
+  expect(window.location.pathname).toMatch(/^\/docs/)
+  expect(window.location.search).toBe('?embed=fixportal-ide&x=1')
+
+  await user.click(screen.getByRole('tab', { name: 'Overview' }))
+  expect(window.location.pathname).toBe('/')
+  expect(window.location.search).toBe('?embed=fixportal-ide&x=1')
+})
+
 test('arrow-key tab traversal does not add history entries as it crosses into and out of docs', async () => {
   window.history.replaceState(null, '', '/')
   const user = userEvent.setup()
@@ -147,4 +164,21 @@ test('a click on the Docs tab adds one history entry', async () => {
   await user.click(screen.getByRole('tab', { name: 'Docs' }))
   expect(window.location.pathname).toMatch(/^\/docs/)
   expect(window.history.length).toBe(before + 1)
+})
+
+test('Back from docs returns to the tab the reader left', async () => {
+  window.history.replaceState(null, '', '/')
+  const user = userEvent.setup()
+  render(<Dashboard />)
+
+  await user.click(screen.getByRole('tab', { name: 'Adversarial Review' }))
+  await user.click(screen.getByRole('tab', { name: 'Docs' }))
+  window.history.back()
+
+  await waitFor(() => {
+    expect(screen.getByRole('tab', { name: 'Adversarial Review' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+  })
 })

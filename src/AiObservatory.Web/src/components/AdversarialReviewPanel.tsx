@@ -54,6 +54,11 @@ function formatRecordedAt(iso: string): string {
 function isPutativeCost(reviewer: string): boolean {
   return reviewer === 'anthropic'
 }
+// Only a figure that is actually shown can be an estimate; an unknown cost displays no number.
+const isPutativeStat = (s: AdversarialReviewStats) =>
+  s.unknownCostRuns < s.runCount && isPutativeCost(s.reviewer)
+const isPutativeParticipant = (p: { reviewer: string; costUnknown: boolean }) =>
+  !p.costUnknown && isPutativeCost(p.reviewer)
 
 function formatCost(n: number | null | undefined, estimated = false): string {
   if (n == null) return '—'
@@ -81,9 +86,7 @@ function capitalize(s: string): string {
 function RunSummary({ group }: { group: RunGroup }) {
   const t = group.totals
   // Only participants whose cost is in the total can make it an estimate.
-  const hasPutativeCost = group.participants.some(
-    (p) => !p.costUnknown && isPutativeCost(p.reviewer),
-  )
+  const hasPutativeCost = group.participants.some(isPutativeParticipant)
   return (
     <span className="adv-run__summary">
       {group.summary && <span className="adv-run__meta">{formatRecordedAt(group.recordedAt)}</span>}
@@ -239,13 +242,13 @@ function StatsTable({ stats, isLoading, isError }: StatsTableProps) {
                   </td>
                   <td>{s.model}</td>
                   <td>{s.runCount}</td>
-                  <td title={isPutativeCost(s.reviewer) ? PUTATIVE_NOTE : undefined}>
-                    {formatStatCost(s.avgCostPerRun, s, isPutativeCost(s.reviewer))}
+                  <td title={isPutativeStat(s) ? PUTATIVE_NOTE : undefined}>
+                    {formatStatCost(s.avgCostPerRun, s, isPutativeStat(s))}
                   </td>
                   <td>{formatCount(s.avgIssuesRaised)}</td>
                   <td>{formatCount(s.avgIssuesAccepted)}</td>
-                  <td title={isPutativeCost(s.reviewer) ? PUTATIVE_NOTE : undefined}>
-                    {formatStatCost(s.avgCostPerAcceptedFinding, s, isPutativeCost(s.reviewer))}
+                  <td title={isPutativeStat(s) ? PUTATIVE_NOTE : undefined}>
+                    {formatStatCost(s.avgCostPerAcceptedFinding, s, isPutativeStat(s))}
                   </td>
                   <td>{formatMinutes(s.avgDurationMs)}</td>
                 </tr>
@@ -439,12 +442,12 @@ function RunsList({ groups, isLoading, isError }: RunsListProps) {
                       <td>{p.model}</td>
                       <td>{p.role === 'judge' ? '—' : p.issuesRaised}</td>
                       <td>{p.role === 'judge' ? '—' : p.issuesAccepted}</td>
-                      <td title={isPutativeCost(p.reviewer) ? PUTATIVE_NOTE : undefined}>
+                      <td title={isPutativeParticipant(p) ? PUTATIVE_NOTE : undefined}>
                         {p.costUnknown
                           ? 'Unknown'
                           : formatCost(p.costUsd, isPutativeCost(p.reviewer))}
                       </td>
-                      <td title={isPutativeCost(p.reviewer) ? PUTATIVE_NOTE : undefined}>
+                      <td title={isPutativeParticipant(p) ? PUTATIVE_NOTE : undefined}>
                         {p.role === 'judge'
                           ? '—'
                           : p.costUnknown
@@ -526,8 +529,8 @@ export function AdversarialReviewPanel() {
           <SeatsTab runs={runs} runsLoading={runsLoading} runsError={runsError} />
         </div>
       )}
-      {(stats.some((s) => isPutativeCost(s.reviewer)) ||
-        groups.some((g) => g.participants.some((p) => isPutativeCost(p.reviewer)))) && (
+      {(stats.some(isPutativeStat) ||
+        groups.some((g) => g.participants.some(isPutativeParticipant))) && (
         <p className="panel-note">{PUTATIVE_NOTE}</p>
       )}
     </div>

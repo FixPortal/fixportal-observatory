@@ -18,7 +18,7 @@ import { useDashboardStatus } from '../api/queries'
 import { ApiError } from '../api/client'
 import { authEnabled, isReadonly, signIn, TokenAcquisitionTimeoutError } from '../auth/msal'
 import { useTheme } from '../theme/useTheme'
-import { DOCS_ROOT, isDocsPath } from '../docs/docsRoute'
+import { DOCS_ROOT, isDocsPath, keepSearch } from '../docs/docsRoute'
 
 type DashboardTab =
   'overview' | 'adversarial-review' | 'reporting' | 'activity' | 'github' | 'spend' | 'docs'
@@ -96,6 +96,8 @@ export function Dashboard() {
   )
   const visibleTabs = TABS.filter((t) => !(t.readonlyHidden && isReadonly))
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+  // Every root tab shares /, so history cannot say which one Back should return to.
+  const lastRootTab = useRef<DashboardTab>('overview')
 
   // The docs reader owns /docs/*; every other tab lives at the root path. Back and forward
   // between the two keep the tab in step with the address bar.
@@ -103,7 +105,7 @@ export function Dashboard() {
     const onPopState = () => {
       setTab((current) => {
         if (isDocsPath(window.location.pathname)) return 'docs'
-        return current === 'docs' ? 'overview' : current
+        return current === 'docs' ? lastRootTab.current : current
       })
     }
     window.addEventListener('popstate', onPopState)
@@ -115,10 +117,11 @@ export function Dashboard() {
   // Arrow-key roving replaces the entry: only a deliberate click adds history.
   const selectTab = (next: DashboardTab, replace = false) => {
     if (next === 'docs' && !isDocsPath(window.location.pathname)) {
-      history[replace ? 'replaceState' : 'pushState'](null, '', DOCS_ROOT)
+      history[replace ? 'replaceState' : 'pushState'](null, '', keepSearch(DOCS_ROOT))
     } else if (next !== 'docs' && isDocsPath(window.location.pathname)) {
-      history[replace ? 'replaceState' : 'pushState'](null, '', '/')
+      history[replace ? 'replaceState' : 'pushState'](null, '', keepSearch('/'))
     }
+    if (next !== 'docs') lastRootTab.current = next
     setTab(next)
   }
 

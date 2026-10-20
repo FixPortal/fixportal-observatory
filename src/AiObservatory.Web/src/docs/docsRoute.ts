@@ -26,6 +26,18 @@ export function docsHref(slug: string, id?: string): string {
   return `${DOCS_ROOT}/${encodeURIComponent(slug)}${id === undefined ? '' : `#${id}`}`
 }
 
+/**
+ * Carries the current query string onto an app URL (before any fragment). The query holds
+ * mode flags such as mbed=fixportal-ide that are read once at page load, so every URL the
+ * app writes must keep them or a reload silently changes mode.
+ */
+export function keepSearch(href: string): string {
+  const { search } = window.location
+  if (search === '' || href.includes('?')) return href
+  const hash = href.indexOf('#')
+  return hash < 0 ? href + search : href.slice(0, hash) + search + href.slice(hash)
+}
+
 interface Location {
   pathname: string
   hash: string
@@ -53,8 +65,12 @@ export function useDocsLocation() {
   }, [])
 
   const navigate = useCallback((href: string, replace = false) => {
-    if (replace) window.history.replaceState(null, '', href)
-    else window.history.pushState(null, '', href)
+    const target = keepSearch(href)
+    const { pathname, search, hash } = window.location
+    // Following a link to the page already shown must not stack a duplicate entry.
+    if (replace || target === pathname + search + hash)
+      window.history.replaceState(null, '', target)
+    else window.history.pushState(null, '', target)
     setLocation(readLocation())
   }, [])
 

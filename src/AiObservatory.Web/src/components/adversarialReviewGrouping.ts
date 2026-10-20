@@ -104,6 +104,9 @@ export function groupRuns(runs: AdversarialReviewRun[]): RunGroup[] {
     const reviewerCount = ACTIVE_REVIEWER_VENDORS.filter((vendor) =>
       reviewerVendors.has(vendor),
     ).length
+    // Validity counts every vendor that reviewed, retired seats included: a run is no thinner
+    // for a seat having been retired since.
+    const validReviewerCount = REVIEWER_ORDER.filter((vendor) => reviewerVendors.has(vendor)).length
     const isComplete = reviewerCount === EXPECTED_REVIEWER_VENDORS && hasJudge
     const statusReason = isComplete
       ? 'complete'
@@ -128,7 +131,7 @@ export function groupRuns(runs: AdversarialReviewRun[]): RunGroup[] {
       },
       isComplete,
       statusReason,
-      isValid: reviewerCount >= MIN_VALID_REVIEWERS,
+      isValid: validReviewerCount >= MIN_VALID_REVIEWERS,
       // A batched run carries the same chunk count on every participant; take the
       // first non-null. Null when no participant reported one (single-diff run).
       chunkCount: participants.find((p) => p.chunkCount != null)?.chunkCount ?? null,

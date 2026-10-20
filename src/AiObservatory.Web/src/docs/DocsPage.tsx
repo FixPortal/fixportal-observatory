@@ -11,7 +11,14 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
 import { CHAPTER_GROUPS, CHAPTERS, type Chapter, type ChapterGroup } from './chapters'
-import { DOCS_ROOT, docsHref, safeDecode, slugFromPath, useDocsLocation } from './docsRoute'
+import {
+  DOCS_ROOT,
+  docsHref,
+  keepSearch,
+  safeDecode,
+  slugFromPath,
+  useDocsLocation,
+} from './docsRoute'
 import { rehypeDocs } from './rehypeDocs'
 import { useActiveSection } from './useActiveSection'
 import './docs.css'
@@ -324,7 +331,7 @@ export function DocsPage({
   const firstSlug = chapters[0]?.slug
   useEffect(() => {
     if (bareRoot && firstSlug !== undefined) {
-      window.history.replaceState(null, '', docsHref(firstSlug))
+      window.history.replaceState(null, '', keepSearch(docsHref(firstSlug) + window.location.hash))
     }
   }, [bareRoot, firstSlug])
 
@@ -343,8 +350,7 @@ export function DocsPage({
   const slug = chapter?.slug
   useEffect(() => {
     if (slug === undefined) return
-    if (hash.length > 0) scrollToHash(hash)
-    else window.scrollTo(0, 0)
+    if (hash.length === 0 || !scrollToHash(hash)) window.scrollTo(0, 0)
   }, [slug, hash, scrollToHash])
 
   const follow = useCallback(
@@ -352,6 +358,7 @@ export function DocsPage({
       navigate(href)
       const id = href.split('#')[1]
       if (id !== undefined) scrollToHash(safeDecode(id))
+      else window.scrollTo(0, 0)
     },
     [navigate, scrollToHash],
   )

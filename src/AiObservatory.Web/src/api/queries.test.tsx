@@ -148,6 +148,65 @@ describe('dashboard queries', () => {
     })
   })
 
+  test('keeps the error state while a manual retry of a first-load failure is in flight', async () => {
+    client.getAggregates.mockRejectedValueOnce(new Error('API unavailable'))
+    let finishRetry!: (value: never[]) => void
+    client.getAggregates.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRetry = resolve
+        }),
+    )
+    const { result } = renderHook(() => useDashboardStatus(), { wrapper })
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true)
+    })
+
+    act(() => {
+      void result.current.retry()
+    })
+    await waitFor(() => {
+      expect(result.current.isRetrying).toBe(true)
+    })
+    expect(result.current.isError).toBe(true)
+    expect(result.current.isLoading).toBe(false)
+
+    await act(async () => {
+      finishRetry([])
+    })
+    await waitFor(() => {
+      expect(result.current.isError).toBe(false)
+    })
+  })
+
+  test('does not flag an error while a background refetch over cached data retries', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: 3, retryDelay: 60_000 } },
+    })
+    const retryingWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    try {
+      const { result } = renderHook(() => useDashboardStatus(), { wrapper: retryingWrapper })
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(false)
+        expect(result.current.isRetrying).toBe(false)
+      })
+
+      client.getAggregates.mockRejectedValue(new Error('blip'))
+      act(() => {
+        void result.current.retry()
+      })
+      await waitFor(() => {
+        expect(result.current.isAutomaticallyRetrying).toBe(true)
+      })
+
+      expect(result.current.isError).toBe(false)
+    } finally {
+      queryClient.clear()
+    }
+  })
+
   test('uses the shared aggregate rolling range unchanged for billed reporting', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-31T12:00:00'))

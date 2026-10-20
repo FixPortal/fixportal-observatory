@@ -63,6 +63,9 @@ interface SeatAggregates extends FindingAggregates {
   // Known cost of runs that carry finding detail only: unique catches exist for those runs
   // alone, so cost per unique catch must not be divided over counts-only runs' spend.
   detailedKnownCostUsd: number
+  // Unique catches from known-cost runs: pairs with detailedKnownCostUsd so a catch from a run
+  // with no cost adds nothing to the numerator's divisor.
+  knownCostUnique: number
   unknownCostRuns: number
   countsOnlyRuns: number
   byWeek: Map<string, WeekAggregates>
@@ -71,7 +74,11 @@ interface SeatAggregates extends FindingAggregates {
 const runKey = (runId: string, reviewer: string) => `${runId}\u0000${reviewer}`
 
 function isoWeekUtc(iso: string): string {
-  const instant = new Date(iso)
+  const parsed = new Date(iso)
+  // Whole days only: a time of day would push the fractional week count over a boundary.
+  const instant = new Date(
+    Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()),
+  )
   const day = instant.getUTCDay() || 7
   const thursday = new Date(instant)
   thursday.setUTCDate(instant.getUTCDate() + 4 - day)
@@ -111,6 +118,7 @@ function emptySeat(model: string): SeatAggregates {
     peerAgreement: 0,
     knownCostUsd: 0,
     detailedKnownCostUsd: 0,
+    knownCostUnique: 0,
     unknownCostRuns: 0,
     knownCostRuns: 0,
     countsOnlyRuns: 0,
@@ -220,6 +228,9 @@ function accumulateFindingForSeat(
   target: FindingTarget,
 ): void {
   accumulateFinding(seat, finding)
+  if (finding.outcome === 'accepted' && finding.raisedBy.length === 1 && !target.row.costUnknown) {
+    seat.knownCostUnique += 1
+  }
   seat.peerAgreement += peerAgreementReceived(finding, target.reviewers)
   const week = weekFor(seat, target.row.recordedAt)
   accumulateFinding(week, finding)
@@ -281,9 +292,9 @@ export function computeSeatMetrics(
         knownCostUsd: seat.knownCostUsd,
         unknownCostRuns: seat.unknownCostRuns,
         costPerUnique:
-          seat.unique === 0 || seat.detailedKnownCostUsd === 0
+          seat.knownCostUnique === 0 || seat.detailedKnownCostUsd === 0
             ? null
-            : seat.detailedKnownCostUsd / seat.unique,
+            : seat.detailedKnownCostUsd / seat.knownCostUnique,
         countsOnlyRuns: seat.countsOnlyRuns,
         smallSample: seat.runs < 5,
         byWeek: [...seat.byWeek.entries()]

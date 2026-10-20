@@ -2570,13 +2570,14 @@ td.budget-rules__actions {
 .spend-ledger__wrapper {
   overflow-x: auto;
 }
-.spend-ledger__num {
+/* Scoped under .spend-ledger: the shared table rule above is (0,1,1) and would win otherwise. */
+.spend-ledger .spend-ledger__num {
   text-align: right;
 }
 /* A refund nets off the total, so it must not scan as just another charge. --ok-text is
    the semantic "good" token and passes AA on the card background; the minus sign and the
    visually-hidden "Refund:" prefix carry the meaning for anyone who cannot use the colour. */
-.spend-ledger__num--refund {
+.spend-ledger .spend-ledger__num--refund {
   color: var(--ok-text);
 }
 .spend-ledger__native {

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import {
   getAggregates,
@@ -415,7 +415,17 @@ export function useDashboardStatus(): {
     useQuery({ queryKey: ['insights'], queryFn: getInsights }),
     useQuery({ queryKey: ['subscriptions'], queryFn: getSubscriptions }),
   ]
-  const isUnavailable = queries.some((query) => query.isError || query.failureCount > 0)
+  // An early failure (before retries are exhausted) only counts when there is nothing cached
+  // to show; a blip on a background refetch must not flash the banner over populated panels.
+  const failingNow = queries.some(
+    (query) => query.isError || (query.failureCount > 0 && query.data === undefined),
+  )
+  // A manual retry of a first-load failure resets the query to pending with no error, which
+  // would swap the banner for the first-load spinner. Hold the failure until every query succeeds.
+  const [failed, setFailed] = useState(false)
+  if (failingNow && !failed) setFailed(true)
+  else if (failed && !failingNow && queries.every((query) => query.isSuccess)) setFailed(false)
+  const isUnavailable = failingNow || failed
   const failure = queries.find((query) => query.error != null || query.failureReason != null)
   return {
     isError: isUnavailable,

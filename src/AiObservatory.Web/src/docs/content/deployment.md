@@ -90,11 +90,11 @@ Notes:
 
 The web image builds the app and serves it with nginx. The relevant behaviour of `nginx.conf.template`, which the nginx image turns into its configuration at start:
 
-| Path          | Behaviour                                                                                                                                                                                                                                                                                                 |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Path          | Behaviour                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/api/`       | Proxied to `http://api:8080/api/`, with `Host`, `X-Real-IP` and `X-Forwarded-For` set, and `X-Observatory-Key` set to the container's `OBSERVATORY_API_KEY` for same-origin requests unless the request already carries one (a `?key=` viewer link). A cross-site request is passed on without a key. This keeps the browser same-origin, so no CORS, sign-in or key in the bundle. |
-| `/assets/`    | Served with `Cache-Control: public, max-age=31536000, immutable`, because Vite fingerprints the file names.                                                                                                                                                                                               |
-| Anything else | Falls back to `index.html`, so client-side routes such as `/docs/api` work on reload.                                                                                                                                                                                                                     |
+| `/assets/`    | Served with `Cache-Control: public, max-age=31536000, immutable`, because Vite fingerprints the file names.                                                                                                                                                                                                                                                                         |
+| Anything else | Falls back to `index.html`, so client-side routes such as `/docs/api` work on reload.                                                                                                                                                                                                                                                                                               |
 
 Responses of types JavaScript, JSON, SVG and CSS are gzip-compressed.
 
@@ -207,7 +207,7 @@ Setting it up (summary; the operator guide is `docs/demo.md` in the repository):
 
 Operating notes:
 
-- Re-running the bootstrap script regenerates every key and the database password. The deployed web bundle keeps the old read-only key until the demo deploy workflow is dispatched again, and until then the demo shows authentication errors.
+- Re-running the bootstrap script regenerates every key and the database password, and it rotates the Static Web App deployment token too. The deployed web bundle keeps the old read-only key until the demo deploy workflow is dispatched again, and until then the demo shows authentication errors.
 - `swaOrigin` is matched as an exact CORS origin: `https://<host>` with no trailing slash and no path. A mistake produces no error; the browser simply blocks every call.
 - Scheduled workflows are disabled by GitHub after 60 days without repository activity, so the nightly reset can stop silently. Re-enable it from the Actions tab or run it by hand.
 - The Free plan has no Always On, so the API cold-starts after about 20 minutes idle, and each start runs the migrations. Free plans also stop the app when it passes CPU quotas (3 CPU-minutes per 5 minutes, 60 CPU-minutes per day) until the quota resets.
