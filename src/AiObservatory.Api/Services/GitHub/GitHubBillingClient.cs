@@ -16,8 +16,9 @@ namespace AiObservatory.Api.Services.GitHub;
 /// Credits was invisible.
 /// </para>
 /// <para>
-/// The token needs read access to the org's billing ("Plan" read on a fine-grained PAT, or
-/// <c>admin:org</c> on a classic one). That is a different scope from the
+/// The token needs read access to the org's billing (organization "Administration" read on a
+/// fine-grained PAT, or <c>admin:org</c> on a classic one; the user-scoped "Plan" permission
+/// is not enough). That is a different scope from the
 /// <c>contents/pull-requests/actions</c> set the activity ingester uses, so the same
 /// <c>GITHUB_TOKEN</c> secret must carry both for this arm to work.
 /// </para>
