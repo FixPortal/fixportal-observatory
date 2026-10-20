@@ -48,8 +48,8 @@ var integrationSettings = [
   // GitHub billing sync. The org bill is not paid from the account the spend CSV
   // exports, so this is the only route by which GitHub spend reaches the ledger.
   // Shares the github-token secret with the ingest worker, but needs billing read
-  // (organization "Administration" read on a fine-grained PAT, not the user-scoped "Plan")
-  // on top of that token's activity scopes.
+  // (organization "Administration" read on a fine-grained PAT, or admin:org on a classic one;
+  // not the user-scoped "Plan") on top of that token's activity scopes.
   // Either secret absent => the reference stays unresolved (the literal
   // '@Microsoft.KeyVault(...)' string), which GitHubBillingRegistration's
   // IsConfigured guard rejects => the sync stays disabled.
