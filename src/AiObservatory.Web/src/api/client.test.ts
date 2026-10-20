@@ -18,6 +18,7 @@ import {
   getSpendEntries,
   createSpendCategory,
   patchSpendCategory,
+  patchSpendEntry,
   createSpendVendor,
   patchSpendVendor,
   SPEND_SOURCE_VALUES,
@@ -407,6 +408,32 @@ describe('spend catalog writes', () => {
     const [path, init] = fetchMock.mock.calls[0]!
     expect(path).toContain('/spend/categories/c1')
     expect(JSON.parse(init.body as string)).toEqual({ archived: true })
+  })
+
+  test('patches a spend entry with only the changed fields and returns the updated row', async () => {
+    const patched = {
+      id: 'e1',
+      occurredOn: '2026-07-01',
+      vendorId: 'v1',
+      categoryId: 'c1',
+      amount: 95,
+      currency: 'GBP',
+      amountGbp: 95,
+      fxRate: 1,
+      description: null,
+      source: 'manual',
+      entryKey: null,
+      recordedAt: '2026-07-01T00:00:00Z',
+    }
+    const fetchMock = mockFetchOnceWithText(200, patched)
+
+    const result = await patchSpendEntry('e1', { amount: 95, description: '' })
+
+    expect(result).toEqual(patched)
+    const [path, init] = fetchMock.mock.calls[0]!
+    expect(path).toContain('/spend/entries/e1')
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body as string)).toEqual({ amount: 95, description: '' })
   })
 
   test('creates a vendor with no provider by sending null, not an empty string', async () => {

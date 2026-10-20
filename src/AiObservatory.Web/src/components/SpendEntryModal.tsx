@@ -2,14 +2,21 @@ import { useClock } from '../lib/useClock'
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
+  patchSpendEntry,
   postSpendEntries,
   type NewSpendEntry,
   type SpendCategory,
+  type SpendEntry,
+  type SpendEntryPatch,
   type SpendVendor,
 } from '../api/client'
 import { invalidateSpendData, localDate } from '../api/queries'
 
+const LISTED_CURRENCIES = ['GBP', 'USD']
+
 interface Props {
+  /** When set the form edits this entry (PATCH) instead of adding a new one. */
+  entry?: SpendEntry | undefined
   categories: SpendCategory[]
   vendors: SpendVendor[]
   /** The page's visible date range. Bounds the date input so a charge dated outside
@@ -20,7 +27,7 @@ interface Props {
   onClose: () => void
 }
 
-export function SpendEntryModal({ categories, vendors, from, to, onClose }: Props) {
+export function SpendEntryModal({ entry, categories, vendors, from, to, onClose }: Props) {
   const minDate = localDate(from)
   const maxDate = localDate(to)
   const qc = useQueryClient()
@@ -29,10 +36,11 @@ export function SpendEntryModal({ categories, vendors, from, to, onClose }: Prop
   // dashboard is left open past midnight, and an untouched form must still be valid --
   // see the range check in handleSave, which this clamp is not a substitute for.
   const [occurredOn, setOccurredOn] = useState(() => {
+    if (entry) return entry.occurredOn
     const today = localDate(clock.now())
     return today < minDate ? minDate : today > maxDate ? maxDate : today
   })
-  const [vendorId, setVendorId] = useState(vendors[0]?.id ?? '')
+  const [vendorId, setVendorId] = useState(entry?.vendorId ?? vendors[0]?.id ?? '')
   // A vendor's default category applies only while it exists in the live list passed to
   // the picker — an archived default has no matching <option>, so the select would
   // display one category while state silently held another (the trap SpendVendorCatalog's
@@ -44,14 +52,17 @@ export function SpendEntryModal({ categories, vendors, from, to, onClose }: Prop
       ? preferred
       : (categories[0]?.id ?? '')
   }
-  const [categoryId, setCategoryId] = useState(() => liveDefaultCategoryId(vendors[0]))
-  const [amount, setAmount] = useState('')
+  const [categoryId, setCategoryId] = useState(
+    () => entry?.categoryId ?? liveDefaultCategoryId(vendors[0]),
+  )
+  // An edit shows the magnitude; the Charge/Refund toggle below carries the sign.
+  const [amount, setAmount] = useState(entry ? String(Math.abs(entry.amount)) : '')
   // The sign lives here, not in the amount box. A refund is stored as a negative amount
   // (see SpendEntry.Amount), but typing a bare "-120" is far more likely to be a slip than
   // an intent, so the box stays positive-only and this toggle is the only way to book one.
-  const [isRefund, setIsRefund] = useState(false)
-  const [currency, setCurrency] = useState('GBP')
-  const [description, setDescription] = useState('')
+  const [isRefund, setIsRefund] = useState(entry ? entry.amount < 0 : false)
+  const [currency, setCurrency] = useState(entry?.currency ?? 'GBP')
+  const [description, setDescription] = useState(entry?.description ?? '')
   const [formError, setFormError] = useState<string | null>(null)
   const [verdictError, setVerdictError] = useState<string | null>(null)
 
@@ -72,8 +83,22 @@ export function SpendEntryModal({ categories, vendors, from, to, onClose }: Prop
     },
   })
 
+  const update = useMutation({
+    mutationFn: ({ id, changes }: { id: string; changes: SpendEntryPatch }) =>
+      patchSpendEntry(id, changes),
+    onSuccess: async () => {
+      await invalidateSpendData(qc)
+      onClose()
+    },
+    onError: (err: Error) => {
+      setVerdictError(err.message)
+    },
+  })
+
   function onVendorChange(id: string) {
     setVendorId(id)
+    // Changing the vendor of an existing entry must not rewrite the category it was filed under.
+    if (entry) return
     // Follow the vendor's default category as a starting point — but only when it is
     // still a live, selectable category. Falling back to the first live category here
     // (as the initialiser does) would clobber the category the user already picked.
@@ -99,8 +124,14 @@ export function SpendEntryModal({ categories, vendors, from, to, onClose }: Prop
     // form will still submit a typed-in out-of-range date. Without this check, a charge
     // dated outside the visible window would save, return `created`, and then simply not
     // appear -- there is no date picker to widen the view and find it until phase 2.
-    if (occurredOn < minDate || occurredOn > maxDate) {
+    // An existing entry may predate the window; only a date the person changed is held to it.
+    if (occurredOn !== entry?.occurredOn && (occurredOn < minDate || occurredOn > maxDate)) {
       setFormError(`Date must be between ${minDate} and ${maxDate}`)
+      return
+    }
+
+    if (entry) {
+      saveEdit(entry, parsed)
       return
     }
 
@@ -119,7 +150,32 @@ export function SpendEntryModal({ categories, vendors, from, to, onClose }: Prop
     })
   }
 
+  // Sends only what differs from the stored entry, so an untouched field is never rewritten
+  // (and its FX conversion never re-resolved) as a side effect of fixing another.
+  function saveEdit(original: SpendEntry, magnitude: number) {
+    const signed = isRefund ? -magnitude : magnitude
+    const changes: SpendEntryPatch = {}
+    if (occurredOn !== original.occurredOn) changes.occurredOn = occurredOn
+    if (vendorId !== original.vendorId) changes.vendorId = vendorId
+    if (categoryId !== original.categoryId) changes.categoryId = categoryId
+    if (signed !== original.amount) changes.amount = signed
+    if (currency !== original.currency) changes.currency = currency
+    // The API reads an empty string as "clear it" and null as "leave alone".
+    if (description.trim() !== (original.description ?? ''))
+      changes.description = description.trim()
+
+    if (Object.keys(changes).length === 0) {
+      onClose()
+      return
+    }
+    update.mutate({ id: original.id, changes })
+  }
+
   const error = formError ?? verdictError
+  const isPending = save.isPending || update.isPending
+  // An entry in a currency the picker does not list must still be representable in the form.
+  const unlistedCurrency =
+    entry && !LISTED_CURRENCIES.includes(entry.currency) ? entry.currency : null
 
   return (
     <dialog
@@ -132,7 +188,7 @@ export function SpendEntryModal({ categories, vendors, from, to, onClose }: Prop
     >
       <div className="modal__header">
         <span id="spend-entry-modal-title" className="modal__title">
-          Add spend entry
+          {entry ? 'Edit spend entry' : 'Add spend entry'}
         </span>
         <button type="button" className="modal__close" onClick={onClose} aria-label="Close">
           ×
@@ -266,6 +322,7 @@ export function SpendEntryModal({ categories, vendors, from, to, onClose }: Prop
                 >
                   <option value="GBP">GBP (£)</option>
                   <option value="USD">USD ($)</option>
+                  {unlistedCurrency && <option value={unlistedCurrency}>{unlistedCurrency}</option>}
                 </select>
               </div>
               <div>
@@ -296,16 +353,16 @@ export function SpendEntryModal({ categories, vendors, from, to, onClose }: Prop
                 type="button"
                 className="sub-form__btn sub-form__btn--secondary"
                 onClick={onClose}
-                disabled={save.isPending}
+                disabled={isPending}
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 className="sub-form__btn sub-form__btn--primary"
-                disabled={save.isPending}
+                disabled={isPending}
               >
-                {save.isPending ? 'Saving...' : 'Save'}
+                {isPending ? 'Saving...' : 'Save'}
               </button>
             </div>
           </form>

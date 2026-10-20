@@ -257,3 +257,34 @@ test('shows a delete failure inline instead of a blocking alert', async () => {
   )
   expect(alertSpy).not.toHaveBeenCalled()
 })
+
+test('opens the edit form for a ledger row, filled from that entry', () => {
+  reporting.entries = [
+    {
+      id: 'e1',
+      occurredOn: '2026-08-20',
+      vendorId: 'azure-id',
+      categoryId: 'cloud-id',
+      amount: 42.5,
+      currency: 'GBP',
+      amountGbp: 42.5,
+      fxRate: 1,
+      description: 'Compute',
+      source: 'manual',
+      entryKey: null,
+      recordedAt: '2026-08-20T12:00:00Z',
+    },
+  ]
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={queryClient}>
+      <SpendPage />
+    </QueryClientProvider>,
+  )
+
+  fireEvent.click(screen.getByRole('button', { name: 'Edit entry from 2026-08-20' }))
+
+  expect(screen.getByText('Edit spend entry')).toBeInTheDocument()
+  expect(screen.getByLabelText('Amount')).toHaveValue(42.5)
+  expect(screen.getByLabelText(/description/i)).toHaveValue('Compute')
+})

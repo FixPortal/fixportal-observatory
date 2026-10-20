@@ -593,6 +593,26 @@ export const postSpendEntries = async (entries: NewSpendEntry[]): Promise<SpendE
   return res.json() as Promise<SpendEntryResult[]>
 }
 
+// Every field optional: PATCH only touches what is present. `description` is the odd one out --
+// the API reads null as "leave alone" and an empty string as "clear it".
+export interface SpendEntryPatch {
+  occurredOn?: string
+  vendorId?: string
+  categoryId?: string
+  amount?: number
+  currency?: string
+  description?: string
+}
+
+export const patchSpendEntry = async (id: string, body: SpendEntryPatch): Promise<SpendEntry> => {
+  const res = await request(`/spend/entries/${id}`, {
+    method: 'PATCH',
+    headers: jsonHeaders,
+    body: JSON.stringify(body),
+  })
+  return res.json() as Promise<SpendEntry>
+}
+
 export const deleteSpendEntry = async (id: string): Promise<void> => {
   await request(`/spend/entries/${id}`, { method: 'DELETE' })
 }

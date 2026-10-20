@@ -2583,6 +2583,12 @@ td.budget-rules__actions {
   color: var(--text-muted);
   font-size: 11px;
 }
+.spend-ledger__actions {
+  white-space: nowrap;
+}
+.spend-ledger__actions > * + * {
+  margin-left: var(--space-2);
+}
 .spend-ledger__empty {
   margin: 0;
   padding: var(--space-4) 0;
