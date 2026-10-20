@@ -49,6 +49,53 @@ function hasPrivatePackageReference(pathname, text) {
   })
 }
 
+// Parses <PackageReference> elements into attribute maps with a quote-aware scanner, so
+// assertions hold for any attribute order, whitespace or quoting the XML grammar allows —
+// the same forms the private package matcher above accepts.
+function packageReferenceAttributes(xml) {
+  const elements = []
+  let cursor = 0
+  for (;;) {
+    const start = xml.indexOf('<PackageReference', cursor)
+    if (start === -1) return elements
+    let index = start + '<PackageReference'.length
+    const attributes = {}
+    let selfClosed = false
+    let closed = false
+    while (!closed) {
+      while (index < xml.length && /\s/.test(xml[index])) index++
+      if (xml.startsWith('/>', index)) {
+        index += 2
+        closed = true
+        selfClosed = true
+      } else if (xml[index] === '>') {
+        index++
+        closed = true
+      } else {
+        const name = /^[^\s=/<>]+/.exec(xml.slice(index))?.[0]
+        assert.ok(name, `unparseable attribute at offset ${index} of a PackageReference element`)
+        index += name.length
+        while (index < xml.length && /\s/.test(xml[index])) index++
+        assert.equal(xml[index], '=', `attribute ${name} has no value at offset ${index}`)
+        index++
+        const quote = xml[index]
+        assert.ok(quote === '"' || quote === "'", `attribute ${name} is not quoted at offset ${index}`)
+        const end = xml.indexOf(quote, index + 1)
+        assert.notEqual(end, -1, `attribute ${name} is never closed`)
+        attributes[name] = xml.slice(index + 1, end)
+        index = end + 1
+      }
+    }
+    if (!selfClosed) {
+      const close = xml.indexOf('</PackageReference>', index)
+      assert.notEqual(close, -1, 'PackageReference element is never closed')
+      index = close
+    }
+    elements.push(attributes)
+    cursor = index
+  }
+}
+
 async function runWithRecovery(operation, recovery, cleanup) {
   let primaryFailure
   try {
@@ -137,7 +184,11 @@ test('successful recovery cleans the isolated cache without masking the primary 
 
 test('public restore contract excludes private package plumbing and leaves live build assets usable', async () => {
   const buildProps = await readFile(path.join(root, 'Directory.Build.props'), 'utf8')
-  assert.match(buildProps, /<PackageReference Include="FixPortal\.CodeStyle" PrivateAssets="all"\s*\/>/)
+  const codeStyle = packageReferenceAttributes(buildProps).filter(
+    (attributes) => attributes.Include === 'FixPortal.CodeStyle'
+  )
+  assert.equal(codeStyle.length, 1, 'Directory.Build.props must reference FixPortal.CodeStyle exactly once')
+  assert.equal(codeStyle[0].PrivateAssets, 'all', 'the FixPortal.CodeStyle reference must stay private')
   assert.doesNotMatch(buildProps, /GlobalAnalyzerConfigFiles|SonarAnalyzer\.CSharp/)
 
   for (const pathname of trackedFiles().filter(isLive)) {
