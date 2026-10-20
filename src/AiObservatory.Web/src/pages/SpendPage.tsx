@@ -15,7 +15,7 @@ import {
   useSpendEntries,
   invalidateSpendData,
 } from '../api/queries'
-import { deleteSpendEntry } from '../api/client'
+import { deleteSpendEntry, type SpendEntry } from '../api/client'
 import { isReadonly } from '../auth/msal'
 import { useDateRange } from '../lib/dateRange'
 
@@ -28,6 +28,7 @@ export function SpendPage() {
   const [categoryId, setCategoryId] = useState<string | undefined>()
   const [vendorId, setVendorId] = useState<string | undefined>()
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<SpendEntry | null>(null)
   const [managingCatalog, setManagingCatalog] = useState(false)
 
   // The default remains Overview's inclusive rolling 31-day window; Spend can then
@@ -191,6 +192,7 @@ export function SpendPage() {
             onDelete={(id) => {
               remove.mutate(id)
             }}
+            onEdit={setEditing}
             canEdit={!isReadonly}
             isDeleting={remove.isPending}
           />
@@ -240,6 +242,22 @@ export function SpendPage() {
           to={to}
           onClose={() => {
             setAdding(false)
+          }}
+        />
+      )}
+
+      {editing && (
+        <SpendEntryModal
+          key={editing.id}
+          entry={editing}
+          // An entry may sit in a category or vendor that has since been archived, so the
+          // pickers get the live ones plus whatever this entry already references.
+          categories={allCategories.filter((c) => !c.archivedAt || c.id === editing.categoryId)}
+          vendors={allVendors.filter((v) => !v.archivedAt || v.id === editing.vendorId)}
+          from={from}
+          to={to}
+          onClose={() => {
+            setEditing(null)
           }}
         />
       )}

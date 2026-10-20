@@ -12,6 +12,8 @@ interface Props {
   categories: SpendCategory[]
   vendors: SpendVendor[]
   onDelete: (id: string) => void
+  /** Opens the edit form for a row. The Edit action is shown only when this is supplied. */
+  onEdit?: ((entry: SpendEntry) => void) | undefined
   canEdit: boolean
   /** True while a delete is in flight, so a fast double-click can't fire a second
    * DELETE for a row that has already gone -- which would 404 after a successful
@@ -25,6 +27,7 @@ export function SpendLedgerTable({
   categories,
   vendors,
   onDelete,
+  onEdit,
   canEdit,
   isDeleting = false,
 }: Props) {
@@ -143,7 +146,20 @@ export function SpendLedgerTable({
               </td>
               <td>{e.source}</td>
               {canEdit && (
-                <td>
+                <td className="spend-ledger__actions">
+                  {onEdit && confirmDeleteId !== e.id && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        onEdit(e)
+                      }}
+                      disabled={isDeleting}
+                      aria-label={`Edit entry from ${e.occurredOn}`}
+                    >
+                      Edit
+                    </Button>
+                  )}
                   {confirmDeleteId === e.id ? (
                     <span className="budget-rules__actions">
                       <Button

@@ -62,6 +62,39 @@ describe('SpendLedgerTable', () => {
     expect(screen.queryByText('—')).not.toBeInTheDocument()
   })
 
+  it('offers an Edit action on each row and hands the entry to onEdit', () => {
+    const onEdit = vi.fn()
+    render(
+      <SpendLedgerTable
+        entries={[entryAgainstArchivedCategory]}
+        categories={[liveCategory, archivedCategory]}
+        vendors={[vendor]}
+        onDelete={vi.fn()}
+        onEdit={onEdit}
+        canEdit
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit entry from 2026-07-01' }))
+
+    expect(onEdit).toHaveBeenCalledWith(entryAgainstArchivedCategory)
+  })
+
+  it('shows no Edit action to a read-only viewer', () => {
+    render(
+      <SpendLedgerTable
+        entries={[entryAgainstArchivedCategory]}
+        categories={[liveCategory, archivedCategory]}
+        vendors={[vendor]}
+        onDelete={vi.fn()}
+        onEdit={vi.fn()}
+        canEdit={false}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: /edit entry/i })).not.toBeInTheDocument()
+  })
+
   it('falls back to an em-dash when the category truly is not in the supplied list', () => {
     render(
       <SpendLedgerTable
