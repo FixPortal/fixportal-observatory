@@ -205,27 +205,41 @@ public class CavemanEndpointsWafTests(FixedClockApiFactory fixture)
         await using var scope = Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
         const string insert = "INSERT INTO \"CavemanSessions\"";
-        while (true)
+        // The caller's own 30 s deadline owns the test budget; this helper keeps a shorter
+        // one so a wait that never appears fails with a timeout that names the fragment
+        // instead of the caller's bare cancellation.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(20));
+        var waitToken = deadline.Token;
+        try
         {
-            var blocked = await db
-                .Database.SqlQuery<int>(
-                    $"""
-                    SELECT a.pid AS "Value" FROM pg_stat_activity a
-                    WHERE a.datname = current_database() AND a.wait_event_type = 'Lock'
-                        AND a.query LIKE '%' || {insert} || '%'
-                        AND {blockerPid} = ANY(pg_blocking_pids(a.pid))
-                        AND EXISTS (SELECT 1 FROM pg_locks l WHERE l.pid = a.pid AND NOT l.granted)
-                    """
-                )
-                .ToListAsync(ct);
-            if (blocked.Count == expected)
+            while (true)
             {
-                Console.WriteLine(
-                    $"Observed Caveman INSERT waiters {string.Join(",", blocked)} blocked by {blockerPid} in {db.Database.GetDbConnection().Database}."
-                );
-                return;
+                var blocked = await db
+                    .Database.SqlQuery<int>(
+                        $"""
+                        SELECT a.pid AS "Value" FROM pg_stat_activity a
+                        WHERE a.datname = current_database() AND a.wait_event_type = 'Lock'
+                            AND a.query LIKE '%' || {insert} || '%'
+                            AND {blockerPid} = ANY(pg_blocking_pids(a.pid))
+                            AND EXISTS (SELECT 1 FROM pg_locks l WHERE l.pid = a.pid AND NOT l.granted)
+                        """
+                    )
+                    .ToListAsync(waitToken);
+                if (blocked.Count == expected)
+                {
+                    Console.WriteLine(
+                        $"Observed Caveman INSERT waiters {string.Join(",", blocked)} blocked by {blockerPid} in {db.Database.GetDbConnection().Database}."
+                    );
+                    return;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(50), waitToken);
             }
-            await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw new TimeoutException($"No session reached the expected PostgreSQL lock wait for '{insert}'.");
         }
     }
 
