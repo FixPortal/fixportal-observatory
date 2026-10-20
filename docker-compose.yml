@@ -24,7 +24,8 @@ services:
       ASPNETCORE_URLS: http://+:8080
       DB_CONNECTION: "Host=db;Database=aiobservatory;Username=aiobs;Password=aiobs"
       OBSERVATORY_API_KEY: ${OBSERVATORY_API_KEY:-change-me}
-      # Billing needs Plan read on a fine-grained PAT or admin:org on a classic PAT.
+      # Billing needs organization Administration read on a fine-grained PAT or admin:org on a
+      # classic PAT. The user-scoped Plan permission is not enough.
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_BILLING_ORG: ${GITHUB_BILLING_ORG:-}
       # Comma-separated GitHub account names whose projects and repositories appear in the
