@@ -11,5 +11,9 @@ RUN VITE_API_BASE="" VITE_AAD_CLIENT_ID="" VITE_AAD_TENANT_ID="" VITE_AAD_API_SC
 FROM nginx:stable-alpine AS runtime
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
-ENV NGINX_ENVSUBST_FILTER=OBSERVATORY_API_KEY
+COPY 15-check-observatory-key.sh /docker-entrypoint.d/15-check-observatory-key.sh
+RUN chmod 755 /docker-entrypoint.d/15-check-observatory-key.sh
+# An unset key is the empty string: no header is sent and the API answers 401, instead of nginx
+# refusing to start on an undefined variable.
+ENV NGINX_ENVSUBST_FILTER=OBSERVATORY_API_KEY OBSERVATORY_API_KEY=""
 EXPOSE 80

@@ -1,11 +1,26 @@
 # The admin key lives here, not in the JavaScript bundle. The nginx image runs envsubst over
 # /etc/nginx/templates at start, replacing only OBSERVATORY_API_KEY (NGINX_ENVSUBST_FILTER in the
-# Dockerfile), so nginx's own $variables below are untouched. A request that already carries a key
-# (a ?key= viewer link) keeps it; any other request gets the admin key. Do not put a `"`, `\` or `$`
-# in OBSERVATORY_API_KEY: it is written into this file as a quoted string.
-map $http_x_observatory_key $observatory_key {
-    default $http_x_observatory_key;
-    ""      "${OBSERVATORY_API_KEY}";
+# Dockerfile), so nginx's own $variables below are untouched. 15-check-observatory-key.sh rejects
+# characters that cannot sit inside the quoted string; an unset key is the empty string (Dockerfile),
+# which sends no header, so the API answers 401.
+#
+# The key is added only to requests the SPA itself made. A cross-site page can send a CORS-simple
+# POST (a form, or fetch with mode no-cors) with no preflight, so injecting for every keyless
+# request would let it drive admin POSTs. Browsers that send Sec-Fetch-Site are trusted on
+# same-origin/none; older ones fall back to an Origin equal to this server's own Host. A request
+# with neither header is not a browser and is trusted. A request that already carries a key (a
+# ?key= viewer link) keeps it.
+map "$http_sec_fetch_site|$http_origin|http://$http_host" $same_origin_request {
+    default                0;
+    "~^same-origin\|"      1;
+    "~^none\|"             1;
+    "~^\|\|"               1;
+    "~^\|(.*)\|\1$"       1;
+}
+
+map "$same_origin_request|$http_x_observatory_key" $observatory_key {
+    default       $http_x_observatory_key;
+    "~^1\|$"      "${OBSERVATORY_API_KEY}";
 }
 
 server {
