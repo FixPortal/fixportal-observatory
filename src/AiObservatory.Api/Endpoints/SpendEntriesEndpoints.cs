@@ -525,6 +525,22 @@ public static class SpendEntriesEndpoints
             return Results.NotFound();
         }
 
+        // An imported or provider-billed row is owned by its source: the next sweep reverts the
+        // provider facts, and a re-import keeps a hand edit under the import's provenance. Only
+        // the classification, which neither rewrites, can be changed.
+        if (
+            entry.Source != SpendSource.Manual
+            && (
+                req.OccurredOn is not null
+                || req.Amount is not null
+                || req.Currency is not null
+                || req.Description is not null
+            )
+        )
+        {
+            return Results.BadRequest("Only the vendor and category of an imported entry can be changed");
+        }
+
         if (req.OccurredOn is { } occurredOn && occurredOn == default)
         {
             return Results.BadRequest("OccurredOn is required");
