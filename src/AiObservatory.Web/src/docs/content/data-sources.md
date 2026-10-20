@@ -63,7 +63,7 @@ Local producers add the machine name to their source id, for example `codex-loca
 - The built-in row (`Codex local`) stands for the tool as a whole. When nothing is posted under the plain id, it takes the state of the machine that reported most recently, so a tool that is posting reads `Fresh` rather than `Not connected`. If data is posted under the plain id, that exact row is used instead.
 - Each machine also appears as its own additional row, with a name such as `Codex local@my-machine`, so you can see which machine is stale or failing.
 
-The per-machine rows are detail under the built-in row. The summary counts (`N reporting`, `N not connected`, `N need attention`) leave them out, so one tool is never counted twice. A laptop that has been off shows `Stale` on its own row while the built-in row stays `Fresh` as long as another machine is reporting. See [Local producers](/docs/local-producers).
+The per-machine rows are detail under the built-in row. The summary counts (`N reporting`, `N not connected`, `N need attention`) leave them out, so one tool is never counted twice. The exception is health: a machine row that is `Failing` or `Unavailable` adds its tool to `need attention` even while the built-in row reads `Fresh`. A machine that is only `Stale` does not. A laptop that has been off shows `Stale` on its own row while the built-in row stays `Fresh` as long as another machine is reporting. See [Local producers](/docs/local-producers).
 
 ## The six states
 

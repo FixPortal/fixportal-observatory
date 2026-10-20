@@ -233,3 +233,13 @@ test('total cost is null when every participant cost is unknown', () => {
   expect(groups[0]!.totals.costUsd).toBeNull()
   expect(groups[0]!.totals.unknownCostRuns).toBe(1)
 })
+
+test('a retired seat still counts toward validity, though not toward completeness', () => {
+  const groups = groupRuns([
+    run({ runId: 'R1', reviewer: 'anthropic', role: 'reviewer' }),
+    run({ runId: 'R1', reviewer: 'moonshot', role: 'reviewer' }),
+  ])
+  expect(groups[0]!.isValid).toBe(true)
+  expect(groups[0]!.isComplete).toBe(false)
+  expect(groups[0]!.statusReason).toMatch(/^1 of /)
+})

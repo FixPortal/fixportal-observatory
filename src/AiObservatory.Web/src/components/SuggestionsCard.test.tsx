@@ -202,6 +202,32 @@ test('dismiss and snooze call the client helpers for the row', async () => {
   })
 })
 
+test('a rejected dismiss or snooze refetches the list so a row resolved elsewhere drops out', async () => {
+  data.suggestions = [seatSuggestion]
+  dismissSuggestion.mockImplementation(() => Promise.reject(new Error('409 resolved')))
+  snoozeSuggestion.mockImplementation(() => Promise.reject(new Error('404 gone')))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const invalidate = vi.spyOn(client, 'invalidateQueries')
+  const user = userEvent.setup()
+  render(
+    <QueryClientProvider client={client}>
+      <SuggestionsCard />
+    </QueryClientProvider>,
+  )
+
+  const row = screen.getByRole('article', { name: seatSuggestion.title })
+  await user.click(within(row).getByRole('button', { name: 'Dismiss' }))
+  await waitFor(() => {
+    expect(invalidate).toHaveBeenCalledTimes(1)
+  })
+  expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['suggestions'] })
+
+  await user.click(within(row).getByRole('button', { name: 'Snooze 7 days' }))
+  await waitFor(() => {
+    expect(invalidate).toHaveBeenCalledTimes(2)
+  })
+})
+
 test('the not-evaluated footer expands to rule ids with reasons and hides when empty', async () => {
   data.suggestions = [seatSuggestion]
   data.notEvaluated = [

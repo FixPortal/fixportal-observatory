@@ -1,5 +1,38 @@
 [
   {
+    "key": "deepseek-v4",
+    "label": "deepseek-v4",
+    "mixed": false,
+    "runs": 2,
+    "raised": 2,
+    "accepted": 2,
+    "unique": 2,
+    "corroborated": 0,
+    "peerAgreement": 0,
+    "refuted": 0,
+    "dropped": 0,
+    "indeterminate": 0,
+    "falsePositiveRate": 0,
+    "acceptanceRate": 1,
+    "knownCostUsd": 2,
+    "unknownCostRuns": 1,
+    "costPerUnique": 2,
+    "countsOnlyRuns": 0,
+    "smallSample": true,
+    "byWeek": [
+      {
+        "week": "2026-W42",
+        "costUsd": 2,
+        "influence": 1
+      },
+      {
+        "week": "2026-W43",
+        "costUsd": 0,
+        "influence": 1
+      }
+    ]
+  },
+  {
     "key": "glm-5.3",
     "label": "glm-5.3",
     "mixed": false,

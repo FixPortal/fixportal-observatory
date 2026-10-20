@@ -44,6 +44,26 @@ const entryAgainstArchivedCategory: SpendEntry = {
 }
 
 describe('SpendLedgerTable', () => {
+  it('offers Edit on manual rows only, not on imported or provider-billed ones', () => {
+    render(
+      <SpendLedgerTable
+        entries={[
+          { ...entryAgainstArchivedCategory, id: 'm', occurredOn: '2026-07-01' },
+          { ...entryAgainstArchivedCategory, id: 'a', occurredOn: '2026-07-02', source: 'api' },
+          { ...entryAgainstArchivedCategory, id: 'c', occurredOn: '2026-07-03', source: 'csv' },
+        ]}
+        categories={[liveCategory, archivedCategory]}
+        vendors={[vendor]}
+        onDelete={vi.fn()}
+        onEdit={vi.fn()}
+        canEdit
+      />,
+    )
+
+    expect(screen.getAllByRole('button', { name: /^Edit entry/ })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Edit entry from 2026-07-01' })).toBeInTheDocument()
+  })
+
   it('resolves an archived category to its display name rather than an em-dash', () => {
     // The category list passed in must include archived rows (SpendPage's
     // useAllSpendCategories) -- otherwise a retired category's historical entries

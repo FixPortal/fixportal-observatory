@@ -147,7 +147,7 @@ export function SpendLedgerTable({
               <td>{e.source}</td>
               {canEdit && (
                 <td className="spend-ledger__actions">
-                  {onEdit && confirmDeleteId !== e.id && (
+                  {onEdit && e.source === 'manual' && confirmDeleteId !== e.id && (
                     <Button
                       variant="ghost"
                       size="sm"

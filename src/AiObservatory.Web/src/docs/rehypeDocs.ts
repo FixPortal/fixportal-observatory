@@ -60,14 +60,19 @@ function wrapReferences(children: RootContent[]): RootContent[] {
 export function rehypeDocs() {
   return (tree: Root) => {
     const seen = new Map<string, number>()
+    const used = new Set<string>()
     const visit = (node: Root | Element) => {
       for (const child of node.children) {
         if (!isElement(child)) continue
         if (HEADING_TAGS.has(child.tagName)) {
           const base = slugify(textOf(child))
-          const count = seen.get(base) ?? 0
+          // A suffixed duplicate can equal another heading's natural slug (`Base 1`): skip taken ids.
+          let count = seen.get(base) ?? 0
+          let id = count === 0 ? base : `${base}-${count}`
+          while (used.has(id)) id = `${base}-${++count}`
           seen.set(base, count + 1)
-          child.properties = { ...child.properties, id: count === 0 ? base : `${base}-${count}` }
+          used.add(id)
+          child.properties = { ...child.properties, id }
         }
         visit(child)
       }

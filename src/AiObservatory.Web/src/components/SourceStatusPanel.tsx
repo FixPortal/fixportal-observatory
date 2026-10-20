@@ -159,8 +159,15 @@ export function SourceStatusPanel() {
   const counted = rows.filter((row) => !row.machineOf)
   const reporting = counted.filter((row) => row.status === 'fresh').length
   const notConnected = counted.filter((row) => row.status === 'notConfigured').length
-  const attention = counted.filter((row) =>
-    ['stale', 'failing', 'unavailable'].includes(row.status),
+  // The roll-up shows only the newest machine, so a failing sibling must still raise its tool.
+  // A merely stale machine is not counted: a laptop that is off is dormant, not broken.
+  const attention = counted.filter(
+    (row) =>
+      ['stale', 'failing', 'unavailable'].includes(row.status) ||
+      rows.some(
+        (machine) =>
+          machine.machineOf === row.sourceId && ['failing', 'unavailable'].includes(machine.status),
+      ),
   ).length
   const summary = isLoading
     ? 'Checking collection status'

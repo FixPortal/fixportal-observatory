@@ -71,7 +71,7 @@ The ledger endpoint returns at most 5,000 entries, newest first. The totals and 
 
 ### Editing an entry
 
-Administrators see an **Edit** button beside **Delete** on each row. It opens the **Edit spend entry** dialog, filled from the entry. The fields are those of the Add dialog: date, vendor, category, amount with the Charge or Refund choice, currency and description. A refund shows as a positive amount with Refund selected.
+Administrators see an **Edit** button beside **Delete** on each manually entered row. Rows imported from a CSV file, the portal or a provider billing API have no **Edit** button, because the next import or sweep would overwrite or contradict the change. It opens the **Edit spend entry** dialog, filled from the entry. The fields are those of the Add dialog: date, vendor, category, amount with the Charge or Refund choice, currency and description. A refund shows as a positive amount with Refund selected.
 
 - Only what you change is sent, so fixing a description never touches the stored exchange rate.
 - Changing the amount, currency or date recalculates the exchange rate and GBP amount at the (possibly new) charge date. See [Correcting an entry](#correcting-an-entry).

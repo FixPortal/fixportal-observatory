@@ -139,10 +139,10 @@ The organization report is the latest 28-day report. Observatory stores each day
 
 ### Google
 
-The Cloud Billing export reads a BigQuery table or stable view (the Standard or Detailed export shape).
+The Cloud Billing export reads the ingestion-time partitioned BigQuery export table (the Standard or Detailed export shape). The query filters on `_PARTITIONDATE`, so the target must expose that column. Pointing it at a view is UNVERIFIED: a view works only if it exposes `_PARTITIONDATE`, and no such view has been tested.
 
 - **Cost to you.** Each cycle runs two billed BigQuery jobs. `GOOGLE_BILLING_EXPORT_MAX_BYTES_BILLED` caps the bytes one job may bill; the default is 1,073,741,824 (1 GiB). A job over the cap fails without charge and the cycle reports the failure. `GOOGLE_BILLING_EXPORT_LOCATION` (for example `EU`) pins the job region to the dataset's.
-- **Access.** Application default credentials with BigQuery Job User on the execution project and BigQuery Data Viewer on the table or view.
+- **Access.** Application default credentials with BigQuery Job User on the execution project and BigQuery Data Viewer on the export table.
 - **Corrections.** Late corrections to a day, service and SKU are folded in by re-aggregating that group. The scan has a floor: usage older than 31 days before the changes-since point cannot be refreshed. If a correction for older usage is detected, the worker logs a warning and does not backfill. Check those warnings before treating the export as reconciled.
 - **Currency.** Rows keep the export's native currency; GBP views follow the historical FX path.
 - This is billed evidence, not token telemetry.

@@ -145,6 +145,49 @@ describe('AdversarialReviewPanel runs list unknown cost', () => {
     const total = screen.getByText('$1.00', { selector: '.adv-run__totals b' })
     expect(total).not.toHaveAttribute('title')
     expect(screen.queryByText('~$1.00')).not.toBeInTheDocument()
+    expect(screen.queryByText(/putative cost/)).not.toBeInTheDocument()
+  })
+
+  test('an unknown-cost anthropic cell carries no putative tooltip', () => {
+    data.runs = [
+      run({
+        id: 'a',
+        reviewer: 'anthropic',
+        costUsd: 0,
+        costUnknown: true,
+        costPerAcceptedFinding: null,
+        summary: 'Unknown only',
+      }),
+    ]
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: /Unknown only/ }))
+
+    for (const cell of screen.getAllByText('Unknown', { selector: 'td' })) {
+      expect(cell).not.toHaveAttribute('title')
+    }
+  })
+
+  test('an all-unknown anthropic stats group shows no putative footnote or tooltip', () => {
+    data.stats = [
+      {
+        reviewer: 'anthropic',
+        model: 'claude',
+        role: 'reviewer',
+        runCount: 2,
+        avgCostPerRun: null,
+        avgIssuesRaised: 1,
+        avgIssuesAccepted: 1,
+        avgCostPerAcceptedFinding: null,
+        avgDurationMs: 1000,
+        unknownCostRuns: 2,
+      },
+    ]
+    renderPanel()
+
+    expect(screen.queryByText(/putative cost/)).not.toBeInTheDocument()
+    for (const cell of screen.getAllByText('Unknown', { selector: 'td' })) {
+      expect(cell).not.toHaveAttribute('title')
+    }
   })
 })
 
