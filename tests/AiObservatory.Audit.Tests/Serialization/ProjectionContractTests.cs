@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json.Nodes;
 using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
 using AwesomeAssertions;
@@ -8,6 +9,67 @@ namespace AiObservatory.Audit.Tests.Serialization;
 
 public sealed class ProjectionContractTests
 {
+    /// <summary>Downstream checks see the same normalized facts for equivalent duplicate/shuffled wire inputs.</summary>
+    [Fact]
+    public void Deserialize_DuplicateAndShuffledFacts_ReturnsNormalizedGraph()
+    {
+        var input = CompleteInput() with
+        {
+            Records = [CanonicalJsonTests.Record(), CanonicalJsonTests.Record() with { FileId = "file-b" }],
+            Scope = CanonicalJsonTests.Scope() with
+            {
+                RequestedChecks = [CheckCode.SourceAccounting, CheckCode.EventAggregation],
+            },
+        };
+        var bytes = AuditCanonicalJson.Serialize(input);
+        var wire = JsonNode.Parse(bytes)!.AsObject();
+        foreach (var name in new[] { "records", "events" })
+        {
+            var values = wire[name]!.AsArray();
+            wire[name] = new JsonArray(
+                values.Reverse().Select(value => value!.DeepClone()).Append(values[0]!.DeepClone()).ToArray()
+            );
+        }
+        var scope = wire["scope"]!.AsObject();
+        scope["sources"]!.AsArray().Add(scope["sources"]![0]!.DeepClone());
+        scope["requestedChecks"] = new JsonArray("sourceAccounting", "eventAggregation", "sourceAccounting");
+
+        var normalized = AuditCanonicalJson.Deserialize<AuditInput>(Encoding.UTF8.GetBytes(wire.ToJsonString()));
+        var original = AuditCanonicalJson.Deserialize<AuditInput>(bytes);
+
+        normalized.Records.Should().HaveCount(2);
+        normalized.Records.Select(record => record.FileId).Should().Equal("file-a", "file-b");
+        normalized.Events.Should().HaveCount(2);
+        normalized.Events.Select(row => row.RowId).Should().Equal(original.Events.Select(row => row.RowId));
+        normalized.Scope.Sources.Should().ContainSingle();
+        normalized.Scope.RequestedChecks.Should().Equal(CheckCode.EventAggregation, CheckCode.SourceAccounting);
+        normalized.Should().BeEquivalentTo(original, options => options.WithStrictOrdering());
+    }
+
+    /// <summary>The complete input can combine more than one million facts from individually valid captures.</summary>
+    [Fact]
+    public void ValidateInput_MultipleValidCaptures_AllowsCombinedRecordCountAboveCaptureLimit()
+    {
+        const int count = 1_000_001;
+        var record = CanonicalJsonTests.Record();
+        var records = new SourceUsageRecord[count];
+        Array.Fill(records, record);
+        var first = Manifest() with { RecordCount = 600_000 };
+        var second = first with
+        {
+            CaptureId = Guid.Parse("66666666-6666-6666-6666-666666666666"),
+            RecordCount = 400_001,
+        };
+        var input = CanonicalJsonTests.Input(records) with { Captures = [first, second] };
+
+        var action = () => AuditContractValidation.ValidateInput(input);
+        action.Should().NotThrow();
+        AuditCanonicalJson.Serialize(first).Should().NotBeEmpty();
+        AuditCanonicalJson.Serialize(second).Should().NotBeEmpty();
+        var oversizedCapture = () => AuditCanonicalJson.Serialize(first with { RecordCount = count });
+        oversizedCapture.Should().Throw<AuditValidationException>().Which.Code.Should().Be("record_limit");
+    }
+
     /// <summary>Frozen projections preserve signed spend, every aggregate dimension, pricing and frontend observations.</summary>
     [Fact]
     public void Serialize_CompleteFrozenInput_RoundTripsAndSorts()
