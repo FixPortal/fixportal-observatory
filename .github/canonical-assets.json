@@ -2,8 +2,8 @@
   "schema": 1,
   "canonical": {
     "repository": "FixPortal/fixportal-agents-skills",
-    "commit": "a7ca45665b926525f7073068c533e28a3a232cb1",
-    "syncedAt": "2026-10-20"
+    "commit": "39b1670411f25b531bca3e2e4cb7c468935af475",
+    "syncedAt": "2026-10-21"
   },
   "assets": [
     {
@@ -113,10 +113,10 @@
     },
     {
       "path": ".github/ai-smells/post-smell-threads.ps1",
-      "sha256": "6156d8a10bf13b3945e6e50fd372eeefb4187aa7acd6e365dc0a08629f7dec1a",
+      "sha256": "d355f70a3e510cf25d856c6dd455e22ccf6c8ac93fc79b8f1d3b1d971665ba46",
       "verbatim": true,
-      "commit": "a7ca45665b926525f7073068c533e28a3a232cb1",
-      "syncedAt": "2026-10-20"
+      "commit": "39b1670411f25b531bca3e2e4cb7c468935af475",
+      "syncedAt": "2026-10-21"
     },
     {
       "path": ".github/ai-smells/pr-detect.ps1",

@@ -33,8 +33,21 @@ if ($pick.Overflow.Count) {
     # One marked notice per PR: later pushes edit it rather than adding another.
     $marker = '<!-- ai-smell:overflow -->'
     $notice = "ai-smells: $($pick.Overflow.Count) further hit(s) beyond the $Cap-thread cap. They are listed in this run's job summary and will be posted on the next push.`n`n$marker"
-    $existingId = @(gh api "repos/$Repo/issues/$Pr/comments" --paginate --jq ".[] | select(.body | contains(`"$marker`")) | .id")
-    if ($LASTEXITCODE -ne 0) { $existingId = @(); Write-Warning 'could not list PR comments; posting a new overflow notice' }
+    # Match the author as well as the marker: anyone can paste the marker into a comment, and a
+    # repository writer may edit comments they did not write, so the marker alone could pick (and
+    # overwrite) someone else's comment. The author is whoever the active credential posts as: a
+    # personal access token or a local sign-in answers /user, while the Actions GITHUB_TOKEN is
+    # refused there and posts as github-actions[bot].
+    $author = [string](gh api user --jq .login 2>$null)
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($author)) {
+        $author = if ($env:GITHUB_ACTIONS) { 'github-actions[bot]' } else { '' }
+    }
+    $existingId = @()
+    if ($author) {
+        $existingId = @(gh api "repos/$Repo/issues/$Pr/comments" --paginate --jq ".[] | select(.user.login == `"$author`" and (.body | contains(`"$marker`"))) | .id")
+        if ($LASTEXITCODE -ne 0) { $existingId = @(); Write-Warning 'could not list PR comments; posting a new overflow notice' }
+    }
+    else { Write-Warning 'could not tell who posts here; posting a new overflow notice rather than editing a comment' }
     if ($existingId.Count) {
         gh api -X PATCH "repos/$Repo/issues/comments/$($existingId[0])" -f body="$notice" | Out-Null
     }
