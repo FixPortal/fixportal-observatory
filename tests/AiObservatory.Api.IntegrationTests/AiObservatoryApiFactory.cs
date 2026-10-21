@@ -1,6 +1,9 @@
+using System.Net;
 using AiObservatory.Data;
+using AiObservatory.Data.Spend;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -99,6 +102,14 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
         // process environment variables instead.
         builder.UseEnvironment(Environment);
         builder.ConfigureAppConfiguration(config => config.AddInMemoryCollection(ConfigurationOverrides));
+        // No test through this host may reach api.frankfurter.dev: an unreachable FX service is a
+        // fast null (not cached), which is what a refresh sees offline. A test that needs a rate
+        // layers its own handler with WithWebHostBuilder, which is registered after this and wins.
+        builder.ConfigureTestServices(services =>
+            services
+                .AddHttpClient<FxRateProvider>()
+                .ConfigurePrimaryHttpMessageHandler(() => new FxUnavailableHandler())
+        );
         if (ClockOverride is { } clock)
         {
             builder.ConfigureServices(services =>
@@ -107,6 +118,14 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
                 services.AddSingleton(clock);
             });
         }
+    }
+
+    private sealed class FxUnavailableHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        ) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
     }
 
     protected override IHost CreateHost(IHostBuilder builder)
