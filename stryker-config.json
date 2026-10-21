@@ -1,0 +1,53 @@
+{
+  // Stryker.NET skips JSON comments (ReadCommentHandling.Skip) but REJECTS unknown keys
+  // (FileConfigReader.EnsureCorrectKeys throws on extra keys), so the rationale for the
+  // narrowed scope lives in these comments, not a "_comment" key.
+  "stryker-config": {
+    // A CURATED UNIT-ONLY LANE. The scope below, and the structural exclusion that goes with
+    // it, come from 6e31d24 (2026-07-29) -- read that commit before changing any of this. The
+    // nightly run had failed since 2026-07-27 and three earlier fixes had not moved it; that
+    // commit took it from 55 minutes and timing out to 39 seconds, by removing two settings
+    // that were failing SILENTLY:
+    //
+    //   test-case-filter  is implemented only in Stryker's VSTest runner. The MTP runner has
+    //                     no reference to it and emits no warning, so every database-backed
+    //                     test was booting a host and migrating a database per mutant.
+    //   test-projects     does not restrict execution either. Run from the repository root,
+    //                     Stryker discovers every test project referencing the API. Only the
+    //                     WORKING DIRECTORY scopes it.
+    //
+    // So exclusion here is structural, not declared: the integration suite lives in its own
+    // project and the lane runs from the unit-test directory. This `mutate` list names the
+    // production code that unit lane actually covers. coverage-analysis "perTest" is part of
+    // the same fix and is why this repository can afford it where others cannot.
+    //
+    // SO READ THE SCORE AS SCOPED -- it covers the listed paths, not AiObservatory.Api. That
+    // gap between a narrow scope and a whole-project-looking report is adversarial-review
+    // finding M17; here the scope is deliberate and measured, so it is recorded rather than
+    // widened. Widening it re-creates the timeout 6e31d24 fixed.
+    "project": "AiObservatory.Api.csproj",
+    "reporters": ["progress", "html", "json"],
+    "report-file-name": "mutation-report",
+    "mutation-level": "Standard",
+    "coverage-analysis": "perTest",
+    "test-runner": "mtp",
+    // Stryker.NET 4.16.0's MTP runner changes attribution across identical parallel runs.
+    // Two serial runs matched all 1,024 scoped mutant outcomes (2026-09-10).
+    // Keep serial until a runner upgrade passes the same comparison; see docs/mutation-testing.md.
+    "concurrency": 1,
+    "thresholds": {
+      "high": 80,
+      "low": 70,
+      "break": 0
+    },
+    "mutate": [
+      "**/Services/Fx/*.cs",
+      "**/Services/GitHub/*.cs",
+      "**/Endpoints/SpendEntriesEndpoints.cs",
+      "**/Endpoints/SpendCatalogEndpoints.cs",
+      "**/ApiKeyEndpointFilter.cs",
+      "**/AdminOnlyApiKeyEndpointFilter.cs",
+      "**/ApiKeyComparer.cs"
+    ]
+  }
+}

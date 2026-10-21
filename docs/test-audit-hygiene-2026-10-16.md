@@ -1,0 +1,9 @@
+# Clock and lock-wait hygiene — 16 October 2026
+
+Original H1/H2 named classes now use deterministic clock inputs and operation-local cancellation. ActivitySessions, Caveman and Events share a separate opt-in fixed-clock WAF fixture; the ordinary factory clock remains unchanged. ActivitySessions, Insights and NotificationSettings keep their exact PostgreSQL blocked-state queries and polling cadence, replacing iteration-count five-second windows with linked30second cancellation. No production behavior or job budget changed.
+
+Clock-input counterexample: with the same real host fixed at2030, restoring wall-clock test inputs caused exactly3 existing future-date assertions to fail (expected400, observed200/201). Restored fixed inputs178passed. This demonstrates fixture/host clock mismatch, not a fabricated production regression. Structural comparison rejects all3 original short wait bounds and accepts replacements while proving SQL literals unchanged; reliability hygiene does not claim a forced timing failure.
+
+Full isolated backend1641passed0failed1existing explicitly filtered pricing-qualification skip; build0warnings/errors; formatting320files. Real PostgreSQL was dedicated to the proof on an internal Docker network with no published ports/host mounts/socket/live credentials. Initial full run exposed the demo hostname guard; using the allowed local db alias on that owned network corrected only the fixture prerequisite. Both containers stopped and retained. No frontend changes/gate repeated. Detailed logs/TRX retained under observatory-hygiene-proof in the session evidence directory.
+
+All original named H1/H2 components are addressed after integration and green CI. Other Observatory and estate findings remain queued. Canonical reviewer remnants were preserved; this pass uses an explicitly dedicated sibling worktree.

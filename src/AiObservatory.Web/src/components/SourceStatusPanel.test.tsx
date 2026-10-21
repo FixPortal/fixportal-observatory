@@ -1,0 +1,255 @@
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import type { SourceStatusResponse } from '../api/client'
+import { NON_PROVIDER_SOURCES, PROVIDERS } from '../config/providers'
+import { SourceStatusPanel, formatLastSuccess, mergeSourceStatuses } from './SourceStatusPanel'
+
+const data = vi.hoisted(() => ({
+  statuses: [] as SourceStatusResponse[],
+  isError: false,
+  isLoading: false,
+}))
+vi.mock('../api/queries', () => ({ useSourceStatuses: () => data }))
+
+const REGISTRY_SOURCE_COUNT =
+  PROVIDERS.reduce((n, provider) => n + provider.sources.length, 0) + NON_PROVIDER_SOURCES.length
+
+// The test supplies five statuses (fresh, configured, stale, failing, unavailable); every other source reads not connected.
+const REPORTING_OR_FLAGGED = 5
+
+const status = (overrides: Partial<SourceStatusResponse>): SourceStatusResponse => ({
+  sourceId: 'openai-usage-api',
+  status: 'fresh',
+  isConfigured: true,
+  lastAttemptAt: '2026-08-25T11:00:00Z',
+  lastSuccessAt: '2026-08-25T11:00:00Z',
+  latestObservationAt: '2026-08-25T10:00:00Z',
+  consecutiveFailureCount: 0,
+  lastError: null,
+  ...overrides,
+})
+
+beforeEach(() => {
+  localStorage.clear()
+  data.statuses = []
+  data.isError = false
+  data.isLoading = false
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-08-25T12:00:00Z'))
+})
+
+afterEach(() => vi.useRealTimers())
+
+describe('source status helpers', () => {
+  test('lets API truth win, synthesizes missing registry capabilities, preserves unknowns, and orders deterministically', () => {
+    const rows = mergeSourceStatuses([
+      status({ sourceId: 'openai-usage-api', status: 'failing', consecutiveFailureCount: 2 }),
+      status({ sourceId: 'z-new-source', status: 'fresh' }),
+      status({ sourceId: 'a-new-source', status: 'configured' }),
+    ])
+    expect(rows.find((row) => row.sourceId === 'openai-usage-api')).toMatchObject({
+      status: 'failing',
+      consecutiveFailureCount: 2,
+    })
+    expect(rows.find((row) => row.sourceId === 'codex-local')).toMatchObject({
+      status: 'notConfigured',
+      isConfigured: false,
+      lastSuccessAt: null,
+    })
+    expect(rows.slice(-2).map((row) => row.sourceId)).toEqual(['a-new-source', 'z-new-source'])
+  })
+
+  test('rolls per-machine rows up into the built-in row using the most recent success', () => {
+    const rows = mergeSourceStatuses([
+      status({
+        sourceId: 'codex-local@laptop',
+        status: 'stale',
+        lastSuccessAt: '2026-08-20T09:00:00Z',
+      }),
+      status({
+        sourceId: 'codex-local@desktop',
+        status: 'fresh',
+        lastSuccessAt: '2026-08-25T11:30:00Z',
+      }),
+    ])
+
+    expect(rows.find((row) => row.sourceId === 'codex-local')).toMatchObject({
+      status: 'fresh',
+      isConfigured: true,
+      lastSuccessAt: '2026-08-25T11:30:00Z',
+      displayName: 'Codex local',
+    })
+    // The machine rows stay for per-machine detail, marked so they are not counted twice.
+    expect(
+      rows.filter((row) => row.machineOf === 'codex-local').map((row) => row.sourceId),
+    ).toEqual(['codex-local@desktop', 'codex-local@laptop'])
+  })
+
+  test('an exact built-in id still wins over its machine rows', () => {
+    const rows = mergeSourceStatuses([
+      status({ sourceId: 'codex-local', status: 'failing', consecutiveFailureCount: 4 }),
+      status({ sourceId: 'codex-local@desktop', status: 'fresh' }),
+    ])
+
+    expect(rows.find((row) => row.sourceId === 'codex-local')).toMatchObject({
+      status: 'failing',
+      consecutiveFailureCount: 4,
+    })
+  })
+
+  test('only an @-suffixed id rolls up, not a source that merely shares the prefix', () => {
+    const rows = mergeSourceStatuses([status({ sourceId: 'codex-localish@desktop' })])
+
+    expect(rows.find((row) => row.sourceId === 'codex-local')).toMatchObject({
+      status: 'notConfigured',
+    })
+    expect(rows.find((row) => row.sourceId === 'codex-localish@desktop')?.machineOf).toBeUndefined()
+  })
+
+  test('formats deterministic relative and absolute success evidence and preserves null', () => {
+    expect(formatLastSuccess(null, new Date('2026-08-25T12:00:00Z'))).toBeNull()
+    expect(formatLastSuccess('2026-08-25T11:00:00Z', new Date('2026-08-25T12:00:00Z'))).toEqual({
+      relative: '1 hour ago',
+      absolute: '25 Aug 2026, 12:00',
+      dateTime: '2026-08-25T11:00:00Z',
+    })
+  })
+})
+
+test('maps all statuses, shows failure evidence, and uses native time/details/link semantics', async () => {
+  data.statuses = [
+    status({ sourceId: 'anthropic-usage-api', status: 'fresh' }),
+    status({ sourceId: 'anthropic-cost-report', status: 'configured' }),
+    status({ sourceId: 'claude-code-usage-api', status: 'stale' }),
+    status({
+      sourceId: 'claude-local',
+      status: 'failing',
+      consecutiveFailureCount: 3,
+      lastError: 'Sanitized failure only',
+    }),
+    status({ sourceId: 'claude-pricing', status: 'unavailable' }),
+  ]
+  render(<SourceStatusPanel />)
+
+  for (const label of ['Fresh', 'Configured', 'Stale', 'Failing', 'Unavailable', 'Not connected']) {
+    expect(screen.getAllByText(label).length).toBeGreaterThan(0)
+  }
+  const panelButton = screen.getByRole('button', { name: /Data sources/ })
+  expect(panelButton).toHaveAttribute('aria-expanded', 'false')
+  expect(
+    screen.getByText(
+      `1 reporting · ${REGISTRY_SOURCE_COUNT - REPORTING_OR_FLAGGED} not connected · 3 need attention`,
+    ),
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText(/Collection health for optional APIs and local telemetry/i),
+  ).toBeInTheDocument()
+  fireEvent.click(panelButton)
+  const failingRow = screen.getByText('Claude local').closest('li')!
+  expect(within(failingRow).getByText('3 failures')).toBeInTheDocument()
+  const disclosure = failingRow.querySelector('summary')!
+  expect(disclosure).toHaveAccessibleName('Show error for Claude local')
+  expect(disclosure).toHaveProperty('tabIndex', 0)
+  disclosure.focus()
+  expect(disclosure).toHaveFocus()
+  fireEvent.click(disclosure)
+  expect(within(failingRow).getByText('Sanitized failure only')).toBeInTheDocument()
+  expect(failingRow.querySelector('time')).toHaveAttribute('datetime', '2026-08-25T11:00:00Z')
+  const setup = screen.getByRole('link', { name: 'Setup: Codex local' })
+  setup.focus()
+  expect(setup).toHaveFocus()
+  expect(setup).toHaveAttribute('href', expect.stringContaining('docs/provider-setup.md'))
+})
+
+test('counts a tool once in the summary however many machines report it', () => {
+  data.statuses = [
+    status({ sourceId: 'codex-local@desktop', status: 'fresh' }),
+    status({ sourceId: 'codex-local@laptop', status: 'fresh' }),
+  ]
+  render(<SourceStatusPanel />)
+
+  expect(
+    screen.getByText(`1 reporting · ${REGISTRY_SOURCE_COUNT - 1} not connected`),
+  ).toBeInTheDocument()
+  // A built-in row that is reporting has no setup link.
+  fireEvent.click(screen.getByRole('button', { name: /Data sources/ }))
+  expect(screen.queryByRole('link', { name: 'Setup: Codex local' })).not.toBeInTheDocument()
+})
+
+test('a failing machine behind a fresh roll-up still needs attention in the collapsed summary', () => {
+  data.statuses = [
+    status({ sourceId: 'codex-local@desktop', status: 'fresh' }),
+    status({
+      sourceId: 'codex-local@laptop',
+      status: 'failing',
+      lastSuccessAt: '2026-08-20T09:00:00Z',
+      consecutiveFailureCount: 3,
+    }),
+  ]
+  render(<SourceStatusPanel />)
+
+  expect(
+    screen.getByText(
+      `1 reporting · ${REGISTRY_SOURCE_COUNT - 1} not connected · 1 needs attention`,
+    ),
+  ).toBeInTheDocument()
+})
+
+test('a merely stale machine behind a fresh roll-up is not counted as needing attention', () => {
+  data.statuses = [
+    status({ sourceId: 'codex-local@desktop', status: 'fresh' }),
+    status({
+      sourceId: 'codex-local@laptop',
+      status: 'stale',
+      lastSuccessAt: '2026-08-20T09:00:00Z',
+    }),
+  ]
+  render(<SourceStatusPanel />)
+
+  expect(
+    screen.getByText(`1 reporting · ${REGISTRY_SOURCE_COUNT - 1} not connected`),
+  ).toBeInTheDocument()
+})
+
+test('shows readable API-only sources without inventing setup links and does not mask query errors', () => {
+  data.statuses = [status({ sourceId: 'new-oss-source', status: 'fresh' })]
+  const { rerender } = render(<SourceStatusPanel />)
+  fireEvent.click(screen.getByRole('button', { name: /Data sources/ }))
+  const unknownRow = screen.getByText('New oss source').closest('li')!
+  expect(within(unknownRow).queryByRole('link')).not.toBeInTheDocument()
+
+  data.isError = true
+  rerender(<SourceStatusPanel />)
+  // The panel is the only visible surface for /source-statuses: on failure it must
+  // stay rendered as a collapsed shell carrying the error, not vanish silently.
+  expect(screen.getByRole('button', { name: /Data sources/ })).toBeInTheDocument()
+  expect(screen.getByText('Couldn’t load collection status')).toBeInTheDocument()
+})
+
+test('keeps the registry rows in place while source status is loading', () => {
+  data.isLoading = true
+  render(<SourceStatusPanel />)
+  fireEvent.click(screen.getByRole('button', { name: /Data sources/ }))
+
+  const panel = screen.getByRole('region', { name: 'Source freshness' })
+  expect(panel).toHaveAttribute('aria-busy', 'true')
+  expect(within(panel).getAllByRole('listitem')).toHaveLength(REGISTRY_SOURCE_COUNT)
+  expect(within(panel).getByText('Repository activity')).toBeInTheDocument()
+  expect(within(panel).getByText('GitHub billing')).toBeInTheDocument()
+  expect(within(panel).getAllByText('Loading')).toHaveLength(REGISTRY_SOURCE_COUNT)
+  expect(within(panel).queryByRole('link')).not.toBeInTheDocument()
+})
+
+test('renders the collapsed shell with an inline error when source statuses fail to load', () => {
+  data.isError = true
+  render(<SourceStatusPanel />)
+
+  const panelButton = screen.getByRole('button', { name: /Data sources/ })
+  expect(panelButton).toHaveAttribute('aria-expanded', 'false')
+  expect(screen.getByText('Couldn’t load collection status')).toBeInTheDocument()
+
+  fireEvent.click(panelButton)
+  expect(panelButton).toHaveAttribute('aria-expanded', 'true')
+  expect(screen.getByText(/try refreshing/)).toBeInTheDocument()
+  expect(screen.queryByRole('listitem')).not.toBeInTheDocument()
+})

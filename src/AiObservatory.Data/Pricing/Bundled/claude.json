@@ -1,0 +1,71 @@
+{
+  "currency": "USD",
+  "sourceUrl": "https://platform.claude.com/docs/en/about-claude/pricing.md",
+  "retrievedAt": "2026-08-24T12:00:00Z",
+  "entries": [
+    {
+      "modelPrefix": "claude-opus-4-5",
+      "aliases": ["claude-opus-4-5"],
+      "effectiveFrom": "2026-08-24",
+      "effectiveDateIsProviderDeclared": false,
+      "input": 5.00,
+      "output": 25.00,
+      "cacheRead": 0.50,
+      "cacheWrite5m": 6.25,
+      "cacheWrite1h": 10.00,
+      "batchInput": 2.50,
+      "batchOutput": 12.50,
+      "fastInput": null,
+      "fastOutput": null,
+      "usInferenceMultiplier": null
+    },
+    {
+      "modelPrefix": "claude-opus-4-8",
+      "aliases": ["claude-opus-4-8"],
+      "effectiveFrom": "2026-08-24",
+      "effectiveDateIsProviderDeclared": false,
+      "input": 5.00,
+      "output": 25.00,
+      "cacheRead": 0.50,
+      "cacheWrite5m": 6.25,
+      "cacheWrite1h": 10.00,
+      "batchInput": 2.50,
+      "batchOutput": 12.50,
+      "fastInput": 10.00,
+      "fastOutput": 50.00,
+      "usInferenceMultiplier": 1.1
+    },
+    {
+      "modelPrefix": "claude-sonnet-5",
+      "aliases": ["claude-sonnet-5"],
+      "effectiveFrom": "2026-08-24",
+      "effectiveDateIsProviderDeclared": false,
+      "input": 2.00,
+      "output": 10.00,
+      "cacheRead": 0.20,
+      "cacheWrite5m": 2.50,
+      "cacheWrite1h": 4.00,
+      "batchInput": 1.00,
+      "batchOutput": 5.00,
+      "fastInput": null,
+      "fastOutput": null,
+      "usInferenceMultiplier": 1.1
+    },
+    {
+      "modelPrefix": "claude-opus-5",
+      "aliases": ["claude-opus-5"],
+      "effectiveFrom": "2026-08-24",
+      "effectiveDateIsProviderDeclared": false,
+      "input": 5.00,
+      "output": 25.00,
+      "cacheRead": 0.50,
+      "cacheWrite5m": 6.25,
+      "cacheWrite1h": 10.00,
+      "batchInput": 2.50,
+      "batchOutput": 12.50,
+      "fastInput": 10.00,
+      "fastOutput": 50.00,
+      "usInferenceMultiplier": 1.1
+    }
+  ]
+}

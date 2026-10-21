@@ -1,0 +1,30 @@
+# Docker reads .dockerignore from the BUILD CONTEXT root, not the repo root. This service
+# builds with `context: src/AiObservatory.Web` (see docker-compose.yml), so the repo-root
+# .dockerignore — which does exclude **/node_modules — is never consulted for this image.
+# Without this file `COPY . .` copies the host's node_modules straight over the clean
+# `npm ci` from the layer above, replacing Linux binaries with Windows ones. Vite then
+# loads a mismatched rolldown native binding and the build dies with
+# `value "builtin:vite-wasm-fallback" does not match any variant of enum
+# BindingBuiltinPluginName`.
+#
+# It only bites locally: CI builds from a clean checkout with no node_modules on disk,
+# so "Frontend (UI)" stays green while `docker compose build web` fails.
+node_modules
+
+# Build output — stale, and regenerated inside the image anyway.
+dist
+
+# Local secrets only — the same three patterns the repo-root .dockerignore uses, kept
+# deliberately narrow. A blanket `.env.*` would also drop a committed `.env.production`,
+# which Vite reads at build time; the Dockerfile already neutralises that file by blanking
+# the VITE_* vars on the build command, and process env beats a .env file in Vite. Dropping
+# it here as well would silently discard any non-VITE_ var someone later expects to be baked in.
+.env
+.env.local
+.env.*.local
+
+# Local noise that has no business in a build context.
+.vite
+coverage
+*.log
+.DS_Store

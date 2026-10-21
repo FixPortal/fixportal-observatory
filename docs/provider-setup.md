@@ -1,0 +1,151 @@
+# Provider setup
+
+> Setup guide for maintainers configuring acquisition sources as of 2026-08-25. Costs are USD unless a billed export retains its native currency.
+
+Configure only sources you can verify. A missing credential leaves a source visible as not configured; it does not turn a missing value into zero. Local telemetry is best-effort, machine-local subscription/notional evidence, never an invoice.
+
+## Setup order
+
+1. Choose only verifiable lanes from the matrix; avoid overlapping local and remote coverage for the same activity.
+2. Provision the required upstream access and settings through your secret store.
+3. Run the relevant API, Ingest worker, or local producer.
+4. Check `/api/sources/status` for configured, fresh, or unavailable truth before relying on values.
+
+## Dashboard sources
+
+Provider polling sources start in the immediate loop and then run every 60 minutes by default; set `Ingest__PollingIntervalMinutes` to change that interval. Pricing refreshes at startup when due, then daily. Local producers are user-scheduled; this guide recommends every 15 minutes.
+
+| Source ID / display name | What it provides | Required access or setting | Scope and cost basis | Cadence | Official/setup link | When absent or unavailable |
+| --- | --- | --- | --- | --- | --- | --- |
+| `anthropic-usage-api` — Messages usage | API token activity | `ANTHROPIC_BILLING_KEY`: organization Admin API key | API / list-price estimate | Startup/immediate loop, then default 60m | [Usage and Cost API](https://platform.claude.com/docs/en/manage-claude/usage-cost-api) | Not configured; unavailable to individual accounts and Claude Platform on AWS |
+| `anthropic-cost-report` — Cost report | Billed API and non-token cost evidence | Same Admin API key | API / billed | Startup/immediate loop, then default 60m | [Usage and Cost API](https://platform.claude.com/docs/en/manage-claude/usage-cost-api) | Not configured; unavailable where the Admin API is unavailable |
+| `claude-code-usage-api` — Claude Code usage | Daily Claude Code activity and provider estimates where supplied | `ANTHROPIC_BILLING_KEY` plus `CLAUDE_CODE_USAGE_ENABLED=true`; organization must have Admin API access | API or subscription / provider estimated or none | Startup/immediate loop, then default 60m | [Claude Code Analytics API](https://platform.claude.com/docs/en/manage-claude/claude-code-analytics-api) | Disabled by default; unavailable to individual accounts and Claude Platform on AWS. Claude Enterprise uses its separate Enterprise Analytics API/key, not this adapter |
+| `claude-local` — Claude local | Transcript-derived token snapshots | Local files plus `OBSERVATORY_LOCAL_SOURCES`, `OBSERVATORY_URL`, and `OBSERVATORY_API_KEY` | Subscription / notional | User-scheduled; recommend every 15m | [Local producers](../clients/README.md) | Not configured on that machine |
+| `claude-pricing` — Claude pricing | Refreshed public catalog | No credential | API catalog / list-price estimate input | Startup when due, then daily | [Claude pricing](https://platform.claude.com/docs/en/about-claude/pricing.md) | Bundled/last-known-good catalog remains; unknown dimensions stay null |
+| `copilot-org-report` — Organization report | `organization-28-day/latest` engagement report descriptor and facts, not token or money rows | `GITHUB_TOKEN` and `COPILOT_ORG`; classic PAT `read:org`, fine-grained `Organization Copilot metrics` read | Subscription / none | Startup/immediate loop, then default 60m | [Copilot report](https://docs.github.com/en/rest/copilot/copilot-usage-metrics?apiVersion=2026-03-10) | Not configured; no fabricated token/cost rows |
+| `copilot-local` — Copilot local | Session token snapshots | Local files plus local producer settings | Subscription / notional | User-scheduled; recommend every 15m | [Local producers](../clients/README.md) | Not configured on that machine |
+| `google-cloud-billing-export` — Cloud Billing export | Billed cloud-spend evidence with service, SKU, credits, invoice month, and corrections | `GOOGLE_CLOUD_PROJECT_ID` and `GOOGLE_BILLING_EXPORT_TABLE` together; Standard/Detailed export table partitioned by ingestion time (every scan filters on `_PARTITIONDATE`, so a target that does not expose that column, such as a view that omits it or a table partitioned on a column, fails every poll); ADC with BigQuery Job User on execution project and BigQuery Data Viewer on the export table. Optional `GOOGLE_BILLING_EXPORT_MAX_BYTES_BILLED` (default 1073741824, 1 GiB) caps bytes billed per query job — a job over the cap fails uncharged and the cycle reports the failure — and optional `GOOGLE_BILLING_EXPORT_LOCATION` (for example `EU`) pins the job region to the dataset's | API / billed | Startup/immediate loop, then default 60m; each cycle runs two billed query jobs | [Export setup](https://docs.cloud.google.com/billing/docs/how-to/export-data-bigquery-setup) | Not configured; export enablement needs separate billing/project privileges and queries incur charges |
+| `google-cloud-catalog` — Cloud catalog | Potential Google list-price catalog | `GOOGLE_CLOUD_CATALOG_API_KEY` and `GOOGLE_CLOUD_CATALOG_SERVICE_ID`; Cloud Billing API enabled | API catalog / list-price estimate input | No fetch occurs now: marked not configured during startup/daily pricing checks until verified exact SKU mappings ship | [Catalog API](https://docs.cloud.google.com/billing/v1/how-tos/catalog-api) | Known unavailable: production has zero verified exact SKU mappings, so credentials alone do not enable estimates |
+| `gemini-review-local` — Gemini review | Token snapshots from API-key-isolated adversarial review sessions | Local files plus local producer settings | API / list-price estimate | User-scheduled; recommend every 15m | [Local producers](../clients/README.md) | Only `gem-review-*` sessions are included; other Gemini auth history is not inferred |
+| `gemini-developer-api-pricing` — Gemini API pricing | Bundled public Gemini Developer API rates | No credential | API catalog / list-price estimate input | Loaded at startup | [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing) | Exact model, tier, and context band required |
+| `antigravity-local` — Antigravity local | Conversation token snapshots | Local files plus local producer settings | Subscription / notional | User-scheduled; recommend every 15m | [Local producers](../clients/README.md) | Missing transcript/model evidence remains unreported |
+| `openai-usage-api` — Usage API | API token activity | `OPENAI_ADMIN_KEY`: organization Admin key | API / list-price estimate | Startup/immediate loop, then default 60m | [Usage and Costs](https://developers.openai.com/api/reference/python/resources/admin/subresources/organization/subresources/usage) | Not configured |
+| `openai-costs-api` — Costs API | Financial API cost evidence | Same organization Admin key | API / billed | Startup/immediate loop, then default 60m | [Usage and Costs](https://developers.openai.com/api/reference/python/resources/admin/subresources/organization/subresources/usage) | Not configured; use Costs, not Usage, for financial reconciliation |
+| `codex-local` — Codex local | Session token snapshots | Local files plus local producer settings | Subscription / notional | User-scheduled; recommend every 15m | [Local producers](../clients/README.md) | Not configured on that machine |
+| `openai-pricing` — OpenAI pricing | Refreshed public catalog | No credential | API catalog / list-price estimate input | Startup when due, then daily | [OpenAI pricing](https://developers.openai.com/api/docs/pricing.md) | Bundled/last-known-good catalog remains |
+| `kimi-local` — Kimi local | Session token snapshots | Local files plus local producer settings | Subscription / notional | User-scheduled; recommend every 15m | [Local producers](../clients/README.md) | Not configured on that machine |
+| `kimi-pricing` — Kimi pricing | Refreshed public catalog | No credential | API catalog / list-price estimate input | Dormant by default (not configured); daily only when `PRICING_RETIRED_SOURCES_ENABLED=true` | [Kimi documentation](https://platform.kimi.ai/docs/llms.txt) | Last stored catalog keeps pricing history |
+| `grok-local` — Grok local | Session token and cost snapshots | Local files plus local producer settings | Subscription / provider-estimated | User-scheduled; recommend every 15m | [Local producers](../clients/README.md) | Not configured on that machine |
+| `xai-pricing` — xAI pricing | Refreshed public catalog | No credential | API catalog / list-price estimate input | Dormant by default (not configured); daily only when `PRICING_RETIRED_SOURCES_ENABLED=true` | [xAI pricing](https://docs.x.ai/developers/pricing.md) | Last stored catalog keeps pricing history |
+| `pi-local` — PI local | Meta turn usage and charged cost | Local files plus local producer settings | Subscription / provider-estimated | User-scheduled; recommend every 15m | [Local producers](../clients/README.md) | Not configured on that machine |
+| `meta-openrouter-pricing` — OpenRouter pricing | Refreshed public catalog | No credential | API catalog / list-price estimate input | Dormant by default (not configured); daily only when `PRICING_RETIRED_SOURCES_ENABLED=true` | [OpenRouter models](https://openrouter.ai/api/v1/models) | Last stored catalog keeps pricing history |
+| `zai-pricing` — z.AI pricing | Bundled public list-price catalog (no fetcher, no source status row) | No credential; interactive via Codex; panel via review wrappers | API catalog / list-price estimate input | Loaded at startup | [z.AI pricing](https://docs.z.ai/guides/overview/pricing) | Exact model required; unknown models stay unpriced |
+| `deepseek-pricing` — DeepSeek pricing | Bundled public list-price catalog (no fetcher, no source status row) | No credential; interactive via Codex; panel via review wrappers | API catalog / list-price estimate input | Loaded at startup | [DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing) | Exact model required; always priced at the standard (peak) tier, so the estimate is an upper bound for token charges only (Search/Fetch calls from Codex bill per request from 2026-11-01 and are not in token telemetry) (off-peak and Chinese public holidays are half rate) |
+| `portal-spend-feed` — Portal spend feed | Health of the tax portal's expense feed: counts of expenses it skipped, by reason code | Admin API key on `POST /api/spend/feed-status` | Health only; no usage or cost rows | Expected daily; stale after twice that | [API summary](../README.md) | The tax portal posts one report per feed cycle; until it has run once after deploy the source stays unreported. Skips report as unavailable (the daily digest alerts while any persist); silence reads stale and never alerts. Expense ids are used for counting only and are not stored |
+| `sweep-placement@<machine>` — Sweep placement | Count of local sessions the sweep could not attribute to a provider, by tool and model | Same key as the sweep (`POST /api/sources/sweep-status`) | Health only; no usage or cost rows | Every sweep run; stale after twice the daily interval | [Local producers](../clients/README.md) | Unplaced sessions are not posted, so their spend is missing until the model is mapped; the source reads unavailable and the daily digest alerts until a sweep places everything |
+
+`OPENAI_ADMIN_KEY` enables both OpenAI acquisition lanes. OpenAI documents different Usage and Costs reconciliation semantics; Costs is the financial source. Claude Admin API key choices are documented in [Anthropic analytics guidance](https://platform.claude.com/docs/en/manage-claude/analytics-api).
+
+> [!IMPORTANT]
+> `anthropic-usage-api`, `anthropic-cost-report`, and `claude-code-usage-api` are shipped adapters for Claude Platform organization Admin APIs and use `ANTHROPIC_BILLING_KEY`. Claude Enterprise Analytics uses a different API/key and is not supported by these adapters.
+
+### xAI and Meta have no usage API lane
+
+Neither provider is reachable here as an API. xAI publishes API rates, but the API channel
+needs an `XAI_API_KEY` this estate does not hold, so usage arrives only from the Grok CLI.
+Meta's own API is likewise unreachable; its models are served through OpenRouter by the PI
+harness, which is why the model ids carry OpenRouter's `meta/` prefix and the pricing source
+reads OpenRouter's catalogue rather than Meta's docs — OpenRouter is what actually bills.
+
+Both CLIs record the cost their vendor charged, so their rows post a measured cost rather
+than a notional one and are not re-estimated from the catalogs. The catalogs still gate what
+can be priced from tokens alone: `grok-4.6-build`, the model the Grok CLI reports for most of
+its work, appears on no published xAI price table, so a token-only event naming it stays
+unpriced instead of being charged at `grok-4.6`'s rates. Measured on 2026-09-18, that
+guard is load-bearing rather than cautious: applying `grok-4.6`'s published rates to a day of
+recorded `grok-4.6-build` tokens overstates the cost the CLI actually recorded by about
+three-quarters again, and solving three such days for a single rate triple returns negative
+rates, so no substitute rate is recoverable from the local evidence either.
+
+### Optional Key Vault references
+
+The default FixPortal Bicep deployment omits `ANTHROPIC_BILLING_KEY` and `COPILOT_ORG` so an unconfigured provider does not create a broken Key Vault reference. After creating the corresponding Key Vault secret, enable either setting by passing its secret name:
+
+```powershell
+az deployment group create -g fpaiobs-rg -f infra/main.bicep -p anthropicBillingSecretName=anthropic-billing-key
+```
+
+```powershell
+az deployment group create -g fpaiobs-rg -f infra/main.bicep -p copilotOrgSecretName=copilot-org
+```
+
+To enable both, pass both names in the same deployment because omitted optional parameters return to their empty defaults:
+
+```powershell
+az deployment group create -g fpaiobs-rg -f infra/main.bicep -p anthropicBillingSecretName=anthropic-billing-key copilotOrgSecretName=copilot-org
+```
+
+Google export rows preserve native export currency and credits. `export_time` advances when late corrections arrive, so affected stable groups are reaggregated. This is billed evidence, not token telemetry or an invoice clone; GBP display follows the existing historical FX path.
+
+The current source scan has a usage-date floor of 31 days before `changes_since`.
+Corrections for older usage cannot refresh stored observations: the companion
+query detects affected keys and the worker logs a warning; it does not backfill
+them. Check those warnings before treating the export as reconciled.
+
+The export table the queries were written against is partitioned by ingestion time, and all
+three scans filter on `_PARTITIONDATE` unconditionally; startup validates only the
+`project.dataset.table` shape, not the target's partitioning. UNVERIFIED: whether a view can
+expose `_PARTITIONDATE` (refuted if `SELECT _PARTITIONDATE FROM <view> LIMIT 1` succeeds), so
+point the lane at the export table itself.
+
+The scanned window widens after an outage: it reaches back to the last successful poll and
+any pending date, then 32 days further. A job over `GOOGLE_BILLING_EXPORT_MAX_BYTES_BILLED`
+fails uncharged and the lane stays failed until the cap is raised or the window shrinks, so
+raise the cap before a long outage on a large export.
+
+**UNVERIFIED: live BigQuery query cost (review finding M24).**
+SQL-shape tests do not establish bytes billed. Before enabling this lane, dry-run both
+queries from `GoogleBillingExportClient.cs` with representative parameters. Record bytes
+processed and check recent, boundary-day, and older corrected usage against source
+totals. A missing pruning benefit or omitted/mismatched billing group refutes the
+qualification; do not claim full historical correction coverage with this scan floor.
+
+> [!WARNING]
+> Exclude `claude` from `OBSERVATORY_LOCAL_SOURCES` when `claude-code-usage-api` covers the same account/activity. The independent lanes do not cross-deduplicate.
+
+## Compatibility, GitHub, and manual sources
+
+| Source ID | What it provides | Required access | Cadence | Meaning when absent |
+| --- | --- | --- | --- | --- |
+| `demo-seed` | Synthetic local demonstration data | Development seed endpoint | On submission; only when the relevant tables are empty | No sample data; never treated as provider billing |
+| `github-activity-api` | Repository activity acquisition | `GITHUB_TOKEN` plus **either** `GITHUB_ACTIVITY_ORG` (every non-archived repo in that org, discovered each cycle, so a new repo needs no config change) **or** `Ingest__GitHubRepoAllowlist` as an explicit override — set the allowlist to pin a subset, or to reach repos outside the org, which discovery cannot. Token needs `contents:read`, `pull-requests:read`, `actions:read`, and metadata read to enumerate the org | Startup/immediate loop, then default 60m | Not configured; separate from Copilot metrics. A failed enumeration reports the source unavailable rather than polling nothing |
+| `github-billing-api` | GitHub billed-ledger observations | `GITHUB_TOKEN` plus `GITHUB_BILLING_ORG`; fine-grained `Administration` **organization** read (not `Plan`, which is user-scoped, and not the repository-level `Administration` of the same name) or classic `admin:org` billing access | API-worker startup, then daily UTC | Not configured; not a token source |
+| `legacy-api` | Historical usage migrated without trusted provenance | None | Existing rows retained; no polling; new provenance-free writes rejected | Retained as legacy/unknown rather than guessed |
+| `legacy-spend` | Older spend records without trusted provenance | None | Retained; no polling | Retained as legacy/unknown rather than guessed |
+| `manual-ledger` | User-entered spend ledger evidence | Dashboard/API authorization | On submission | Manual billed record only when entered |
+
+BenchLM is discovery/cross-check evidence only: it is never a runtime source, authority, fallback, or prerequisite.
+
+## Local telemetry safeguards
+
+| Tool | Local path and fact | Safeguard |
+| --- | --- | --- |
+| Codex | `~/.codex/sessions/**/rollout-*.jsonl`; final cumulative `token_count` | Stable cumulative day/model snapshots |
+| Copilot | `~/.copilot/session-state/**/events.jsonl`; final `session.shutdown` per-model totals | Final cumulative totals win |
+| Claude | `~/.claude/projects/**/*.jsonl`; assistant usage | Global `message.id` deduplication retains the richest copy |
+| Kimi | `~/.kimi-code/sessions/**/wire.jsonl`; `usage.record` rows only | Mirrored `step.end` rows are ignored; turn and session scopes both count |
+| Grok | `~/.grok/sessions/**/usage.json`; per-turn `modelUsage` | The session block mirrors the turns and is ignored; input is converted to exclude cached reads, and reasoning already sits inside output |
+| PI | `~/.pi/agent/sessions/**/*.jsonl`; assistant `usage` on `meta/` models | Other vendors PI drives arrive through their own lanes and are skipped here |
+
+The sweeper uses source-scoped keys, server inventory, and zero corrections for removed/disabled snapshots. Its local state is a parse cache, not the system of record. See [clients/README.md](../clients/README.md) for home overrides and scheduling.
+
+## Alert channels
+
+Budget alerts and the daily source-health digest both deliver through the same two channels. Neither is configured by default, and **a stored recipient is not a channel** — a deployment carrying only `alertEmailTo` sends nothing, because there is no transport to send it through. The worker states which channels can actually deliver in its startup line (`alert channels: ...`); `NO DELIVERABLE CHANNEL` there means every alert this instance raises will be recorded and never seen.
+
+| Channel | Recipient | Transport | Notes |
+| --- | --- | --- | --- |
+| Email | `alertEmailTo` via `PUT /api/notification-settings` | `BUDGET_ALERT_SMTP_HOST` (default `smtp.office365.com`), `BUDGET_ALERT_SMTP_PORT` (default 587), `BUDGET_ALERT_SMTP_USER`, `BUDGET_ALERT_SMTP_PASS` | `BUDGET_ALERT_EMAIL_FROM` overrides the sender, which otherwise defaults to the SMTP user. An unset user disables the channel: the empty sender fails to parse and the channel reports itself unconfigured |
+| Slack | `slackWebhookUrl` via `PUT /api/notification-settings`; must start with `https://hooks.slack.com/` | None beyond the webhook | Set `SLACK_WEBHOOK_PROTECTION_KEY` **before** storing the URL so it is encrypted at rest; without it the webhook is stored as plaintext. Losing the key costs only a re-entry of the webhook |
+
+Either channel alone is enough. Where both are configured, one success is enough to close a budget-alert claim, and Slack delivery is fenced to once per claim regardless of how often email retries.

@@ -1,0 +1,215 @@
+"""Regression tests for assert_gate_coverage.py, one per checker fix.
+
+Fixture-level tests drive check_file over a written workflow, so the assertion and
+the line grammar it parses cannot drift apart; unit tests pin the small helpers
+directly. check_file reports a breach by sys.exit, which pytest sees as SystemExit.
+"""
+import textwrap
+
+import pytest
+
+import assert_gate_coverage as gate
+
+
+WORKFLOW = """\
+name: CI
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo build
+  ci-gate:
+    if: always()
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any upstream job did not succeed
+        if: {condition}
+        {continue_on_error}
+        run: |
+          echo "Upstream results"
+          {command}
+"""
+
+
+def write_workflow(tmp_path, condition, continue_on_error=None, command="exit 1"):
+    body = WORKFLOW.format(
+        condition=condition,
+        continue_on_error=continue_on_error or "",
+        command=command,
+    )
+    path = tmp_path / "ci.yml"
+    path.write_text(textwrap.dedent(body), encoding="utf-8")
+    return str(path)
+
+
+def check(path):
+    return gate.check_file(path, "ci-gate", set(), set())
+
+
+def test_correct_gate_passes(tmp_path):
+    condition = "always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))"
+    assert check(write_workflow(tmp_path, condition)) is True
+
+
+# M33: a failure-only condition is skipped when an upstream job is cancelled, so the
+# required check reports green over a dependency that did not pass.
+def test_failure_only_condition_is_refused(tmp_path):
+    with pytest.raises(SystemExit, match="build:cancelled"):
+        check(write_workflow(tmp_path, "always() && contains(needs.*.result, 'failure')"))
+
+
+# The converse of M33: a cancelled-only condition is false when an upstream job
+# FAILS, so the gate step is skipped and the required check reports success over a
+# failed dependency.
+def test_cancelled_only_condition_is_refused(tmp_path):
+    with pytest.raises(SystemExit, match="build:failure"):
+        check(write_workflow(tmp_path, "always() && contains(needs.*.result, 'cancelled')"))
+
+
+# An outcome token that is not bound to a needs result reacts to nothing upstream:
+# `github.event.action == 'cancelled'` mentions 'cancelled' but the gate step still
+# skips when a dependency is cancelled, so it must not satisfy either arm.
+def test_unbound_outcome_token_is_refused(tmp_path):
+    with pytest.raises(SystemExit, match="has no step whose `if:` references"):
+        check(
+            write_workflow(
+                tmp_path,
+                "always() && (contains(needs.*.result, 'failure') || github.event.action == 'cancelled')",
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # An inequality against success is true for failure and cancelled alike.
+        "needs.build.result != 'success'",
+        # The bracket spellings name the same reference GitHub resolves by string key.
+        "needs['build'].result != 'success'",
+        'needs["build"].result != "success"',
+    ],
+)
+def test_cancelled_aware_spellings_pass(tmp_path, condition):
+    assert check(write_workflow(tmp_path, f"always() && ({condition})")) is True
+
+
+def test_bracket_only_gate_is_not_read_as_unreferenced(tmp_path):
+    # Before NEEDS_RESULT learnt the index spelling this exited with "has no step
+    # whose `if:` references a needs.<job>.result" -- a false RED on a correct gate.
+    condition = "always() && (needs['build'].result == 'failure' || needs['build'].result == 'cancelled')"
+    assert check(write_workflow(tmp_path, condition)) is True
+
+
+# M32: YAML lets a plain scalar begin on the line after its key, so the split form
+# below IS `continue-on-error: true`. Reading only the header line vouched for the
+# step as not tolerant -- fail-open on a neutered gate.
+def test_split_continue_on_error_is_still_tolerant(tmp_path):
+    with pytest.raises(SystemExit, match="continue-on-error"):
+        condition = "always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))"
+        check(write_workflow(tmp_path, condition, "continue-on-error:\n          true"))
+
+
+def test_block_scalar_continue_on_error_is_still_tolerant(tmp_path):
+    with pytest.raises(SystemExit, match="continue-on-error"):
+        condition = "always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))"
+        check(write_workflow(tmp_path, condition, "continue-on-error: >\n          true"))
+
+
+def test_block_scalar_false_continue_on_error_passes(tmp_path):
+    # The header-only read compared the literal `>` against ("false", "") and refused
+    # even a false value -- a false RED on a step that genuinely can fail its job.
+    condition = "always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))"
+    assert check(write_workflow(tmp_path, condition, "continue-on-error: >\n          false")) is True
+
+
+# Capitalised False is the same YAML 1.1 boolean as false; reading it as truthy was
+# a false RED on a correct gate.
+def test_capitalised_false_continue_on_error_passes(tmp_path):
+    condition = "always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))"
+    assert check(write_workflow(tmp_path, condition, "continue-on-error: False")) is True
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("False", "false"),
+        ("FALSE", "false"),
+        ("${{ Always() }}", "always()"),
+        ("'always()'", "always()"),
+        ("always() && x", "always()&&x"),
+    ],
+)
+def test_normalise_condition_folds_case(value, expected):
+    assert gate.normalise_condition(value) == expected
+
+
+# A trailing redirection does not change whether the command fails; the compound
+# forms used to fullmatch-reject it, a false RED on the house one-liner.
+@pytest.mark.parametrize(
+    "body",
+    [
+        'echo "failed"; exit 1 >&2',
+        'echo "failed" && exit 1 2>/dev/null',
+        "exit 1 >&2",
+    ],
+)
+def test_failing_forms_accept_trailing_redirection(body):
+    assert gate.ends_non_zero(body)
+
+
+# The `if <test>; then exit 1; fi` spellings EXIT ZERO when their test fails -- the same
+# fail-open as the `||`/`&&` guards the checker already refused. They were carried as a
+# stated residual until the estate was measured and no gate used them. Pinned here as a
+# refusal rather than deleted: a silent deletion is indistinguishable from a test
+# dropped for being inconvenient.
+@pytest.mark.parametrize(
+    "body",
+    [
+        'if [ -z "$x" ]; then exit 1 >&2; fi',
+        'if [ -z "$x" ]; then echo "missing"; exit 1 >&2; fi',
+    ],
+)
+def test_a_test_guarding_the_exit_is_refused(body):
+    assert not gate.ends_non_zero(body)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "exit 1 | true",
+        "false || true",
+        'echo "then exit 1"',
+        "true",
+    ],
+)
+def test_non_failing_forms_stay_rejected(body):
+    assert not gate.ends_non_zero(body)
+
+
+def test_gate_with_swallowed_failure_is_refused(tmp_path):
+    condition = "always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))"
+    with pytest.raises(SystemExit, match="not a recognised failing form"):
+        check(write_workflow(tmp_path, condition, command="exit 1 || true"))
+
+
+def test_missing_explicit_status_override_is_refused(tmp_path):
+    # Upstream outcomes and the aggregate job's current status are independent.
+    # The house contract requires an override for current-job cancellation.
+    condition = "contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')"
+    with pytest.raises(SystemExit, match="explicit status override"):
+        check(write_workflow(tmp_path, condition))
+
+
+# N01 F6: the closed extension set missed gate languages, so a script in one of them was
+# never required to be HIGH tier.
+@pytest.mark.parametrize("name", ["gate.psm1", "gate.cjs", "gate.ts", "gate.bash", "Gate.PSM1"])
+def test_gate_script_recognises_extension(name):
+    match = gate.GATE_SCRIPT.search(f"run: ./scripts/{name}")
+    assert match is not None and match.group(1) == f"scripts/{name}"
+
+
+@pytest.mark.parametrize("name", ["gate.tsx", "gate.jsx", "gate.psm1x"])
+def test_gate_script_still_rejects_lookalike_extension(name):
+    assert gate.GATE_SCRIPT.search(f"run: ./scripts/{name}") is None

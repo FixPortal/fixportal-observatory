@@ -1,0 +1,192 @@
+{
+  "schema": 1,
+  "canonical": {
+    "repository": "FixPortal/fixportal-agents-skills",
+    "commit": "39b1670411f25b531bca3e2e4cb7c468935af475",
+    "syncedAt": "2026-10-21"
+  },
+  "assets": [
+    {
+      "path": ".github/ai-smells/detect.ps1",
+      "sha256": "15ee9ad925191d633e649e96cfae2edbd929bba8c9f3b96c9d03600f7ec58b67",
+      "verbatim": true,
+      "commit": "a7ca45665b926525f7073068c533e28a3a232cb1",
+      "syncedAt": "2026-10-20"
+    },
+    {
+      "path": ".github/ai-smells/detectors/rules/S10.yml",
+      "sha256": "abad2739cad36cf2194927e52ec21e6403bfa5e6764d3f9b818586f01d0122ab",
+      "verbatim": true,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": ".github/ai-smells/detectors/rules/S11.yml",
+      "sha256": "14fc3aae45d339f363fa7147517c7e8fd0bd6969fd6383df6e4bdc91701d5c2a",
+      "verbatim": true,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": ".github/ai-smells/detectors/rules/S13-py.yml",
+      "sha256": "597586024e453f527265884c9a1b5c46f3c10f1a700028c1fcbcffa5e03b69e9",
+      "verbatim": true,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": ".github/ai-smells/detectors/rules/S13-ts.yml",
+      "sha256": "16f921ffc8904fb726880047299291abd49a489b5ee293cb9bee07fc1e610395",
+      "verbatim": true,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": ".github/ai-smells/detectors/rules/S13.yml",
+      "sha256": "df300fe33c88c5eb890e19f7989f02665a3031f336f486455bf97c294ba79df3",
+      "verbatim": true,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": ".github/ai-smells/detectors/rules/S20.yml",
+      "sha256": "48b2e17bdf891153404c08050f02ea063338e98dc97a0933fc81b0811b961443",
+      "verbatim": true,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": ".github/ai-smells/detectors/rules/S21.yml",
+      "sha256": "914d9e7c3ef52cc5931004420d50036128b62781ca0be8d0a14f96ebe395b5ff",
+      "verbatim": true,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": ".github/ai-smells/detectors/rules/S26.yml",
+      "sha256": "8ab1e8650b7af6eaa18758e89f2dadb720f3329c991a948b53e138682ef9d045",
+      "verbatim": true,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": ".github/ai-smells/detectors/rules/S39.yml",
+      "sha256": "b27a5f59ddbcacf44057f2d2bb1a6a080ff0ec5d5933ea66635c44a960cfbf92",
+      "verbatim": true,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": ".github/ai-smells/detectors/rules/S47.yml",
+      "sha256": "5493d50782e79c25ea8b9b94ebabd3d3deec9aa13166ea486e87d99b7a64c23a",
+      "verbatim": true,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": ".github/ai-smells/detectors/scripts/comment_density.py",
+      "sha256": "1ca4c01f27ab6526d1beb8aafb7a48c49298ba9e4fa9448fca2f00538249a535",
+      "verbatim": true,
+      "commit": "a7ca45665b926525f7073068c533e28a3a232cb1",
+      "syncedAt": "2026-10-20"
+    },
+    {
+      "path": ".github/ai-smells/detectors/scripts/jscpd.json",
+      "sha256": "1c73fb7eae9595c92cb2f7661e3422340406f157c840d3e2720c4bbf96af7f7a",
+      "verbatim": true,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": ".github/ai-smells/detectors/scripts/registry_check.py",
+      "sha256": "e1b879d9b29835fe0fc613338af7d9d87497cce258507d8b3c090289b9bbf043",
+      "verbatim": true,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": ".github/ai-smells/detectors/scripts/size_outliers.py",
+      "sha256": "dbcfeddb6971509ee426c6d91d72b1c9ad8742caffe83003308c73c8b38938de",
+      "verbatim": true,
+      "commit": "a7ca45665b926525f7073068c533e28a3a232cb1",
+      "syncedAt": "2026-10-20"
+    },
+    {
+      "path": ".github/ai-smells/post-smell-threads.ps1",
+      "sha256": "d355f70a3e510cf25d856c6dd455e22ccf6c8ac93fc79b8f1d3b1d971665ba46",
+      "verbatim": true,
+      "commit": "39b1670411f25b531bca3e2e4cb7c468935af475",
+      "syncedAt": "2026-10-21"
+    },
+    {
+      "path": ".github/ai-smells/pr-detect.ps1",
+      "sha256": "96cc5963ce9aac99f32a25357577470b13ed802ee193625c89fe4e99fce8d1f4",
+      "verbatim": true,
+      "commit": "0590781ca8b0d41ab5051df45e56288493d021f9",
+      "syncedAt": "2026-10-13"
+    },
+    {
+      "path": ".github/ai-smells/pr-scope.ps1",
+      "sha256": "5222ca77dba6a5e388f89e0d271b3acd4f9a33d6a08106de9df1167f15d8643c",
+      "verbatim": true,
+      "commit": "a7ca45665b926525f7073068c533e28a3a232cb1",
+      "syncedAt": "2026-10-20"
+    },
+    {
+      "path": ".github/ai-smells/smells.json",
+      "sha256": "a7c2c9735efe7be7c96c291b87b0211575c3a78633ec9657bdb998785c907ca9",
+      "verbatim": true,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": ".github/scripts/assert_canonical_assets.py",
+      "sha256": "e6491c2a54d45b57656cfc832a3e1940529c97e3735aa4831e38105472e99f1e",
+      "verbatim": true,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": ".github/scripts/assert_gate_coverage.py",
+      "sha256": "192ca655c5126513965cbbfa97f50cfc0c84b055a2dbf886d77bc0b54caaa5ef",
+      "verbatim": true,
+      "commit": "a7ca45665b926525f7073068c533e28a3a232cb1",
+      "syncedAt": "2026-10-20"
+    },
+    {
+      "path": ".github/scripts/assert_workflow_hygiene.py",
+      "sha256": "13fef6c40e16fa189d0b7f6fa2805da26dc3ba66f85b6ebd663a8eb868789d11",
+      "verbatim": true,
+      "commit": "a7ca45665b926525f7073068c533e28a3a232cb1",
+      "syncedAt": "2026-10-20"
+    },
+    {
+      "path": ".github/workflows/ai-smells.yml",
+      "sha256": "05d86d3aba444c358a37b7e1b5f55abaf58f56ef099d5c91a90254c12942515a",
+      "verbatim": false,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": ".github/workflows/review-policy-guard.yml",
+      "sha256": "fb00848a7c3f9ee0a74f388cc83f2e79621776fbbe7e4b6f2131a929fabc56da",
+      "verbatim": false,
+      "commit": "540c74515ab6d687b2fc4f58e43a59c35b848ee8",
+      "syncedAt": "2026-10-13"
+    },
+    {
+      "path": ".github/workflows/review-tier.yml",
+      "sha256": "c54b26304367f8b811d79ab23864995240145e8d5aa3c6c3e9339675eddda472",
+      "verbatim": false,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    },
+    {
+      "path": "scripts/summarize-stryker.ps1",
+      "sha256": "f8e5604562f101b863db00607db8663fd8cfdb0652b0bbffbe73393df6cdf592",
+      "verbatim": true,
+      "commit": "a87430ddc51e149a7d0e2c42eb61df67adb6e224",
+      "syncedAt": "2026-10-12"
+    }
+  ]
+}

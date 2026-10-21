@@ -1,0 +1,43 @@
+{
+  "runs": [
+    { "id": "a0", "reviewer": "zai", "model": "glm-5.3", "role": "reviewer", "repo": "example-app", "summary": null, "inputTokens": 0, "outputTokens": 0, "costUsd": 0.5, "reviewDurationMs": 0, "issuesRaised": 4, "issuesAccepted": 3, "costPerAcceptedFinding": null, "costUnknown": false, "chunkCount": null, "runId": "R0", "recordedAt": "2026-10-05T12:00:00Z" },
+    { "id": "a1", "reviewer": "zai", "model": "glm-5.3", "role": "reviewer", "repo": "example-app", "summary": null, "inputTokens": 0, "outputTokens": 0, "costUsd": 1, "reviewDurationMs": 0, "issuesRaised": 0, "issuesAccepted": 0, "costPerAcceptedFinding": null, "costUnknown": false, "chunkCount": null, "runId": "R1", "recordedAt": "2026-10-12T12:00:00Z" },
+    { "id": "a2", "reviewer": "zai", "model": "glm-5.3", "role": "reviewer", "repo": "example-app", "summary": null, "inputTokens": 0, "outputTokens": 0, "costUsd": 2, "reviewDurationMs": 0, "issuesRaised": 0, "issuesAccepted": 0, "costPerAcceptedFinding": null, "costUnknown": false, "chunkCount": null, "runId": "R2", "recordedAt": "2026-10-19T12:00:00Z" },
+    { "id": "b1", "reviewer": "openai", "model": "gpt-6-astra", "role": "reviewer", "repo": "example-app", "summary": null, "inputTokens": 0, "outputTokens": 0, "costUsd": 3, "reviewDurationMs": 0, "issuesRaised": 0, "issuesAccepted": 0, "costPerAcceptedFinding": null, "costUnknown": false, "chunkCount": null, "runId": "R1", "recordedAt": "2026-10-12T12:00:00Z" },
+    { "id": "b2", "reviewer": "openai", "model": "gpt-6-astra", "role": "reviewer", "repo": "example-app", "summary": null, "inputTokens": 0, "outputTokens": 0, "costUsd": 0, "reviewDurationMs": 0, "issuesRaised": 0, "issuesAccepted": 0, "costPerAcceptedFinding": null, "costUnknown": true, "chunkCount": null, "runId": "R2", "recordedAt": "2026-10-19T12:00:00Z" },
+    { "id": "c1", "reviewer": "anthropic", "model": "claude-sonnet-5-5+claude-opus-5-5", "role": "reviewer", "repo": "example-app", "summary": null, "inputTokens": 0, "outputTokens": 0, "costUsd": 4, "reviewDurationMs": 0, "issuesRaised": 0, "issuesAccepted": 0, "costPerAcceptedFinding": null, "costUnknown": false, "chunkCount": null, "runId": "R1", "recordedAt": "2026-10-12T12:00:00Z" },
+    { "id": "c2", "reviewer": "anthropic", "model": "claude-sonnet-5-5+claude-opus-5-5", "role": "reviewer", "repo": "example-app", "summary": null, "inputTokens": 0, "outputTokens": 0, "costUsd": 5, "reviewDurationMs": 0, "issuesRaised": 0, "issuesAccepted": 0, "costPerAcceptedFinding": null, "costUnknown": false, "chunkCount": null, "runId": "R2", "recordedAt": "2026-10-19T12:00:00Z" },
+    { "id": "d1", "reviewer": "deepseek", "model": "deepseek-v4", "role": "reviewer", "repo": "example-app", "summary": null, "inputTokens": 0, "outputTokens": 0, "costUsd": 2, "reviewDurationMs": 0, "issuesRaised": 0, "issuesAccepted": 0, "costPerAcceptedFinding": null, "costUnknown": false, "chunkCount": null, "runId": "R1", "recordedAt": "2026-10-12T12:00:00Z" },
+    { "id": "d2", "reviewer": "deepseek", "model": "deepseek-v4", "role": "reviewer", "repo": "example-app", "summary": null, "inputTokens": 0, "outputTokens": 0, "costUsd": 0, "reviewDurationMs": 0, "issuesRaised": 0, "issuesAccepted": 0, "costPerAcceptedFinding": null, "costUnknown": true, "chunkCount": null, "runId": "R2", "recordedAt": "2026-10-19T12:00:00Z" },
+    { "id": "j1", "reviewer": "anthropic", "model": "claude-opus-5-5", "role": "judge", "repo": "example-app", "summary": null, "inputTokens": 0, "outputTokens": 0, "costUsd": 9, "reviewDurationMs": 0, "issuesRaised": 0, "issuesAccepted": 0, "costPerAcceptedFinding": null, "costUnknown": false, "chunkCount": null, "runId": "R1", "recordedAt": "2026-10-12T12:00:00Z" }
+  ],
+  "findings": [
+    { "runId": "R1", "repo": "example-app", "chunkId": "single", "findingId": "F1", "severity": "high", "outcome": "accepted",
+      "raisedBy": [{ "reviewer": "zai", "model": "glm-5.3" }],
+      "assessments": [{ "reviewer": "openai", "model": "gpt-6-astra", "verdict": "agree" }, { "reviewer": "anthropic", "model": "claude-opus-5-5", "verdict": "agree" }] },
+    { "runId": "R1", "repo": "example-app", "chunkId": "single", "findingId": "F2", "severity": "medium", "outcome": "accepted",
+      "raisedBy": [{ "reviewer": "zai", "model": "glm-5.3" }, { "reviewer": "openai", "model": "gpt-6-astra" }],
+      "assessments": [{ "reviewer": "anthropic", "model": "claude-opus-5-5", "verdict": "agree" }] },
+    { "runId": "R1", "repo": "example-app", "chunkId": "single", "findingId": "F3", "severity": "low", "outcome": "refuted",
+      "raisedBy": [{ "reviewer": "openai", "model": "gpt-6-astra" }],
+      "assessments": [{ "reviewer": "zai", "model": "glm-5.3", "verdict": "false-positive" }] },
+    { "runId": "R1", "repo": "example-app", "chunkId": "single", "findingId": "F4", "severity": "low", "outcome": "accepted",
+      "raisedBy": [{ "reviewer": "deepseek", "model": "deepseek-v4" }],
+      "assessments": [] },
+    { "runId": "R2", "repo": "example-app", "chunkId": "single", "findingId": "F5", "severity": "low", "outcome": "accepted",
+      "raisedBy": [{ "reviewer": "deepseek", "model": "deepseek-v4" }],
+      "assessments": [] },
+    { "runId": "R2", "repo": "example-app", "chunkId": "single", "findingId": "F1", "severity": "high", "outcome": "accepted",
+      "raisedBy": [{ "reviewer": "anthropic", "model": "claude-opus-5-5" }],
+      "assessments": [] },
+    { "runId": "R2", "repo": "example-app", "chunkId": "single", "findingId": "F2", "severity": "medium", "outcome": "refuted",
+      "raisedBy": [{ "reviewer": "zai", "model": "glm-5.3" }],
+      "assessments": [{ "reviewer": "openai", "model": "gpt-6-astra", "verdict": "false-positive" }] },
+    { "runId": "R2", "repo": "example-app", "chunkId": "single", "findingId": "F3", "severity": "unknown", "outcome": "dropped",
+      "raisedBy": [{ "reviewer": "anthropic", "model": "claude-opus-5-5" }],
+      "assessments": [] },
+    { "runId": "R2", "repo": "example-app", "chunkId": "single", "findingId": "F4", "severity": "low", "outcome": "indeterminate",
+      "raisedBy": [{ "reviewer": "zai", "model": "glm-5.3" }],
+      "assessments": [] }
+  ]
+}

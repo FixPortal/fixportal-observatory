@@ -1,0 +1,117 @@
+version: 2
+
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/London
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      microsoft-extensions:
+        patterns:
+          - "Microsoft.Extensions.*"
+      aspnetcore:
+        patterns:
+          - "Microsoft.AspNetCore.*"
+      ef-core:
+        patterns:
+          - "Microsoft.EntityFrameworkCore*"
+      xunit:
+        patterns:
+          - "xunit*"
+          - "Xunit*"
+      testing:
+        patterns:
+          - "Microsoft.NET.Test.Sdk"
+          - "NSubstitute*"
+          - "AwesomeAssertions*"
+          - "Stryker*"
+      nodatime:
+        patterns:
+          - "NodaTime*"
+      serilog:
+        patterns:
+          - "Serilog*"
+      azure-sdk:
+        patterns:
+          - "Azure.*"
+    ignore:
+      # Microsoft.OpenApi is pinned only to force the transitive dependency to the
+      # patched 2.x (GHSA-v5pm-xwqc-g5wc) -- it is a security floor, not a version
+      # preference. The 3.x major made IOpenApiMediaType.Example read-only, but the
+      # .NET 10 SDK's Microsoft.AspNetCore.OpenApi XML-comment source generator still
+      # assigns it, so a 3.x bump fails the build with CS0200 in generated code that
+      # no source change here can fix. Stay on 2.x.
+      #
+      # Drop this when the ASP.NET Core OpenApi source generator targets
+      # Microsoft.OpenApi 3.x (a later .NET 10 SDK / ASP.NET Core bump).
+      - dependency-name: "Microsoft.OpenApi"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/London
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: /src/AiObservatory.Web
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/London
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      # vite, its plugins and vitest are ONE toolchain whose peer ranges gate each other, so a
+      # major that goes out on its own cannot install. This group therefore includes major, unlike
+      # every other group here.
+      vite-toolchain:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "vitest"
+          - "@vitest/*"
+        update-types:
+          - major
+          - minor
+          - patch
+      npm-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # TypeScript 7 is the Go compiler rewrite and ships with no public
+      # compiler API. typescript-eslint parses through that API, so it cannot
+      # support TS 7 and closed the request as not planned
+      # (typescript-eslint#12518); forcing the install past the peer range
+      # crashes eslint rather than merely warning. Microsoft expects the new
+      # API in TS 7.1.
+      #
+      # Unblock when BOTH hold: TS 7.1 ships the API, and typescript-eslint
+      # releases a `typescript` peer range admitting >= 7. The typescript-eslint
+      # bump that does so still arrives as its own PR, so the signal survives
+      # this ignore. Drop this entry then.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]

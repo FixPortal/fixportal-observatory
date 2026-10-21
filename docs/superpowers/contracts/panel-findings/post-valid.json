@@ -1,0 +1,47 @@
+{
+  "runId": "20261019T101500Z",
+  "repo": "example-app",
+  "findings": [
+    {
+      "chunkId": "C1",
+      "findingId": "F1",
+      "severity": "high",
+      "outcome": "accepted",
+      "raisedBy": [{ "reviewer": "openai", "model": "gpt-6-astra" }],
+      "assessments": [
+        { "reviewer": "zai", "model": "glm-5.3", "verdict": "agree" },
+        { "reviewer": "anthropic", "model": "claude-opus-5-5", "verdict": "agree" }
+      ]
+    },
+    {
+      "chunkId": "C1",
+      "findingId": "F2",
+      "severity": "medium",
+      "outcome": "accepted",
+      "raisedBy": [
+        { "reviewer": "anthropic", "model": "claude-opus-5-5" },
+        { "reviewer": "zai", "model": "glm-5.3" }
+      ],
+      "assessments": [{ "reviewer": "openai", "model": "gpt-6-astra", "verdict": "agree" }]
+    },
+    {
+      "chunkId": "C1",
+      "findingId": "F3",
+      "severity": "low",
+      "outcome": "refuted",
+      "raisedBy": [{ "reviewer": "zai", "model": "glm-5.3" }],
+      "assessments": [
+        { "reviewer": "openai", "model": "gpt-6-astra", "verdict": "false-positive" },
+        { "reviewer": "anthropic", "model": "claude-opus-5-5", "verdict": "needs-evidence" }
+      ]
+    },
+    {
+      "chunkId": "C2",
+      "findingId": "F1",
+      "severity": "unknown",
+      "outcome": "dropped",
+      "raisedBy": [{ "reviewer": "anthropic", "model": "claude-sonnet-5-5+claude-opus-5-5" }],
+      "assessments": []
+    }
+  ]
+}

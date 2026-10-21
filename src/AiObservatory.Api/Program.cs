@@ -1,0 +1,428 @@
+using System.Threading.RateLimiting;
+using AiObservatory.Api;
+using AiObservatory.Api.Endpoints;
+using AiObservatory.Api.Routing;
+using AiObservatory.Api.Services;
+using AiObservatory.Api.Services.GitHub;
+using AiObservatory.Api.Services.Intelligence;
+using AiObservatory.Api.Services.Suggestions;
+using AiObservatory.Data;
+using AiObservatory.Data.Entities;
+using AiObservatory.Data.Pricing;
+using AiObservatory.Data.Spend;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Cors.Infrastructure;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Microsoft.Identity.Web;
+using NodaTime;
+using NodaTime.Serialization.SystemTextJson;
+using Npgsql;
+
+var builder = WebApplication.CreateBuilder(args);
+
+Program.AddApplicationInsightsIfConfigured(builder);
+builder.Services.AddOpenApi();
+
+builder.Services.ConfigureHttpJsonOptions(o =>
+{
+    o.SerializerOptions.ConfigureForNodaTime(DateTimeZoneProviders.Tzdb);
+    o.SerializerOptions.Converters.Add(
+        new System.Text.Json.Serialization.JsonStringEnumConverter(
+            System.Text.Json.JsonNamingPolicy.CamelCase,
+            allowIntegerValues: false
+        )
+    );
+});
+
+var dbConnection =
+    builder.Configuration["DB_CONNECTION"]
+    ?? throw new InvalidOperationException("DB_CONNECTION configuration is missing.");
+builder.Services.AddDataLayer(dbConnection);
+
+var demoMode = DemoMode.IsEnabled(builder.Configuration);
+if (demoMode)
+{
+    DemoMode.EnsureSafeDatabase(dbConnection);
+}
+
+Program.ValidateApiKeys(builder);
+builder.Services.AddSingleton<IClock>(SystemClock.Instance);
+
+// Owner allowlist for the Activity and GitHub tabs. Resolved once here, so every consumer sees
+// the same value, and bound from either the array or the delimited-scalar shape. Absent means
+// absent: an unset allowlist filters nothing, rather than emptying both tabs.
+builder.Services.Configure<ActivityOptions>(builder.Configuration.GetSection(ActivityOptions.SectionName));
+var projectOwners = ActivityOptions.ResolveProjectOwners(builder.Configuration);
+builder.Services.PostConfigure<ActivityOptions>(o => o.ProjectOwners = projectOwners);
+builder.Services.AddSingleton(
+    RoutingCatalogService.Load(Path.Combine(AppContext.BaseDirectory, "Routing", "routing-catalog.json"))
+);
+
+builder.Services.AddTransient<MailKit.Net.Smtp.ISmtpClient, MailKit.Net.Smtp.SmtpClient>();
+
+// Transient, matching ISmtpClient: the sender connects and disconnects per send, so it holds
+// no state worth sharing and must never hand two callers the same live connection.
+builder.Services.AddTransient<SmtpMailSender>();
+builder.Services.AddKeyedTransient<IAlertNotifier, EmailAlertNotifier>("email");
+builder.Services.AddScoped<SourceHealthDigestService>();
+
+// See SlackAlertNotifierRegistration: the webhook URL is the credential, so the typed client
+// has its logging handlers removed.
+builder.Services.AddSlackAlertNotifier();
+builder.Services.AddTransient<IAlertNotifier, CompositeAlertNotifier>();
+builder.Services.AddScoped<BudgetAlertService>();
+builder.Services.AddScoped<AdversarialReviewService>();
+builder.Services.AddScoped<AdversarialReviewFindingService>();
+builder
+    .Services.AddOptions<SuggestionOptions>()
+    .Bind(builder.Configuration.GetSection(SuggestionOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<SuggestionOptions>, SuggestionOptionsValidator>();
+builder.Services.AddScoped<SuggestionInputsLoader>();
+builder.Services.AddScoped<SuggestionStore>();
+builder.Services.AddScoped<SuggestionService>();
+builder.Services.AddSingleton<ISuggestionRule, SeatNoUniqueCatchRule>();
+builder.Services.AddSingleton<ISuggestionRule, SeatHighFalsePositiveRule>();
+builder.Services.AddSingleton<ISuggestionRule, SeatConfirmationOnlyRule>();
+builder.Services.AddSingleton<ISuggestionRule, SeatCostOutlierRule>();
+builder.Services.AddSingleton<ISuggestionRule, PlanCostsMoreThanUseRule>();
+builder.Services.AddSingleton<ISuggestionRule, PlanUnusedRule>();
+builder.Services.AddSingleton<AnthropicIntelligenceClient>();
+builder.Services.AddSingleton<PromptBuilder>();
+builder.Services.AddSingleton<InsightResponseParser>();
+builder.Services.AddScoped<IInsightGenerator, InsightGenerator>();
+builder.Services.AddMemoryCache();
+
+// FxRateProvider is a transient typed client; only consume from scoped/transient services.
+// Timeout bounded well below the 100s default: a slow Frankfurter must not stall a ledger
+// write for that long, and a large batch pays this per row (see FetchGbpRateAsync's
+// cancellation-vs-timeout handling for why a timeout here does not abort the whole batch).
+builder.Services.AddHttpClient<FxRateProvider>().ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddScoped<BillingObservationWriter>();
+
+// GitHub billing — the org bill is not paid from the account the spend CSV exports, so
+// without this arm the ledger silently omits every penny of GitHub spend. No-ops unless
+// GITHUB_TOKEN and GITHUB_BILLING_ORG are both configured; see AddGitHubBilling for the
+// token scope that arm needs and why an unresolved Key Vault reference counts as unset.
+builder.Services.AddGitHubBilling(builder.Configuration);
+
+// Demo mode has no real data to analyse and must not call Anthropic, send alerts or sync
+// GitHub billing.
+if (!demoMode)
+{
+    builder.Services.AddHostedService<IntelligenceWorkerService>();
+    // Registered unconditionally: the worker reads Suggestions:WorkerEnabled from the bound options,
+    // which see the final configuration (including test overrides) that this builder may not yet.
+    builder.Services.AddHostedService<SuggestionWorkerService>();
+}
+
+// Fixed-window rate limit per client IP on the /api group, so an unauthenticated GET or a
+// hot loop can't hammer the B1 plan. Partitioning on the (real, post-UseForwardedHeaders)
+// remote IP rather than the X-Observatory-Key header is deliberate: the limiter runs before
+// ApiKeyEndpointFilter, so the header is unvalidated at this point — keying on it let an
+// anonymous caller mint a fresh 120/min bucket per request just by rotating a random header,
+// bypassing the limit entirely.
+// Validate the permit limit at boot: FixedWindowRateLimiterOptions is only validated when a
+// partition's limiter is first constructed, so a zero or negative value would otherwise turn
+// every /api request into a 500 instead of refusing to start. The factory below keeps its own
+// read so a config reload still applies to newly-seen client partitions.
+Program.ValidateRateLimitPermitLimit(builder);
+
+builder.Services.AddRateLimiter(o => Program.ConfigureApiRateLimiter(o, builder.Configuration));
+
+// Honour X-Forwarded-For from a trusted reverse proxy (the nginx sidecar in the
+// Docker self-host topology) so the rate limiter partitions by the real client IP
+// rather than collapsing every proxied caller onto the bridge IP. Only proxies on
+// private networks are trusted, so a public client cannot spoof the header.
+builder.Services.Configure<ForwardedHeadersOptions>(Program.ConfigureForwardedHeaders);
+
+builder.Services.AddCors(o => Program.ConfigureCors(o, builder.Configuration));
+
+// Entra (Azure AD) JWT bearer auth for human callers. Only wired when configured —
+// local dev runs without AzureAd settings, so the app starts and the API-key path
+// (or no key, in dev) governs access. In production an authenticated user bypasses
+// the API key entirely (see ApiKeyEndpointFilter); machine callers keep using keys.
+var authEnabled = !string.IsNullOrWhiteSpace(builder.Configuration["AzureAd:ClientId"]);
+if (authEnabled)
+{
+    builder
+        .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
+}
+
+var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+    await db.Database.MigrateAsync();
+
+    // One-time backfill: an existing deployment's BUDGET_ALERT_EMAIL_TO env var predates the
+    // NotificationSettings table, so without this a pre-existing deployment would silently stop
+    // emailing budget alerts on upgrade until someone visited the settings UI. Self-retiring --
+    // once a row exists (created here or via the UI) this is a permanent no-op.
+    if (!await db.NotificationSettings.AnyAsync(s => s.Id == NotificationSettings.SingletonId))
+    {
+        await Program.SeedLegacyAlertEmailAsync(db, scope.ServiceProvider, builder.Configuration);
+    }
+}
+
+app.UseForwardedHeaders();
+app.UseCors();
+app.UseRateLimiter();
+
+if (demoMode)
+{
+    // After UseCors so a preflight is answered before it reaches the block.
+    app.UseMiddleware<DemoWriteBlockMiddleware>();
+}
+
+if (authEnabled)
+{
+    app.UseAuthentication();
+    app.UseAuthorization();
+}
+
+var api = app.MapGroup("/api").AddEndpointFilter<ApiKeyEndpointFilter>().RequireRateLimiting("api");
+var ide = app.MapGroup("/api/ide/v1").AddEndpointFilter<IdeApiKeyEndpointFilter>().RequireRateLimiting("api");
+ide.MapIdeEndpoints();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+}
+
+if (app.Environment.IsDevelopment() || demoMode)
+{
+    api.MapPost(
+        "/dev/seed",
+        async (AiObservatoryDbContext db, IClock clock, CancellationToken ct) =>
+        {
+            // Idempotent: only seed a genuinely empty database. The Docker compose seed service
+            // calls this on every `up`; the guard must cover EVERY table the seed writes (see
+            // DemoSeeder.HasAnyDataAsync) or a self-hoster's pre-existing config is destroyed.
+            if (await DemoSeeder.HasAnyDataAsync(db, ct))
+            {
+                return Results.Ok("Already seeded — skipping (data present).");
+            }
+
+            await DemoSeeder.SeedAsync(db, clock, ct);
+            return Results.Ok("Seed successful");
+        }
+    );
+}
+
+if (demoMode)
+{
+    api.MapPost(
+        "/dev/reset-demo",
+        async (AiObservatoryDbContext db, IClock clock, CancellationToken ct) =>
+        {
+            await DemoSeeder.ResetAsync(db, clock, ct);
+            return Results.Ok("Demo reset");
+        }
+    );
+}
+
+api.MapEventsEndpoints();
+api.MapCavemanEndpoints();
+api.MapActivityEndpoints();
+api.MapGitHubActivityEndpoints();
+api.MapAdversarialReviewEndpoints();
+api.MapAggregatesEndpoints();
+api.MapInsightsEndpoints();
+api.MapSubscriptionsEndpoints();
+api.MapSuggestionsEndpoints();
+api.MapBudgetRulesEndpoints();
+api.MapNotificationSettingsEndpoints();
+api.MapSpendCatalogEndpoints();
+api.MapSpendEntriesEndpoints();
+api.MapSpendFeedStatusEndpoints();
+api.MapSourceStatusEndpoints();
+api.MapSweepStatusEndpoints();
+
+await app.RunAsync();
+
+// Test-enabling: `public partial class Program` exposes the top-level-statement entry
+// point so WebApplicationFactory<Program> can host it; ConfigureForwardedHeaders is
+// pulled out to a named, independently testable method (same body as before, no
+// behaviour change) so a spoofed-XFF test can build the exact same ForwardedHeadersOptions
+// without spinning up the whole app.
+// Required as the WebApplicationFactory<TEntryPoint> marker for integration tests.
+// ReSharper disable once ClassNeverInstantiated.Global
+public partial class Program
+{
+    protected Program() { }
+
+    internal static void ValidateApiKeys(WebApplicationBuilder builder)
+    {
+        if (builder.Environment.IsDevelopment())
+        {
+            return;
+        }
+
+        var adminKey = builder.Configuration["OBSERVATORY_API_KEY"];
+        var readOnlyKey = builder.Configuration["OBSERVATORY_READONLY_API_KEY"];
+        var ideKey = builder.Configuration["OBSERVATORY_IDE_API_KEY"];
+        ValidateApiKey(adminKey, "OBSERVATORY_API_KEY");
+        ValidateApiKey(readOnlyKey, "OBSERVATORY_READONLY_API_KEY");
+        ValidateIdeApiKey(ideKey);
+
+        // The null-forgiving operators below are safe only because the validators throw on a
+        // bad value rather than returning it — keep that throw-or-continue contract.
+        if (ApiKeyComparer.FixedTimeEquals(adminKey!, readOnlyKey!))
+        {
+            throw new InvalidOperationException(
+                "OBSERVATORY_API_KEY and OBSERVATORY_READONLY_API_KEY must be different outside Development."
+            );
+        }
+        if (ApiKeyComparer.FixedTimeEquals(ideKey!, adminKey!) || ApiKeyComparer.FixedTimeEquals(ideKey!, readOnlyKey!))
+        {
+            throw new InvalidOperationException(
+                "OBSERVATORY_IDE_API_KEY must be different from the existing API keys."
+            );
+        }
+    }
+
+    // Extracted (behaviour unchanged) so the single allowed origin is testable on a bare TestHost.
+    internal static void ConfigureCors(CorsOptions o, IConfiguration configuration) =>
+        o.AddDefaultPolicy(p =>
+            p.WithOrigins(configuration["SWA_ORIGIN"] ?? "https://fpaiobs-swa.azurestaticapps.net")
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+        );
+
+    // Extracted (behaviour unchanged) so the 429 and the per-IP partitioning are testable on a
+    // bare TestHost, as ConfigureForwardedHeaders is.
+    internal static void ConfigureApiRateLimiter(RateLimiterOptions o, IConfiguration configuration)
+    {
+        o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+        o.AddPolicy(
+            "api",
+            ctx =>
+            {
+                var partitionKey = ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+                return RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey,
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = configuration.GetValue("RateLimiting:ApiPermitLimit", 120),
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0,
+                    }
+                );
+            }
+        );
+    }
+
+    internal static void ValidateRateLimitPermitLimit(WebApplicationBuilder builder)
+    {
+        var permitLimit = builder.Configuration.GetValue("RateLimiting:ApiPermitLimit", 120);
+        if (permitLimit <= 0)
+        {
+            throw new InvalidOperationException("RateLimiting:ApiPermitLimit must be a positive integer.");
+        }
+    }
+
+    private static void ValidateIdeApiKey(string? value)
+    {
+        ValidateApiKey(value, "OBSERVATORY_IDE_API_KEY");
+        if (value != value!.Trim())
+        {
+            throw new InvalidOperationException(
+                "OBSERVATORY_IDE_API_KEY must be set to a non-default, unpadded value outside Development."
+            );
+        }
+    }
+
+    private static void ValidateApiKey(string? value, string name)
+    {
+        // The length floor is what makes this an anti-guessability check rather than a
+        // presence check: "x" passed every gate below yet would stand as a bearer credential.
+        const int minimumLength = 16;
+        if (
+            string.IsNullOrWhiteSpace(value)
+            || value.Length < minimumLength
+            || value == "change-me"
+            || value.StartsWith("@Microsoft.KeyVault(", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            throw new InvalidOperationException(
+                $"{name} must be set to a non-default value of at least {minimumLength} characters outside Development."
+            );
+        }
+    }
+
+    internal static void AddApplicationInsightsIfConfigured(WebApplicationBuilder builder)
+    {
+        if (!string.IsNullOrEmpty(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+        {
+            builder.Services.AddApplicationInsightsTelemetry();
+        }
+    }
+
+    /// <summary>
+    /// True when the legacy BUDGET_ALERT_EMAIL_TO value is safe to seed into
+    /// NotificationSettings. Routed through the same IsValidEmail gate the settings endpoint
+    /// applies: an invalid value stored here would throw in EmailAlertNotifier at send time and
+    /// wedge the alert claim into an endless retry loop (S4). The Key Vault prefix check is the
+    /// same gate every other configuration value in this composition root carries — an
+    /// unresolved reference arrives as the literal "@Microsoft.KeyVault(...)" string.
+    /// </summary>
+    internal static bool IsSeedableLegacyAlertEmail(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && !value.StartsWith("@Microsoft.KeyVault(", StringComparison.OrdinalIgnoreCase)
+        && NotificationSettingsEndpoints.IsValidEmail(value);
+
+    internal static async Task SeedLegacyAlertEmailAsync(
+        AiObservatoryDbContext db,
+        IServiceProvider services,
+        IConfiguration configuration
+    )
+    {
+        var legacyEmail = configuration["BUDGET_ALERT_EMAIL_TO"];
+        if (!IsSeedableLegacyAlertEmail(legacyEmail))
+        {
+            if (!string.IsNullOrWhiteSpace(legacyEmail))
+            {
+                services
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("AiObservatory.Api.Startup")
+                    .LogWarning(
+                        "BUDGET_ALERT_EMAIL_TO is not a valid email address; skipping the legacy alert-email seed."
+                    );
+            }
+            return;
+        }
+
+        var clock = services.GetRequiredService<IClock>();
+        db.NotificationSettings.Add(
+            new NotificationSettings { AlertEmailTo = legacyEmail, UpdatedAt = clock.GetCurrentInstant() }
+        );
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+            when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            // Lost the insert race to another instance starting concurrently (overlapping
+            // old/new containers during a deploy). Best-effort, one-time backfill -- someone
+            // else already won, which is the outcome this backfill wants anyway.
+        }
+    }
+
+    public static void ConfigureForwardedHeaders(ForwardedHeadersOptions o)
+    {
+        o.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+        o.ForwardLimit = 1;
+        o.KnownIPNetworks.Clear();
+        o.KnownProxies.Clear();
+        o.KnownIPNetworks.Add(new System.Net.IPNetwork(System.Net.IPAddress.Parse("10.0.0.0"), 8));
+        o.KnownIPNetworks.Add(new System.Net.IPNetwork(System.Net.IPAddress.Parse("172.16.0.0"), 12));
+        o.KnownIPNetworks.Add(new System.Net.IPNetwork(System.Net.IPAddress.Parse("192.168.0.0"), 16));
+    }
+}

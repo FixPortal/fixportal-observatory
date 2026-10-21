@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    UNIT tests only, and deliberately database-free: this is the project Stryker mutates
+    against (stryker-config.json `test-projects`), so anything added here is paid for on
+    every mutant. Host-booting / PostgreSQL-backed tests belong in
+    AiObservatory.Api.IntegrationTests. See docs/mutation-testing.md.
+  -->
+
+  <PropertyGroup>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="MailKit" />
+    <!-- Bare in-memory middleware pipelines only (ForwardedHeadersConfigTests). NOT
+         Microsoft.AspNetCore.Mvc.Testing: WebApplicationFactory boots the real composition
+         root and belongs in the integration project. -->
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <!-- The EF in-memory provider, NOT a database: no server, no container, no migrations,
+         nothing to install. It exists here so the money paths (GitHub billing sync, the
+         ledger write path) can be mutation-tested at all — they take a DbContext, and
+         PostgreSQL-backed coverage lives in the integration project, deliberately outside
+         Stryker's lane. Constraints and unique indexes are NOT enforced by this provider;
+         anything asserting on those belongs in the integration project. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+    <PackageReference Include="NodaTime.Testing" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="TngTech.ArchUnitNET.xUnitV3" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Fixtures\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AiObservatory.Api\AiObservatory.Api.csproj" />
+    <!--
+      Aliased. Once AiObservatory.Ingest gained ASP.NET Core (to answer App Service's
+      startup probe) its top-level entry point became a public global-namespace Program,
+      the same shape as the API's own `public partial class Program`. This project
+      references BOTH assemblies, so plain references make every `WebApplicationFactory
+      <Program>` fail with CS0433 "the type exists in both". The alias scopes Ingest's
+      types to `ingest::` so only the API's Program is reachable as bare `Program`.
+      Confined to the test project on purpose: neither production entry point should be
+      reshaped to work around a clash that exists only where both are referenced.
+      See ArchitectureTests, the only consumer.
+    -->
+    <ProjectReference Include="..\..\src\AiObservatory.Ingest\AiObservatory.Ingest.csproj" Aliases="ingest" />
+  </ItemGroup>
+
+</Project>
