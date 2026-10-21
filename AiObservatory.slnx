@@ -21,6 +21,7 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/AiObservatory.Api/AiObservatory.Api.csproj" />
+    <Project Path="src/AiObservatory.Audit/AiObservatory.Audit.csproj" />
     <Project Path="src/AiObservatory.Data/AiObservatory.Data.csproj" />
     <Project Path="src/AiObservatory.Ingest/AiObservatory.Ingest.csproj" />
   </Folder>
@@ -28,6 +29,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/AiObservatory.Api.IntegrationTests/AiObservatory.Api.IntegrationTests.csproj" />
     <Project Path="tests/AiObservatory.Api.Tests/AiObservatory.Api.Tests.csproj" />
+    <Project Path="tests/AiObservatory.Audit.Tests/AiObservatory.Audit.Tests.csproj" />
     <Project Path="tests/AiObservatory.Data.Tests/AiObservatory.Data.Tests.csproj" />
     <Project Path="tests/AiObservatory.Ingest.Tests/AiObservatory.Ingest.Tests.csproj" />
   </Folder>
