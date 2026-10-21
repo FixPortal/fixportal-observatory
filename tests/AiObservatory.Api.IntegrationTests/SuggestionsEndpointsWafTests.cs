@@ -11,13 +11,12 @@ using NodaTime;
 namespace AiObservatory.Api.IntegrationTests;
 
 [Trait("Category", "Integration")]
-[Collection("ApiFactory")]
-public class SuggestionsEndpointsWafTests(AiObservatoryApiFactory factory)
+public class SuggestionsEndpointsWafTests(AiObservatoryApiFactory factory) : IClassFixture<AiObservatoryApiFactory>
 {
     private const string UnusedKey = "plan.unused:Meta";
 
-    // Meta is used by no other integration test, so a plan on it with no usage fires plan.unused
-    // regardless of what the shared database holds.
+    // This class owns its host and database, so the Meta plan it seeds cannot leak into another
+    // class and nothing else can have put Meta rows there first.
     private async Task SeedUnusedMetaPlanAsync()
     {
         using var scope = factory.Services.CreateScope();
@@ -55,6 +54,17 @@ public class SuggestionsEndpointsWafTests(AiObservatoryApiFactory factory)
             .Where(s => s.GetProperty("key").GetString() == key)
             .Select(s => (JsonElement?)s)
             .FirstOrDefault();
+
+    [Fact]
+    public async Task The_fx_client_never_reaches_the_live_service()
+    {
+        using var scope = factory.Services.CreateScope();
+        var fx = scope.ServiceProvider.GetRequiredService<AiObservatory.Data.Spend.FxRateProvider>();
+
+        var rate = await fx.TryGetUsdToGbpAsync(TestContext.Current.CancellationToken);
+
+        rate.Should().BeNull();
+    }
 
     [Fact]
     public async Task Refresh_creates_a_plan_suggestion_with_its_evidence()
