@@ -27,9 +27,9 @@ public static class AuditCanonicalJson
             RejectDuplicateProperties(document.RootElement);
             var value = JsonSerializer.Deserialize<T>(utf8, Options);
             AuditContractValidation.Validate(value);
-            // Validate stable identities on input as well as output; never defer conflicts to evaluation.
-            _ = Serialize(value);
-            return value!;
+            // Return the same normalized facts identified by their canonical bytes, including set multiplicity.
+            var canonical = Serialize(value);
+            return JsonSerializer.Deserialize<T>(canonical, Options)!;
         }
         catch (JsonException)
         {

@@ -187,10 +187,10 @@ internal static class AuditContractValidation
     private static bool IsIdentifierCharacter(char c, bool model) =>
         char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' or ':' or '@' or '|' or '=' || model && c == '/';
 
-    private static void ValidateInput(AuditInput input)
+    internal static void ValidateInput(AuditInput input)
     {
         Require(input.SchemaVersion == 1, "unsupported_schema");
-        Require(input.Records != null && input.Records.Count <= 1_000_000, "record_limit");
+        Require(input.Records != null, "required_value");
         Require(
             input.Scope != null && input.Records.All(record => IsSelected(input.Scope, record)),
             "record_outside_scope"

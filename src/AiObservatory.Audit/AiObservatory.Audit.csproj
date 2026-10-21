@@ -3,4 +3,7 @@
     <IsPackable>false</IsPackable>
     <CheckForOverflowUnderflow>true</CheckForOverflowUnderflow>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AiObservatory.Audit.Tests" />
+  </ItemGroup>
 </Project>
