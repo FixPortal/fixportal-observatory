@@ -129,7 +129,7 @@ public class SpendFeedStatusWafTests(AiObservatoryApiFactory factory) : IClassFi
     }
 
     [Fact]
-    public async Task Skip_reported_at_the_same_time_is_idempotent_and_a_newer_skip_applies()
+    public async Task Skip_reported_at_the_same_time_counts_the_retry_and_a_newer_skip_applies()
     {
         var ct = TestContext.Current.CancellationToken;
         var admin = factory.CreateAdminClient();
@@ -144,12 +144,23 @@ public class SpendFeedStatusWafTests(AiObservatoryApiFactory factory) : IClassFi
                 .StatusCode.Should()
                 .Be(HttpStatusCode.NoContent);
 
-            (await RowsAsync()).Should().ContainSingle().Subject.IsAvailable.Should().BeFalse();
+            // The store's timestamp guard is >=, so a retry at the same reportedAt counts as a second failure.
+            var afterRetry = (await RowsAsync()).Should().ContainSingle().Subject;
+            afterRetry.IsAvailable.Should().BeFalse();
+            afterRetry.ConsecutiveFailureCount.Should().Be(2);
 
-            (await admin.PostAsJsonAsync(Route, Stamped(DateTimeOffset.UtcNow.ToString("O")), ct))
+            (
+                await admin.PostAsJsonAsync(
+                    Route,
+                    Stamped(DateTimeOffset.UtcNow.AddMinutes(-1).ToString("O"), (2, "no-category")),
+                    ct
+                )
+            )
                 .StatusCode.Should()
                 .Be(HttpStatusCode.NoContent);
-            (await RowsAsync()).Should().ContainSingle().Subject.IsAvailable.Should().BeTrue();
+            var afterNewerSkip = (await RowsAsync()).Should().ContainSingle().Subject;
+            afterNewerSkip.IsAvailable.Should().BeFalse();
+            afterNewerSkip.LastError.Should().Be("1 expense skipped: 1 no-category");
         }
         finally
         {
