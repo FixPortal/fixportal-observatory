@@ -20,21 +20,12 @@ internal sealed class SourceCheckEvaluation
         var reconstructions = adapters.Select(adapter => adapter.Reconstruct(input.Records, input.Scope)).ToArray();
         findings.AddRange(reconstructions.SelectMany(r => r.Findings).Select(f => f with { CheckCode = code }));
         gaps.AddRange(reconstructions.SelectMany(r => r.Coverage.Gaps));
-        var unsupported = Coverage(input, code, findings, gaps);
         var compatible = reconstructions.SelectMany(r => r.CompatibleGroups).ToArray();
         var expected =
             code == CheckCode.DailyAttribution
                 ? reconstructions.SelectMany(r => r.ChronologicalGroups).ToArray()
                 : compatible;
-        foreach (
-            var source in input
-                .Scope.Sources.Select(s => s.SourceId)
-                .Distinct()
-                .Where(s => !expected.Any(g => g.Key.SourceId == s))
-        )
-        {
-            AddGap(source, "no_usage_records", code, findings, gaps);
-        }
+        var unsupported = Coverage(input, code, expected, findings, gaps);
         var expectedMap = Groups(expected);
         var actualMap = code == CheckCode.DailyAttribution ? Groups(compatible) : Events(input, code, findings, gaps);
         var keys = expectedMap.Keys.Union(actualMap.Keys).OrderBy(k => k.Id, StringComparer.Ordinal).ToArray();
@@ -81,7 +72,13 @@ internal sealed class SourceCheckEvaluation
         );
     }
 
-    private static bool Coverage(AuditInput input, CheckCode code, List<AuditFinding> findings, List<CoverageGap> gaps)
+    private static bool Coverage(
+        AuditInput input,
+        CheckCode code,
+        ReconstructedGroup[] expected,
+        List<AuditFinding> findings,
+        List<CoverageGap> gaps
+    )
     {
         var unsupported = false;
         foreach (var selection in input.Scope.Sources)
@@ -98,22 +95,51 @@ internal sealed class SourceCheckEvaluation
                     AddGap(selection.SourceId, reason, code, findings, gaps);
                 }
             }
-            if (!records.Any(r => r.Kind is UsageRecordKind.MessageUsage or UsageRecordKind.CumulativeUsage))
-            {
-                AddGap(selection.SourceId, "no_usage_records", code, findings, gaps);
-                continue;
-            }
-            foreach (
-                var generation in records
-                    .Select(r => r.Generation)
-                    .Distinct()
-                    .Where(g => !HasCapture(input, selection, g))
-            )
-            {
-                AddGap(selection.SourceId, "incomplete_capture", code, findings, gaps);
-            }
+            SelectionCoverage(input, selection, records, expected, code, findings, gaps);
         }
         return unsupported;
+    }
+
+    private static void SelectionCoverage(
+        AuditInput input,
+        SourceSelection selection,
+        SourceUsageRecord[] records,
+        ReconstructedGroup[] expected,
+        CheckCode code,
+        List<AuditFinding> findings,
+        List<CoverageGap> gaps
+    )
+    {
+        if (records.Length == 0)
+        {
+            AddGap(
+                selection.SourceId,
+                "no_usage_records",
+                code,
+                findings,
+                gaps,
+                SourceAuditSupport.Identity(selection.MachineId, selection.SourceId)
+            );
+            return;
+        }
+        foreach (var generation in records.GroupBy(r => r.Generation))
+        {
+            var groupKey = SourceAuditSupport.Identity(selection.MachineId, selection.SourceId, generation.Key);
+            if (
+                !expected.Any(g =>
+                    g.Key.MachineId == selection.MachineId
+                    && g.Key.SourceId == selection.SourceId
+                    && g.Key.Generation == generation.Key
+                )
+            )
+            {
+                AddGap(selection.SourceId, "no_usage_records", code, findings, gaps, groupKey);
+            }
+            if (!HasCapture(input, selection, generation))
+            {
+                AddGap(selection.SourceId, "incomplete_capture", code, findings, gaps, groupKey);
+            }
+        }
     }
 
     private static bool CompleteScan(CaptureManifest capture) =>
@@ -123,16 +149,22 @@ internal sealed class SourceCheckEvaluation
         && capture.Diagnostics.All(d => d.Count == 0)
         && capture.SealedAt >= capture.ScanEndedAt;
 
-    private static bool HasCapture(AuditInput input, SourceSelection selection, string generation) =>
+    private static bool HasCapture(
+        AuditInput input,
+        SourceSelection selection,
+        IGrouping<string, SourceUsageRecord> generation
+    ) =>
         input.Captures.Any(c =>
             c.MachineId == selection.MachineId
-            && c.Generation == generation
+            && c.Generation == generation.Key
             && c.Scope.Sources.Contains(selection)
             && c.Scope.From <= input.Scope.From
             && c.Scope.To >= input.Scope.To
-            && c.SourceFormats.Any(f =>
-                f.SourceId == selection.SourceId
-                && AuditCapabilities.Sources.Any(a => a.Supported && a.Format == f.Format && a.Version == f.Version)
+            && generation.All(r =>
+                SourceAuditSupport.Supported(r)
+                && c.SourceFormats.Any(f =>
+                    f.SourceId == selection.SourceId && f.Format == r.SourceFormat && f.Version == r.SourceVersion
+                )
             )
             && CompleteScan(c)
         );
@@ -142,15 +174,16 @@ internal sealed class SourceCheckEvaluation
         string diagnostic,
         CheckCode code,
         List<AuditFinding> findings,
-        List<CoverageGap> gaps
+        List<CoverageGap> gaps,
+        string? groupKey = null
     )
     {
-        gaps.Add(new(source, source, diagnostic));
+        gaps.Add(new(source, groupKey ?? source, diagnostic));
         findings.Add(
             new(
                 code,
                 diagnostic,
-                source,
+                groupKey ?? source,
                 [],
                 "evidence",
                 null,
