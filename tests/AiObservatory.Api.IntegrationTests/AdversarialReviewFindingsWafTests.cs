@@ -97,6 +97,50 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
         corroborated.GetProperty("repo").GetString().Should().Be("example-app");
     }
 
+    // The window floor is a UTC midnight, so "tomorrow" is always after a row recorded now and
+    // "yesterday" always before it.
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(-1, true)]
+    public async Task The_since_window_keeps_only_findings_recorded_on_or_after_it(int dayOffset, bool expectedPresent)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = factory.CreateAdminClient();
+        var runId = $"since-{Guid.NewGuid():N}";
+        await SeedRunAsync(client, runId);
+        (await client.PostAsJsonAsync(FindingsRoute, ValidBody(runId), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var since = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(dayOffset).ToString("yyyy-MM-dd");
+
+        var rows = await client.GetFromJsonAsync<JsonElement>($"{FindingsRoute}?since={since}", ct);
+
+        rows.EnumerateArray().Any(r => r.GetProperty("runId").GetString() == runId).Should().Be(expectedPresent);
+    }
+
+    [Fact]
+    public async Task A_named_run_is_returned_whole_whatever_the_window()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = factory.CreateAdminClient();
+        var runId = $"named-{Guid.NewGuid():N}";
+        await SeedRunAsync(client, runId);
+        (await client.PostAsJsonAsync(FindingsRoute, ValidBody(runId), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var tomorrow = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1).ToString("yyyy-MM-dd");
+
+        var rows = await client.GetFromJsonAsync<JsonElement>($"{FindingsRoute}?runId={runId}&since={tomorrow}", ct);
+
+        rows.GetArrayLength().Should().Be(4);
+    }
+
+    [Fact]
+    public async Task A_malformed_since_is_a_400()
+    {
+        using var client = factory.CreateAdminClient();
+
+        var response = await client.GetAsync($"{FindingsRoute}?since=last-week", TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     [Fact]
     public async Task A_repost_replaces_the_set_and_leaves_no_stale_findings()
     {

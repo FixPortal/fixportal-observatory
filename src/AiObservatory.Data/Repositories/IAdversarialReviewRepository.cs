@@ -43,8 +43,16 @@ public interface IAdversarialReviewRepository
         IReadOnlyList<AdversarialReviewFinding> findings,
         CancellationToken ct = default
     );
+    /// <param name="since">When set, only findings recorded at or after this instant.</param>
     Task<IReadOnlyList<AdversarialReviewFinding>> GetFindingsAsync(
         string? runId = null,
+        CancellationToken ct = default,
+        Instant? since = null
+    );
+
+    /// <returns>The repo of each given run that has one; runs without a repo are absent.</returns>
+    Task<IReadOnlyDictionary<string, string>> GetRepositoriesByRunAsync(
+        IReadOnlyCollection<string> runIds,
         CancellationToken ct = default
     );
     Task<int> DeleteAllRunsAsync(CancellationToken ct = default);
