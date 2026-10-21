@@ -142,10 +142,30 @@ public sealed class XaiPricingSourceTests
 
         bundled.LongContextThresholdTokens.Should().Be(parsed.LongContextThresholdTokens);
         bundled
-            .Entries.Select(entry => (entry.Model, entry.Input, entry.CachedInput, entry.Output))
+            .Entries.Select(entry =>
+                (
+                    entry.Model,
+                    entry.Input,
+                    entry.CachedInput,
+                    entry.Output,
+                    entry.LongContextInput,
+                    entry.LongContextCachedInput,
+                    entry.LongContextOutput
+                )
+            )
             .Should()
             .BeEquivalentTo(
-                parsed.Entries.Select(entry => (entry.Model, entry.Input, entry.CachedInput, entry.Output))
+                parsed.Entries.Select(entry =>
+                    (
+                        entry.Model,
+                        entry.Input,
+                        entry.CachedInput,
+                        entry.Output,
+                        entry.LongContextInput,
+                        entry.LongContextCachedInput,
+                        entry.LongContextOutput
+                    )
+                )
             );
     }
 
