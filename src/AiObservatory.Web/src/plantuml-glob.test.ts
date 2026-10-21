@@ -26,9 +26,12 @@ let relativeRoot: string
 const slash = (value: string) => value.replaceAll('\\', '/')
 
 beforeAll(() => {
+  // Register each root straight after its own mkdtempSync, so a failure creating the second one
+  // still lets afterAll remove the first, and cleanup only ever sees paths this run created.
   absoluteRoot = mkdtempSync(join(tmpdir(), 'observatory-plantuml-glob-'))
+  roots.push(absoluteRoot)
   relativeRoot = mkdtempSync(join(process.cwd(), '.tmp-plantuml-glob-'))
-  roots.push(absoluteRoot, relativeRoot)
+  roots.push(relativeRoot)
   for (const root of roots) {
     mkdirSync(join(root, 'nested'))
     for (const file of ['one.puml', 'two.puml', 'nested/three.puml', '.hidden.puml']) {
@@ -47,6 +50,7 @@ afterAll(() => {
     if (!allowed.some((prefix) => target.startsWith(resolve(prefix)))) {
       throw new Error('Refusing to remove a fixture outside its generated root')
     }
+    console.log('removing plantuml glob fixture ' + target)
     rmSync(target, { recursive: true, force: true })
   }
 })
