@@ -151,10 +151,7 @@ test('spend-source values match the backend enum wire contract', () => {
     const commentStart = rawLine.indexOf('//')
     const line = (commentStart === -1 ? rawLine : rawLine.slice(0, commentStart)).trim()
     if (line === '' || line.startsWith('[')) continue
-    const member = line
-      .replace(/=.*/, '')
-      .trim()
-      .replace(/,$/, '')
+    const member = line.replace(/=.*/, '').trim().replace(/,$/, '')
     if (!/^[A-Z]\w*$/.test(member)) {
       throw new Error(`Unparsed SpendSource member line: "${rawLine.trim()}"`)
     }
