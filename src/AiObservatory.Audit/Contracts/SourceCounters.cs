@@ -15,7 +15,14 @@ public sealed record ClaudeCounters(
     [property: JsonPropertyName("cache_read_input_tokens")] long? CacheReadInputTokens,
     [property: JsonPropertyName("ephemeral_5m_input_tokens")] long? CacheCreation5mInputTokens,
     [property: JsonPropertyName("ephemeral_1h_input_tokens")] long? CacheCreation1hInputTokens
-) : SourceCounters;
+) : SourceCounters
+{
+    [JsonPropertyName("thinking_tokens")]
+    public long? ThinkingTokens { get; init; }
+
+    [JsonPropertyName("thinking_output_tokens")]
+    public long? ThinkingOutputTokens { get; init; }
+}
 
 /// <summary>Codex total_token_usage fields: input includes cached input and output includes reasoning output.</summary>
 public sealed record CodexCounters(
