@@ -82,9 +82,20 @@ public sealed class ClaudeAuditAdapter : ISourceAuditAdapter
         }
         return (decimal)(c.InputTokens ?? 0)
             + (c.OutputTokens ?? 0)
-            + (c.CacheCreationInputTokens ?? 0)
+            + (Creation(c) ?? 0)
             + (c.CacheReadInputTokens ?? 0)
             + (c.ThinkingTokens ?? 0);
+    }
+
+    private static long? Creation(ClaudeCounters counters)
+    {
+        if (counters.CacheCreationInputTokens is { } aggregate)
+        {
+            return aggregate;
+        }
+        return counters.CacheCreation5mInputTokens is { } five && counters.CacheCreation1hInputTokens is { } hour
+            ? AuditNumbers.AddCounters(five, hour)
+            : null;
     }
 
     private static int Completeness(SourceUsageRecord record)
@@ -118,15 +129,7 @@ public sealed class ClaudeAuditAdapter : ISourceAuditAdapter
             findings.Add(SourceAuditSupport.Gap(record, "missing_counter"));
             return null;
         }
-        var creation = counters.CacheCreationInputTokens;
-        if (
-            creation is null
-            && counters.CacheCreation5mInputTokens is { } five
-            && counters.CacheCreation1hInputTokens is { } hour
-        )
-        {
-            creation = AuditNumbers.AddCounters(five, hour);
-        }
+        var creation = Creation(counters);
         if (creation is null || counters.CacheReadInputTokens is null)
         {
             findings.Add(SourceAuditSupport.Gap(record, "missing_counter"));
