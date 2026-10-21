@@ -66,10 +66,9 @@ public static class AdversarialReviewEndpoints
                 Instant? floor = null;
                 if (runId is null)
                 {
-                    var start =
-                        since is { } day
-                            ? new LocalDate(day.Year, day.Month, day.Day)
-                            : clock.GetCurrentInstant().InUtc().Date.PlusDays(-DefaultFindingsWindowDays);
+                    var start = since is { } day
+                        ? new LocalDate(day.Year, day.Month, day.Day)
+                        : clock.GetCurrentInstant().InUtc().Date.PlusDays(-DefaultFindingsWindowDays);
                     floor = start.AtMidnight().InUtc().ToInstant();
                 }
                 var findings = await repo.GetFindingsAsync(runId, ctx.RequestAborted, floor);
