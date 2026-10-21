@@ -467,7 +467,9 @@ public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClass
         {
             // The expected lock wait never appeared (SQL drift, table rename): name what the
             // helper waited for instead of surfacing a bare cancellation.
-            throw new TimeoutException($"No session reached the expected PostgreSQL lock wait for '{statementFragment}'.");
+            throw new TimeoutException(
+                $"No session reached the expected PostgreSQL lock wait for '{statementFragment}'."
+            );
         }
     }
 }
