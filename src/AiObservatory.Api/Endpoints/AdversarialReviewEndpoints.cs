@@ -1,10 +1,14 @@
 using AiObservatory.Api.Services;
 using AiObservatory.Data.Repositories;
+using NodaTime;
 
 namespace AiObservatory.Api.Endpoints;
 
 public static class AdversarialReviewEndpoints
 {
+    // Three times the Seats tab's 60-day window: wide enough for any view the dashboard offers.
+    private const int DefaultFindingsWindowDays = 180;
+
     // Returning the builder is the standard fluent endpoint-mapping convention.
     // ReSharper disable once UnusedMethodReturnValue.Global
     public static IEndpointRouteBuilder MapAdversarialReviewEndpoints(this IEndpointRouteBuilder app)
@@ -55,13 +59,24 @@ public static class AdversarialReviewEndpoints
 
         app.MapGet(
             "/adversarial-review/findings",
-            async (string? runId, IAdversarialReviewRepository repo, HttpContext ctx) =>
+            async (string? runId, DateOnly? since, IClock clock, IAdversarialReviewRepository repo, HttpContext ctx) =>
             {
-                var findings = await repo.GetFindingsAsync(runId, ctx.RequestAborted);
-                var repos = (await repo.GetRunsAsync(runId, ctx.RequestAborted))
-                    .Where(r => r.Repo is not null)
-                    .GroupBy(r => r.RunId)
-                    .ToDictionary(g => g.Key, g => g.First().Repo);
+                // A named run is returned whole. Otherwise the list is bounded to a window, so the
+                // payload does not grow with every review ever recorded.
+                Instant? floor = null;
+                if (runId is null)
+                {
+                    var start =
+                        since is { } day
+                            ? new LocalDate(day.Year, day.Month, day.Day)
+                            : clock.GetCurrentInstant().InUtc().Date.PlusDays(-DefaultFindingsWindowDays);
+                    floor = start.AtMidnight().InUtc().ToInstant();
+                }
+                var findings = await repo.GetFindingsAsync(runId, ctx.RequestAborted, floor);
+                var repos = await repo.GetRepositoriesByRunAsync(
+                    findings.Select(f => f.RunId).Distinct().ToList(),
+                    ctx.RequestAborted
+                );
                 return Results.Ok(
                     findings.Select(f => new
                     {

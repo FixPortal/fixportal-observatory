@@ -241,7 +241,7 @@ The activity and GitHub reads all take `from` and `to`, and are filtered by `Act
 | `POST`   | `/api/adversarial-review/runs`         | Admin | Record one participant's run.                    |
 | `GET`    | `/api/adversarial-review/runs`         | Read  | List participant rows (`runId` optional filter). |
 | `POST`   | `/api/adversarial-review/findings`     | Admin | Replace the findings of a run.                   |
-| `GET`    | `/api/adversarial-review/findings`     | Read  | List findings (`runId` optional filter).         |
+| `GET`    | `/api/adversarial-review/findings`     | Read  | List findings (`runId`, `since=YYYY-MM-DD`).     |
 | `GET`    | `/api/adversarial-review/stats`        | Read  | Per reviewer and model statistics.               |
 | `DELETE` | `/api/adversarial-review/runs`         | Admin | Delete all runs.                                 |
 | `DELETE` | `/api/adversarial-review/runs/{runId}` | Admin | Delete one sweep.                                |

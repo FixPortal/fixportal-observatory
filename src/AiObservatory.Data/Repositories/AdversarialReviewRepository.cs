@@ -230,7 +230,8 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
 
     public async Task<IReadOnlyList<AdversarialReviewFinding>> GetFindingsAsync(
         string? runId = null,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        Instant? since = null
     )
     {
         var query = ctx.AdversarialReviewFindings.AsNoTracking().Include(f => f.Participants).AsQueryable();
@@ -238,7 +239,28 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
         {
             query = query.Where(f => f.RunId == runId);
         }
+        if (since is { } floor)
+        {
+            query = query.Where(f => f.RecordedAt >= floor);
+        }
         return await query.OrderBy(f => f.RunId).ThenBy(f => f.ChunkId).ThenBy(f => f.FindingId).ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyDictionary<string, string>> GetRepositoriesByRunAsync(
+        IReadOnlyCollection<string> runIds,
+        CancellationToken ct = default
+    )
+    {
+        if (runIds.Count == 0)
+        {
+            return new Dictionary<string, string>();
+        }
+        var rows = await ctx
+            .AdversarialReviewRuns.AsNoTracking()
+            .Where(r => r.Repo != null && runIds.Contains(r.RunId))
+            .Select(r => new { r.RunId, Repo = r.Repo! })
+            .ToListAsync(ct);
+        return rows.GroupBy(r => r.RunId).ToDictionary(g => g.Key, g => g.First().Repo);
     }
 
     public async Task<int> DeleteAllRunsAsync(CancellationToken ct = default)

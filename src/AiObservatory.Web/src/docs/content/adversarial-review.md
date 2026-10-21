@@ -211,15 +211,15 @@ If no seat has been selected, the first seat in the table is selected.
 
 All review data enters through the HTTP API; nothing is read from the review tooling's disk by the server. See [Authentication](/docs/authentication) for keys and [API](/docs/api) for the full route list.
 
-| Method and route                              | Purpose                                                                    | Access                       |
-| --------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------- |
-| `POST /api/adversarial-review/runs`           | Record or correct one participant row.                                     | Admin key or signed-in user. |
-| `GET /api/adversarial-review/runs`            | List all participant rows, newest first. Optional `runId` filter.          | Read key or above.           |
-| `POST /api/adversarial-review/findings`       | Replace the whole finding set of one run.                                  | Admin key or signed-in user. |
-| `GET /api/adversarial-review/findings`        | List findings with their raisers and assessments. Optional `runId` filter. | Read key or above.           |
-| `GET /api/adversarial-review/stats`           | The grouped figures behind the Stats table.                                | Read key or above.           |
-| `DELETE /api/adversarial-review/runs/{runId}` | Remove one run and its findings. `404` when nothing matched.               | Admin key or signed-in user. |
-| `DELETE /api/adversarial-review/runs`         | Remove every run and every finding.                                        | Admin key or signed-in user. |
+| Method and route                              | Purpose                                                                                                                                                               | Access                       |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `POST /api/adversarial-review/runs`           | Record or correct one participant row.                                                                                                                                | Admin key or signed-in user. |
+| `GET /api/adversarial-review/runs`            | List all participant rows, newest first. Optional `runId` filter.                                                                                                     | Read key or above.           |
+| `POST /api/adversarial-review/findings`       | Replace the whole finding set of one run.                                                                                                                             | Admin key or signed-in user. |
+| `GET /api/adversarial-review/findings`        | List findings with their raisers and assessments. `runId` returns that run whole; otherwise only findings recorded since `since` (a UTC date, default 180 days back). | Read key or above.           |
+| `GET /api/adversarial-review/stats`           | The grouped figures behind the Stats table.                                                                                                                           | Read key or above.           |
+| `DELETE /api/adversarial-review/runs/{runId}` | Remove one run and its findings. `404` when nothing matched.                                                                                                          | Admin key or signed-in user. |
+| `DELETE /api/adversarial-review/runs`         | Remove every run and every finding.                                                                                                                                   | Admin key or signed-in user. |
 
 ### Run row fields
 
