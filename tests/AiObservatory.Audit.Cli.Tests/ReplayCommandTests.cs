@@ -1,0 +1,211 @@
+using System.Diagnostics;
+using System.Security.Cryptography;
+using AiObservatory.Audit.Bundles;
+using AiObservatory.Audit.Contracts;
+using AiObservatory.Audit.Serialization;
+using AwesomeAssertions;
+
+namespace AiObservatory.Audit.Cli.Tests;
+
+public sealed class ReplayCommandTests
+{
+    /// <summary>The real built process deterministically replays without credentials or package restoration.</summary>
+    [Fact]
+    public async Task Replay_GoldenFixture_WritesDeterministicExpectedResultOffline()
+    {
+        using var directory = new TestDirectory();
+        var first = Path.Combine(directory.Path, "first");
+        var second = Path.Combine(directory.Path, "second");
+        var fixture = Path.Combine(AppContext.BaseDirectory, "Fixtures", "golden-v1.zip");
+        var run1 = await Run("replay", fixture, "--output", first);
+        var run2 = await Run("replay", fixture, "--output", second);
+        run1.ExitCode.Should().Be(3, run1.Error);
+        run2.ExitCode.Should().Be(3, run2.Error);
+        var expected = await File.ReadAllBytesAsync(
+            Path.Combine(AppContext.BaseDirectory, "Fixtures", "golden-v1.result.json"),
+            TestContext.Current.CancellationToken
+        );
+        (await File.ReadAllBytesAsync(Path.Combine(first, "result.json"), TestContext.Current.CancellationToken))
+            .Should()
+            .Equal(expected);
+        (await File.ReadAllBytesAsync(Path.Combine(second, "result.json"), TestContext.Current.CancellationToken))
+            .Should()
+            .Equal(expected);
+        (await File.ReadAllTextAsync(Path.Combine(first, "result.sha256"), TestContext.Current.CancellationToken))
+            .Trim()
+            .Should()
+            .Be(Convert.ToHexStringLower(SHA256.HashData(expected)));
+        (await File.ReadAllTextAsync(Path.Combine(first, "report.txt"), TestContext.Current.CancellationToken))
+            .Should()
+            .Contain("Incomplete")
+            .And.Contain("Coverage");
+    }
+
+    /// <summary>Unknown versions and options fail with a sanitized exit code and create no outputs.</summary>
+    [Theory]
+    [InlineData("--verifier-version", "9.0.0")]
+    [InlineData("--download", "https://invalid.example/tool")]
+    public async Task Replay_InvalidOption_ExitsFour(string option, string value)
+    {
+        using var directory = new TestDirectory();
+        var output = Path.Combine(directory.Path, "result");
+        var result = await Run(
+            "replay",
+            Path.Combine(AppContext.BaseDirectory, "Fixtures", "golden-v1.zip"),
+            "--output",
+            output,
+            option,
+            value
+        );
+        result.ExitCode.Should().Be(4);
+        Directory.Exists(output).Should().BeFalse();
+    }
+
+    /// <summary>Process exit status represents numeric match or difference for explicitly supported aggregate scope.</summary>
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 2)]
+    public async Task Replay_SupportedAggregateScope_ReturnsVerdictExitCode(bool mismatch, int expectedExit)
+    {
+        using var directory = new TestDirectory();
+        var bundle = await Golden();
+        var input = bundle.Input with
+        {
+            Scope = bundle.Input.Scope with { RequestedChecks = [CheckCode.EventAggregation], ExcludedChecks = [] },
+            Aggregates = mismatch
+                ? [bundle.Input.Aggregates[0] with { InputTokens = 9007199254740992 }]
+                : bundle.Input.Aggregates,
+        };
+        var path = await Write(directory, bundle with { Input = input, Result = new AuditVerifier().Verify(input) });
+        var output = Path.Combine(directory.Path, "output");
+        var run = await Run("replay", path, "--output", output, "--verifier-version", "1.0.0");
+        run.ExitCode.Should().Be(expectedExit, run.Error);
+        var result = AuditCanonicalJson.Deserialize<AuditResult>(
+            await File.ReadAllBytesAsync(Path.Combine(output, "result.json"), TestContext.Current.CancellationToken)
+        );
+        result.Verdict.Should().Be(mismatch ? CheckVerdict.Mismatched : CheckVerdict.Matched);
+        if (mismatch)
+        {
+            (await File.ReadAllTextAsync(Path.Combine(output, "report.txt"), TestContext.Current.CancellationToken))
+                .Should()
+                .Contain("inputTokens: expected=9007199254740993 actual=9007199254740992 delta=-1");
+        }
+    }
+
+    /// <summary>Explicit reevaluation keeps the recorded prior result and creates a distinct current evaluation identity.</summary>
+    [Fact]
+    public async Task Replay_PriorVersion_RequiresFlagAndPreservesOriginalResult()
+    {
+        using var directory = new TestDirectory();
+        var bundle = await Golden();
+        var prior = bundle.Input with { VerifierVersion = "0.9.0", RuleVersion = "0" };
+        bundle = bundle with { Input = prior, Result = new AuditVerifier().Verify(prior) };
+        var path = await Write(directory, bundle);
+        var originalBytes = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+        var rejected = await Run("replay", path, "--output", Path.Combine(directory.Path, "rejected"));
+        rejected.ExitCode.Should().Be(4);
+        Directory.Exists(Path.Combine(directory.Path, "rejected")).Should().BeFalse();
+        var output = Path.Combine(directory.Path, "reevaluated");
+        var run = await Run("replay", path, "--output", output, "--reevaluate", "--verifier-version", "1.0.0");
+        run.ExitCode.Should().Be(3, run.Error);
+        (
+            await File.ReadAllBytesAsync(
+                Path.Combine(output, "recorded-result.json"),
+                TestContext.Current.CancellationToken
+            )
+        )
+            .Should()
+            .Equal(AuditCanonicalJson.Serialize(bundle.Result));
+        var reevaluated = AuditCanonicalJson.Deserialize<AuditResult>(
+            await File.ReadAllBytesAsync(Path.Combine(output, "result.json"), TestContext.Current.CancellationToken)
+        );
+        reevaluated.VerifierVersion.Should().Be("1.0.0");
+        reevaluated.RuleVersion.Should().Be("1");
+        reevaluated.InputContentDigest.Should().NotBe(bundle.Result.InputContentDigest);
+        (await File.ReadAllTextAsync(Path.Combine(output, "evaluation.json"), TestContext.Current.CancellationToken))
+            .Should()
+            .Contain("reevaluation")
+            .And.Contain(bundle.Result.InputContentDigest);
+        (await File.ReadAllTextAsync(Path.Combine(output, "report.txt"), TestContext.Current.CancellationToken))
+            .Should()
+            .StartWith("Reevaluation\n");
+        (await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken)).Should().Equal(originalBytes);
+    }
+
+    /// <summary>Invalid archives and missing arguments fail without exposing private rejected paths.</summary>
+    [Fact]
+    public async Task Replay_InvalidBundleOrArguments_ReturnsSanitizedFailure()
+    {
+        using var directory = new TestDirectory();
+        Directory.CreateDirectory(directory.Path);
+        var path = Path.Combine(directory.Path, "private-evidence.zip");
+        await File.WriteAllBytesAsync(path, [1, 2, 3], TestContext.Current.CancellationToken);
+        var invalid = await Run("replay", path, "--output", Path.Combine(directory.Path, "output"));
+        invalid.ExitCode.Should().Be(4);
+        invalid.Error.Should().NotContain(path);
+        Directory.Exists(Path.Combine(directory.Path, "output")).Should().BeFalse();
+        (await Run()).ExitCode.Should().Be(4);
+    }
+
+    private static async Task<AuditBundle> Golden()
+    {
+        await using var source = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Fixtures", "golden-v1.zip"));
+        return await AuditBundleReader.ReadBundleAsync(source, new(), TestContext.Current.CancellationToken);
+    }
+
+    private static async Task<string> Write(TestDirectory directory, AuditBundle bundle)
+    {
+        Directory.CreateDirectory(directory.Path);
+        var path = Path.Combine(directory.Path, "input.zip");
+        await using var destination = File.Create(path);
+        await AuditBundleWriter.WriteAsync(destination, bundle, TestContext.Current.CancellationToken);
+        return path;
+    }
+
+    private static async Task<(int ExitCode, string Error)> Run(params string[] args)
+    {
+        var start = new ProcessStartInfo("dotnet")
+        {
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+        };
+        start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "AiObservatory.Audit.Cli.dll"));
+        foreach (var argument in args)
+        {
+            start.ArgumentList.Add(argument);
+        }
+        start.Environment.Clear();
+        foreach (
+            var name in new[] { "PATH", "SystemRoot", "WINDIR", "TEMP", "TMP", "DOTNET_ROOT", "HOME", "USERPROFILE" }
+        )
+        {
+            if (Environment.GetEnvironmentVariable(name) is { } value)
+            {
+                start.Environment[name] = value;
+            }
+        }
+        start.Environment["HTTP_PROXY"] = "http://127.0.0.1:1";
+        start.Environment["HTTPS_PROXY"] = "http://127.0.0.1:1";
+        using var process = Process.Start(start)!;
+        var error = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var output = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        await process.WaitForExitAsync(TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(30));
+        await output;
+        return (process.ExitCode, await error);
+    }
+
+    private sealed class TestDirectory : IDisposable
+    {
+        internal string Path { get; } =
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "audit-cli-" + Guid.NewGuid().ToString("N"));
+
+        public void Dispose()
+        {
+            if (Directory.Exists(Path))
+            {
+                Directory.Delete(Path, true);
+            }
+        }
+    }
+}

@@ -12,5 +12,6 @@
   <ItemGroup>
     <ProjectReference Include="../../src/AiObservatory.Audit/AiObservatory.Audit.csproj" />
     <None Update="Fixtures/**/*" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../fixtures/audit/*" Link="Fixtures/audit/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
