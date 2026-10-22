@@ -83,6 +83,10 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
       - name: Restore local tools
         run: dotnet tool restore
 
@@ -173,6 +177,7 @@ jobs:
           tests/docs-contract.test.mjs
           tests/public-restore-contract.test.mjs
           clients/observatory-sweep.test.mjs
+          clients/observatory-audit.test.mjs
 
   gate-coverage:
     name: Gate coverage
