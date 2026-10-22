@@ -447,11 +447,19 @@ public sealed class PricingApplicationTests : IAsyncLifetime
         (await _db.DailyAggregates.AsNoTracking().SingleAsync(ct)).Should().BeEquivalentTo(aggregate);
     }
 
-    [Fact]
-    public async Task ClaudeActivationAdmitsClaimedHistoricalFlatQuoteThroughRepricingTransaction()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ClaudeActivationAdmitsClaimedHistoricalFlatQuoteThroughRepricingTransaction(bool correctFamily)
     {
         var ct = TestContext.Current.CancellationToken;
-        var flat = ClaudeContextFixture.Entry(null) with { EffectiveFrom = new(2026, 9, 1) };
+        var flat = ClaudeContextFixture.Entry(null) with
+        {
+            EffectiveFrom = new(2026, 9, 1),
+            ModelPrefix = correctFamily ? "claude-haiku-5-5" : "claude-haiku-5",
+            Aliases = ["claude-haiku-5-5"],
+            Input = correctFamily ? 2m : 99m,
+        };
         var retained = new PricingSnapshot
         {
             Provider = Provider.Anthropic,
@@ -516,6 +524,21 @@ public sealed class PricingApplicationTests : IAsyncLifetime
             .Should()
             .Be(PricingActivationResult.Activated);
         var after = await _db.UsageEvents.AsNoTracking().SingleAsync(ct);
+        if (!correctFamily)
+        {
+            after.Should().BeEquivalentTo(before);
+            after.RawPayload.Should().Be(before.RawPayload);
+            PricingEvidence.SourceDimensions(after).Context.Should().Be(ClaudeContextFixture.Upper);
+            after.CostUsd.Should().BeNull();
+            after.CacheSavingsUsd.Should().BeNull();
+            (await _db.PricingApplications.AsNoTracking().OrderBy(row => row.Revision).ToListAsync(ct))
+                .Should()
+                .BeEquivalentTo(oldApplications);
+            (await _db.PricingApplications.CountAsync(row => row.Kind == "catalog", ct)).Should().Be(0);
+            (await _db.DailyAggregates.AsNoTracking().SingleAsync(ct)).Should().BeEquivalentTo(oldAggregate);
+            (await store.GetActiveAsync(PricingSourceIds.Claude, ct))!.ContentHash.Should().Be(candidate.ContentHash);
+            return;
+        }
         after
             .Should()
             .BeEquivalentTo(

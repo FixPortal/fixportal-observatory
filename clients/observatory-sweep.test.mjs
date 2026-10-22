@@ -57,8 +57,6 @@ for (const [name, usage] of [
   ['missing read', { input_tokens: 100001, cache_creation_input_tokens: 0 }],
   ['missing creation', { input_tokens: 100001, cache_read_input_tokens: 0 }],
   ['only one TTL subset', { input_tokens: 100001, cache_read_input_tokens: 0, cache_creation: { ephemeral_5m_input_tokens: 0 } }],
-  ['inconsistent total and splits', { ...COMPLETE_CLAUDE_PROMPT, cache_creation_input_tokens: 9, cache_creation: { ephemeral_5m_input_tokens: 5, ephemeral_1h_input_tokens: 5 } }],
-  ['subset exceeds total', { ...COMPLETE_CLAUDE_PROMPT, cache_creation_input_tokens: 9, cache_creation: { ephemeral_1h_input_tokens: 10 } }],
 ]) {
   test(`Claude prompt unknown: ${name} preserves safe usage`, () => {
     const [snapshot] = buildDailySnapshots(parseClaude(claudePromptRow(usage)), TEST_MACHINE)
@@ -257,7 +255,7 @@ test('Claude prompt version-6 cache is reparsed even at the same mtime and lost 
     await writeFile(path, claudePromptRow(COMPLETE_CLAUDE_PROMPT))
     const state = oldState()
     const scan = await scanRecords({ claudeHome: root }, state, new Set(['claude']), async () => files)
-    assert.equal(state.parseCacheVersion, 7)
+    assert.equal(state.parseCacheVersion, 8)
     assert.equal(scan.records[0].inputTokens, 100000)
     assert.equal(JSON.parse(buildDailySnapshots(scan.records, TEST_MACHINE)[0].rawPayload).context, 'prompt_le_100000')
     const missing = await scanRecords({ claudeHome: root }, oldState(), new Set(['claude']), async () => [{ path: join(root, 'unavailable.jsonl'), mtimeMs: 123 }])
@@ -344,7 +342,7 @@ for (const failure of ['malformed JSONL', 'invalid counters', 'overflowed counte
         const warnings = activity.filter(item => item.warning?.startsWith('Scan incomplete'))
         assert.equal(warnings.length, 1, 'exactly one warning for the withheld source each run')
         assert.match(warnings[0].warning, /claude-local@test-machine/)
-        assert.match(warnings[0].warning, /possible causes: unreadable file, malformed JSONL, or invalid or overflowed counters/)
+        assert.match(warnings[0].warning, /possible causes: unreadable file, malformed JSONL, malformed assistant usage or timestamp, or invalid or overflowed counters/)
         assert.match(warnings[0].warning, /corrections and tombstones are withheld/)
         assert.equal(warnings[0].warning.includes(root), false, 'native paths are absent')
         const events = activity.filter(item => item.url && new URL(item.url).pathname === '/api/events')
@@ -362,6 +360,97 @@ for (const failure of ['malformed JSONL', 'invalid counters', 'overflowed counte
     }
   })
 }
+
+const CLAUDE_SAFETY_CASES = [
+  // These two previously posted prompt_unknown; contradictory meters now withhold the source.
+  ['inconsistent total and splits', claudePromptRow({ ...COMPLETE_CLAUDE_PROMPT, cache_creation_input_tokens: 9, cache_creation: { ephemeral_5m_input_tokens: 5, ephemeral_1h_input_tokens: 5 } }, { id: 'unsafe' }), true],
+  ['subset exceeds total', claudePromptRow({ ...COMPLETE_CLAUDE_PROMPT, cache_creation_input_tokens: 9, cache_creation: { ephemeral_1h_input_tokens: 10 } }, { id: 'unsafe' }), true],
+  ['creation total below subset', claudePromptRow({ ...COMPLETE_CLAUDE_PROMPT, cache_creation_input_tokens: 10, cache_creation: { ephemeral_5m_input_tokens: 20, ephemeral_1h_input_tokens: 0 } }, { id: 'unsafe' }), true],
+  ['creation total differs from split sum', claudePromptRow({ ...COMPLETE_CLAUDE_PROMPT, cache_creation_input_tokens: 30, cache_creation: { ephemeral_5m_input_tokens: 10, ephemeral_1h_input_tokens: 10 } }, { id: 'unsafe' }), true],
+  ['one creation subset above total', claudePromptRow({ ...COMPLETE_CLAUDE_PROMPT, cache_creation_input_tokens: 10, cache_creation: { ephemeral_1h_input_tokens: 20 } }, { id: 'unsafe' }), true],
+  ...[[], null, 'invalid', 0, false].map(usage => [`assistant usage ${JSON.stringify(usage)}`, claudePromptRow(usage, { id: 'unsafe' }), false]),
+  ['assistant invalid timestamp', claudePromptRow(COMPLETE_CLAUDE_PROMPT, { id: 'unsafe' }, 'invalid'), false],
+  ['assistant missing timestamp', JSON.stringify({ type: 'assistant', message: { id: 'unsafe', model: 'claude-haiku-5-5', usage: COMPLETE_CLAUDE_PROMPT } }), false],
+]
+
+for (const [name, unsafe, invalidCounters] of CLAUDE_SAFETY_CASES) {
+  test(`Claude safety parse rejects ${name} before snapshot reconciliation`, () => {
+    const records = parseClaude(`${claudePromptRow(COMPLETE_CLAUDE_PROMPT)}\n${unsafe}`)
+    if (invalidCounters) { assert.equal(records.at(-1).claudeInvalidCounters, true) }
+    else { assert.equal(records.incomplete, true); assert.equal(records.length, 1) }
+    const snapshots = buildDailySnapshots(records, TEST_MACHINE)
+    assert.equal(snapshots.length, 0)
+    assert.deepEqual(planSnapshotSubmissions(snapshots, [{ sourceId: 'claude-local@test-machine', runtime: 'claude', eventKey: 'prior-flat' }]), [])
+  })
+  for (const legacyCache of [false, true]) {
+    test(`Claude safety main withholds ${name} with ${legacyCache ? 'version7 reparse' : 'cold cache'} and persisted hit`, async () => {
+      const root = await mkdtemp(join(tmpdir(), 'observatory-claude-safety-'))
+      const path = join(root, 'claude.jsonl'), kimiPath = join(root, 'wire.jsonl'), statePath = join(root, 'state.json')
+      const keys = ['OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES', 'OBSERVATORY_MACHINE', 'CLAUDE_HOME', 'KIMI_HOME']
+      const before = Object.fromEntries(keys.map(key => [key, process.env[key]]))
+      const originalFetch = globalThis.fetch, originalError = console.error
+      const activity = [], gets = []
+      Object.assign(process.env, { OBSERVATORY_URL: 'http://127.0.0.1:1', OBSERVATORY_API_KEY: 'synthetic-key', OBSERVATORY_STATE: statePath, OBSERVATORY_LOCAL_SOURCES: 'claude,kimi', OBSERVATORY_MACHINE: TEST_MACHINE, CLAUDE_HOME: join(root, 'claude'), KIMI_HOME: join(root, 'kimi') })
+      console.error = message => activity.push({ warning: String(message) })
+      globalThis.fetch = async (url, options = {}) => {
+        if (options.method === 'POST') { activity.push({ url, body: JSON.parse(options.body) }); return new Response('{}') }
+        gets.push(new URL(url).searchParams.get('sourceId'))
+        return new Response(JSON.stringify(new URL(url).searchParams.get('sourceId') === 'claude-local@test-machine'
+          ? [{ sourceId: 'claude-local@test-machine', runtime: 'claude', eventKey: 'prior-flat' }] : []))
+      }
+      try {
+        const valid = claudePromptRow(COMPLETE_CLAUDE_PROMPT)
+        await writeFile(path, `${valid}\n${unsafe}`)
+        await writeFile(kimiPath, JSON.stringify({ type: 'usage.record', time: 1787572800000, model: 'kimi-code/kimi-for-coding', usage: { inputOther: 10, output: 2, inputCacheRead: 20, inputCacheCreation: 3 } }))
+        if (legacyCache) {
+          await writeFile(statePath, JSON.stringify({ parseCacheVersion: 7, files: { claude: { [path]: { mtimeMs: 1, records: [{ ...parseClaude(valid)[0], inputTokens: 23, claudeInvalidCounters: false }] } } } }))
+        }
+        const discover = async dir => [{ path: dir.startsWith(process.env.CLAUDE_HOME) ? path : kimiPath, mtimeMs: 1 }]
+        for (let run = 0; run < 2; run++) {
+          activity.length = 0; gets.length = 0
+          await sweep.main({ discover })
+          const events = activity.filter(item => item.url && new URL(item.url).pathname === '/api/events')
+          assert.equal(events.some(item => item.body.sourceId === 'claude-local@test-machine'), false, 'affected active corrections and tombstones withheld')
+          assert.ok(events.some(item => item.body.sourceId === 'kimi-local@test-machine'), 'healthy source proceeds')
+          assert.equal(gets.includes('claude-local'), false, 'affected legacy migration is withheld')
+          const warnings = activity.filter(item => item.warning?.startsWith('Scan incomplete'))
+          assert.equal(warnings.length, 1)
+          assert.match(warnings[0].warning, /claude-local@test-machine/)
+          assert.match(warnings[0].warning, /corrections and tombstones are withheld/)
+          assert.equal(warnings[0].warning.includes(root), false)
+          assert.ok(activity.indexOf(warnings[0]) < activity.findIndex(item => item.url))
+          const state = JSON.parse(await readFile(statePath, 'utf8'))
+          assert.equal(state.parseCacheVersion, 8)
+          assert.equal(state.files.claude[path].records[0].inputTokens, 100000, 'old version7 same-mtime usage must be reparsed')
+          if (invalidCounters) { assert.ok(state.files.claude[path].records.some(row => row.claudeInvalidCounters)) }
+          else { assert.equal(state.files.claude[path].incomplete, true) }
+        }
+      } finally {
+        globalThis.fetch = originalFetch; console.error = originalError
+        for (const key of keys) { if (before[key] === undefined) { delete process.env[key] } else { process.env[key] = before[key] } }
+        await rm(root, { recursive: true, force: true })
+      }
+    })
+  }
+}
+
+test('Claude safety ignores nonusage rows and preserves genuinely missing evidence as unknown', () => {
+  const nonusage = [
+    { type: 'assistant', message: { content: 'synthetic' } },
+    { type: 'user', message: { usage: [] }, timestamp: 'invalid' },
+    { type: 'system', message: { usage: null } },
+  ].map(JSON.stringify)
+  const records = parseClaude(nonusage.join('\n'))
+  assert.equal(records.incomplete, false)
+  assert.equal(records.length, 0)
+  for (const usage of [{ output_tokens: 1 }, { input_tokens: 3 }, { input_tokens: 3, cache_read_input_tokens: 0 }, { cache_creation_input_tokens: 10, cache_creation: { ephemeral_5m_input_tokens: 5 } }]) {
+    const partial = parseClaude(claudePromptRow(usage))
+    assert.equal(partial.incomplete, false)
+    assert.equal(partial[0].claudeInvalidCounters, false)
+    const [snapshot] = buildDailySnapshots(partial, TEST_MACHINE)
+    assert.ok(snapshot.eventKey.endsWith(':prompt_unknown'))
+  }
+})
 
 test('Claude prompt truncated JSON retains valid records but cannot plan destructive corrections', () => {
   const records = parseClaude(`${claudePromptRow(COMPLETE_CLAUDE_PROMPT)}\n{"type":"assistant",`)
@@ -975,7 +1064,7 @@ test('scanRecords rebuilds an unversioned matching-mtime cache instead of reusin
     const { records } = await scanRecords(cfg, state, new Set(['codex']))
 
     assert.deepEqual(records, [])
-    assert.equal(state.parseCacheVersion, 7)
+    assert.equal(state.parseCacheVersion, 8)
     assert.deepEqual(state.files.codex[path].records, [])
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -1036,7 +1125,7 @@ test('scanRecords handles transcript histories larger than the engine argument l
   }
   const files = Array.from({ length: 200 }, (_, index) => ({ path: `claude-${index}.jsonl`, mtimeMs: 1 }))
   const state = {
-    parseCacheVersion: 7,
+    parseCacheVersion: 8,
     files: {
       claude: Object.fromEntries(files.map(file => [file.path, {
         mtimeMs: file.mtimeMs,
@@ -1720,7 +1809,7 @@ test('scanRecords reparses a version-2 cache instead of reusing its stale record
 
     assert.deepEqual(records, [])
     assert.deepEqual([...incompleteSources], [])
-    assert.equal(state.parseCacheVersion, 7)
+    assert.equal(state.parseCacheVersion, 8)
     assert.deepEqual(state.files.codex[path].records, [])
   } finally {
     await rm(root, { recursive: true, force: true })
