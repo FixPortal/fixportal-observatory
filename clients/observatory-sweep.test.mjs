@@ -362,7 +362,7 @@ for (const failure of ['malformed JSONL', 'invalid counters', 'overflowed counte
 }
 
 const CLAUDE_SAFETY_CASES = [
-  // These two previously posted prompt_unknown; contradictory meters now withhold the source.
+  // Contradictory creation totals and TTL subsets withhold the entire source.
   ['inconsistent total and splits', claudePromptRow({ ...COMPLETE_CLAUDE_PROMPT, cache_creation_input_tokens: 9, cache_creation: { ephemeral_5m_input_tokens: 5, ephemeral_1h_input_tokens: 5 } }, { id: 'unsafe' }), true],
   ['subset exceeds total', claudePromptRow({ ...COMPLETE_CLAUDE_PROMPT, cache_creation_input_tokens: 9, cache_creation: { ephemeral_1h_input_tokens: 10 } }, { id: 'unsafe' }), true],
   ['creation total below subset', claudePromptRow({ ...COMPLETE_CLAUDE_PROMPT, cache_creation_input_tokens: 10, cache_creation: { ephemeral_5m_input_tokens: 20, ephemeral_1h_input_tokens: 0 } }, { id: 'unsafe' }), true],
