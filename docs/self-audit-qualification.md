@@ -1,5 +1,100 @@
 # Self-audit qualification — 2026-10-22
 
+Qualification remains partial. Review batch 64 corrects the reviewed accounting,
+coverage, capture-lifetime and report defects. Its focused regressions and fresh
+native replay pass. The full Windows gate still times out, and acceptance 7
+remains blocked on a transactional snapshot of the actual installation database.
+No production data, network rule, deployment or feature setting was changed.
+
+## Review batch 64 identity and scope
+
+The newly qualified implementation is
+`66af853e822eaef006b3485f22ef301f4ca85dbb`, with schema `1`, verifier `1.0.0`
+and rules `1`. These remain the initial unpublished versions. The prior bundles
+and their compatible runner are preserved separately; their canonical results
+qualify the earlier implementation, not these revised semantics. After
+publication, a semantic change requires a verifier or rule version boundary.
+
+The fresh run used the same frozen completed window, **2026-10-21 UTC**, and
+24 source files containing 466,105,398 bytes. The ordinary Windows companion
+sealed 13,863 sanitized records in 20.07 seconds. Source hashes were verified
+before and after capture, and identical new preservation copies are held outside
+both Git and the user home. The API mounted the committed review-worktree
+binaries, used only the owned projection-copy database, had blank vendor
+credentials and suggestions disabled, and failed an external network probe.
+The database still lacks the actual installation's transactional and historical
+pricing provenance; this run does not close that qualification gap.
+
+| Check | Fresh linked evaluation | Meaning |
+|---|---|---|
+| Event aggregation | Matched, 2 / 2 groups | Agreement within the owned frozen projection copy |
+| Source accounting | Incomplete, 0 / 31 groups | Missing closure and incomplete extraction remain explicit |
+| Daily attribution | Incomplete, 0 / 30 groups | Open sessions remain provisional, including those ending outside the selected window |
+| Pricing arithmetic | Incomplete, 0 / 2 events | Historical catalog/application evidence remains absent |
+| Displayed totals | Matched, 11 / 11 values | Actual production browser summary and formatter on the selected frozen scope |
+| Billing reconciliation | Excluded | Unqualified feed; no invoice or publication confirmation |
+
+The result remains **Incomplete**. Source and daily checks retain the 38
+last-usage disagreements observed previously. The unsupported Codex
+`token_usage_record` shape, missing historical denominator and other source
+limitations described below remain unresolved. Production-calculator integration
+fixtures separately prove the corrected OpenAI uncached-input/cache-read/write
+contract and corruption detection; the native cohort cannot establish missing
+historical prices.
+
+The actual linked presentation action completed in 97.73 seconds: one projected
+page took 48.34 seconds and the probe POST took 12.83 seconds. Export returned
+HTTP 200 with 18,617,800 bytes in 91.91 seconds. Two ordinary Windows CLI replays
+returned expected exit 3 in 63.08 and 66.58 seconds. A Linux container with no
+network returned exit 3 in 75.69 seconds. All three canonical outputs equal the
+new bundle's recorded result, SHA-256
+`84638af21c4e8698651a2189eb91290e716bed65ccc5221aa7877f775e1f22be`.
+This is fresh execution evidence; earlier timings below are retained historical
+measurements.
+
+The six-check results panel was inspected in the real production UI at desktop
+and narrow widths, in light and dark themes. It exposes exact coverage counts,
+qualifications and field exclusions without horizontal page overflow. Selecting
+the completed evaluation focused its heading. The actual read-only viewer could
+read the scoped report and was denied privileged evidence and bundle routes.
+Full and expired report regressions cover scope, cutoff/completion context,
+per-check coverage and explicit unavailable legacy qualifications. Existing
+browser file-saving and real Entra issuer limitations remain unchanged.
+
+## Review batch 64 gates and remaining limits
+
+Release restore/build and C# formatting passed with zero build warnings/errors.
+The Web gate passed 551 tests across 67 files, with the existing 120 advisory
+warnings and bundle-size warning. Node contract/client suites passed 156 tests;
+Python policy and packaging checks passed 75 and 2. Changed workflow lint,
+workflow hygiene, gate coverage and canonical assets passed. The synthetic golden
+replayed twice with its unchanged expected Incomplete result.
+
+The single idle full Windows Release run retained the five-minute module cap
+and **did not pass**. API Integration timed out at 5m 01.066s and Data at
+5m 01.877s; total wall time was 5m 02.350s. The command reported 2,103 passed
+and one existing explicit skip, plus two module errors. Partial TRX files contain
+2,105 passed entries and that skip; this reporting discrepancy is preserved,
+and neither count establishes completion. CLI, API unit, independent Audit and
+Ingest modules completed successfully. All newly added regressions and their
+changed fixture classes recorded passes. Eight uncovered cancellation,
+shared-owner, partial-evidence and database-template/startup composition cases
+then passed serial targeted runs under the unchanged two-minute limit. There was
+no full retry or limit increase. Earlier public Linux CI below qualifies the
+old commit; no new public CI result is claimed here.
+
+Default detailed paging still validates/materializes the full cohort per page;
+this review does not resolve its previously measured scaling limitation or
+establish a maximum-memory guarantee. Actual installation database acceptance,
+unsupported source formats, real Entra, macOS execution and browser file saving
+remain bounded as described below. The feature stays default-disabled.
+
+## Historical pre-review qualification
+
+The following measurements and public CI results qualify implementation
+`445570e121ce6e524d389226686da2e2eee905a5`, documented at
+`0a9c879e1bace8b0ca87249c118286ecf5bbe60c`. They are preserved for comparison.
+
 > Point-in-time qualification of the shipped dashboard, companion and offline
 > verifier. Durations are measured wall time; sizes are bytes or MiB. This report
 > contains no installation identifiers, credentials, transcripts or spend totals.
@@ -13,7 +108,7 @@ but they are nontransactional projections with missing database-only facts.
 They do not substitute for the required database snapshot. No production data,
 firewall, deployment or feature setting was changed by this qualification.
 
-## Reproduction identity and scope
+### Reproduction identity and scope
 
 The implementation under qualification is commit
 `445570e121ce6e524d389226686da2e2eee905a5` with schema `1`, verifier `1.0.0` and rules `1`. The approved design is
@@ -41,7 +136,7 @@ The native Windows capture read 24 files, 466,105,398 source bytes and produced
 Claude Code 2.1.302–2.1.307 and Codex CLI 0.163.0. Installed executable versions
 were observed separately; they are not evidence of historical source format.
 
-## Check outcomes and their limits
+### Check outcomes and their limits
 
 | Question | Observed outcome | Qualification limit |
 |---|---|---|
@@ -69,7 +164,7 @@ establish safe deduplication or attribution semantics. Unknown shapes were not
 silently treated as zero usage. The six other local source families and
 unqualified billing feeds remain visibly unsupported.
 
-## Browser, authority and lifecycle evidence
+### Browser, authority and lifecycle evidence
 
 The ordinary shipped companion and API were exercised through a real production
 browser build: machine registration, credential issuance, claim, capture,
@@ -96,7 +191,7 @@ sink failed downloads, including an independent retained Blob diagnostic. Direct
 authenticated HTTP exports and ordinary offline replay passed. Successful browser
 file saving is therefore not claimed.
 
-## Replay, privacy and adversarial copies
+### Replay, privacy and adversarial copies
 
 The native clean bundle and its linked presentation evaluation were exported
 privately. Ordinary CLI replay of the clean evidence was run twice and produced
@@ -123,7 +218,7 @@ handling required correction before all copy hashes and owner-only file and
 directory access were verified. That handling incident is retained in the private
 report and is separate from product privacy tests.
 
-## Performance and bounds
+### Performance and bounds
 
 | Actual workload | Measurement | Meaning |
 |---|---|---|
@@ -148,7 +243,7 @@ This remains a substantive scaling limitation for final review. The 512 MiB
 serialized/input ceiling is **not a maximum-memory guarantee**: native API working
 memory was observed around 883 MiB.
 
-## Gates, corrections and remaining blockers
+### Gates, corrections and remaining blockers
 
 [Linux CI for commit 445570e](https://github.com/FixPortal/fixportal-observatory/actions/runs/39743335719)
 passed every job and the required CI Gate: 2,253 backend tests, 2,252 passed,
@@ -191,7 +286,7 @@ Entra issuer validation, managed-browser file saving, and macOS execution.
 The deferred zero-GUID machine-rotation behavior remains a named
 minor risk owned by final review. No review approval substitutes for the missing installation evidence.
 
-## Commands and portability
+### Commands and portability
 
 Commands below omit private locations and connection values. Full commands,
 cutoffs, identities, hashes, logs and copy provenance are preserved privately.
