@@ -422,6 +422,10 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
         await using (var scope = provider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+            // Remove the previous test's usage and cascading application history before its
+            // referenced catalogs; production provenance constraints remain unchanged.
+            await db.UsageEvents.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+            await db.DailyAggregates.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
             await db.PricingSnapshots.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
             await db.SourceSyncStates.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
         }

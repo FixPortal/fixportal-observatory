@@ -37,6 +37,7 @@ public sealed class AuditWorkerTests : IAsyncLifetime
         {
             Database = $"aiobs_test_worker_{Guid.NewGuid():N}",
         }.ConnectionString;
+        await AiObservatory.Testing.PostgresTestAssemblyFixture.CloneMigratedDatabaseAsync(conn, Ct);
         _options = new DbContextOptionsBuilder<AiObservatoryDbContext>().UseNpgsql(conn, o => o.UseNodaTime()).Options;
         _db = new(_options);
         await _db.Database.MigrateAsync(Ct);
