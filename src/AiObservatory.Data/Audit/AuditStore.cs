@@ -29,7 +29,7 @@ public sealed class AuditStore
         _db = db;
         _clock = clock;
         _options = options ?? new();
-        Require(_options.ValidationErrors().Count == 0, "invalid_audit_options", 400);
+        Require(_options.ValidationErrors(clock.GetCurrentInstant()).Count == 0, "invalid_audit_options", 400);
         ValidateKey(instanceId);
         _instanceId = instanceId;
     }
@@ -246,6 +246,8 @@ public sealed class AuditStore
                     "capture_count_mismatch",
                     409
                 );
+                var recordHashes =
+                    new Dictionary<(string SourceId, string Generation, string FileId, long Sequence), string>();
                 for (var index = 0; index < chunks.Count; index++)
                 {
                     var chunk = chunks[index];
@@ -272,6 +274,7 @@ public sealed class AuditStore
                             "capture_record_membership",
                             409
                         );
+                        ValidateRecordIdentity(record, recordHashes);
                     }
                 }
                 var now = _clock.GetCurrentInstant();
@@ -713,10 +716,16 @@ public sealed class AuditStore
 
     public Task UpdateRetentionAsync(int? evidenceDays, int? summaryDays, CancellationToken ct)
     {
-        Require(evidenceDays is null or > 0 && summaryDays is null or > 0, "invalid_retention", 400);
         return Transaction(
             async () =>
             {
+                var now = _clock.GetCurrentInstant();
+                Require(
+                    AuditRetentionPolicy.TryGetExpiry(now, evidenceDays, out _)
+                        && AuditRetentionPolicy.TryGetExpiry(now, summaryDays, out _),
+                    "invalid_retention",
+                    400
+                );
                 var settings = await Retention(ct);
                 settings.EvidenceDays = evidenceDays;
                 settings.SummaryDays = summaryDays;
@@ -873,6 +882,21 @@ public sealed class AuditStore
         return bytes;
     }
 
+    private static void ValidateRecordIdentity(
+        SourceUsageRecord record,
+        IDictionary<(string SourceId, string Generation, string FileId, long Sequence), string> recordHashes
+    )
+    {
+        var identity = (record.SourceId, record.Generation, record.FileId, record.Sequence);
+        var hash = AuditCanonicalJson.ContentHash(AuditCanonicalJson.Serialize(record));
+        Require(
+            !recordHashes.TryGetValue(identity, out var existing) || existing == hash,
+            "capture_record_identity_conflict",
+            409
+        );
+        recordHashes[identity] = hash;
+    }
+
     private static IReadOnlyList<SourceUsageRecord> ParseRecords(byte[] bytes)
     {
         var records = new List<SourceUsageRecord>();
@@ -903,8 +927,11 @@ public sealed class AuditStore
 
     private static bool IsTerminal(string state) => state is "completed" or "cancelled" or "failed";
 
-    private static Instant? Expiry(Instant from, int? days) =>
-        days == null ? null : from.Plus(Duration.FromDays(days.Value));
+    private static Instant? Expiry(Instant from, int? days)
+    {
+        Require(AuditRetentionPolicy.TryGetExpiry(from, days, out var expiry), "invalid_retention", 400);
+        return expiry;
+    }
 
     private static Instant Min(Instant a, Instant b) => a < b ? a : b;
 

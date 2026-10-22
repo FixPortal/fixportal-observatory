@@ -1,3 +1,5 @@
+using NodaTime;
+
 namespace AiObservatory.Data.Audit;
 
 /// <summary>Hard protocol ceilings may be lowered by an installation, never silently raised.</summary>
@@ -18,7 +20,7 @@ public class AuditStoreOptions
     public int? EvidenceRetentionDays { get; set; } = 90;
     public int? SummaryRetentionDays { get; set; } = 365;
 
-    public IReadOnlyList<string> ValidationErrors()
+    public IReadOnlyList<string> ValidationErrors(Instant? now = null)
     {
         var errors = new List<string>();
         Bound(MaxChunkBytes, 8 * 1024 * 1024, nameof(MaxChunkBytes));
@@ -46,9 +48,19 @@ public class AuditStoreOptions
         {
             errors.Add("RunLeaseRenewalInterval must be positive and shorter than the lease.");
         }
-        if (EvidenceRetentionDays is <= 0 || SummaryRetentionDays is <= 0)
+        if (
+            !AuditRetentionPolicy.IsSupportedDays(EvidenceRetentionDays)
+            || !AuditRetentionPolicy.IsSupportedDays(SummaryRetentionDays)
+            || now is { } from
+                && (
+                    !AuditRetentionPolicy.TryGetExpiry(from, EvidenceRetentionDays, out _)
+                    || !AuditRetentionPolicy.TryGetExpiry(from, SummaryRetentionDays, out _)
+                )
+        )
         {
-            errors.Add("Retention must be positive or explicitly null for indefinite.");
+            errors.Add(
+                "Retention must be 1 to 36500 days with a representable expiry, or explicitly null for indefinite."
+            );
         }
         return errors;
         void Bound(long value, long ceiling, string name)

@@ -373,6 +373,115 @@ public sealed class AuditStoreTests : IAsyncLifetime
         (await _store.ReadCaptureAsync(lease.RequestId, Ct)).Should().BeNull();
     }
 
+    /// <summary>Contradictory facts under one stable identity must never become immutable evidence.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SealCapture_ConflictingStableIdentity_RejectsWithinAndAcrossChunks(bool separateChunks)
+    {
+        var lease = await Capture();
+        var first = Record(lease.MachineId, model: "model-a");
+        var second = Record(lease.MachineId, model: "model-b");
+        byte[][] chunks = separateChunks
+            ? [first, second]
+            :
+            [
+                [.. first, .. second],
+            ];
+        var hashes = chunks.Select(chunk => AuditCanonicalJson.ContentHash(chunk)).ToArray();
+        for (var index = 0; index < chunks.Length; index++)
+        {
+            await _store.PutChunkAsync(lease, index, chunks[index], hashes[index], Ct);
+        }
+        var action = () => _store.SealCaptureAsync(lease, Manifest(lease, hashes, 2), "seal", Ct);
+        var rejected = (await action.Should().ThrowAsync<AuditStoreException>()).Which;
+        rejected.StatusCode.Should().Be(409);
+        rejected.Code.Should().Be("capture_record_identity_conflict");
+        (await _store.ReadCaptureAsync(lease.RequestId, Ct)).Should().BeNull();
+        await _store.PutChunkAsync(lease, 0, chunks[0], hashes[0], Ct);
+    }
+
+    /// <summary>Identical repeated original facts remain retained with their original line count and bytes.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SealCapture_IdenticalStableIdentity_PreservesDuplicatesWithinAndAcrossChunks(bool separateChunks)
+    {
+        var lease = await Capture();
+        var record = Record(lease.MachineId, model: "model-a");
+        byte[][] chunks = separateChunks
+            ? [record, record]
+            :
+            [
+                [.. record, .. record],
+            ];
+        var hashes = chunks.Select(chunk => AuditCanonicalJson.ContentHash(chunk)).ToArray();
+        for (var index = 0; index < chunks.Length; index++)
+        {
+            await _store.PutChunkAsync(lease, index, chunks[index], hashes[index], Ct);
+        }
+        var manifest = Manifest(lease, hashes, 2);
+        var id = await _store.SealCaptureAsync(lease, manifest, "seal", Ct);
+        var retained = (await _store.ReadCaptureAsync(id, Ct))!;
+        retained.Manifest.Should().Equal(manifest);
+        retained.Chunks.Should().HaveCount(chunks.Length);
+        for (var index = 0; index < chunks.Length; index++)
+        {
+            retained.Chunks[index].Should().Equal(chunks[index]);
+        }
+        AuditCanonicalJson.Deserialize<CaptureManifest>(retained.Manifest).RecordCount.Should().Be(2);
+    }
+
+    /// <summary>Unsupported finite settings cannot poison subsequent seals or run completions.</summary>
+    [Theory]
+    [InlineData(int.MaxValue)]
+    [InlineData(3_000_000)]
+    [InlineData(36_501)]
+    public async Task UpdateRetention_UnsupportedFiniteDays_RejectsWithoutChangingDefaults(int days)
+    {
+        foreach (var values in new (int? Evidence, int? Summary)[] { (days, null), (null, days) })
+        {
+            var action = () => _store.UpdateRetentionAsync(values.Evidence, values.Summary, Ct);
+            var rejected = (await action.Should().ThrowAsync<AuditStoreException>()).Which;
+            rejected.StatusCode.Should().Be(400);
+            rejected.Code.Should().Be("invalid_retention");
+        }
+        var lease = await Capture();
+        var captureId = await _store.SealCaptureAsync(lease, Manifest(lease, [], 0), "seal", Ct);
+        (await _store.ReadCaptureAsync(captureId, Ct))!.ExpiresAt.Should().Be(Now.Plus(Duration.FromDays(90)));
+        var run = await Run();
+        var worker = (await _store.TryLeaseRunAsync(Guid.NewGuid(), Now, Ct))!;
+        (await _store.TryPublishAsync(worker, Result(), Ct)).Should().BeTrue();
+        (await _store.GetRunAsync(run, Ct))!.SummaryExpiresAt.Should().Be(Now.Plus(Duration.FromDays(365)));
+    }
+
+    /// <summary>Even a supported finite day count must be rejected if the actual current Instant cannot hold its expiry.</summary>
+    [Fact]
+    public async Task UpdateRetention_InstantBoundary_RejectsFiniteExpiryAndAllowsIndefinite()
+    {
+        var clock = new FakeClock(Now);
+        var store = new AuditStore(_db, clock);
+        clock.Advance(Instant.MaxValue - Now - Duration.FromHours(1));
+        foreach (var values in new (int? Evidence, int? Summary)[] { (1, null), (null, 1) })
+        {
+            var action = () => store.UpdateRetentionAsync(values.Evidence, values.Summary, Ct);
+            var rejected = (await action.Should().ThrowAsync<AuditStoreException>()).Which;
+            rejected.StatusCode.Should().Be(400);
+            rejected.Code.Should().Be("invalid_retention");
+        }
+        await store.UpdateRetentionAsync(null, null, Ct);
+    }
+
+    /// <summary>The documented finite upper bound remains usable rather than rejecting all finite settings.</summary>
+    [Fact]
+    public async Task UpdateRetention_SupportedMaximum_StoresRepresentableExpiry()
+    {
+        await _store.UpdateRetentionAsync(36_500, 36_500, Ct);
+        var lease = await Capture();
+        var captureId = await _store.SealCaptureAsync(lease, Manifest(lease, [], 0), "seal", Ct);
+        (await _store.ReadCaptureAsync(captureId, Ct))!.ExpiresAt.Should().Be(Now.Plus(Duration.FromDays(36_500)));
+    }
+
     private Task<Guid> Run() =>
         _store.CreateRunAsync(Scope(), [], Guid.NewGuid().ToString("N"), false, _clock.GetCurrentInstant(), Ct);
 
@@ -417,7 +526,7 @@ public sealed class AuditStoreTests : IAsyncLifetime
             CheckVerdict.Incomplete
         );
 
-    private static byte[] Record(Guid machine, long sequence = 1) =>
+    private static byte[] Record(Guid machine, long sequence = 1, string? model = null) =>
         [
             .. AuditCanonicalJson.Serialize(
                 new SourceUsageRecord
@@ -431,6 +540,7 @@ public sealed class AuditStoreTests : IAsyncLifetime
                     Generation = "generation-a",
                     FileId = "file-a",
                     Sequence = sequence,
+                    Model = model,
                     Timestamp = Now.ToDateTimeOffset(),
                     Pricing = new(ServiceTier.Unknown, false, null, null),
                     Closure = new(ClosureState.Unknown, null, null),
