@@ -1,3 +1,7 @@
+using System.Text;
+using AiObservatory.Audit.Serialization;
+using AiObservatory.Data.Audit;
+
 namespace AiObservatory.Api.Audit;
 
 public static class AuditEvidenceEndpoints
@@ -9,6 +13,14 @@ public static class AuditEvidenceEndpoints
                 "/{id:guid}/evidence",
                 async (Guid id, HttpRequest request, AuditReportService service, CancellationToken ct) =>
                 {
+                    var presentation = request.Query.ContainsKey("projection");
+                    if (
+                        presentation
+                        && (request.Query["projection"].Count != 1 || request.Query["projection"] != "presentation")
+                    )
+                    {
+                        throw new AuditStoreException("invalid_evidence_projection", 400);
+                    }
                     var session = await service.OpenAsync(id, ct);
                     try
                     {
@@ -17,25 +29,38 @@ public static class AuditEvidenceEndpoints
                         var evidence = new List<object>();
                         void Add<T>(string kind, IReadOnlyList<T> rows) =>
                             evidence.AddRange(rows.Select(record => AuditViewerProjection.Wire(new { kind, record })));
-                        Add("capture", bundle.Input.Captures);
-                        Add("pricingCatalog", bundle.Input.PricingCatalogs);
-                        Add("sourceRecord", bundle.Input.Records);
-                        Add("event", bundle.Input.Events);
+                        if (!presentation)
+                        {
+                            Add("capture", bundle.Input.Captures);
+                            Add("pricingCatalog", bundle.Input.PricingCatalogs);
+                            Add("sourceRecord", bundle.Input.Records);
+                            Add("event", bundle.Input.Events);
+                        }
                         Add("aggregate", bundle.Input.Aggregates);
                         Add("spend", bundle.Input.Spend);
-                        Add("sourceStatus", bundle.Input.SourceStatuses);
-                        Add("fx", bundle.Input.FxRates);
-                        Add("financialObservation", bundle.Input.FinancialObservations ?? []);
-                        Add("sourceQualification", bundle.Input.SourceQualifications ?? []);
-                        if (bundle.Input.PresentationProbe != null)
+                        if (!presentation)
                         {
-                            Add("presentationProbe", new[] { bundle.Input.PresentationProbe });
+                            Add("sourceStatus", bundle.Input.SourceStatuses);
+                            Add("fx", bundle.Input.FxRates);
+                            Add("financialObservation", bundle.Input.FinancialObservations ?? []);
+                            Add("sourceQualification", bundle.Input.SourceQualifications ?? []);
+                            if (bundle.Input.PresentationProbe != null)
+                            {
+                                Add("presentationProbe", new[] { bundle.Input.PresentationProbe });
+                            }
+                            Add("finding", bundle.Result.Findings);
+                            Add(
+                                "pricingEquation",
+                                bundle.Result.Checks.SelectMany(c => c.PricingTraces ?? []).ToArray()
+                            );
                         }
-                        Add("finding", bundle.Result.Findings);
-                        Add("pricingEquation", bundle.Result.Checks.SelectMany(c => c.PricingTraces ?? []).ToArray());
-                        var page = AuditViewerProjection.Wire(
-                            AuditViewerProjection.Page(evidence, request, bundle.Result.InputContentDigest)
+                        // Bind offsets to this run, immutable scope/input, snapshot and projection.
+                        var binding = AuditCanonicalJson.ContentHash(
+                            Encoding.UTF8.GetBytes(
+                                $"{id:D}:{bundle.Result.InputContentDigest}:{document.FrozenSnapshotHash}:{(presentation ? "presentation" : "detailed")}"
+                            )
                         );
+                        var page = AuditViewerProjection.Wire(AuditViewerProjection.Page(evidence, request, binding));
                         page["frozenSnapshotHash"] = document.FrozenSnapshotHash;
                         page["summaryInputDigest"] = document.SummaryInputDigest;
                         session.Token.ThrowIfCancellationRequested();

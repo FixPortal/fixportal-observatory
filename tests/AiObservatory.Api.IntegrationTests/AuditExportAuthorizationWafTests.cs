@@ -94,7 +94,7 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
             var body = await response.Content.ReadAsStringAsync(Ct);
             body.Should().NotContain("secret-session").And.NotContain("evidenceRefs");
         }
-        foreach (var suffix in new[] { "bundle", "evidence" })
+        foreach (var suffix in new[] { "bundle", "evidence", "evidence?projection=presentation" })
         {
             (await viewer.GetAsync($"/api/audits/runs/{id}/{suffix}", Ct))
                 .StatusCode.Should()
@@ -148,6 +148,61 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
         (await viewer.PostAsync($"/api/audits/runs/{Guid.NewGuid()}/presentation-probe", null, Ct))
             .StatusCode.Should()
             .Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Evidence_PresentationProjectionDrainsEquivalentRowsAndRejectsForeignCursors()
+    {
+        var id = await Seed(aggregateCount: 205);
+        using var admin = _factory.CreateAdminClient();
+        var path = $"/api/audits/runs/{id}/evidence?limit=200";
+        var detailed = await admin.GetFromJsonAsync<JsonElement>(path, Ct);
+        var projected = await admin.GetFromJsonAsync<JsonElement>(path + "&projection=presentation", Ct);
+        var next = projected.GetProperty("nextCursor").GetString()!;
+        var tail = await admin.GetFromJsonAsync<JsonElement>(path + "&projection=presentation&cursor=" + next, Ct);
+        tail.GetProperty("nextCursor").ValueKind.Should().Be(JsonValueKind.Null);
+        var rows = projected
+            .GetProperty("items")
+            .EnumerateArray()
+            .Concat(tail.GetProperty("items").EnumerateArray())
+            .ToArray();
+        rows.Should().HaveCount(205);
+        rows.Should().OnlyContain(row => row.GetProperty("kind").GetString() == "aggregate");
+        var detailTail = await admin.GetFromJsonAsync<JsonElement>(
+            path + "&cursor=" + detailed.GetProperty("nextCursor").GetString(),
+            Ct
+        );
+        var expected = detailed
+            .GetProperty("items")
+            .EnumerateArray()
+            .Concat(detailTail.GetProperty("items").EnumerateArray())
+            .Where(row => row.GetProperty("kind").GetString() is "aggregate" or "spend")
+            .Select(row => row.GetRawText());
+        rows.Select(row => row.GetRawText()).Should().Equal(expected);
+        foreach (var field in new[] { "frozenSnapshotHash", "summaryInputDigest" })
+        {
+            projected.GetProperty(field).GetString().Should().Be(detailed.GetProperty(field).GetString());
+            tail.GetProperty(field).GetString().Should().Be(projected.GetProperty(field).GetString());
+        }
+        (await admin.GetAsync(path + "&cursor=" + next, Ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (
+            await admin.GetAsync(
+                path + "&projection=presentation&cursor=" + detailed.GetProperty("nextCursor").GetString(),
+                Ct
+            )
+        )
+            .StatusCode.Should()
+            .Be(HttpStatusCode.BadRequest);
+        var other = await Seed(aggregateCount: 205);
+        (await admin.GetAsync($"/api/audits/runs/{other}/evidence?projection=presentation&cursor={next}", Ct))
+            .StatusCode.Should()
+            .Be(HttpStatusCode.BadRequest);
+        foreach (var invalid in new[] { "", "all", "sourceRecord", "presentation&projection=presentation" })
+        {
+            (await admin.GetAsync(path + "&projection=" + invalid, Ct))
+                .StatusCode.Should()
+                .Be(HttpStatusCode.BadRequest);
+        }
     }
 
     [Fact]
@@ -263,6 +318,9 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
         using var admin = _factory.CreateAdminClient();
         (await admin.GetAsync($"/api/audits/runs/{id}/bundle", Ct)).StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await admin.GetAsync($"/api/audits/runs/{id}/evidence", Ct)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await admin.GetAsync($"/api/audits/runs/{id}/evidence?projection=presentation", Ct))
+            .StatusCode.Should()
+            .Be(HttpStatusCode.Conflict);
     }
 
     [Fact]
@@ -431,7 +489,11 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
         }
     }
 
-    private async Task<Guid> Seed(CheckCode[]? requestedChecks = null, CheckCode[]? excludedChecks = null)
+    private async Task<Guid> Seed(
+        CheckCode[]? requestedChecks = null,
+        CheckCode[]? excludedChecks = null,
+        int aggregateCount = 0
+    )
     {
         using var scope = _factory.Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<AuditStore>();
@@ -476,6 +538,30 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
                     null
                 ),
             ],
+            Aggregates = Enumerable
+                .Range(0, aggregateCount)
+                .Select(index => new FrozenAggregate(
+                    new(
+                        new(2026, 10, 20),
+                        "OpenAi",
+                        $"synthetic-model-{index:D4}",
+                        "synthetic",
+                        SourceKind.Synthetic,
+                        UsageScope.Subscription,
+                        AccountingBasis.Notional
+                    ),
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    4m,
+                    0,
+                    0m,
+                    0,
+                    1
+                ))
+                .ToArray(),
         };
         var source = new SourceUsageRecord
         {
@@ -532,7 +618,7 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
         var id = await store.CreateRunAsync(
             input.Scope,
             [captureId],
-            "export-fixture",
+            $"export-fixture-{machine.MachineId:D}",
             false,
             _clock.GetCurrentInstant(),
             Ct

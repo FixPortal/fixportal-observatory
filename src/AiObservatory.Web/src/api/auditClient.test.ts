@@ -102,8 +102,8 @@ test('probe drains frozen pages, calls production summary and sends the exact se
     diagnosticCodes: ['missing_presentation_value:billedNative'],
   })
   expect(requests.map((request) => request.url)).toEqual([
-    '/api/audits/runs/original/evidence?limit=200',
-    '/api/audits/runs/original/evidence?limit=200&cursor=frozen-next',
+    '/api/audits/runs/original/evidence?limit=200&projection=presentation',
+    '/api/audits/runs/original/evidence?limit=200&cursor=frozen-next&projection=presentation',
     '/api/audits/runs/original/presentation-probe',
   ])
   const posted = JSON.parse(requests[2]!.init.body as string)
@@ -134,6 +134,34 @@ test('probe drains frozen pages, calls production summary and sends the exact se
       'Idempotency-Key': expect.any(String),
     }),
   )
+})
+
+test('presentation projection drains more than 200 aggregates before observing production totals', async () => {
+  const rows = Array.from({ length: 205 }, () => aggregate)
+  vi.mocked(fetch).mockImplementation(async (url, init = {}) => {
+    const address = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
+    requests.push({ url: address, init })
+    if (address.includes('/evidence'))
+      return Response.json(
+        address.includes('cursor=')
+          ? page(rows.slice(200))
+          : page(rows.slice(0, 200), 'next-aggregate-page'),
+      )
+    return Response.json({ schemaVersion: 1, runId: 'linked-evaluation' })
+  })
+  await verifyAuditPresentation('large')
+  expect(requests.filter((request) => request.url.includes('/evidence'))).toHaveLength(2)
+  expect(
+    requests.slice(0, 2).every((request) => request.url.includes('projection=presentation')),
+  ).toBe(true)
+  const posted = JSON.parse(requests[2]!.init.body as string)
+  expect(posted.probe.values).toContainEqual({
+    field: 'notionalUsd',
+    groupKey: 'all',
+    unroundedValue: '820',
+    formattedValue: '820.00',
+    currency: 'USD',
+  })
 })
 
 test.each(['changed', 'loop', 'expired', 'unsafe'])(

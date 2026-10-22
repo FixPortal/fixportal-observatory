@@ -94,3 +94,5 @@ node scripts/audit-replay-smoke.mjs
 ```
 
 The smoke runs the built DLL twice in separate temporary directories and requires exact canonical bytes and SHA-256 `5a194bb9f85af8731a076e0fbea4baad6a57e0f8a32c5c746f3cea90d9a78f5b`. The correct result is **Incomplete**, exit 3: pricing publication evidence and a presentation probe are absent. It needs no provider credentials, server, database or private paths, and qualifies deterministic replay rather than installation source completeness.
+
+The displayed-total action requests `GET /api/audits/runs/{id}/evidence?projection=presentation&limit=200` and drains every page of frozen aggregate and spend rows before calling the dashboard summary and formatter. This projection retains full snapshot, capture, hash and verifier validation; it omits unrelated record kinds from the paginated response. Cursors bind to the run, snapshot, input scope/digest and projection. Unknown projection names and cursors from another projection or run are rejected. Ordinary detailed evidence requests retain all sanitized record kinds and can be expensive for large cohorts because each page validates the complete retained evidence.
