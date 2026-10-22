@@ -6,9 +6,87 @@ native replay pass. The full Windows gate still times out, and acceptance 7
 remains blocked on a transactional snapshot of the actual installation database.
 No production data, network rule, deployment or feature setting was changed.
 
-## Review batch 64 identity and scope
+## Current qualification after follow-up review
 
-The newly qualified implementation is
+The current qualified code is `499d668d87fc2740f9d852ad60cae87b625d9795`.
+It corrects three follow-up findings: daily attribution at a session/window
+boundary, evidence-lock duration during capture byte transfer, and test-container
+cleanup after an owned template fails. A fresh native run qualifies these
+semantics; the earlier runs below remain historical. Schema `1`, verifier
+`1.0.0` and rules `1` remain the initial unpublished versions.
+
+The same preserved 24 files were copied into a new owner-restricted evidence
+location and verified unchanged before and after capture. The ordinary companion
+sealed 13,863 sanitized records in 19.59 seconds. The owned API ran the exact
+committed binaries against the existing projection-copy database on an internal
+network; its external TCP probe failed. No original histories or installation
+data were changed.
+
+| Check | Fresh linked evaluation |
+|---|---|
+| Event aggregation | Matched, 2 / 2 groups |
+| Source accounting | Incomplete, 0 / 31 groups |
+| Daily attribution | Incomplete, 0 / 32 groups |
+| Pricing arithmetic | Incomplete, 0 / 2 events |
+| Displayed totals | Matched, 11 / 11 values |
+| Billing reconciliation | Excluded |
+
+The result remains **Incomplete**. Daily attribution now explicitly qualifies
+boundary-dependent groups with `daily_attribution_boundary`; the earlier
+implementation reported 0 / 30 groups. This affects open as well as closed
+straddling sessions, so the earlier native evidence could not qualify the fix.
+The fresh result retains 38 last-usage disagreements in each source/daily check
+and records 191 boundary diagnostics; diagnostics are per observation, not a
+count of unique sessions. Independent complete groups remain comparable.
+Missing closure, unsupported source shapes and historical pricing gaps remain.
+
+The actual production browser created the linked display evaluation in 95.30
+seconds: one presentation page took 45.71 seconds and the probe POST took 11.68
+seconds. Its six-check panel showed the boundary qualification and 11 matching
+displayed values without horizontal overflow. Browser automation used DOM button
+clicks to invoke the actual production handlers after native CLI clicks failed
+to select the audit. This proves the handler/API path, not a trusted native-click
+path for this run. Previous unchanged UI layout/theme qualification is retained
+below. Requests made before the linked evaluation completed returned
+`report_unavailable`; they are not counted as successful exports.
+
+After completion, HTTP export returned 200 with 18,767,042 bytes in 93.86 seconds.
+Two Windows replays returned expected exit 3 in 63.86 and 64.46 seconds. Linux
+replay, with networking disabled, a read-only root and a 2 GiB cap, returned exit
+3 in 74.82 seconds. All three canonical outputs are byte-identical to the new
+bundle's recorded result, SHA-256 `ce32b6a28373c061312da56f8d89eba230e23dc9db3048f107ce5e2f35cd9c50`.
+The compatible runner is preserved with this evidence; earlier bundles and
+runners remain separate and unchanged.
+
+The 13-entry bundle privacy check found no raw source paths, raw native
+session/message identifiers or tested owned credential values. An operator
+inventory command did print one generated capture identifier; that diagnostic
+handling lapse is recorded privately and is distinct from the product privacy
+check. No spend, native identifiers, source paths or credentials were printed
+by that command.
+
+All 271 Audit unit tests, 35 focused seal cases, six assembly-cleanup fault cases
+and three template-lifetime cases passed serial Release runs. The solution built
+with zero warnings/errors, and changed C# formatting passed. The prior exact
+`8e375533` Linux CI result of 2,302 passed / one skipped is historical; it does
+not establish CI success for this new code. The full Windows **NONPASS** below
+is unchanged; no full retry or timeout increase was made.
+
+Capture admission remains one candidate per server process before byte
+allocation. Full byte transfer and validation run outside the evidence lock;
+SQL revision binding and fresh publication fences reject changed generations
+and authority. Multiple processes each have their own budget, and the serialized
+512 MiB ceiling remains distinct from a maximum-memory guarantee.
+
+Actual-installation acceptance 7 remains **PARTIAL/BLOCKED**. The actual database
+snapshot and GitGuardian disposition await explicit authorization, and an actual
+Gitar verdict has not been established. Default detailed paging, unsupported
+formats, real Entra, macOS execution and browser file-saving limits remain as
+documented below. The feature remains default-disabled.
+
+## Historical first review batch 64 qualification
+
+The implementation qualified by this earlier run is
 `66af853e822eaef006b3485f22ef301f4ca85dbb`, with schema `1`, verifier `1.0.0`
 and rules `1`. These remain the initial unpublished versions. The prior bundles
 and their compatible runner are preserved separately; their canonical results
