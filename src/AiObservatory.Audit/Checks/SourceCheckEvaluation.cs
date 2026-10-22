@@ -34,21 +34,28 @@ internal sealed class SourceCheckEvaluation
         {
             var reference = expectedMap.GetValueOrDefault(key);
             var actual = actualMap.GetValueOrDefault(key);
-            Compare(key, reference, actual, code, findings);
+            Compare(key, reference, actual, code, findings, gaps);
             if (reference is not null && actual is not null)
             {
                 compared++;
             }
         }
-        var hasDifferences = findings.Any(f =>
-            f.RuleCode is "source_accounting_difference" or "daily_attribution_difference"
-        );
-        var verdict = hasDifferences ? CheckVerdict.Mismatched : CheckVerdict.Matched;
-        if (gaps.Count > 0)
-        {
-            verdict = CheckVerdict.Incomplete;
-        }
-        if (unsupported && input.Records.All(r => !AuditCapabilities.Sources.Any(c => c.Tool == r.Tool && c.Supported)))
+        var hasDifferences =
+            findings.Any(f =>
+                f.RuleCode is "source_accounting_difference" or "daily_attribution_difference"
+                && f.Field != "groupPresence"
+                && f.Expected is not null
+                && f.Actual is not null
+            )
+            || keys.Any(key =>
+                expectedMap.ContainsKey(key) != actualMap.ContainsKey(key) && !gaps.Any(g => g.SourceId == key.SourceId)
+            );
+        var verdict = ComparisonSupport.Verdict(hasDifferences ? 1 : 0, gaps.Count);
+        if (
+            !hasDifferences
+            && unsupported
+            && input.Records.All(r => !AuditCapabilities.Sources.Any(c => c.Tool == r.Tool && c.Supported))
+        )
         {
             verdict = CheckVerdict.Unsupported;
         }
@@ -249,7 +256,8 @@ internal sealed class SourceCheckEvaluation
         ComparisonGroup? reference,
         ComparisonGroup? actual,
         CheckCode code,
-        List<AuditFinding> findings
+        List<AuditFinding> findings,
+        List<CoverageGap> gaps
     )
     {
         var rule = code == CheckCode.DailyAttribution ? "daily_attribution_difference" : "source_accounting_difference";
@@ -284,6 +292,10 @@ internal sealed class SourceCheckEvaluation
         ];
         foreach (var (field, expected, observed) in values.Where(v => v.Expected != v.Actual))
         {
+            if (expected is null || observed is null)
+            {
+                gaps.Add(new(key.SourceId, key.Id + "|" + field, "unknown_token_comparison"));
+            }
             findings.Add(
                 new(
                     code,
