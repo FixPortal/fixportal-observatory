@@ -91,13 +91,20 @@ beforeEach(() => {
           schemaVersion: 1,
           enabled: true,
           schemaVersions: [1],
-          verifierVersions: ['1.0.0'],
+          verifierVersions: ['1.1.0'],
           sources: [
             {
               tool: 'claude',
               supported: true,
               format: 'claude-jsonl',
               version: '1',
+              reasonCode: null,
+            },
+            {
+              tool: 'claude',
+              supported: true,
+              format: 'claude-jsonl',
+              version: '2',
               reasonCode: null,
             },
             {
@@ -224,6 +231,27 @@ test('retains capture choices and acknowledges offline partial collection explic
   expect(request.scope.requestedChecks).toEqual(['sourceAccounting'])
   expect(request.scope.allowPartial).toBe(true)
   expect(request.requestFreshCapture).toBe(true)
+})
+
+test('multiple Claude evidence versions render one source choice and submit one configured source', async () => {
+  mount()
+  const user = userEvent.setup()
+  expect(await screen.findAllByRole('checkbox', { name: /claude-local/ })).toHaveLength(1)
+  expect(screen.getAllByLabelText('Configured source ID for claude')).toHaveLength(1)
+  const source = screen.getByLabelText('Configured source ID for claude')
+  await user.clear(source)
+  await user.type(source, 'native-context-evidence')
+  await user.type(screen.getByLabelText('Machine ID for this scope'), machine)
+  await user.click(screen.getByRole('button', { name: 'Start audit' }))
+  await waitFor(() => {
+    expect(calls.some((c) => c.path === '/runs' && c.init.method === 'POST')).toBe(true)
+  })
+  const request = JSON.parse(
+    calls.find((c) => c.path === '/runs' && c.init.method === 'POST')!.init.body as string,
+  )
+  expect(request.scope.sources).toEqual([
+    { machineId: machine, sourceId: 'native-context-evidence' },
+  ])
 })
 
 test('uses the explicit configured source instance independently of the extractor family', async () => {

@@ -9,6 +9,7 @@ export function extractClaudeEvidence(text, identityContext) {
     if (['user', 'system', 'progress', 'file-history-snapshot', 'queue-operation', 'summary'].includes(native.type)) return true;
     if (native.type === 'session_end') {
       const record = recordBase('claude', identityContext, sequence, native);
+      record.sourceVersion = '2';
       record.kind = 'sessionClosure'; record.closure = { state: 'explicitlyClosed', timestamp: record.timestamp, sequence: record.sequence };
       records.push(record); return true;
     }
@@ -17,6 +18,7 @@ export function extractClaudeEvidence(text, identityContext) {
     if (!usage || typeof usage !== 'object' || Array.isArray(usage)) throw new Error('invalid_usage_shape');
     if (usage.cache_creation != null && Object.getPrototypeOf(usage.cache_creation) !== Object.prototype) throw new Error('invalid_usage_shape');
     const record = recordBase('claude', identityContext, sequence, native, { model: native.message.model, provider: 'anthropic' });
+    record.sourceVersion = '2';
     record.kind = 'messageUsage';
     record.messageId = native.message.id == null ? null : identityContext.id('message', native.message.id);
     record.model = identifier(native.message.model, true);

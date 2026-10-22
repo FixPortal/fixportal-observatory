@@ -8,7 +8,8 @@ import { extractClaudeEvidence } from './audit/claude-evidence.mjs';
 import { extractCodexEvidence } from './audit/codex-evidence.mjs';
 import { loadIdentity, identityContext } from './audit/identity.mjs';
 import { parseLossless } from './audit/lossless-json.mjs';
-import { canonical, utcTimestamp } from './audit/protocol.mjs';
+import { canonical, utcTimestamp, sha256 } from './audit/protocol.mjs';
+import { pollOnce } from './audit/poll.mjs';
 import { captureEvidence, writeCapture } from './observatory-audit.mjs';
 
 const machineId = '11111111-1111-1111-1111-111111111111';
@@ -45,6 +46,52 @@ test('Claude copies retain native inclusive/subset counters and exact integer le
   assert.equal(result.records[0].pricing.inferenceGeo, 'us');
   assert.equal(result.records[0].closure.state, 'unknown');
   assert.doesNotMatch(canonical(result), /PLANTED|sk-secret|home\/private/);
+});
+
+test('prospective captures advertise exact emitted versions and remain facts only', async t => {
+  const { root, config, request } = await workspace(t);
+  await writeFile(join(root, 'native.jsonl'), claude());
+  const capture = await captureEvidence(request, config);
+  assert.equal(capture.manifest.extractorVersion, '1.1.0');
+  assert.deepEqual(capture.manifest.sourceFormats, [{ sourceId: 'claude-local', format: 'claude-jsonl', version: '2' }]);
+  assert.ok(capture.records.every(r => r.sourceVersion === '2'));
+  assert.equal(capture.records[0].pricing.context, undefined);
+  assert.deepEqual(Object.keys(capture.records[0].counters).sort(), ['counterKind', 'input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens', 'ephemeral_5m_input_tokens', 'ephemeral_1h_input_tokens', 'thinking_tokens', 'thinking_output_tokens'].sort());
+  const closure = extractClaudeEvidence(JSON.stringify({ type: 'session_end', timestamp: '2026-10-21T02:00:00Z' }), context());
+  assert.equal(closure.records[0].sourceVersion, '2');
+  config.sources[0].tool = 'codex';
+  await writeFile(join(root, 'native.jsonl'), codex());
+  const codexCapture = await captureEvidence(request, config);
+  assert.deepEqual(codexCapture.manifest.sourceFormats, [{ sourceId: 'claude-local', format: 'codex-jsonl', version: '1' }]);
+  assert.ok(codexCapture.records.every(r => r.sourceVersion === '1'));
+});
+
+test('restart retains a sealed v1 package without upgrading version or bytes', async t => {
+  const { dir, root, config, request } = await workspace(t);
+  await writeFile(join(root, 'native.jsonl'), claude());
+  const capture = await captureEvidence(request, config);
+  const records = capture.records.map(r => ({ ...r, sourceVersion: '1' }));
+  const ndjson = Buffer.from(records.map(canonical).join('\n') + '\n');
+  const manifest = { ...capture.manifest, extractorVersion: '1.0.0', sourceFormats: [{ sourceId: 'claude-local', format: 'claude-jsonl', version: '1' }], chunkHashes: [sha256(ndjson)] };
+  const token = '44444444-4444-4444-4444-444444444444';
+  const stateDirectory = join(dir, 'retained'); await mkdir(stateDirectory);
+  const directory = join(stateDirectory, request.requestId + '-' + token);
+  await writeCapture({ ...capture, manifest, records, chunks: [{ index: 0, sha256: sha256(ndjson), ndjson }] }, directory);
+  const before = await readFile(join(directory, 'manifest.json'));
+  await writeFile(join(root, 'native.jsonl'), 'changed invalid native input');
+  const uploads = [];
+  const transport = { async request(path, options) {
+    if (path.endsWith('/claim')) return { status: 200, body: JSON.stringify({ schemaVersion: 1, requestId: request.requestId, machineId, leaseToken: token, expiresAt: new Date(Date.now() + 300000).toISOString(), scope: request.scope }) };
+    uploads.push(options.body); return { status: 200, body: '{}' };
+  } };
+  assert.equal(await pollOnce({ ...config, machineId, stateDirectory }, { transport }), 'sealed');
+  assert.deepEqual(uploads[0], ndjson);
+  const seal = JSON.parse(uploads[1]);
+  assert.equal(seal.manifest.extractorVersion, '1.0.0');
+  assert.equal(seal.manifest.sourceFormats[0].version, '1');
+  assert.equal(canonical(seal.manifest), before.toString());
+  assert.deepEqual(await readFile(join(directory, 'manifest.json')), before);
+  assert.deepEqual(await readFile(join(directory, 'chunks', '000000.ndjson')), ndjson);
 });
 
 test('session and parent identities share domains across files without merging message and session domains', () => {

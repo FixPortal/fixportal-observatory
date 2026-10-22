@@ -12,18 +12,18 @@ public sealed class ReplayCommandTests
 {
     /// <summary>The real built process deterministically replays without credentials or package restoration.</summary>
     [Fact]
-    public async Task Replay_GoldenFixture_WritesDeterministicExpectedResultOffline()
+    public async Task Replay_VersionTwoFixture_WritesDeterministicExpectedResultOffline()
     {
         using var directory = new TestDirectory();
         var first = Path.Combine(directory.Path, "first");
         var second = Path.Combine(directory.Path, "second");
-        var fixture = Path.Combine(AppContext.BaseDirectory, "Fixtures", "golden-v1.zip");
+        var fixture = Path.Combine(AppContext.BaseDirectory, "Fixtures", "golden-v2.zip");
         var run1 = await Run("replay", fixture, "--output", first);
         var run2 = await Run("replay", fixture, "--output", second);
-        run1.ExitCode.Should().Be(3, run1.Error);
-        run2.ExitCode.Should().Be(3, run2.Error);
+        run1.ExitCode.Should().Be(0, run1.Error);
+        run2.ExitCode.Should().Be(0, run2.Error);
         var expected = await File.ReadAllBytesAsync(
-            Path.Combine(AppContext.BaseDirectory, "Fixtures", "golden-v1.result.json"),
+            Path.Combine(AppContext.BaseDirectory, "Fixtures", "golden-v2.result.json"),
             TestContext.Current.CancellationToken
         );
         (await File.ReadAllBytesAsync(Path.Combine(first, "result.json"), TestContext.Current.CancellationToken))
@@ -38,7 +38,7 @@ public sealed class ReplayCommandTests
             .Be(Convert.ToHexStringLower(SHA256.HashData(expected)));
         (await File.ReadAllTextAsync(Path.Combine(first, "report.txt"), TestContext.Current.CancellationToken))
             .Should()
-            .Contain("Incomplete")
+            .Contain("Matched")
             .And.Contain("Coverage");
     }
 
@@ -105,7 +105,14 @@ public sealed class ReplayCommandTests
         };
         var path = await Write(directory, bundle with { Input = input, Result = new AuditVerifier().Verify(input) });
         var output = Path.Combine(directory.Path, "output");
-        var run = await Run("replay", path, "--output", output, "--verifier-version", "1.0.0");
+        var run = await Run(
+            "replay",
+            path,
+            "--output",
+            output,
+            "--verifier-version",
+            AuditVerifierIdentity.VerifierVersion
+        );
         run.ExitCode.Should().Be(expectedExit, run.Error);
         var result = AuditCanonicalJson.Deserialize<AuditResult>(
             await File.ReadAllBytesAsync(Path.Combine(output, "result.json"), TestContext.Current.CancellationToken)
@@ -130,15 +137,29 @@ public sealed class ReplayCommandTests
     {
         using var directory = new TestDirectory();
         var bundle = await Golden();
-        var prior = bundle.Input with { VerifierVersion = "0.9.0", RuleVersion = "0" };
-        bundle = bundle with { Input = prior, Result = new AuditVerifier().Verify(prior) };
-        var path = await Write(directory, bundle);
+        var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "golden-v1.zip");
+        await using (var source = File.OpenRead(path))
+        {
+            bundle = await AuditBundleReader.ReadBundleAsync(
+                source,
+                new() { AllowReevaluation = true },
+                TestContext.Current.CancellationToken
+            );
+        }
         var originalBytes = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
         var rejected = await Run("replay", path, "--output", Path.Combine(directory.Path, "rejected"));
         rejected.ExitCode.Should().Be(4);
         Directory.Exists(Path.Combine(directory.Path, "rejected")).Should().BeFalse();
         var output = Path.Combine(directory.Path, "reevaluated");
-        var run = await Run("replay", path, "--output", output, "--reevaluate", "--verifier-version", "1.0.0");
+        var run = await Run(
+            "replay",
+            path,
+            "--output",
+            output,
+            "--reevaluate",
+            "--verifier-version",
+            AuditVerifierIdentity.VerifierVersion
+        );
         run.ExitCode.Should().Be(3, run.Error);
         (
             await File.ReadAllBytesAsync(
@@ -151,8 +172,8 @@ public sealed class ReplayCommandTests
         var reevaluated = AuditCanonicalJson.Deserialize<AuditResult>(
             await File.ReadAllBytesAsync(Path.Combine(output, "result.json"), TestContext.Current.CancellationToken)
         );
-        reevaluated.VerifierVersion.Should().Be("1.0.0");
-        reevaluated.RuleVersion.Should().Be("1");
+        reevaluated.VerifierVersion.Should().Be("1.1.0");
+        reevaluated.RuleVersion.Should().Be("2");
         reevaluated.InputContentDigest.Should().NotBe(bundle.Result.InputContentDigest);
         (await File.ReadAllTextAsync(Path.Combine(output, "evaluation.json"), TestContext.Current.CancellationToken))
             .Should()
@@ -182,7 +203,17 @@ public sealed class ReplayCommandTests
     private static async Task<AuditBundle> Golden()
     {
         await using var source = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Fixtures", "golden-v1.zip"));
-        return await AuditBundleReader.ReadBundleAsync(source, new(), TestContext.Current.CancellationToken);
+        var recorded = await AuditBundleReader.ReadBundleAsync(
+            source,
+            new() { AllowReevaluation = true },
+            TestContext.Current.CancellationToken
+        );
+        var input = recorded.Input with
+        {
+            VerifierVersion = AuditVerifierIdentity.VerifierVersion,
+            RuleVersion = AuditVerifierIdentity.RuleVersion,
+        };
+        return recorded with { Input = input, Result = new AuditVerifier().Verify(input) };
     }
 
     private static async Task<string> Write(TestDirectory directory, AuditBundle bundle)

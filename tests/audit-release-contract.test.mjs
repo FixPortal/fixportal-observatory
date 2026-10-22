@@ -30,11 +30,14 @@ test('release workflow packages all supported framework-dependent runners withou
   assert.doesNotMatch(workflow, /secrets[.\[]|id-token:|contents: write|deploy\.yml|gh release|azure\//i)
 })
 
-test('replay smoke locks the reviewed golden verdict, canonical bytes and SHA-256', async () => {
+test('replay smoke preserves v1 identity boundary and qualifies v2 canonical bytes', async () => {
   const smoke = await read('scripts/audit-replay-smoke.mjs')
   assert.match(smoke, /5a194bb9f85af8731a076e0fbea4baad6a57e0f8a32c5c746f3cea90d9a78f5b/)
   assert.match(smoke, /golden-v1\.result\.json/)
   assert.match(smoke, /status, 3/)
+  assert.match(smoke, /status, 4/)
+  assert.match(smoke, /status, 0/)
+  for (const contract of ['golden-v2.result.json', '--reevaluate', 'recorded-result.json', 'recordedResultSha256', 'recordedInputDigest', 'evaluationIdentity', '1.1.0']) assert.ok(smoke.includes(contract))
   assert.match(smoke, /deepEqual/)
   assert.match(smoke, /\['first', 'second'\]/)
   assert.doesNotMatch(smoke, /fetch\(|https?:|curl|wget|dotnet run|dotnet build|dotnet restore/)

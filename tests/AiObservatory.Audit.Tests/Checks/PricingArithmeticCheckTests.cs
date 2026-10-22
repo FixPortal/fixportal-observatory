@@ -7,6 +7,25 @@ namespace AiObservatory.Audit.Tests.Checks;
 
 public sealed class PricingArithmeticCheckTests
 {
+    [Fact]
+    public void MissingContextInUnrelatedGroupDoesNotMaskKnownArithmeticError()
+    {
+        var input = Fixture("Anthropic");
+        var unknown = input.Events[0] with
+        {
+            RowId = Guid.Parse("00000000-0000-0000-0000-000000000099"),
+            Model = "claude-haiku-5-5",
+            SourceDimensions = input.Events[0].PricingApplication!.Dimensions with { Context = null },
+            PricingApplication = null,
+        };
+        input = input with { Events = [input.Events[0], unknown] };
+        var result = new AuditVerifier().Verify(input);
+        result.Findings.Should().Contain(f => f.RuleCode == "pricing_cost_difference" && f.Actual!.Value == "99");
+        result.Coverage.Gaps.Should().Contain(g => g.DiagnosticCode == "pricing_application_missing");
+        result.Verdict.Should().Be(CheckVerdict.Mismatched);
+        input.Events[0].PricingApplication!.RuleVersion.Should().Be("1");
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1000)]

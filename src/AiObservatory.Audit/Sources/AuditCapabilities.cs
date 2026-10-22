@@ -9,6 +9,7 @@ public static class AuditCapabilities
             new SourceAuditCapability[]
             {
                 new(SourceTool.Claude, true, "claude-jsonl", "1", null),
+                new(SourceTool.Claude, true, "claude-jsonl", "2", null),
                 new(SourceTool.Codex, true, "codex-jsonl", "1", null),
                 new(SourceTool.Copilot, false, null, null, "unsupported_copilot_accounting"),
                 new(SourceTool.Gemini, false, null, null, "unsupported_gemini_accounting"),
