@@ -68,10 +68,11 @@ export const getAuditEvidence = (
   id: string,
   cursor: string | null = null,
   signal?: AbortSignal,
+  projection: 'presentation' | null = null,
 ) => {
   writable()
   return json<AuditEvidencePage>(
-    `/runs/${encodeURIComponent(id)}/evidence` + query({ limit: '200', cursor }),
+    `/runs/${encodeURIComponent(id)}/evidence` + query({ limit: '200', cursor, projection }),
     signal ? { signal } : undefined,
   )
 }
@@ -121,7 +122,7 @@ export async function verifyAuditPresentation(id: string, signal?: AbortSignal) 
   let cursor: string | null = null
   let binding: { frozenSnapshotHash: string; summaryInputDigest: string } | undefined
   do {
-    const page = await getAuditEvidence(id, cursor, signal)
+    const page = await getAuditEvidence(id, cursor, signal, 'presentation')
     if (
       !/^[a-f0-9]{64}$/.test(page.frozenSnapshotHash) ||
       !/^[a-f0-9]{64}$/.test(page.summaryInputDigest)
