@@ -148,8 +148,10 @@ public sealed class AuditPricingProjectorTests
         frozen.CostUsd.Should().Be(exact ? 0.0004m : 0.00025m);
     }
 
-    [Fact]
-    public void ReorderedCatalogEntry_BindsSelectedIdentityToFrozenRate()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReorderedCatalogEntry_BindsSelectedIdentityToFrozenRate(bool hasGenericWriteRate)
     {
         var now = Instant.FromUtc(2026, 10, 22, 12, 0);
         var entry = new OpenAiPriceEntry(
@@ -163,7 +165,7 @@ public sealed class AuditPricingProjectorTests
             2m,
             0.5m,
             10m,
-            3m
+            hasGenericWriteRate ? 3m : null
         );
         var wire = JsonNode.Parse(
             PricingCatalogJson.Serialize(new OpenAiPriceCatalog("USD", "https://example.com/pricing", now, [entry]))
@@ -195,6 +197,8 @@ public sealed class AuditPricingProjectorTests
             }
         );
         frozen.Rates.Should().OnlyContain(r => r.CatalogEntryKey == applied.RateKey);
+        frozen.Rates.Count(r => r.Meter == AiObservatory.Audit.Contracts.PriceMeter.CacheWrite5m)
+            .Should().Be(hasGenericWriteRate ? 1 : 0);
     }
 
     [Theory]

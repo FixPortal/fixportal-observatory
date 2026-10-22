@@ -8,6 +8,32 @@ namespace AiObservatory.Audit.Tests.Checks;
 public sealed class PricingArithmeticCheckTests
 {
     [Theory]
+    [InlineData(0)]
+    [InlineData(1000)]
+    public void MissingGenericWriteRate_DoesNotInventAPriceForPositiveWrites(long writes)
+    {
+        var input = Fixture(writes: writes);
+        input = input with
+        {
+            PricingCatalogs = input.PricingCatalogs.Select(c => c with
+            {
+                Rates = c.Rates.Where(r => r.Meter is not (PriceMeter.CacheWrite5m or PriceMeter.CacheWrite1h)).ToArray(),
+            }).ToArray(),
+        };
+        var result = new AuditVerifier().Verify(input);
+        var costFindings = result.Findings.Where(f => f.RuleCode == "pricing_cost_difference").ToArray();
+        if (writes == 0)
+        {
+            costFindings.Should().ContainSingle().Which.Expected!.Value.Should().Be("0.0042");
+        }
+        else
+        {
+            costFindings.Should().BeEmpty();
+            result.Checks.Single(c => c.Code == CheckCode.PricingArithmetic).Verdict.Should().Be(CheckVerdict.Incomplete);
+        }
+    }
+
+    [Theory]
     [InlineData("OpenAi", 1000, 100, 200, 0, 0, "0.0042")]
     [InlineData("Anthropic", 1000, 100, 200, 100, 40, "0.00451")]
     public void IndependentMeters_HandCalculatedCostDetectsCorruptPosting(

@@ -17,6 +17,112 @@ public sealed class OpenAiPricingSourceTests
 
     [Theory]
     [InlineData("standard", "short", 2.50, 0.25, 15.00)]
+    [InlineData("batch", "short", 1.25, 0.13, 7.50)]
+    [InlineData("flex", "long", 2.50, 0.25, 11.25)]
+    [InlineData("fast", "short", 5.00, 0.50, 30.00)]
+    public void CurrentDocumentPreservesSupportedRatesWithoutInventingWriteDuration(
+        string processing, string context, double input, double cached, double output)
+    {
+        var catalog = OpenAiPricingSource.Parse(CurrentFixture(), RetrievedAt);
+        var entry = catalog.Resolve("gpt-5.4", processing, context, "global", ObservedOn)!;
+        entry.Input.Should().Be((decimal)input);
+        entry.CachedInput.Should().Be((decimal)cached);
+        entry.Output.Should().Be((decimal)output);
+        entry.CacheWrite.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1000)]
+    public void CurrentDocumentFlowsThroughProductionCalculatorWithoutAssumingWriteDuration(long writes)
+    {
+        var catalog = OpenAiPricingSource.Parse(CurrentFixture(), RetrievedAt);
+        var usage = new UsageEvent
+        {
+            Provider = Provider.OpenAI,
+            Model = "gpt-5.4",
+            OccurredAt = RetrievedAt,
+            InputTokens = 1000,
+            OutputTokens = 2000,
+            CacheReadTokens = 500,
+            CacheWriteTokens = writes,
+            CostBasis = CostBasis.ListPriceEstimate,
+            RawPayload = """{"processing":"standard","context":"short","region":"global"}""",
+        };
+        var quote = new OpenAiPriceCalculator().CalculateWithEvidence(usage, PricingCatalogJson.Serialize(catalog));
+        if (writes > 0)
+        {
+            quote.Should().BeNull();
+        }
+        else
+        {
+            quote.Should().NotBeNull();
+            quote.Quote.CostUsd.Should().Be(0.032625m);
+            quote.Quote.CacheSavingsUsd.Should().Be(0.001125m);
+            quote.RateKey.Should().NotBeNullOrEmpty();
+        }
+    }
+
+    [Theory]
+    [InlineData("duplicate-standard")]
+    [InlineData("duplicate-model")]
+    [InlineData("unknown-column")]
+    [InlineData("invalid-duration-price")]
+    [InlineData("missing-flagship")]
+    [InlineData("ambiguous-boundary")]
+    [InlineData("misplaced-flex")]
+    [InlineData("conflicting-unit")]
+    public void CurrentDocumentRejectsAmbiguousOrUnrecognizedSupportedTables(string mutation)
+    {
+        var document = CurrentFixture();
+        document = mutation switch
+        {
+            "duplicate-standard" => document.Replace("### Fast pricing data", "### Standard pricing data", StringComparison.Ordinal),
+            "duplicate-model" => document.Replace("| gpt-5.6-sol |", "| gpt-5.4 |", StringComparison.Ordinal),
+            "unknown-column" => document.Replace("Short context 30m write", "Short context mystery write", StringComparison.Ordinal),
+            "invalid-duration-price" => document.Replace("$91.00", "$-91.00", StringComparison.Ordinal),
+            "missing-flagship" => document.Replace("Flagship models", "Models", StringComparison.Ordinal),
+            "ambiguous-boundary" => document + "\nCyber models\n",
+            "misplaced-flex" => document.Replace("#### Flex", "#### Batch", StringComparison.Ordinal),
+            "conflicting-unit" => document.Replace("Prices per 1M tokens.", "Prices per 1K tokens.", StringComparison.Ordinal),
+            _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
+        };
+        var act = () => OpenAiPricingSource.Parse(document, RetrievedAt);
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    private static string CurrentFixture()
+    {
+        // Invented prices and minimal structure; no vendor page is copied into the fixture.
+        var lines = Fixture().Split('\n').Select(line =>
+        {
+            if (!line.TrimStart().StartsWith('|'))
+            {
+                return line;
+            }
+            var cells = line.Trim().Split('|')[1..^1].Select(cell => cell.Trim()).ToArray();
+            if (cells[0] == "Model")
+            {
+                return "| Model | Short context input | Short context output | Short context cached input | Short context 30m write | Short context 12h write | Long context input | Long context output | Long context cached input | Long context 30m write | Long context 12h write |";
+            }
+            if (cells[0].StartsWith("---", StringComparison.Ordinal))
+            {
+                return "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |";
+            }
+            var shortWrite = cells[1] == "-" ? "-" : "$91.00";
+            var shortLongWrite = cells[1] == "-" ? "-" : "$92.00";
+            var longWrite = cells[5] == "-" ? "-" : "$93.00";
+            var longLongWrite = cells[5] == "-" ? "-" : "$94.00";
+            return $"| {cells[0]} | {cells[1]} | {cells[4]} | {cells[2]} | {shortWrite} | {shortLongWrite} | {cells[5]} | {cells[8]} | {cells[6]} | {longWrite} | {longLongWrite} |";
+        });
+        return string.Join('\n', lines)
+            .Replace("### Batch pricing data", "### Batch pricing data\n\n#### Batch", StringComparison.Ordinal)
+            .Replace("### Flex pricing data", "#### Flex", StringComparison.Ordinal)
+            + "\nCyber models\n\nPrices per 1M tokens.\n\n### Standard pricing data\n\n| Model | Other product rate |\n| --- | --- |\n| gpt-5.4 | $999.00 |\n";
+    }
+
+    [Theory]
+    [InlineData("standard", "short", 2.50, 0.25, 15.00)]
     [InlineData("standard", "long", 5.00, 0.50, 22.50)]
     [InlineData("batch", "short", 1.25, 0.13, 7.50)]
     [InlineData("flex", "long", 2.50, 0.25, 11.25)]
@@ -114,10 +220,12 @@ public sealed class OpenAiPricingSourceTests
         act.Should().Throw<InvalidDataException>();
     }
 
-    [Fact]
-    public async Task FetchBuildsAnExactEvidenceCandidateAndReusesItWhenUnchanged()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FetchBuildsAnExactEvidenceCandidateAndReusesItWhenUnchanged(bool current)
     {
-        var raw = Fixture();
+        var raw = current ? CurrentFixture() : Fixture();
         var handler = new FirstPartyDocumentFetcherTests.RecordingHandler(
             (_, _) => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(raw) }
         );
