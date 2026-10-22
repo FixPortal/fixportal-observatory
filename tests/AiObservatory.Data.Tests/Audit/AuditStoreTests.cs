@@ -15,7 +15,7 @@ namespace AiObservatory.Data.Tests.Audit;
 
 /// <summary>Exercises durable coordination against isolated real PostgreSQL databases.</summary>
 [Trait("Category", "Integration")]
-public sealed class AuditStoreTests : IAsyncLifetime
+public sealed partial class AuditStoreTests : IAsyncLifetime
 {
     private static readonly Instant Now = Instant.FromUtc(2026, 10, 22, 12, 0);
     private readonly FakeClock _clock = new(Now);
@@ -1005,6 +1005,7 @@ public sealed class AuditStoreTests : IAsyncLifetime
         {
             await using var writer = new AiObservatoryDbContext(_options);
             var other = new AuditStore(writer, _clock);
+            Task<Guid>? retry = null;
             switch (action)
             {
                 case "revoke":
@@ -1037,7 +1038,7 @@ public sealed class AuditStoreTests : IAsyncLifetime
                     await other.PutChunkAsync(capture, 1, bytes, hash, Ct);
                     break;
                 case "retry":
-                    await other.SealCaptureAsync(capture, manifest, "seal", Ct);
+                    retry = other.SealCaptureAsync(capture, manifest, "seal", Ct);
                     break;
                 case "conflict":
                     var altered = bytes.Concat(bytes).ToArray();
@@ -1058,6 +1059,10 @@ public sealed class AuditStoreTests : IAsyncLifetime
             else if (action is "retry" or "conflict")
             {
                 (await seal).Should().Be(AuditCanonicalJson.Deserialize<CaptureManifest>(manifest).CaptureId);
+                if (retry != null)
+                {
+                    (await retry).Should().Be(await seal);
+                }
                 (await other.SealCaptureAsync(capture, manifest, "seal", Ct)).Should().Be(await seal);
             }
             else
@@ -1068,6 +1073,10 @@ public sealed class AuditStoreTests : IAsyncLifetime
                 .Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM \"AuditEvidenceCaptures\"")
                 .SingleAsync(Ct);
             count.Should().Be(action is "retry" or "conflict" ? 1 : 0);
+            var recovered = await UploadedCapture();
+            (await other.SealCaptureAsync(recovered.Lease, recovered.Manifest, "seal", Ct))
+                .Should()
+                .Be(recovered.Lease.RequestId, "every publication/cancellation exit must release seal admission");
         }
         finally
         {
