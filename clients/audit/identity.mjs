@@ -4,8 +4,7 @@ import { join } from 'node:path';
 import { userInfo } from 'node:os';
 import { execFileSync } from 'node:child_process';
 
-export async function loadIdentity(directory) {
-  try {
+export async function privateDirectory(directory) {
     await mkdir(directory, { recursive: true, mode: 0o700 });
     if ((await lstat(directory)).isSymbolicLink()) throw new Error('invalid_identity');
     if (process.platform === 'win32') {
@@ -14,6 +13,11 @@ export async function loadIdentity(directory) {
       execFileSync('icacls.exe', [directory, '/inheritance:r', '/grant:r', `${userInfo().username}:(OI)(CI)F`], { stdio: 'pipe', windowsHide: true });
     }
     else await chmod(directory, 0o700);
+}
+
+export async function loadIdentity(directory) {
+  try {
+    await privateDirectory(directory);
     const path = join(directory, 'identity.json');
     try {
       const info = await lstat(path);

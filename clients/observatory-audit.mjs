@@ -108,6 +108,17 @@ export async function writeCapture(capture, outputDirectory) {
 
 async function main() {
   const args = process.argv.slice(2);
+  if (args[0] === 'poll') {
+    if (args.length < 3 || args.length > 4 || args[1] !== '--config' || args.length === 4 && args[3] !== '--once') throw new Error('invalid_cli_arguments');
+    const buffer = await readFile(args[2]);
+    if (buffer.length > 1024 * 1024) throw new Error('invalid_capture_configuration');
+    const configuration = JSON.parse(buffer.toString('utf8'));
+    const { poll } = await import('./audit/poll.mjs');
+    const controller = new AbortController();
+    process.once('SIGINT', () => controller.abort()); process.once('SIGTERM', () => controller.abort());
+    await poll(configuration, { once: args.includes('--once'), signal: controller.signal, log: message => process.stdout.write(message + '\n') });
+    return;
+  }
   if (args.length !== 5 || args[0] !== 'capture' || args[1] !== '--request' || args[3] !== '--output') throw new Error('invalid_cli_arguments');
   const buffer = await readFile(args[2]);
   if (buffer.length > 1024 * 1024) throw new Error('invalid_capture_request');

@@ -56,6 +56,13 @@ builder
     .Bind(builder.Configuration.GetSection(AuditOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<AuditOptions>, AuditOptionsValidator>();
+builder.Services.AddScoped(services => new AiObservatory.Data.Audit.AuditStore(
+    services.GetRequiredService<AiObservatoryDbContext>(),
+    services.GetRequiredService<IClock>(),
+    services.GetRequiredService<IOptions<AuditOptions>>().Value
+));
+builder.Services.AddScoped<AuditCredentialService>();
+builder.Services.AddScoped<AuditCaptureService>();
 
 // Owner allowlist for the Activity and GitHub tabs. Resolved once here, so every consumer sees
 // the same value, and bound from either the array or the delimited-scalar shape. Absent means
@@ -193,6 +200,11 @@ if (authEnabled)
 }
 
 var api = app.MapGroup("/api").AddEndpointFilter<ApiKeyEndpointFilter>().RequireRateLimiting("api");
+if (app.Services.GetRequiredService<IOptions<AuditOptions>>().Value.Enabled)
+{
+    app.MapAuditMachineEndpoints();
+    app.MapAuditCaptureEndpoints();
+}
 var ide = app.MapGroup("/api/ide/v1").AddEndpointFilter<IdeApiKeyEndpointFilter>().RequireRateLimiting("api");
 ide.MapIdeEndpoints();
 
