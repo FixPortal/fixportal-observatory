@@ -235,6 +235,39 @@ public sealed class AuditWorkerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Restart_IncompatiblePinnedIdentityFailsPermanentlyWithoutChangingSnapshot()
+    {
+        var scope = Scope(Guid.NewGuid());
+        var id = await _store.CreateRunAsync(scope, [], "old-pinned-restart", false, Now, Ct);
+        var lease = (await _store.TryLeaseRunAsync(Guid.NewGuid(), Now, Ct))!;
+        var old = new AuditInput
+        {
+            SchemaVersion = 1,
+            VerifierVersion = "1.0.0",
+            RuleVersion = "1",
+            Scope = scope,
+        };
+        var bytes = AuditCanonicalJson.Serialize(old);
+        var digest = AuditComputationInput.ContentDigest(old);
+        (await _store.TryStoreSnapshotAsync(lease, bytes, digest, Ct)).Should().BeTrue();
+        var pinned = (await _store.ReadSnapshotAsync(id, Ct))!;
+        _clock.Advance(Duration.FromMinutes(6));
+        await using var restarted = new AiObservatoryDbContext(_options);
+        var store = new AuditStore(restarted, _clock, _audit);
+        var worker = new AuditWorkerService(restarted, store, _clock, Options.Create(_audit), _options);
+        (await worker.ExecuteOneAsync(Guid.NewGuid(), Ct)).Should().BeTrue();
+        var run = (await store.GetRunAsync(id, Ct))!;
+        run.State.Should().Be("failed");
+        run.DiagnosticCode.Should().Be("incompatible_audit_verifier");
+        run.Result.Should().BeNull();
+        var retained = (await store.ReadSnapshotAsync(id, Ct))!;
+        retained.Bytes.Should().Equal(bytes);
+        retained.Sha256.Should().Be(pinned.Sha256);
+        retained.InputContentDigest.Should().Be(digest);
+        (await worker.ExecuteOneAsync(Guid.NewGuid(), Ct)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task PartialProceed_MixedSealedAndOfflineMachineFreezesOnlyAcknowledgedCaptures()
     {
         var ready = await _store.RegisterMachineAsync(new byte[32], Ct);
@@ -638,7 +671,7 @@ public sealed class AuditWorkerTests : IAsyncLifetime
             MachineId = machine.MachineId,
             SourceId = "claude-local",
             SourceFormat = "claude-jsonl",
-            SourceVersion = kind == "format" ? "2" : "1",
+            SourceVersion = kind == "format" ? "future" : "1",
             Tool = SourceTool.Claude,
             Kind = UsageRecordKind.MessageUsage,
             Generation = "g1",
@@ -701,7 +734,7 @@ public sealed class AuditWorkerTests : IAsyncLifetime
         {
             SchemaVersion = 1,
             VerifierVersion = "0.9.0",
-            RuleVersion = "1",
+            RuleVersion = AuditVerifierIdentity.RuleVersion,
             Scope = scope,
         };
         var oldBytes = AuditCanonicalJson.Serialize(older);

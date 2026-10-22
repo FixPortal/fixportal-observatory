@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { counter } from './lossless-json.mjs';
 
-export const EXTRACTOR_VERSION = '1.0.0';
+export const EXTRACTOR_VERSION = '1.1.0';
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
 function quote(value) {

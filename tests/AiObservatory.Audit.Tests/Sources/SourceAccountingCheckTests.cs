@@ -199,8 +199,19 @@ public sealed class SourceAccountingCheckTests
     [Fact]
     public void CapabilityMatrix_DeclaresAllProducersAndUnsupportedReasonCodes()
     {
-        AuditCapabilities.Sources.Should().HaveCount(8);
-        AuditCapabilities.Sources.Count(c => c.Supported).Should().Be(2);
+        AuditCapabilities.Sources.Should().HaveCount(9);
+        AuditCapabilities.Sources.Count(c => c.Supported).Should().Be(3);
+        AuditCapabilities
+            .Sources.Where(c => c.Tool == SourceTool.Claude)
+            .Select(c => c.Version)
+            .Should()
+            .BeEquivalentTo("1", "2");
+        AuditCapabilities
+            .Sources.Where(c => c.Tool == SourceTool.Codex)
+            .Should()
+            .ContainSingle()
+            .Which.Version.Should()
+            .Be("1");
         AuditCapabilities.Sources.Where(c => !c.Supported).Should().OnlyContain(c => c.ReasonCode != null);
     }
 }

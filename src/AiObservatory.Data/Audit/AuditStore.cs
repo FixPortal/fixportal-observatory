@@ -508,7 +508,7 @@ public sealed partial class AuditStore
         );
     }
 
-    public Task<bool> FailRunAsync(RunLease lease, string diagnosticCode, CancellationToken ct)
+    public Task<bool> FailRunAsync(RunLease lease, string diagnosticCode, CancellationToken ct, bool terminal = false)
     {
         ValidateKey(diagnosticCode);
         Require(diagnosticCode.All(c => char.IsAsciiLetterOrDigit(c) || c == '_'), "invalid_diagnostic", 400);
@@ -521,7 +521,7 @@ public sealed partial class AuditStore
                 {
                     return false;
                 }
-                if (run.Attempts >= _options.MaxExecutionAttempts)
+                if (terminal || run.Attempts >= _options.MaxExecutionAttempts)
                 {
                     await Complete(run, "failed", diagnosticCode, now, ct);
                 }

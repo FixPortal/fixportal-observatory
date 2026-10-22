@@ -20,6 +20,9 @@ public sealed class NodeCaptureTests
             var cancellation = TestContext.Current.CancellationToken;
             var manifestBytes = await File.ReadAllBytesAsync(Path.Combine(directory, "manifest.json"), cancellation);
             var manifest = AuditCanonicalJson.Deserialize<CaptureManifest>(manifestBytes);
+            manifest.ExtractorVersion.Should().Be("1.1.0");
+            manifest.SourceFormats.Where(f => f.Format == "claude-jsonl").Should().OnlyContain(f => f.Version == "2");
+            manifest.SourceFormats.Where(f => f.Format == "codex-jsonl").Should().OnlyContain(f => f.Version == "1");
             AuditCanonicalJson.Serialize(manifest).Should().Equal(manifestBytes);
             var chunks = new List<AuditCaptureChunk>();
             var records = new List<SourceUsageRecord>();
@@ -63,6 +66,8 @@ public sealed class NodeCaptureTests
                 Captures = [manifest],
                 Records = records,
             };
+            records.Where(r => r.Tool == SourceTool.Claude).Should().OnlyContain(r => r.SourceVersion == "2");
+            records.Where(r => r.Tool == SourceTool.Codex).Should().OnlyContain(r => r.SourceVersion == "1");
             var bundle = new AuditBundle(input, new AuditVerifier().Verify(input), [new(manifest, chunks)]);
             using var destination = new MemoryStream();
             await AuditBundleWriter.WriteAsync(destination, bundle, cancellation);

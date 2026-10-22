@@ -38,6 +38,13 @@ export function AuditRunWizard({
   const [allowPartial, setAllowPartial] = useState(false)
   const [fresh, setFresh] = useState(true)
   const actions = useAuditActions()
+  const supportedSources = [
+    ...new Map(
+      capabilities.sources
+        .filter((source) => source.supported)
+        .map((source) => [source.tool, source]),
+    ).values(),
+  ]
   const days = (dates.to.getTime() - dates.from.getTime()) / 86400000 + 1
   const validDates = days >= 1 && days <= 31
   const selectedSourceIds = sources.map((source) => configuredSourceIds[source] ?? source)
@@ -101,41 +108,39 @@ export function AuditRunWizard({
       <div className="audit-scope-grid">
         <fieldset>
           <legend>Sources</legend>
-          {capabilities.sources
-            .filter((source) => source.supported)
-            .map((source) => (
-              <div key={source.tool}>
-                <label className="audit-choice">
+          {supportedSources.map((source) => (
+            <div key={source.tool}>
+              <label className="audit-choice">
+                <input
+                  type="checkbox"
+                  checked={sources.includes(`${source.tool}-local`)}
+                  disabled={!source.supported}
+                  onChange={() => {
+                    setSources((items) => toggle(items, `${source.tool}-local`))
+                  }}
+                />
+                {source.tool}-local {source.supported ? '' : '· unsupported'}
+              </label>
+              {sources.includes(`${source.tool}-local`) && (
+                <label className="audit-field">
+                  Configured source ID for {source.tool}
                   <input
-                    type="checkbox"
-                    checked={sources.includes(`${source.tool}-local`)}
-                    disabled={!source.supported}
-                    onChange={() => {
-                      setSources((items) => toggle(items, `${source.tool}-local`))
+                    value={configuredSourceIds[`${source.tool}-local`] ?? `${source.tool}-local`}
+                    maxLength={256}
+                    spellCheck={false}
+                    onChange={(e) => {
+                      setConfiguredSourceIds((prior) => ({
+                        ...prior,
+                        [`${source.tool}-local`]: e.target.value.trim(),
+                      }))
+                      setCaptureIds([])
                     }}
                   />
-                  {source.tool}-local {source.supported ? '' : '· unsupported'}
                 </label>
-                {sources.includes(`${source.tool}-local`) && (
-                  <label className="audit-field">
-                    Configured source ID for {source.tool}
-                    <input
-                      value={configuredSourceIds[`${source.tool}-local`] ?? `${source.tool}-local`}
-                      maxLength={256}
-                      spellCheck={false}
-                      onChange={(e) => {
-                        setConfiguredSourceIds((prior) => ({
-                          ...prior,
-                          [`${source.tool}-local`]: e.target.value.trim(),
-                        }))
-                        setCaptureIds([])
-                      }}
-                    />
-                  </label>
-                )}
-                {source.reasonCode && <code className="audit-muted">{source.reasonCode}</code>}
-              </div>
-            ))}
+              )}
+              {source.reasonCode && <code className="audit-muted">{source.reasonCode}</code>}
+            </div>
+          ))}
           {capabilities.sources.some((source) => !source.supported) && (
             <CollapsiblePanel
               id="audit-unsupported"

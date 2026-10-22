@@ -68,6 +68,10 @@ public sealed class AuditWorkerService(
         {
             await store.FailRunAsync(lease, ex.Code, ct);
         }
+        catch (AuditValidationException ex) when (ex.Code == "incompatible_audit_verifier")
+        {
+            await store.FailRunAsync(lease, ex.Code, ct, terminal: true);
+        }
         catch (Exception)
         {
             await store.FailRunAsync(lease, "audit_execution_failed", ct);
@@ -157,6 +161,16 @@ public interface IAuditRunVerifier
 
 public sealed class AuditRunVerifier : IAuditRunVerifier
 {
-    public Task<AuditResult> VerifyAsync(AuditInput input, CancellationToken ct) =>
-        Task.Run(() => new AuditVerifier().Verify(input), ct);
+    public Task<AuditResult> VerifyAsync(AuditInput input, CancellationToken ct)
+    {
+        if (
+            input.SchemaVersion != AuditVerifierIdentity.SchemaVersion
+            || input.VerifierVersion != AuditVerifierIdentity.VerifierVersion
+            || input.RuleVersion != AuditVerifierIdentity.RuleVersion
+        )
+        {
+            throw new AuditValidationException("incompatible_audit_verifier");
+        }
+        return Task.Run(() => new AuditVerifier().Verify(input), ct);
+    }
 }

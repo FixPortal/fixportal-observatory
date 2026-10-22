@@ -246,9 +246,9 @@ internal sealed class SourceCheckEvaluation
                 .ToArray();
             foreach (var tool in records.Select(r => r.Tool).Distinct())
             {
-                var capability = AuditCapabilities.Sources.Single(c => c.Tool == tool);
-                unsupported |= !capability.Supported;
-                if (capability.ReasonCode is { } reason)
+                var capabilities = AuditCapabilities.Sources.Where(c => c.Tool == tool).ToArray();
+                unsupported |= !capabilities.Any(c => c.Supported);
+                foreach (var reason in capabilities.Select(c => c.ReasonCode).OfType<string>().Distinct())
                 {
                     AddGap(selection.SourceId, reason, code, findings, gaps);
                 }

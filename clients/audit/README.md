@@ -25,3 +25,22 @@ An idle companion polls every 60 seconds with at most five seconds of jitter; an
 Before uploading, the companion atomically retains the complete original package below `stateDirectory/<requestId>-<leaseToken>/`. A restarted companion reuses those exact bytes for the live token, even if source files changed; damaged retained packages fail closed. Keep the private state directory intact during capture. Expired ownership produces a fresh token and atomically resets the server's unsealed partial chunks and counters. Already sealed evidence remains immutable. State directories have private OS permissions; local retained packages are not automatically pruned by this companion. Only manifest and original chunk bytes are transmitted; `local.json` remains local.
 
 Run `node --test clients/observatory-audit.test.mjs clients/audit-poll.test.mjs` and `dotnet run --project tests/AiObservatory.Audit.Tests -- --filter-class '*NodeCaptureTests'` for synthetic extraction, transport/polling, and Node→.NET canonical/bundle checks.
+
+## Context evidence versions and rollout
+
+New captures use extractor **1.1.0**, Claude `claude-jsonl` source version **2**, and Codex source version **1**. Manifests advertise those exact emitted versions. Wire schema remains **1**. The independent verifier is **1.1.0**, audit rule **2**. Catalog application rule **1** and the `exact-zero` rule **1** are separate identities and retain their arithmetic conventions.
+
+Claude source version 1 keeps its original reconstruction, including richer-copy selection and grouping. Version 2 independently derives `prompt_le_100000` or `prompt_gt_100000` from uncached input + cache-read input + total creation once, before grouping. Output follows its message's band. The bounded qualified model identities are case-insensitive `claude-haiku-5-5` and calendar-valid `yyyyMMdd` suffixes. Model capacity in `contextTokens` is retained as capacity. It never proves prompt size. Other models receive no derived Context.
+
+A complete message candidate and agreement of every observed prompt counter/model/service/speed/geography across copies are required. Disjoint incomplete copies never make a complete observation. Missing identity, inconsistent subsets or checked integer overflow produce sanitized unknown-context coverage; no cheap band is selected. The extractor emits allowlisted native counters only, never a derived Context claim. The verifier ignores companion-supplied Context. Admitted cross-file v1/v2 copies of the same message are ambiguous: reconstruction omits that message and reports `mixed_source_versions` rather than counting both or upgrading v1 evidence. Different versions at the exact same source/generation/file/sequence position violate the existing wire identity and reject the evidence with `conflicting_identity` before reconstruction; that case yields no coverage result.
+
+Install the version-aware server/verifier before enabling a new collector or catalog candidate. Old binaries reject the new catalog property. A retained capture package resumes with its original sealed manifest and chunk bytes, even when the companion has been upgraded. A resumed server snapshot pinned to an incompatible schema/verifier/rule fails with `incompatible_audit_verifier`; it is never certified under the old identity by the new engine. No production activation or historical repair follows from this source change.
+
+The new CLI rejects a 1.0.0/rule1 bundle by default. Explicit reevaluation uses a new identity and preserves `recorded-result.json` plus a linked `evaluation.json`:
+
+```text
+dotnet <installed-cli.dll> replay <old-bundle.zip> --output <new-directory> --reevaluate
+node scripts/audit-replay-smoke.mjs <installed-cli.dll>
+```
+
+The smoke check preserves both original v1 hashes, checks default rejection and linked reevaluation, then replays the synthetic v2 bundle twice. See [portable fixtures](../../tests/fixtures/audit/README.md) for original-runner reproduction from public source commits and fixed hashes. Do not regenerate v1 results with the new verifier or replace recorded audit evidence.

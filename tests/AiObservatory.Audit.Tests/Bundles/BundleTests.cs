@@ -12,6 +12,73 @@ namespace AiObservatory.Audit.Tests.Bundles;
 
 public sealed class BundleTests
 {
+    [Fact]
+    public async Task VersionTwo_BundleIsDeterministicAndContainsBothIndependentBands()
+    {
+        var bundle = VersionTwoFixture();
+        bundle.Result.VerifierVersion.Should().Be("1.1.0");
+        bundle.Result.RuleVersion.Should().Be("2");
+        bundle.Result.Verdict.Should().Be(CheckVerdict.Matched);
+        using var first = await Write(bundle);
+        using var second = await Write(bundle);
+        first.ToArray().Should().Equal(second.ToArray());
+        first
+            .ToArray()
+            .Should()
+            .Equal(
+                await File.ReadAllBytesAsync(
+                    Path.Combine(AppContext.BaseDirectory, "Fixtures", "audit", "golden-v2.zip"),
+                    TestContext.Current.CancellationToken
+                )
+            );
+        AuditCanonicalJson
+            .Serialize(bundle.Result)
+            .Should()
+            .Equal(
+                await File.ReadAllBytesAsync(
+                    Path.Combine(AppContext.BaseDirectory, "Fixtures", "audit", "golden-v2.result.json"),
+                    TestContext.Current.CancellationToken
+                )
+            );
+        var replay = await AuditBundleReader.ReadBundleAsync(first, new(), TestContext.Current.CancellationToken);
+        var reconstruction = new AiObservatory.Audit.Sources.ClaudeAuditAdapter().Reconstruct(
+            replay.Input.Records,
+            replay.Input.Scope
+        );
+        reconstruction
+            .CompatibleGroups.Select(g => g.Key.Pricing.Context)
+            .Should()
+            .BeEquivalentTo("prompt_le_100000", "prompt_gt_100000");
+        AuditCanonicalJson
+            .Serialize(new AuditVerifier().Verify(replay.Input))
+            .Should()
+            .Equal(AuditCanonicalJson.Serialize(bundle.Result));
+    }
+
+    [Fact]
+    public async Task VersionOne_GoldenBytesStayPinnedAndDefaultReaderRefusesOldIdentity()
+    {
+        var zip = await File.ReadAllBytesAsync(
+            Path.Combine(AppContext.BaseDirectory, "Fixtures", "audit", "golden-v1.zip"),
+            TestContext.Current.CancellationToken
+        );
+        var result = await File.ReadAllBytesAsync(
+            Path.Combine(AppContext.BaseDirectory, "Fixtures", "audit", "golden-v1.result.json"),
+            TestContext.Current.CancellationToken
+        );
+        AuditCanonicalJson
+            .ContentHash(zip)
+            .Should()
+            .Be("adbf69fa7d1b54d9752ab6fd15cb7b7d62f8ac552603ef35e6cb04dbd841f014");
+        AuditCanonicalJson
+            .ContentHash(result)
+            .Should()
+            .Be("5a194bb9f85af8731a076e0fbea4baad6a57e0f8a32c5c746f3cea90d9a78f5b");
+        using var source = new MemoryStream(zip);
+        Func<Task> read = () => AuditBundleReader.ReadBundleAsync(source, new(), TestContext.Current.CancellationToken);
+        await read.Should().ThrowAsync<AuditValidationException>().WithMessage("incompatible_bundle_verifier");
+    }
+
     /// <summary>Preserves exact retained capture bytes, integer precision and complete fact membership.</summary>
     [Fact]
     public async Task Roundtrip_PreservesEvidenceAndDeterministicResult()
@@ -88,7 +155,7 @@ public sealed class BundleTests
             .Equal(AuditCanonicalJson.Serialize(Fixture().Result));
     }
 
-    /// <summary>Golden replay is independent of physical ZIP order and matches the committed canonical result bytes.</summary>
+    /// <summary>Old evidence requires reevaluation permission; reading preserves its recorded bytes and identity.</summary>
     [Fact]
     public async Task Read_ReorderedGolden_MatchesCommittedResult()
     {
@@ -99,9 +166,15 @@ public sealed class BundleTests
             )
         );
         using var reversed = Rewrite(zip, entries => entries.AsEnumerable().Reverse());
-        var input = await AuditBundleReader.ReadAsync(reversed, new(), TestContext.Current.CancellationToken);
+        var bundle = await AuditBundleReader.ReadBundleAsync(
+            reversed,
+            new() { AllowReevaluation = true },
+            TestContext.Current.CancellationToken
+        );
+        bundle.Input.VerifierVersion.Should().Be("1.0.0");
+        bundle.Input.RuleVersion.Should().Be("1");
         AuditCanonicalJson
-            .Serialize(new AuditVerifier().Verify(input))
+            .Serialize(bundle.Result)
             .Should()
             .Equal(
                 await File.ReadAllBytesAsync(
@@ -411,7 +484,7 @@ public sealed class BundleTests
                 "\"verdict\":\"matched\"",
                 StringComparison.Ordinal
             ),
-            "option-version" => json.Replace("1.0.0", "9.0.0", StringComparison.Ordinal),
+            "option-version" => json.Replace(AuditVerifierIdentity.VerifierVersion, "9.0.0", StringComparison.Ordinal),
             "input-schema" => json.Replace("\"schemaVersion\":1", "\"schemaVersion\":2", StringComparison.Ordinal),
             _ => json,
         };
@@ -454,7 +527,11 @@ public sealed class BundleTests
     {
         var record = SourceFixture.Claude() with { Counters = new ClaudeCounters(9007199254740993, 0, 0, 0, 0, 0) };
         var chunk = AuditCanonicalJson.Serialize(record).Concat(new byte[] { 10 }).ToArray();
-        var input = SourceFixture.Input(record) with { VerifierVersion = "1.0.0", RuleVersion = "1" };
+        var input = SourceFixture.Input(record) with
+        {
+            VerifierVersion = AuditVerifierIdentity.VerifierVersion,
+            RuleVersion = AuditVerifierIdentity.RuleVersion,
+        };
         var manifest = input.Captures[0] with
         {
             CaptureId = Guid.Parse("10000000-0000-0000-0000-000000000001"),
@@ -462,6 +539,67 @@ public sealed class BundleTests
             ChunkHashes = [AuditCanonicalJson.ContentHash(chunk)],
         };
         input = input with { Captures = [manifest] };
+        return new(input, new AuditVerifier().Verify(input), [new(manifest, [new(0, chunk)])]);
+    }
+
+    private static AuditBundle VersionTwoFixture()
+    {
+        var lower = SourceFixture.Claude() with
+        {
+            SourceVersion = "2",
+            Model = "claude-haiku-5-5",
+            Counters = new ClaudeCounters(70000, 20, 0, 30000, null, null),
+        };
+        var upper = lower with
+        {
+            Sequence = 2,
+            MessageId = "m2",
+            Counters = new ClaudeCounters(70000, 37, 1, 30000, null, null),
+        };
+        var records = new[] { lower, upper };
+        var chunk = records.SelectMany(r => AuditCanonicalJson.Serialize(r).Append((byte)10)).ToArray();
+        var input = SourceFixture.Input(records) with
+        {
+            VerifierVersion = AuditVerifierIdentity.VerifierVersion,
+            RuleVersion = AuditVerifierIdentity.RuleVersion,
+        };
+        var manifest = input.Captures[0] with
+        {
+            CaptureId = Guid.Parse("10000000-0000-0000-0000-000000000002"),
+            RequestId = Guid.Parse("20000000-0000-0000-0000-000000000002"),
+            ExtractorVersion = "1.1.0",
+            SourceFormats = [new(lower.SourceId, lower.SourceFormat, "2")],
+            ChunkHashes = [AuditCanonicalJson.ContentHash(chunk)],
+        };
+        input = input with
+        {
+            Captures = [manifest],
+            Events = records
+                .Select(
+                    (r, i) =>
+                    {
+                        var counters = (ClaudeCounters)r.Counters!;
+                        var e = SourceFixture.Event(
+                            r,
+                            new(
+                                counters.InputTokens!.Value,
+                                counters.OutputTokens!.Value,
+                                counters.CacheReadInputTokens,
+                                counters.CacheCreationInputTokens,
+                                null,
+                                null
+                            )
+                        );
+                        var dimensions = r.Pricing with { Context = i == 0 ? "prompt_le_100000" : "prompt_gt_100000" };
+                        return e with
+                        {
+                            SourceDimensions = dimensions,
+                            PricingApplication = e.PricingApplication! with { Dimensions = dimensions },
+                        };
+                    }
+                )
+                .ToArray(),
+        };
         return new(input, new AuditVerifier().Verify(input), [new(manifest, [new(0, chunk)])]);
     }
 
