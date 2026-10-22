@@ -3,6 +3,7 @@ using System.Text.Json;
 using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
 using AiObservatory.Data.Entities;
+using AiObservatory.Data.Pricing.Catalogs;
 using NodaTime;
 
 namespace AiObservatory.Data.Pricing;
@@ -30,7 +31,7 @@ public static class PricingEvidence
             Speed = Text("speed"),
             InferenceGeo = Text("inference_geo"),
             Processing = Text("processing"),
-            Context = Text("context"),
+            Context = HasClaudePromptContextClaim(usage, root) ? ClaudePromptContext(usage, root) : Text("context"),
             Service = Text("service"),
             Sku = Text("sku_id"),
             Modality = Text("modality"),
@@ -63,7 +64,65 @@ public static class PricingEvidence
             SourceServiceTier = tier,
             Speed = Text("speed"),
             InferenceGeo = Text("inference_geo"),
+            Context = ClaudePromptContext(usage, root),
         };
+    }
+
+    // Only the local producer's versioned homogeneous-message claim can establish a band.
+    // Capacity, daily counters and the presence of an arbitrary "context" string cannot.
+    internal static string? ClaudePromptContext(UsageEvent usage, JsonElement root) =>
+        usage.Provider == Provider.Anthropic
+        && usage.SourceKind == Entities.SourceKind.LocalTelemetry
+        && root.ValueKind == JsonValueKind.Object
+        && ExactText(root, "claude_prompt_context_version", "1")
+        && ExactText(root, "claude_prompt_context_basis", "deduplicated_message_group")
+        && root.TryGetProperty("context", out var context)
+        && context.ValueKind == JsonValueKind.String
+        && context.GetString() is "prompt_le_100000" or "prompt_gt_100000"
+            ? context.GetString()
+            : null;
+
+    internal static bool HasClaudePromptContextClaim(UsageEvent usage, JsonElement root) =>
+        usage.Provider == Provider.Anthropic
+        && usage.SourceKind == Entities.SourceKind.LocalTelemetry
+        && ContainsClaudePromptContextClaim(root);
+
+    private static bool ContainsClaudePromptContextClaim(JsonElement root) =>
+        root.ValueKind == JsonValueKind.Object
+            ? root.EnumerateObject().Any(p => p.Name.StartsWith("claude_prompt_context_", StringComparison.Ordinal))
+            : root.ValueKind == JsonValueKind.Array && root.EnumerateArray().Any(ContainsClaudePromptContextClaim);
+
+    private static bool ExactText(JsonElement root, string name, string expected) =>
+        root.TryGetProperty(name, out var property)
+        && property.ValueKind == JsonValueKind.String
+        && property.GetString() == expected;
+
+    internal static bool RequiresProspectiveClaudePromptContext(
+        UsageEvent usage,
+        JsonElement root,
+        AnthropicPriceCatalog catalog,
+        LocalDate date
+    )
+    {
+        if (!HasClaudePromptContextClaim(usage, root) || usage.Model is null)
+        {
+            return false;
+        }
+        // Keep the legacy-only deployment guard bounded to this qualified model identity.
+        const string model = "claude-haiku-5-5";
+        return usage.Model.Equals(model, StringComparison.OrdinalIgnoreCase)
+            || usage.Model.Length == model.Length + 9
+                && usage.Model.StartsWith(model + "-", StringComparison.OrdinalIgnoreCase)
+                && DateOnly.TryParseExact(
+                    usage.Model.AsSpan(model.Length + 1),
+                    "yyyyMMdd",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out _
+                )
+            || catalog
+                .Resolve(usage.Model, date)
+                ?.ModelPrefix.Equals("claude-haiku-5-5", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     public static CacheDurationObservation ObserveCacheDurations(UsageEvent usage)

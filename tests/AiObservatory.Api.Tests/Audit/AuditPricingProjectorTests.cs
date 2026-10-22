@@ -10,6 +10,76 @@ namespace AiObservatory.Api.Tests.Audit;
 
 public sealed class AuditPricingProjectorTests
 {
+    [Fact]
+    public void AnthropicBothBandsFreezeExactEntryKeysAndContextOnEveryModifier()
+    {
+        var now = Instant.FromUtc(2026, 10, 22, 12, 0);
+        static AnthropicPriceEntry Entry(string context, decimal rate) =>
+            new(
+                "claude-haiku-5-5",
+                ["claude-haiku-5-5"],
+                new(2026, 10, 1),
+                true,
+                rate,
+                rate * 7,
+                rate / 10,
+                rate * 1.25m,
+                rate * 2,
+                rate / 2,
+                rate * 3,
+                rate * 5,
+                rate * 40,
+                1.25m
+            )
+            {
+                Context = context,
+            };
+        var entries = new[] { Entry("prompt_le_100000", 2m), Entry("prompt_gt_100000", 4m) };
+        var catalog = PricingCatalogJson.Serialize(
+            new AnthropicPriceCatalog("USD", "https://example.test/pricing", now, entries)
+        );
+        var frozen = AuditPricingProjector.Catalog(
+            new()
+            {
+                Provider = Provider.Anthropic,
+                RetrievedAt = now,
+                NormalizedCatalog = catalog,
+                SourceId = PricingSourceIds.Claude,
+                ContentHash = new string('c', 64),
+            }
+        );
+        frozen.Rates.Should().HaveCount(60);
+        foreach (var entry in entries)
+        {
+            var rates = frozen.Rates.Where(r => r.CatalogEntryKey == PricingEvidence.RateKey(entry)).ToArray();
+            rates.Should().HaveCount(30);
+            rates.Should().OnlyContain(r => r.Dimensions.Context == entry.Context);
+            foreach (
+                var (tier, speed) in new[] { ("standard", "standard"), ("batch", "standard"), ("standard", "fast") }
+            )
+            {
+                foreach (var geo in new[] { "global", "us" })
+                {
+                    var usage = new UsageEvent
+                    {
+                        Provider = Provider.Anthropic,
+                        SourceKind = SourceKind.LocalTelemetry,
+                        Model = "claude-haiku-5-5",
+                        OccurredAt = now,
+                        InputTokens = 1_000_000,
+                        CostBasis = CostBasis.Notional,
+                        RawPayload =
+                            $$"""{"claude_prompt_context_version":"1","claude_prompt_context_basis":"deduplicated_message_group","context":"{{entry.Context}}","service_tier":"{{tier}}","speed":"{{speed}}","inference_geo":"{{geo}}"}""",
+                    };
+                    var applied = new AnthropicPriceCalculator().CalculateWithEvidence(usage, catalog);
+                    applied.Should().NotBeNull();
+                    applied.RateKey.Should().Be(PricingEvidence.RateKey(entry));
+                    rates.Where(r => r.Dimensions == applied.Dimensions).Should().HaveCount(5);
+                }
+            }
+        }
+    }
+
     [Theory]
     [InlineData(Provider.OpenAI)]
     [InlineData(Provider.Google)]
