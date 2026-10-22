@@ -402,7 +402,8 @@ public sealed partial class AuditStore
         string idempotencyKey,
         bool collecting,
         Instant now,
-        CancellationToken ct
+        CancellationToken ct,
+        FrozenPresentationProbe? presentationProbe = null
     )
     {
         var scopeBytes = ValidateScope(scope);
@@ -418,7 +419,8 @@ public sealed partial class AuditStore
             .. Encoding.UTF8.GetBytes(string.Join(',', ids)),
             (byte)(collecting ? 1 : 0),
         ]);
-        var replay = await PrepareReplayAsync(scope, ct);
+        hash = ProbeRequestHash(scope, presentationProbe, hash);
+        var replay = await PrepareReplayAsync(scope, presentationProbe, ct);
         return await Transaction(
             async () =>
             {

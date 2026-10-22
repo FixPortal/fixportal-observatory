@@ -45,7 +45,7 @@ public sealed class VerdictTests
         result.Checks.Should().Contain(c => c.Code == CheckCode.DailyAttribution && c.Verdict == CheckVerdict.Matched);
         result
             .Checks.Should()
-            .Contain(c => c.Code == CheckCode.PricingArithmetic && c.Verdict == CheckVerdict.Unsupported);
+            .Contain(c => c.Code == CheckCode.PricingArithmetic && c.Verdict == CheckVerdict.Incomplete);
         result
             .Checks.Should()
             .Contain(c => c.Code == CheckCode.BillingReconciliation && c.Verdict == CheckVerdict.Unsupported);

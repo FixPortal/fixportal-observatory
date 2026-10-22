@@ -99,6 +99,11 @@ public static class AuditBundleReader
             Options = options.Options,
             Tolerances = options.Tolerances,
             PresentationProbe = options.PresentationProbe,
+            SourceQualifications = options.SourceQualifications,
+            FinancialObservations = entries.TryGetValue(BundleCodec.FinancialPath, out var financial)
+                ? BundleCodec.ParseNdjson<FrozenFinancialObservation>(financial)
+                : null,
+            PartialEvidenceAcknowledged = options.PartialEvidenceAcknowledged,
             Captures = captures.Select(c => c.Manifest).ToArray(),
             Records = captures
                 .SelectMany(c => c.Chunks.SelectMany(chunk => BundleCodec.ParseNdjson<SourceUsageRecord>(chunk.Ndjson)))
@@ -179,6 +184,10 @@ public static class AuditBundleReader
     )
     {
         var expected = new HashSet<string>(BundleCodec.FixedPaths, StringComparer.Ordinal) { "manifest.json" };
+        if (entries.ContainsKey(BundleCodec.FinancialPath))
+        {
+            expected.Add(BundleCodec.FinancialPath);
+        }
         foreach (var capture in captures)
         {
             expected.Add(BundleCodec.CapturePath(capture.Manifest.CaptureId));

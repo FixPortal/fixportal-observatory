@@ -16,6 +16,30 @@ public sealed class AuditRunService(AuditStore store, IClock clock)
             ct
         );
 
+    public async Task<Guid> PresentationProbeAsync(
+        Guid id,
+        FrozenPresentationProbe probe,
+        string idempotencyKey,
+        CancellationToken ct
+    )
+    {
+        var run = await store.GetRunAsync(id, ct) ?? throw new AuditStoreException("run_not_found", 404);
+        if (run.Result == null)
+        {
+            throw new AuditStoreException("report_unavailable", 409);
+        }
+        var selection = await store.ReplaySelectionAsync(id, ct);
+        return await store.CreateRunAsync(
+            selection.Scope,
+            selection.CaptureIds,
+            idempotencyKey,
+            false,
+            clock.GetCurrentInstant(),
+            ct,
+            probe
+        );
+    }
+
     public async Task<Guid> ReplayAsync(Guid id, string idempotencyKey, CancellationToken ct)
     {
         var selection = await store.ReplaySelectionAsync(id, ct);

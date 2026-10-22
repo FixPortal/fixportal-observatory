@@ -59,3 +59,15 @@ public sealed class AuditStoreException(string code, int statusCode) : Exception
     public string Code { get; } = code;
     public int StatusCode { get; } = statusCode;
 }
+
+/// <summary>Detached bytes and the revision/deadline fence observed together under EvidenceLockKey.</summary>
+public sealed record AuditExportMaterialization(
+    Guid RunId,
+    long RunRevision,
+    byte[] Result,
+    string ResultHash,
+    RetainedSnapshot Snapshot,
+    IReadOnlyList<RetainedCapture> Captures,
+    Instant MaterializedAt,
+    Instant? EvidenceExpiresAt
+);

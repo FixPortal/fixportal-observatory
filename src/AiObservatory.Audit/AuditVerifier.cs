@@ -55,6 +55,8 @@ public sealed class AuditVerifier
             CheckCode.DailyAttribution => new DailyAttributionCheck().Evaluate(input),
             CheckCode.EventAggregation => new EventAggregationCheck().Evaluate(input),
             CheckCode.PresentationTotals => new PresentationTotalsCheck().Evaluate(input),
+            CheckCode.PricingArithmetic => new PricingArithmeticCheck().Evaluate(input),
+            CheckCode.BillingReconciliation => new BillingReconciliationCheck().Evaluate(input),
             _ => new(code, CheckVerdict.Unsupported, new(0, 1, [new("all", "all", "check_not_implemented")]), []),
         };
     }

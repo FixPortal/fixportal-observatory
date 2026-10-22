@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json.Serialization;
 using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
 
@@ -10,6 +11,7 @@ internal static class BundleCodec
     internal const int HardChunkBytes = 8 * 1024 * 1024;
     internal const int HardEntries = 10_000;
     internal const int ManifestBytes = 1024 * 1024;
+    internal const string FinancialPath = "snapshot/financial-observations.ndjson";
 
     internal static readonly string[] FixedPaths =
     [
@@ -49,7 +51,7 @@ internal static class BundleCodec
 
     internal static bool IsAllowedPath(string path)
     {
-        if (path == "manifest.json" || FixedPaths.Contains(path, StringComparer.Ordinal))
+        if (path is "manifest.json" or FinancialPath || FixedPaths.Contains(path, StringComparer.Ordinal))
         {
             return true;
         }
@@ -211,4 +213,11 @@ internal sealed record BundleOptions(
     AuditOptions Options,
     IReadOnlyList<NamedTolerance> Tolerances,
     FrozenPresentationProbe? PresentationProbe
-);
+)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<SourceQualification>? SourceQualifications { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? PartialEvidenceAcknowledged { get; init; }
+}

@@ -47,6 +47,19 @@ public sealed partial class AuditStore
         return requests.ToArray();
     }
 
+    private static string ProbeRequestHash(AuditScope scope, FrozenPresentationProbe? probe, string hash)
+    {
+        if (probe == null)
+        {
+            return hash;
+        }
+        Require(scope.EvaluationOfRunId != null, "probe_requires_evaluation", 400);
+        return AuditCanonicalJson.ContentHash([
+            .. System.Text.Encoding.UTF8.GetBytes(hash),
+            .. AuditCanonicalJson.Serialize(probe),
+        ]);
+    }
+
     private sealed record PreparedReplay(
         RetainedSnapshot Original,
         byte[] Scope,
@@ -55,7 +68,11 @@ public sealed partial class AuditStore
         string InputContentDigest
     );
 
-    private async Task<PreparedReplay?> PrepareReplayAsync(AuditScope scope, CancellationToken ct)
+    private async Task<PreparedReplay?> PrepareReplayAsync(
+        AuditScope scope,
+        FrozenPresentationProbe? probe,
+        CancellationToken ct
+    )
     {
         if (scope.EvaluationOfRunId is not { } id)
         {
@@ -69,8 +86,25 @@ public sealed partial class AuditStore
         // The evidence transaction has ended. Parsing, canonicalization and hashing large
         // frozen inputs must never hold the shared evidence lock.
         var pinned = CompatibleReplayInput(original.Bytes);
+        Require(
+            AuditCanonicalJson.ContentHash(original.Bytes) == original.Sha256
+                && AuditComputationInput.ContentDigest(pinned) == original.InputContentDigest,
+            "retained_evidence_integrity",
+            409
+        );
+        if (probe != null)
+        {
+            Require(
+                probe.FrozenSnapshotHash == original.Sha256
+                    && probe.SummaryInputDigest
+                        == AiObservatory.Audit.Checks.PresentationTotalsCheck.SummaryInputDigest(pinned),
+                "stale_presentation_probe",
+                409
+            );
+        }
         var evaluation = pinned with
         {
+            PresentationProbe = probe ?? pinned.PresentationProbe,
             VerifierVersion = AuditVerifierIdentity.VerifierVersion,
             RuleVersion = AuditVerifierIdentity.RuleVersion,
         };
