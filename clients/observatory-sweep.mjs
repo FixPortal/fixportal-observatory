@@ -31,7 +31,7 @@ const LOCAL_SOURCE_IDS = {
 // every file. Never bump alone: after the wipe an unreadable file has no cached
 // records, so scanRecords flags its source incomplete and main withholds that
 // source's corrections and tombstones until a complete scan succeeds.
-const PARSE_CACHE_VERSION = 6
+const PARSE_CACHE_VERSION = 7
 // Gemini Developer API standard-tier pricing changes above this documented prompt-token threshold.
 const GEMINI_LONG_CONTEXT_THRESHOLD = 200_000
 // The Grok CLI records each turn's cost as an integer tick count rather than a decimal. The
@@ -188,19 +188,145 @@ export function parseCopilot(content) {
   return { endedAt, perModel }
 }
 
+const CLAUDE_PROMPT_COUNTERS = {
+  input: 'input_tokens', read: 'cache_read_input_tokens', creation: 'cache_creation_input_tokens',
+}
+
+function safeTokenCount(value) {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}
+
+function checkedTokenSum(values) {
+  let sum = 0
+  for (const value of values) {
+    if (!safeTokenCount(value) || !Number.isSafeInteger(sum + value)) { return null }
+    sum += value
+  }
+  return sum
+}
+
+// Preserve presence separately from the legacy usage counters' zero defaults.
+function claudePromptFacts(usage) {
+  const facts = {}
+  const count = (key, value) => { facts[key] = safeTokenCount(value) ? value : null }
+  for (const [key, native] of Object.entries(CLAUDE_PROMPT_COUNTERS)) {
+    if (Object.hasOwn(usage, native)) { count(key, usage[native]) }
+  }
+  const creation = usage.cache_creation
+  if (Object.hasOwn(usage, 'cache_creation') && (!creation || typeof creation !== 'object' || Array.isArray(creation))) {
+    facts.creation5m = null
+  } else if (creation) {
+    for (const [key, native] of [['creation5m', 'ephemeral_5m_input_tokens'], ['creation1h', 'ephemeral_1h_input_tokens']]) {
+      if (Object.hasOwn(creation, native)) { count(key, creation[native]) }
+    }
+  }
+  return facts
+}
+
+function claudeCreationTokens(facts) {
+  if (Object.values(facts).some(value => value === null)) { return null }
+  const split = Object.hasOwn(facts, 'creation5m') && Object.hasOwn(facts, 'creation1h')
+    ? checkedTokenSum([facts.creation5m, facts.creation1h]) : null
+  if (Object.hasOwn(facts, 'creation')) {
+    if (['creation5m', 'creation1h'].some(key => Object.hasOwn(facts, key) && facts[key] > facts.creation)) { return null }
+    if (Object.hasOwn(facts, 'creation5m') && Object.hasOwn(facts, 'creation1h') && split !== facts.creation) { return null }
+    return facts.creation
+  }
+  return split
+}
+
+function claudePromptObservation(usage) {
+  const facts = claudePromptFacts(usage)
+  const creation = claudeCreationTokens(facts)
+  const promptTokens = Object.hasOwn(facts, 'input') && Object.hasOwn(facts, 'read') && creation !== null
+    ? checkedTokenSum([facts.input, facts.read, creation]) : null
+  return { promptTokens, valid: promptTokens !== null }
+}
+
+function claudeInvalidCounters(usage, facts) {
+  if (Object.values(facts).some(value => value === null)) { return true }
+  if (['output_tokens', 'thinking_tokens', 'thinking_output_tokens'].some(key => Object.hasOwn(usage, key) && !safeTokenCount(usage[key]))) { return true }
+  const subsets = ['creation5m', 'creation1h'].filter(key => Object.hasOwn(facts, key)).map(key => facts[key])
+  const split = checkedTokenSum(subsets)
+  if (split === null) { return true }
+  // Check even a partial observation's known sum without inventing its missing categories.
+  return checkedTokenSum([
+    ...['input', 'read'].filter(key => Object.hasOwn(facts, key)).map(key => facts[key]),
+    facts.creation ?? split,
+  ]) === null
+}
+
+function claudePromptDimensions(message, usage) {
+  const dimensions = {}
+  for (const [key, source, native] of [
+    ['model', message, 'model'], ['tier', usage, 'service_tier'], ['speed', usage, 'speed'], ['geo', usage, 'inference_geo'],
+  ]) {
+    if (Object.hasOwn(source, native)) {
+      const value = source[native]
+      dimensions[key] = typeof value === 'string' && value.trim() ? (key === 'model' ? value.toLowerCase() : value) : null
+    }
+  }
+  return dimensions
+}
+
+function claudeTieredModel(model) {
+  if (typeof model !== 'string') { return false }
+  const normalized = model.toLowerCase()
+  if (normalized === 'claude-haiku-5-5') { return true }
+  const match = /^claude-haiku-5-5-(\d{4})(\d{2})(\d{2})$/.exec(normalized)
+  if (!match || match[1] === '0000') { return false }
+  const date = `${match[1]}-${match[2]}-${match[3]}`
+  const parsed = isoTimestamp(`${date}T00:00:00Z`)
+  return parsed?.slice(0, 10) === date
+}
+
+function claudeMessageIdentity(record) {
+  return typeof record.messageId === 'string' && record.messageId.trim() ? record.messageId : null
+}
+
+function claudePromptContext(copies) {
+  if (!copies.every(record => claudeMessageIdentity(record) && record.claudePromptFacts && record.claudePromptDimensions)) { return null }
+  const candidate = copies.find(record => record.claudePromptObservation?.valid && claudeTieredModel(record.model))
+  if (!candidate) { return null }
+  const facts = {}
+  const dimensions = {}
+  // A complete candidate is mandatory. Merging here only rejects disagreements;
+  // it must never manufacture completeness from disjoint partial messages.
+  for (const record of copies) {
+    for (const [observed, agreed] of [[record.claudePromptFacts, facts], [record.claudePromptDimensions, dimensions]]) {
+      for (const [key, value] of Object.entries(observed)) {
+        if (value === null || (Object.hasOwn(agreed, key) && agreed[key] !== value)) { return null }
+        agreed[key] = value
+      }
+    }
+    const creation = claudeCreationTokens(record.claudePromptFacts)
+    if (creation !== null && creation !== claudeCreationTokens(candidate.claudePromptFacts)) { return null }
+  }
+  if (!dimensions.model || dimensions.model !== candidate.model.toLowerCase()) { return null }
+  // Compare split-only copies to an explicit total, including complementary
+  // partial splits. The candidate, rather than this union, supplies the proof.
+  const creation = claudeCreationTokens({ ...facts, creation: claudeCreationTokens(candidate.claudePromptFacts) })
+  if (creation === null || facts.input !== candidate.claudePromptFacts.input || facts.read !== candidate.claudePromptFacts.read) { return null }
+  return candidate.claudePromptObservation.promptTokens <= 100000 ? 'prompt_le_100000' : 'prompt_gt_100000'
+}
+
 /** Parse Claude assistant-message usage for global message.id selection. */
 export function parseClaude(content) {
   const records = []
+  let incomplete = false
   for (const line of content.split('\n')) {
-    if (!line) { continue }
+    if (!line.trim()) { continue }
     let row
-    try { row = JSON.parse(line) } catch { continue }
+    try { row = JSON.parse(line) } catch { incomplete = true; continue }
     if (!row || typeof row !== 'object') { continue }
     const message = row.type === 'assistant' ? row.message : null
     const usage = message?.usage
     const occurredAtUtc = isoTimestamp(row.timestamp)
-    if (!usage || !occurredAtUtc) { continue }
+    if (!usage || typeof usage !== 'object' || Array.isArray(usage) || !occurredAtUtc) { continue }
 
+    const promptFacts = claudePromptFacts(usage)
+    const promptObservation = claudePromptObservation(usage)
+    const invalidCounters = claudeInvalidCounters(usage, promptFacts)
     const creation = usage.cache_creation ?? {}
     const cacheWrite5mTokens = token(creation.ephemeral_5m_input_tokens)
     const cacheWrite1hTokens = token(creation.ephemeral_1h_input_tokens)
@@ -214,6 +340,10 @@ export function parseClaude(content) {
       date: occurredAtUtc.slice(0, 10),
       model: message.model ?? 'unknown',
       occurredAtUtc,
+      claudePromptObservation: promptObservation,
+      claudePromptFacts: promptFacts,
+      claudePromptDimensions: claudePromptDimensions(message, usage),
+      claudeInvalidCounters: invalidCounters,
       inputTokens: token(usage.input_tokens),
       outputTokens: token(usage.output_tokens),
       cacheReadTokens: token(usage.cache_read_input_tokens),
@@ -228,6 +358,9 @@ export function parseClaude(content) {
       ...(typeof usage.inference_geo === 'string' && usage.inference_geo ? { inferenceGeo: usage.inference_geo } : {}),
     })
   }
+  // updateFileCache persists this diagnostic on the wrapper, because JSON
+  // serializing the array alone would lose it on the next matching-mtime scan.
+  Object.defineProperty(records, 'incomplete', { value: incomplete })
   return records
 }
 
@@ -584,23 +717,31 @@ function claudeRecordScore(record) {
 function deduplicateClaudeRecords(records) {
   const deduplicated = []
   const indexes = new Map()
+  const copies = new Map()
   for (const record of records) {
-    if (record.tool !== 'claude' || !record.messageId) {
-      deduplicated.push(record)
+    const identity = record.tool === 'claude' ? claudeMessageIdentity(record) : null
+    if (!identity) {
+      deduplicated.push(record.tool === 'claude' ? { ...record, claudePromptContext: null } : record)
       continue
     }
-    const index = indexes.get(record.messageId)
+    const index = indexes.get(identity)
     if (index === undefined) {
-      indexes.set(record.messageId, deduplicated.length)
+      indexes.set(identity, deduplicated.length)
+      copies.set(identity, [record])
       deduplicated.push(record)
       continue
     }
+    copies.get(identity).push(record)
     const existing = deduplicated[index]
     const score = claudeRecordScore(record)
     const existingScore = claudeRecordScore(existing)
     if (score > existingScore || (score === existingScore && record.occurredAtUtc < existing.occurredAtUtc)) {
       deduplicated[index] = record
     }
+  }
+  for (const [identity, messages] of copies) {
+    const index = indexes.get(identity)
+    deduplicated[index] = { ...deduplicated[index], claudePromptContext: claudePromptContext(messages) }
   }
   return deduplicated
 }
@@ -620,6 +761,15 @@ export function countUnplaced(records, machine) {
 /** Rebuild stable cumulative day/model snapshots from cached per-file records. */
 export function buildDailySnapshots(records, machine) {
   const groups = new Map()
+  // Kept outside each HTTP snapshot. A malformed unselected streaming copy is
+  // still unsafe evidence, so inspect the original records before deduplication.
+  const incompleteSourceIds = new Set()
+  if (records.incomplete) { incompleteSourceIds.add(localSourceId('claude', machine)) }
+  for (const record of records) {
+    if (record.tool === 'claude' && record.claudeInvalidCounters) {
+      incompleteSourceIds.add(localSourceId('claude', machine))
+    }
+  }
   for (const record of deduplicateClaudeRecords(records)) {
     const metadata = sourceMetadata(record.tool, record.model, machine, record.modelProvider)
     if (!metadata || !record.date || !record.model) { continue }
@@ -627,8 +777,9 @@ export function buildDailySnapshots(records, machine) {
     const tier = record.serviceTier ?? 'unknown'
     const speed = record.speed ?? 'unknown'
     const geo = record.inferenceGeo ?? 'unknown'
+    const claudeTiered = record.tool === 'claude' && claudeTieredModel(record.model)
     const eventKey = record.tool === 'claude'
-      ? `claude:${record.date}:${record.model}:${tier}:${speed}:${geo}`
+      ? `claude:${record.date}:${record.model}:${tier}:${speed}:${geo}${claudeTiered ? `:${record.claudePromptContext ?? 'prompt_unknown'}` : ''}`
       : record.tool === 'gemini-review'
         ? `gemini-review:${record.date}:${record.model}:${record.context}`
         : `${record.tool}:${record.date}:${record.model}`
@@ -643,7 +794,8 @@ export function buildDailySnapshots(records, machine) {
         serviceTier: record.serviceTier,
         speed: record.speed,
         inferenceGeo: record.inferenceGeo,
-        context: record.context,
+        context: claudeTiered ? record.claudePromptContext : record.context,
+        claudeTiered,
         input: 0,
         output: 0,
         cacheRead: 0,
@@ -659,23 +811,22 @@ export function buildDailySnapshots(records, machine) {
     }
 
     const usage = recordTokens(record)
-    group.input += usage.input
-    group.output += usage.output
-    group.cacheRead += usage.cacheRead
-    group.cacheWrite += usage.cacheWrite
-    group.cacheWrite1h += usage.cacheWrite1h
-    group.cacheWrite5m += token(record.cacheWrite5mTokens)
+    for (const [key, value] of Object.entries({ ...usage, cacheWrite5m: token(record.cacheWrite5mTokens) })) {
+      if (record.tool === 'claude' && checkedTokenSum([group[key], value]) === null) {
+        incompleteSourceIds.add(metadata.sourceId)
+      }
+      group[key] += value
+    }
     if (usage.cacheWrite > 0 && !(Object.hasOwn(record, 'cacheWrite1hTokens') && Object.hasOwn(record, 'cacheWrite5mTokens'))) {
       group.cacheDurationsObserved = false
     }
-    group.thought += usage.thought
     group.costUsd += token(record.costUsd)
     const occurredAtUtc = isoTimestamp(record.occurredAtUtc)
     if (occurredAtUtc && occurredAtUtc > group.occurredAtUtc) { group.occurredAtUtc = occurredAtUtc }
   }
 
-  return [...groups.values()]
-    .filter(group => group.input + group.output + group.cacheRead + group.cacheWrite + group.thought > 0)
+  const snapshots = [...groups.values()]
+    .filter(group => !incompleteSourceIds.has(group.sourceId) && [group.input, group.output, group.cacheRead, group.cacheWrite, group.thought].some(value => value > 0))
     .sort((a, b) => a.eventKey.localeCompare(b.eventKey))
     .map(group => {
       return {
@@ -701,6 +852,11 @@ export function buildDailySnapshots(records, machine) {
           machine: machineLabel(machine),
           ...(group.tool === 'codex' ? { processing: 'standard', context: 'short', region: 'global' } : {}),
           ...(group.tool === 'gemini-review' ? { service: 'Gemini Developer API', tier: 'standard', context: group.context } : {}),
+          ...(group.claudeTiered ? {
+            claude_prompt_context_version: '1',
+            claude_prompt_context_basis: 'deduplicated_message_group',
+            ...(group.context ? { context: group.context } : {}),
+          } : {}),
           ...(group.serviceTier ? { service_tier: group.serviceTier } : {}),
           ...(group.speed ? { speed: group.speed } : {}),
           ...(group.inferenceGeo ? { inference_geo: group.inferenceGeo } : {}),
@@ -712,6 +868,8 @@ export function buildDailySnapshots(records, machine) {
         }),
       }
     })
+  Object.defineProperty(snapshots, 'incompleteSourceIds', { value: incompleteSourceIds })
+  return snapshots
 }
 
 function zeroSnapshot(snapshot) {
@@ -734,10 +892,12 @@ function zeroSnapshot(snapshot) {
 
 /** Plan current snapshots plus zero corrections for server keys that vanished locally. */
 export function planSnapshotSubmissions(snapshots, inventory = []) {
+  const incompleteSourceIds = snapshots.incompleteSourceIds ?? new Set()
   const identity = snapshot => `${snapshot.sourceId}\n${snapshot.eventKey}`
   const currentKeys = new Set(snapshots.map(identity))
-  const submissions = snapshots.map(snapshot => ({ snapshot, active: true }))
+  const submissions = snapshots.filter(snapshot => !incompleteSourceIds.has(snapshot.sourceId)).map(snapshot => ({ snapshot, active: true }))
   for (const snapshot of Object.values(inventory)) {
+    if (incompleteSourceIds.has(snapshot.sourceId)) { continue }
     if (!currentKeys.has(identity(snapshot))) {
       // ponytail: /api/events has correction but no deletion. Zero corrections
       // leave a one-request ceiling per removed key; add deletion only if request counts need exact removal.
@@ -776,6 +936,7 @@ export async function updateFileCache(files, cache, parse, read = path => readFi
         if (cached && Array.isArray(cached.records)) {
           log(`Read failed for ${file.path}; reusing cached records:`, error.message)
           next[file.path] = cached
+          if (cached.incomplete) { incomplete = true }
           for (const record of cached.records) { records.push(record) }
         } else {
           // Unreadable with no cached records. "Nothing was ever posted from this
@@ -791,8 +952,10 @@ export async function updateFileCache(files, cache, parse, read = path => readFi
         mtimeMs: file.mtimeMs,
         ...(file.cacheKey === undefined ? {} : { cacheKey: file.cacheKey }),
         records: parsed ?? [],
+        ...(parsed?.incomplete ? { incomplete: true } : {}),
       }
     }
+    if (next[file.path].incomplete) { incomplete = true }
     for (const record of next[file.path].records) { records.push(record) }
   }
   return { cache: next, records, incomplete }
@@ -1189,7 +1352,7 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   // missing from the scan, so both its corrections and its tombstones are withheld
   // until a complete scan succeeds.
   const incompleteSourceIds = new Set(
-    [...incompleteSources].map(tool => localSourceId(tool, machine)),
+    [...incompleteSources].map(tool => localSourceId(tool, machine)).concat([...snapshots.incompleteSourceIds]),
   )
 
   let posted = 0
