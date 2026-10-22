@@ -297,7 +297,17 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
     private static (string Model, string? Context) ParseModelLane(string value)
     {
         // Recognize the observed qualifier before presentation normalization can erase it.
-        var suffix = value.IndexOf(" (", StringComparison.Ordinal);
+        var suffix = value.IndexOf('(');
+        if (suffix >= 0)
+        {
+            // Price and presentation qualifiers have one exact ASCII-space boundary.
+            // Reject malformed boundaries rather than treating conditions as model text.
+            if (suffix < 2 || value[suffix - 1] != ' ' || char.IsWhiteSpace(value[suffix - 2]))
+            {
+                throw new InvalidDataException("Claude pricing contains a malformed model qualifier boundary.");
+            }
+            suffix--;
+        }
         var qualifier = suffix < 0 ? null : value[suffix..];
         var context = qualifier switch
         {
@@ -309,7 +319,7 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
         {
             throw new InvalidDataException("Claude pricing contains an unsupported model qualifier.");
         }
-        var model = NormalizeModel(value);
+        var model = NormalizeModel(suffix < 0 ? value : value[..suffix]);
         if (context is not null && model != "claude-haiku-5-5")
         {
             throw new InvalidDataException("Claude prompt bands are only supported for Haiku 5.5.");
@@ -329,14 +339,17 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
 
     private static string NormalizeModel(string value)
     {
-        var suffix = value.IndexOf(" (", StringComparison.Ordinal);
-        var displayName = (suffix < 0 ? value : value[..suffix]).Trim();
-        if (!displayName.StartsWith("Claude ", StringComparison.Ordinal))
+        // Only the already-separated model name reaches normalization; conditions are never stripped here.
+        if (
+            !value.StartsWith("Claude ", StringComparison.Ordinal)
+            || value.Contains("prompt", StringComparison.OrdinalIgnoreCase)
+            || value.Any(character => !char.IsAsciiLetterOrDigit(character) && character is not (' ' or '.' or '-'))
+        )
         {
             throw new InvalidDataException("Claude pricing contains an unknown model name.");
         }
 
-        return displayName.ToLowerInvariant().Replace('.', '-').Replace(' ', '-');
+        return value.ToLowerInvariant().Replace('.', '-').Replace(' ', '-');
     }
 
     private static IReadOnlyList<string[]> TableRows(
