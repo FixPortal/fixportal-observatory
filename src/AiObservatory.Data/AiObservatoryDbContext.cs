@@ -1,3 +1,4 @@
+using AiObservatory.Data.Audit;
 using AiObservatory.Data.Entities;
 using AiObservatory.Data.Security;
 using Microsoft.EntityFrameworkCore;
@@ -61,6 +62,16 @@ public class AiObservatoryDbContext(DbContextOptions<AiObservatoryDbContext> opt
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.ApplyConfiguration(new AuditMachineConfiguration());
+        modelBuilder.ApplyConfiguration(new AuditMachineCredentialConfiguration());
+        modelBuilder.ApplyConfiguration(new AuditCaptureRequestConfiguration());
+        modelBuilder.ApplyConfiguration(new AuditEvidenceCaptureConfiguration());
+        modelBuilder.ApplyConfiguration(new AuditEvidenceChunkConfiguration());
+        modelBuilder.ApplyConfiguration(new AuditRunConfiguration());
+        modelBuilder.ApplyConfiguration(new AuditRunCaptureConfiguration());
+        modelBuilder.ApplyConfiguration(new AuditServerSnapshotConfiguration());
+        modelBuilder.ApplyConfiguration(new AuditFindingRecordConfiguration());
+        modelBuilder.ApplyConfiguration(new AuditRetentionSettingsConfiguration());
         modelBuilder.Entity<UsageEvent>(b =>
         {
             b.Property(e => e.Provider).HasConversion<string>();

@@ -1,5 +1,6 @@
 using System.Threading.RateLimiting;
 using AiObservatory.Api;
+using AiObservatory.Api.Audit;
 using AiObservatory.Api.Endpoints;
 using AiObservatory.Api.Routing;
 using AiObservatory.Api.Services;
@@ -50,6 +51,11 @@ if (demoMode)
 
 Program.ValidateApiKeys(builder);
 builder.Services.AddSingleton<IClock>(SystemClock.Instance);
+builder
+    .Services.AddOptions<AuditOptions>()
+    .Bind(builder.Configuration.GetSection(AuditOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<AuditOptions>, AuditOptionsValidator>();
 
 // Owner allowlist for the Activity and GitHub tabs. Resolved once here, so every consumer sees
 // the same value, and bound from either the array or the delimited-scalar shape. Absent means

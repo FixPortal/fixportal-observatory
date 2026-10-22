@@ -9,11 +9,11 @@ public class AiObservatoryDbContextFactory : IDesignTimeDbContextFactory<AiObser
 {
     public AiObservatoryDbContext CreateDbContext(string[] args)
     {
+        var connection = args is ["--connection", var explicitConnection]
+            ? explicitConnection
+            : "Host=localhost;Database=aiobservatory;Username=postgres;Password=postgres";
         var options = new DbContextOptionsBuilder<AiObservatoryDbContext>()
-            .UseNpgsql(
-                "Host=localhost;Database=aiobservatory;Username=postgres;Password=postgres",
-                npgsql => npgsql.UseNodaTime()
-            )
+            .UseNpgsql(connection, npgsql => npgsql.UseNodaTime())
             .Options;
         return new AiObservatoryDbContext(options);
     }
