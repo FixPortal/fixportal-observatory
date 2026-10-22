@@ -36,9 +36,9 @@ class PackagingTests(unittest.TestCase):
                         metadata = json.loads(bundle.read("release.json"))
                         self.assertEqual(metadata["runtimeIdentifier"], rid)
                         self.assertEqual(metadata["sourceCommit"], subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip())
-                        self.assertEqual(metadata["verifierVersion"], "1.0.0")
+                        self.assertEqual(metadata["verifierVersion"], "1.1.0")
                         self.assertEqual(metadata["schemaVersion"], 1)
-                        self.assertEqual(metadata["ruleVersion"], "1")
+                        self.assertEqual(metadata["ruleVersion"], "2")
                         for item in metadata["files"]:
                             self.assertEqual(item["sha256"], hashlib.sha256(bundle.read(item["path"])).hexdigest())
                         self.assertEqual(archive.with_suffix(".release.json").read_bytes(), bundle.read("release.json"))

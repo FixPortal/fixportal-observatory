@@ -54,7 +54,11 @@ ZIP entries. Compressed input is bounded to 528 MiB including metadata; compress
 entries may expand at most 200 times their compressed size. ZIP64 and multidisk
 archives are unsupported because these sizes/counts do not require them. Callers
 may tighten the public limits, and cannot lift the protocol maxima. Writer output
-uses stored ZIP entries, fixed timestamps, and ordinal paths for reproducible bytes.
+uses stored ZIP entries, fixed timestamps, and ordinal paths for reproducible bytes
+on the same runtime. ZIP created-by-OS metadata can differ across hosts, so a newly
+exported archive's transport SHA-256 can differ while its canonical entries and
+replayed result bytes remain identical. Replay of a sealed bundle retains its exact
+canonical result bytes and result hash.
 
 Task 10 explicitly advanced this synthetic pre-release fixture under verifier 1.0.0.
 The input digest remains 0048b16609f4b1075bf5fd40bac774df99457485e81eddea260dfe40bcb99827.
@@ -72,7 +76,9 @@ cache-read input + 0 creation (100,000, lower; output 20) and 70,000 uncached in
 Source/daily checks match both independent bands.
 No pricing or complete installation assurance is asserted by this scoped Matched result.
 The existing `BundleTests.VersionTwo_BundleIsDeterministicAndContainsBothIndependentBands`
-constructs the same facts and compares the exact archive and result bytes.
+constructs the same facts and compares exact canonical entry names and bytes with
+the retained archive, plus exact result bytes from both exports and golden replay.
+Two exports on the same runtime must also have identical whole-archive bytes.
 
 | Artifact | SHA-256 |
 | --- | --- |

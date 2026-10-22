@@ -22,15 +22,13 @@ public sealed class BundleTests
         using var first = await Write(bundle);
         using var second = await Write(bundle);
         first.ToArray().Should().Equal(second.ToArray());
-        first
-            .ToArray()
-            .Should()
-            .Equal(
-                await File.ReadAllBytesAsync(
-                    Path.Combine(AppContext.BaseDirectory, "Fixtures", "audit", "golden-v2.zip"),
-                    TestContext.Current.CancellationToken
-                )
-            );
+        using var golden = new MemoryStream(
+            await File.ReadAllBytesAsync(
+                Path.Combine(AppContext.BaseDirectory, "Fixtures", "audit", "golden-v2.zip"),
+                TestContext.Current.CancellationToken
+            )
+        );
+        AssertCanonicalEntriesEqual(first, golden);
         AuditCanonicalJson
             .Serialize(bundle.Result)
             .Should()
@@ -40,6 +38,15 @@ public sealed class BundleTests
                     TestContext.Current.CancellationToken
                 )
             );
+        var goldenReplay = await AuditBundleReader.ReadBundleAsync(
+            golden,
+            new(),
+            TestContext.Current.CancellationToken
+        );
+        AuditCanonicalJson
+            .Serialize(new AuditVerifier().Verify(goldenReplay.Input))
+            .Should()
+            .Equal(AuditCanonicalJson.Serialize(bundle.Result));
         var replay = await AuditBundleReader.ReadBundleAsync(first, new(), TestContext.Current.CancellationToken);
         var reconstruction = new AiObservatory.Audit.Sources.ClaudeAuditAdapter().Reconstruct(
             replay.Input.Records,
@@ -53,6 +60,30 @@ public sealed class BundleTests
             .Serialize(new AuditVerifier().Verify(replay.Input))
             .Should()
             .Equal(AuditCanonicalJson.Serialize(bundle.Result));
+    }
+
+    private static void AssertCanonicalEntriesEqual(MemoryStream actual, MemoryStream expected)
+    {
+        using (var archive = new ZipArchive(actual, ZipArchiveMode.Read, true))
+        using (var golden = new ZipArchive(expected, ZipArchiveMode.Read, true))
+        {
+            archive.Entries.Select(e => e.FullName).Should().Equal(golden.Entries.Select(e => e.FullName));
+            foreach (var entry in archive.Entries)
+            {
+                using var source = entry.Open();
+                using var reference = golden.GetEntry(entry.FullName)!.Open();
+                using var bytes = new MemoryStream();
+                using var referenceBytes = new MemoryStream();
+                source.CopyTo(bytes);
+                reference.CopyTo(referenceBytes);
+                bytes
+                    .ToArray()
+                    .Should()
+                    .Equal(referenceBytes.ToArray(), "canonical entry {0} must be unchanged", entry.FullName);
+            }
+        }
+        actual.Position = 0;
+        expected.Position = 0;
     }
 
     [Fact]
