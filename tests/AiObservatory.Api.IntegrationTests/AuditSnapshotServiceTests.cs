@@ -40,6 +40,7 @@ public sealed class AuditSnapshotServiceTests : IAsyncLifetime
         {
             Database = $"aiobs_test_snapshot_{Guid.NewGuid():N}",
         }.ConnectionString;
+        await AiObservatory.Testing.PostgresTestAssemblyFixture.CloneMigratedDatabaseAsync(connection, Ct);
         _options = new DbContextOptionsBuilder<AiObservatoryDbContext>()
             .UseNpgsql(connection, o => o.UseNodaTime())
             .Options;

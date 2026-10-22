@@ -24,6 +24,7 @@ public class StartupGuardsTests
     {
         await using var factory = new AiObservatoryApiFactory
         {
+            UseMigratedTemplate = false,
             Environment = Environments.Production,
             ApiKeyOverride = apiKey,
         };
@@ -44,6 +45,7 @@ public class StartupGuardsTests
     {
         await using var factory = new AiObservatoryApiFactory
         {
+            UseMigratedTemplate = false,
             Environment = Environments.Production,
             ReadOnlyKeyOverride = apiKey,
         };
@@ -62,6 +64,7 @@ public class StartupGuardsTests
         const string sharedKey = "same-production-key";
         await using var factory = new AiObservatoryApiFactory
         {
+            UseMigratedTemplate = false,
             Environment = Environments.Production,
             ApiKeyOverride = sharedKey,
             ReadOnlyKeyOverride = sharedKey,
@@ -84,6 +87,7 @@ public class StartupGuardsTests
     {
         await using var factory = new AiObservatoryApiFactory
         {
+            UseMigratedTemplate = false,
             Environment = Environments.Production,
             IdeKeyOverride = ideKey,
         };
@@ -101,6 +105,7 @@ public class StartupGuardsTests
     {
         await using var factory = new AiObservatoryApiFactory
         {
+            UseMigratedTemplate = false,
             Environment = Environments.Production,
             IdeKeyOverride = ideKey,
         };
@@ -117,6 +122,7 @@ public class StartupGuardsTests
     {
         await using var factory = new AiObservatoryApiFactory
         {
+            UseMigratedTemplate = false,
             Environment = Environments.Development,
             ApiKeyOverride = "change-me",
         };
@@ -127,7 +133,11 @@ public class StartupGuardsTests
     [Fact]
     public async Task Startup_WhenDbConnectionUnset_ThrowsRegardlessOfEnvironment()
     {
-        await using var factory = new AiObservatoryApiFactory { Environment = Environments.Development };
+        await using var factory = new AiObservatoryApiFactory
+        {
+            UseMigratedTemplate = false,
+            Environment = Environments.Development,
+        };
         factory.SetDbConnection(null);
 
         var thrown = CaptureServicesException(factory);
@@ -143,6 +153,7 @@ public class StartupGuardsTests
     {
         await using var factory = new AiObservatoryApiFactory
         {
+            UseMigratedTemplate = false,
             Environment = Environments.Production,
             DemoMode = true,
         };
@@ -163,7 +174,11 @@ public class StartupGuardsTests
         // Production uses a non-demo host and must start exactly as it does today. The host is
         // deliberately NOT localhost (with the default host the guard would pass either way), and
         // it is a non-resolving .invalid name so the test never dials a real database.
-        await using var factory = new AiObservatoryApiFactory { Environment = Environments.Production };
+        await using var factory = new AiObservatoryApiFactory
+        {
+            UseMigratedTemplate = false,
+            Environment = Environments.Production,
+        };
         factory.SetDbConnection("Host=fpaiobs-db.invalid;Database=a;Username=u;Password=p;Timeout=1");
 
         var thrown = CaptureServicesException(factory);
@@ -197,7 +212,11 @@ public class StartupGuardsTests
     [Fact]
     public async Task DevSeedRoute_Returns404InProduction()
     {
-        await using var factory = new AiObservatoryApiFactory { Environment = Environments.Production };
+        await using var factory = new AiObservatoryApiFactory
+        {
+            UseMigratedTemplate = false,
+            Environment = Environments.Production,
+        };
         await factory.InitializeAsync();
         using var client = factory.CreateAdminClient();
 
@@ -210,7 +229,11 @@ public class StartupGuardsTests
     [Fact]
     public async Task DevSeedRoute_IsReachableInDevelopment()
     {
-        await using var factory = new AiObservatoryApiFactory { Environment = Environments.Development };
+        await using var factory = new AiObservatoryApiFactory
+        {
+            UseMigratedTemplate = false,
+            Environment = Environments.Development,
+        };
         await factory.InitializeAsync();
         using var client = factory.CreateAdminClient();
 

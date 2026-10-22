@@ -144,6 +144,42 @@ public sealed class BundledPricingCatalogLoaderTests(ProviderPollingDatabase dat
     }
 
     [Fact]
+    public async Task ConsecutiveHarnessesIsolateUsageAndRetainedPricingApplications()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using (var first = await CreateHarnessAsync())
+        {
+            await first.Loader.LoadAsync(ct);
+            await new UsageRepository(first.Db).RecordEventAsync(
+                new UsageEvent
+                {
+                    Provider = Provider.OpenAI,
+                    Model = "gpt-5.4",
+                    OccurredAt = Instant.FromUtc(2026, 8, 23, 12, 0),
+                    IngestedAt = Instant.FromUtc(2026, 8, 27, 12, 0),
+                    ObservedAt = Instant.FromUtc(2026, 8, 27, 12, 0),
+                    InputTokens = 1_000_000,
+                    OutputTokens = 1_000_000,
+                    RawPayload = """{"processing":"standard","context":"short","region":"global"}""",
+                    SourceId = UsageSourceIds.CodexLocal,
+                    SourceKind = SourceKind.LocalTelemetry,
+                    UsageScope = UsageScope.Subscription,
+                    CostBasis = CostBasis.Notional,
+                },
+                ct
+            );
+            await first.Loader.LoadAsync(ct);
+            (await first.Db.PricingApplications.AnyAsync(ct)).Should().BeTrue();
+        }
+
+        await using var second = await CreateHarnessAsync();
+        (await second.Db.UsageEvents.AnyAsync(ct)).Should().BeFalse();
+        (await second.Db.PricingApplications.AnyAsync(ct)).Should().BeFalse();
+        (await second.Db.DailyAggregates.AnyAsync(ct)).Should().BeFalse();
+        (await second.Db.PricingSnapshots.AnyAsync(ct)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task ReplacesTheBundledOnlyGeminiCatalogWhenTheShippedEvidenceChanges()
     {
         await using var harness = await CreateHarnessAsync();
@@ -232,6 +268,8 @@ public sealed class BundledPricingCatalogLoaderTests(ProviderPollingDatabase dat
         await using var remoteScope = provider.CreateAsyncScope();
         await using var bundleScope = provider.CreateAsyncScope();
         var remoteDb = remoteScope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+        await remoteDb.UsageEvents.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        await remoteDb.DailyAggregates.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
         await remoteDb.PricingSnapshots.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
         await remoteDb.SourceSyncStates.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
         var remoteStore = new PricingSnapshotStore(remoteDb);
@@ -316,6 +354,10 @@ public sealed class BundledPricingCatalogLoaderTests(ProviderPollingDatabase dat
         var provider = services.BuildServiceProvider();
         var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+        // This collection owns its disposable database. Deleting usage cascades its retained
+        // pricing applications before catalogs, whose production foreign key is restrictive.
+        await db.UsageEvents.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        await db.DailyAggregates.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
         await db.PricingSnapshots.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
         await db.SourceSyncStates.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
         var store = new PricingSnapshotStore(db);

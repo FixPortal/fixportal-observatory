@@ -37,6 +37,7 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
     public const string IdeKey = "test-ide-key-0123456789";
 
     public string Environment { get; set; } = Environments.Development;
+    public bool UseMigratedTemplate { get; init; } = true;
     public string? ApiKeyOverride { get; set; } = AdminKey;
     public IClock? ClockOverride { get; init; }
 
@@ -73,6 +74,7 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
     private string? _dbConnectionOverride;
     private bool _dbConnectionOverrideSet;
     private readonly string _connectionString;
+    private bool _databasePrepared;
 
     public AiObservatoryApiFactory()
     {
@@ -131,6 +133,17 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
 
     protected override IHost CreateHost(IHostBuilder builder)
     {
+        if (UseMigratedTemplate && !_dbConnectionOverrideSet && !_databasePrepared)
+        {
+            AiObservatory
+                .Testing.PostgresTestAssemblyFixture.CloneMigratedDatabaseAsync(
+                    _connectionString,
+                    CancellationToken.None
+                )
+                .GetAwaiter()
+                .GetResult();
+            _databasePrepared = true;
+        }
         // Runs once per EnsureServer(), strictly after every test-side property override
         // (Environment/ApiKeyOverride/etc. — set via object initializer or after
         // construction) and strictly before builder.Build() triggers Program.Main.
