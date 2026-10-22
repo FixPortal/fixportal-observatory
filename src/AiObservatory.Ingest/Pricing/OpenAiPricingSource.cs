@@ -24,6 +24,20 @@ public sealed class OpenAiPricingSource : IPricingSource, IDisposable
         "Long context cache writes",
         "Long context output",
     ];
+    private static readonly string[] DurationPriceColumns =
+    [
+        "Model",
+        "Short context input",
+        "Short context output",
+        "Short context cached input",
+        "Short context 30m write",
+        "Short context 12h write",
+        "Long context input",
+        "Long context output",
+        "Long context cached input",
+        "Long context 30m write",
+        "Long context 12h write",
+    ];
     private static readonly (string Model, string Processing, string Context)[] RequiredLanes =
     [
         ("gpt-5.6-sol", "standard", "short"),
@@ -92,14 +106,35 @@ public sealed class OpenAiPricingSource : IPricingSource, IDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(document);
         var lines = Lines(document);
+        var durations = lines.Any(line => line.Trim() == "#### Flex");
+        if (durations)
+        {
+            // The page also contains Cyber/product tables with repeated headings. They are
+            // not interchangeable pricing lanes: accept only the explicitly bounded flagship section.
+            var start = SingleLine(lines, "Flagship models");
+            var end = SingleLine(lines, "Cyber models");
+            if (end <= start)
+            {
+                throw new InvalidDataException("OpenAI flagship pricing section boundaries changed.");
+            }
+            lines = lines[(start + 1)..end];
+            var wrapper = SingleLine(lines, "### Batch pricing data");
+            var batch = SingleLine(lines, "#### Batch");
+            var flex = SingleLine(lines, "#### Flex");
+            var fast = SingleLine(lines, "### Fast pricing data");
+            if (wrapper >= batch || batch >= flex || flex >= fast)
+            {
+                throw new InvalidDataException("OpenAI batch and Flex pricing hierarchy changed.");
+            }
+        }
         ValidateUnitDeclaration(lines);
         var observedOn = retrievedAt.InUtc().Date;
         var entries = new List<OpenAiPriceEntry>();
         var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        ParseTable(lines, "### Standard pricing data", "standard", observedOn, entries, keys);
-        ParseTable(lines, "### Batch pricing data", "batch", observedOn, entries, keys);
-        ParseTable(lines, "### Flex pricing data", "flex", observedOn, entries, keys);
-        ParseTable(lines, "### Fast pricing data", "fast", observedOn, entries, keys);
+        ParseTable(lines, "### Standard pricing data", "standard", observedOn, entries, keys, durations);
+        ParseTable(lines, durations ? "#### Batch" : "### Batch pricing data", "batch", observedOn, entries, keys, durations);
+        ParseTable(lines, durations ? "#### Flex" : "### Flex pricing data", "flex", observedOn, entries, keys, durations);
+        ParseTable(lines, "### Fast pricing data", "fast", observedOn, entries, keys, durations);
         if (
             RequiredLanes.Any(required =>
                 !keys.Contains(string.Join('\u001f', required.Model, required.Processing, required.Context, "global"))
@@ -120,31 +155,33 @@ public sealed class OpenAiPricingSource : IPricingSource, IDisposable
         string processing,
         LocalDate observedOn,
         List<OpenAiPriceEntry> entries,
-        HashSet<string> keys
+        HashSet<string> keys,
+        bool durations
     )
     {
         var headingIndex = SingleLine(lines, heading);
         var headerIndex = NextContentLine(lines, headingIndex + 1);
-        if (!Cells(lines[headerIndex]).SequenceEqual(PriceColumns, StringComparer.Ordinal))
+        var columns = durations ? DurationPriceColumns : PriceColumns;
+        if (!Cells(lines[headerIndex]).SequenceEqual(columns, StringComparer.Ordinal))
         {
             throw new InvalidDataException($"OpenAI {processing} pricing columns changed.");
         }
 
         var separatorIndex = NextContentLine(lines, headerIndex + 1);
-        ValidateSeparator(lines[separatorIndex], PriceColumns.Length);
+        ValidateSeparator(lines[separatorIndex], columns.Length);
         var rowIndex = separatorIndex + 1;
         var parsedRows = 0;
         while (rowIndex < lines.Count && lines[rowIndex].TrimStart().StartsWith('|'))
         {
             var cells = Cells(lines[rowIndex]);
-            if (cells.Length != PriceColumns.Length)
+            if (cells.Length != columns.Length)
             {
                 throw new InvalidDataException($"OpenAI {processing} pricing row is partial.");
             }
 
             var model = NormalizeModel(cells[0]);
-            AddLane(cells, model, processing, "short", 1, observedOn, entries, keys);
-            AddLane(cells, model, processing, "long", 5, observedOn, entries, keys);
+            AddLane(cells, model, processing, "short", 1, observedOn, entries, keys, durations);
+            AddLane(cells, model, processing, "long", durations ? 6 : 5, observedOn, entries, keys, durations);
             parsedRows++;
             rowIndex++;
         }
@@ -163,14 +200,19 @@ public sealed class OpenAiPricingSource : IPricingSource, IDisposable
         int offset,
         LocalDate observedOn,
         List<OpenAiPriceEntry> entries,
-        HashSet<string> keys
+        HashSet<string> keys,
+        bool durations
     )
     {
         var input = ParseRate(cells[offset]);
-        var cachedInput = ParseRate(cells[offset + 1]);
-        var cacheWrite = ParseRate(cells[offset + 2]);
-        var output = ParseRate(cells[offset + 3]);
-        if (input is null && cachedInput is null && output is null && cells[offset + 2] == "-")
+        var cachedInput = ParseRate(cells[offset + (durations ? 2 : 1)]);
+        var output = ParseRate(cells[offset + (durations ? 1 : 3)]);
+        // Validate both declared rates, but do not misrepresent either duration as the
+        // existing generic-write meter. Its null keeps positive generic writes unpriceable.
+        var firstWrite = ParseRate(cells[offset + (durations ? 3 : 2)]);
+        var secondWrite = durations ? ParseRate(cells[offset + 4]) : null;
+        var cacheWrite = durations ? null : firstWrite;
+        if (input is null && cachedInput is null && output is null && firstWrite is null && secondWrite is null)
         {
             return;
         }
