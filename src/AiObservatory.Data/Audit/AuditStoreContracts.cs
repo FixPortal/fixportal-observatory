@@ -27,16 +27,30 @@ public sealed record AuditRunView(
     Instant? EvidenceExpiresAt,
     Instant? SummaryExpiresAt,
     byte[]? Result
-);
+)
+{
+    public string Stage { get; init; } = "queued";
+    public Instant CreatedAt { get; init; }
+    public Instant? ServerCutoff { get; init; }
+    public byte[] Scope { get; init; } = [];
+    public Guid? PredecessorRunId { get; init; }
+    public Guid? EvaluationOfRunId { get; init; }
+}
+
+public sealed record AvailableAuditCapture(Guid Id, Guid MachineId, byte[] Manifest, Instant? ExpiresAt);
 
 public sealed record RetainedCapture(byte[] Manifest, IReadOnlyList<byte[]> Chunks, Instant? ExpiresAt);
 
 public sealed record RetainedSnapshot(byte[] Bytes, string Sha256, string InputContentDigest, Instant? ExpiresAt)
 {
     public Guid SnapshotId { get; init; }
+    public long RunRevision { get; init; }
 }
 
-public sealed record SnapshotMaterialization(AuditScope Scope, IReadOnlyList<RetainedCapture> Captures);
+public sealed record SnapshotMaterialization(AuditScope Scope, IReadOnlyList<RetainedCapture> Captures)
+{
+    public bool PartialEvidenceAcknowledged { get; init; }
+}
 
 public sealed class AuditStoreException(string code, int statusCode) : Exception(code)
 {

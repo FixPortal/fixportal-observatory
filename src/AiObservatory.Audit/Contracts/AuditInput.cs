@@ -9,6 +9,12 @@ public sealed record AuditInput
     public required string RuleVersion { get; init; }
     public required AuditScope Scope { get; init; }
     public IReadOnlyList<CaptureManifest> Captures { get; init; } = [];
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<SourceQualification>? SourceQualifications { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? PartialEvidenceAcknowledged { get; init; }
     public IReadOnlyList<SourceUsageRecord> Records { get; init; } = [];
     public IReadOnlyList<FrozenEvent> Events { get; init; } = [];
     public IReadOnlyList<FrozenAggregate> Aggregates { get; init; } = [];
@@ -23,3 +29,5 @@ public sealed record AuditInput
     public AuditOptions Options { get; init; } = new();
     public IReadOnlyList<NamedTolerance> Tolerances { get; init; } = [];
 }
+
+public sealed record SourceQualification(string SourceId, string DiagnosticCode, bool AllowHistoricalMatch);

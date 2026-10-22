@@ -67,6 +67,7 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
             // The daily suggestion worker evaluates at startup and fetches a live FX rate, which
             // would show up in tests that count outbound FX requests.
             ["Suggestions:WorkerEnabled"] = "false",
+            ["Audit:WorkerEnabled"] = "false",
         };
 
     private string? _dbConnectionOverride;

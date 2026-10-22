@@ -265,6 +265,12 @@ namespace AiObservatory.Data.Migrations
                     b.Property<int>("Attempts")
                         .HasColumnType("integer");
 
+                    b.PrimitiveCollection<Guid[]>("CaptureRequestIds")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid[]")
+                        .HasDefaultValueSql("'{}'::uuid[]");
+
                     b.Property<Instant?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -294,6 +300,9 @@ namespace AiObservatory.Data.Migrations
                     b.Property<Instant?>("LeaseExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("PartialEvidenceAcknowledged")
+                        .HasColumnType("boolean");
+
                     b.Property<Guid?>("PredecessorRunId")
                         .HasColumnType("uuid");
 
@@ -316,6 +325,13 @@ namespace AiObservatory.Data.Migrations
                     b.Property<byte[]>("Scope")
                         .IsRequired()
                         .HasColumnType("bytea");
+
+                    b.Property<string>("Stage")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("queued");
 
                     b.Property<string>("State")
                         .IsRequired()

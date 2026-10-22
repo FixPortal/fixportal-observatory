@@ -122,6 +122,8 @@ internal sealed class AuditRunConfiguration : IEntityTypeConfiguration<AuditRun>
                 t.HasCheckConstraint("CK_AuditRun_Attempts", "\"Attempts\" BETWEEN 0 AND 3 AND \"Revision\" >= 0");
             }
         );
+        b.Property(x => x.Stage).HasMaxLength(32).HasDefaultValue("queued");
+        b.Property(x => x.CaptureRequestIds).HasDefaultValueSql("'{}'::uuid[]");
         b.HasKey(x => x.Id);
         b.Property(x => x.InstanceId).HasMaxLength(128);
         b.Property(x => x.State).HasMaxLength(20);

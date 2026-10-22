@@ -11,7 +11,7 @@ namespace AiObservatory.Data.Audit;
 /// state and holds it only through bounded database work. Never hold it during verification or streaming.
 /// Entities remain internal; consumers receive detached transport values or retained original bytes.
 /// </summary>
-public sealed class AuditStore
+public sealed partial class AuditStore
 {
     public const long EvidenceLockKey = 0x4155444954455644;
     private readonly AiObservatoryDbContext _db;
@@ -396,7 +396,7 @@ public sealed class AuditStore
             ct
         );
 
-    public Task<Guid> CreateRunAsync(
+    public async Task<Guid> CreateRunAsync(
         AuditScope scope,
         IReadOnlyList<Guid> captureIds,
         string idempotencyKey,
@@ -408,13 +408,18 @@ public sealed class AuditStore
         var scopeBytes = ValidateScope(scope);
         ValidateKey(idempotencyKey);
         var ids = captureIds.Distinct().Order().ToArray();
-        Require(ids.Length == captureIds.Count && ids.All(x => x != Guid.Empty), "invalid_capture_selection", 400);
+        Require(
+            ids.Length <= 200 && ids.Length == captureIds.Count && ids.All(x => x != Guid.Empty),
+            "invalid_capture_selection",
+            400
+        );
         var hash = AuditCanonicalJson.ContentHash([
             .. scopeBytes,
             .. Encoding.UTF8.GetBytes(string.Join(',', ids)),
             (byte)(collecting ? 1 : 0),
         ]);
-        return Transaction(
+        var replay = await PrepareReplayAsync(scope, ct);
+        return await Transaction(
             async () =>
             {
                 var existing = await _db.Set<AuditRun>()
@@ -446,11 +451,13 @@ public sealed class AuditStore
                     IdempotencyKey = idempotencyKey,
                     RequestHash = hash,
                     State = collecting ? "collecting" : "queued",
+                    CaptureRequestIds = await CreateRunCaptureRequests(scope, collecting, now, ct),
                     CreatedAt = now,
                     PredecessorRunId = scope.PredecessorRunId,
                     EvaluationOfRunId = scope.EvaluationOfRunId,
                     EvidenceExpiresAt = captures.Select(x => x.ExpiresAt).Where(x => x != null).Min(),
                 };
+                await PinReplay(run, ids, replay, _clock.GetCurrentInstant(), ct);
                 _db.Add(run);
                 foreach (var id in ids)
                 {
@@ -564,10 +571,11 @@ public sealed class AuditStore
                     409
                 );
                 var snapshot = await _db.Set<AuditServerSnapshot>().SingleOrDefaultAsync(x => x.RunId == run.Id, ct);
-                if (snapshot != null)
+                if (snapshot == null)
                 {
-                    Require(result.InputContentDigest == snapshot.InputContentDigest, "result_input_mismatch", 409);
+                    return false;
                 }
+                Require(result.InputContentDigest == snapshot.InputContentDigest, "result_input_mismatch", 409);
                 run.Result = bytes;
                 run.ResultHash = AuditCanonicalJson.ContentHash(bytes);
                 await Complete(run, "completed", null, now, ct);
@@ -658,7 +666,18 @@ public sealed class AuditStore
                 x.EvidenceExpiresAt,
                 x.SummaryExpiresAt,
                 x.Result
-            ))
+            )
+            {
+                Stage = x.Stage,
+                CreatedAt = x.CreatedAt,
+                ServerCutoff = _db.Set<AuditServerSnapshot>()
+                    .Where(s => s.RunId == x.Id)
+                    .Select(s => (Instant?)s.FrozenAt)
+                    .FirstOrDefault(),
+                Scope = x.Scope,
+                PredecessorRunId = x.PredecessorRunId,
+                EvaluationOfRunId = x.EvaluationOfRunId,
+            })
             .SingleOrDefaultAsync(ct);
 
     /// <summary>Copies immutable capture bytes under the evidence lock and the caller's ownership fence.</summary>
@@ -692,7 +711,10 @@ public sealed class AuditStore
                         .ToArrayAsync(ct);
                     captures.Add(new(capture.Manifest, chunks, capture.ExpiresAt));
                 }
-                return new SnapshotMaterialization(AuditCanonicalJson.Deserialize<AuditScope>(run.Scope), captures);
+                return new SnapshotMaterialization(AuditCanonicalJson.Deserialize<AuditScope>(run.Scope), captures)
+                {
+                    PartialEvidenceAcknowledged = run.PartialEvidenceAcknowledged,
+                };
             },
             ct
         );
@@ -774,6 +796,7 @@ public sealed class AuditStore
                     .Select(x => new RetainedSnapshot(x.Bytes, x.Sha256, x.InputContentDigest, x.ExpiresAt)
                     {
                         SnapshotId = x.Id,
+                        RunRevision = _db.Set<AuditRun>().Where(r => r.Id == runId).Select(r => r.Revision).First(),
                     })
                     .SingleOrDefaultAsync(ct);
             },
@@ -928,6 +951,7 @@ public sealed class AuditStore
     {
         var retention = await Retention(ct);
         run.State = state;
+        run.Stage = state;
         run.DiagnosticCode = diagnostic;
         run.CompletedAt = now;
         run.SummaryExpiresAt = Expiry(now, retention.SummaryDays);
@@ -973,6 +997,22 @@ public sealed class AuditStore
 
     private static void ValidateCaptureSelection(IReadOnlyList<AuditEvidenceCapture> captures, AuditScope scope)
     {
+        var manifests = captures.Select(c => AuditCanonicalJson.Deserialize<CaptureManifest>(c.Manifest)).ToArray();
+        foreach (var first in manifests)
+        {
+            Require(
+                !manifests.Any(second =>
+                    first.CaptureId != second.CaptureId
+                    && first.MachineId == second.MachineId
+                    && first.Generation != second.Generation
+                    && first.Scope.From <= second.Scope.To
+                    && second.Scope.From <= first.Scope.To
+                    && first.Scope.Sources.Intersect(second.Scope.Sources).Any()
+                ),
+                "identity_generation_ambiguous",
+                409
+            );
+        }
         foreach (var capture in captures)
         {
             var manifest = AuditCanonicalJson.Deserialize<CaptureManifest>(capture.Manifest);
@@ -989,6 +1029,7 @@ public sealed class AuditStore
     private byte[] ValidateScope(AuditScope scope)
     {
         var bytes = AuditCanonicalJson.Serialize(scope);
+        Require(scope.Sources.Count <= 32, "source_selection_limit", 413);
         Require(scope.To.DayNumber - scope.From.DayNumber + 1 <= _options.MaxRunWindowDays, "run_window_limit", 400);
         return bytes;
     }

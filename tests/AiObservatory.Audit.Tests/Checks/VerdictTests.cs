@@ -85,7 +85,7 @@ public sealed class VerdictTests
     }
 
     [Fact]
-    public void ProvenSourceTokenMismatch_OverridesUnrelatedMissingCaptureCoverage()
+    public void MissingReferenceCapture_CannotProveSourceTokenMismatch()
     {
         var record = SourceFixture.Claude();
         var input = SourceFixture.Input(record) with
@@ -94,11 +94,9 @@ public sealed class VerdictTests
             Events = [SourceFixture.Event(record, new(99, 20, 60, 40, 10, null))],
         };
         var result = new AuditVerifier().Verify(input);
-        result.Verdict.Should().Be(CheckVerdict.Mismatched);
+        result.Verdict.Should().Be(CheckVerdict.Incomplete);
         result.Coverage.Gaps.Should().Contain(g => g.DiagnosticCode == "incomplete_capture");
-        result
-            .Findings.Should()
-            .Contain(f => f.Field == "inputTokens" && f.Delta == new AuditValue(AuditValueKind.Integer, "-1"));
+        result.Findings.Should().NotContain(f => f.RuleCode == "source_accounting_difference");
     }
 
     [Fact]

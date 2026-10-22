@@ -54,7 +54,14 @@ public sealed class AuditSnapshotService
             input = await Materialize(evidence.Scope, budget, ct);
             await tx.CommitAsync(ct);
         }
-        input = input with { Captures = captures, Records = records };
+        input = AuditCompatibilityEvaluator.Qualify(
+            input with
+            {
+                Captures = captures,
+                Records = records,
+                PartialEvidenceAcknowledged = evidence.PartialEvidenceAcknowledged ? true : null,
+            }
+        );
         var bytes = AuditCanonicalJson.Serialize(input);
         if (bytes.LongLength > _maximumBytes)
         {
