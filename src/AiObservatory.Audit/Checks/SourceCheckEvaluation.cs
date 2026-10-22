@@ -18,8 +18,21 @@ internal sealed class SourceCheckEvaluation
         var findings = new List<AuditFinding>();
         var gaps = new List<CoverageGap>();
         var reconstructions = adapters.Select(adapter => adapter.Reconstruct(input.Records, input.Scope)).ToArray();
-        findings.AddRange(reconstructions.SelectMany(r => r.Findings).Select(f => f with { CheckCode = code }));
-        gaps.AddRange(reconstructions.SelectMany(r => r.Coverage.Gaps));
+        findings.AddRange(
+            reconstructions
+                .SelectMany(r => r.Findings)
+                .Where(f =>
+                    code == CheckCode.DailyAttribution || f.DiagnosticCode != CodexAuditAdapter.DailyBoundaryDiagnostic
+                )
+                .Select(f => f with { CheckCode = code })
+        );
+        gaps.AddRange(
+            reconstructions
+                .SelectMany(r => r.Coverage.Gaps)
+                .Where(g =>
+                    code == CheckCode.DailyAttribution || g.DiagnosticCode != CodexAuditAdapter.DailyBoundaryDiagnostic
+                )
+        );
         var compatible = reconstructions.SelectMany(r => r.CompatibleGroups).ToArray();
         var expected =
             code == CheckCode.DailyAttribution
@@ -58,7 +71,9 @@ internal sealed class SourceCheckEvaluation
                 expectedMap.ContainsKey(key) != actualMap.ContainsKey(key)
                 && !unprovenSources.Contains(key.SourceId)
                 && !unprovenGroups.Contains(key)
-                && !gaps.Any(g => g.SourceId == key.SourceId)
+                && !gaps.Any(g =>
+                    g.SourceId == key.SourceId && g.DiagnosticCode != CodexAuditAdapter.DailyBoundaryDiagnostic
+                )
             );
         var verdict = ComparisonSupport.Verdict(hasDifferences ? 1 : 0, gaps.Count);
         if (
@@ -91,10 +106,10 @@ internal sealed class SourceCheckEvaluation
 
     private static HashSet<ComparisonKey> UnprovenGroups(AuditInput input, List<AuditFinding> findings)
     {
-        // A dropped record makes its accounting subtotal unknown, even when other
-        // records in that subtotal are complete. Unrelated keys remain comparable.
+        // A dropped record or a qualified daily boundary makes its comparison subtotal
+        // unproven, even when other records in that key are complete. Unrelated keys remain comparable.
         var missingReferences = findings
-            .Where(f => f.DiagnosticCode == "missing_counter")
+            .Where(f => f.DiagnosticCode is "missing_counter" or CodexAuditAdapter.DailyBoundaryDiagnostic)
             .SelectMany(f => f.EvidenceRefs)
             .ToHashSet(StringComparer.Ordinal);
         return input
