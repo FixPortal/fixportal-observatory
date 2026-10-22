@@ -31,7 +31,7 @@ const LOCAL_SOURCE_IDS = {
 // every file. Never bump alone: after the wipe an unreadable file has no cached
 // records, so scanRecords flags its source incomplete and main withholds that
 // source's corrections and tombstones until a complete scan succeeds.
-const PARSE_CACHE_VERSION = 8
+const PARSE_CACHE_VERSION = 9
 // Gemini Developer API standard-tier pricing changes above this documented prompt-token threshold.
 const GEMINI_LONG_CONTEXT_THRESHOLD = 200_000
 // The Grok CLI records each turn's cost as an integer tick count rather than a decimal. The
@@ -60,6 +60,63 @@ function isoTimestamp(value) {
   if (value === null || value === undefined || value === '') { return null }
   const date = new Date(value)
   return Number.isNaN(date.valueOf()) ? null : date.toISOString()
+}
+
+// Claude usage must observe an explicit, real calendar instant. Keep other CLI
+// timestamp conventions (including numeric Kimi time) in isoTimestamp unchanged.
+function claudeTimestamp(value) {
+    if (typeof value !== "string") {
+        return null
+    }
+    const match =
+        /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,7})?(Z|[+-]\d{2}:\d{2})$/.exec(
+            value,
+        )
+    if (!match) {
+        return null
+    }
+    const [, yearText, monthText, dayText, hour, minute, second, offset] = match
+    const year = Number(yearText),
+        month = Number(monthText),
+        day = Number(dayText)
+    if (
+        year < 1 ||
+        month < 1 ||
+        month > 12 ||
+        +hour > 23 ||
+        +minute > 59 ||
+        +second > 59
+    ) {
+        return null
+    }
+    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+    const daysInMonth = [
+        31,
+        leap ? 29 : 28,
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ][month - 1]
+    if (day < 1 || day > daysInMonth) {
+        return null
+    }
+    if (
+        offset !== "Z" &&
+        (+offset.slice(1, 3) > 14 ||
+            +offset.slice(4) > 59 ||
+            (+offset.slice(1, 3) === 14 && +offset.slice(4) !== 0))
+    ) {
+        return null
+    }
+    const utc = isoTimestamp(value)
+    return utc && /^\d{4}-/.test(utc) && !utc.startsWith("0000-") ? utc : null
 }
 
 export function observatoryUrl(value) {
@@ -325,7 +382,7 @@ export function parseClaude(content) {
     const message = row.type === 'assistant' ? row.message : null
     if (!message || typeof message !== 'object' || !Object.hasOwn(message, 'usage')) { continue }
     const usage = message.usage
-    const occurredAtUtc = isoTimestamp(row.timestamp)
+    const occurredAtUtc = claudeTimestamp(row.timestamp)
     if (!usage || typeof usage !== 'object' || Array.isArray(usage) || !occurredAtUtc) { incomplete = true; continue }
 
     const promptFacts = claudePromptFacts(usage)

@@ -255,7 +255,7 @@ test('Claude prompt version-6 cache is reparsed even at the same mtime and lost 
     await writeFile(path, claudePromptRow(COMPLETE_CLAUDE_PROMPT))
     const state = oldState()
     const scan = await scanRecords({ claudeHome: root }, state, new Set(['claude']), async () => files)
-    assert.equal(state.parseCacheVersion, 8)
+    assert.equal(state.parseCacheVersion, 9)
     assert.equal(scan.records[0].inputTokens, 100000)
     assert.equal(JSON.parse(buildDailySnapshots(scan.records, TEST_MACHINE)[0].rawPayload).context, 'prompt_le_100000')
     const missing = await scanRecords({ claudeHome: root }, oldState(), new Set(['claude']), async () => [{ path: join(root, 'unavailable.jsonl'), mtimeMs: 123 }])
@@ -369,6 +369,37 @@ const CLAUDE_SAFETY_CASES = [
   ['creation total differs from split sum', claudePromptRow({ ...COMPLETE_CLAUDE_PROMPT, cache_creation_input_tokens: 30, cache_creation: { ephemeral_5m_input_tokens: 10, ephemeral_1h_input_tokens: 10 } }, { id: 'unsafe' }), true],
   ['one creation subset above total', claudePromptRow({ ...COMPLETE_CLAUDE_PROMPT, cache_creation_input_tokens: 10, cache_creation: { ephemeral_1h_input_tokens: 20 } }, { id: 'unsafe' }), true],
   ...[[], null, 'invalid', 0, false].map(usage => [`assistant usage ${JSON.stringify(usage)}`, claudePromptRow(usage, { id: 'unsafe' }), false]),
+  ...[
+      false,
+      true,
+      [],
+      [2026],
+      {},
+      0,
+      1787572800000,
+      "0",
+      "2026-10-22",
+      "2026-10-22T12:00:00",
+      "2026-02-29T12:00:00Z",
+      "2026-02-30T12:00:00Z",
+      "2026-04-31T12:00:00Z",
+      "2026-00-01T12:00:00Z",
+      "2026-13-01T12:00:00Z",
+      "2026-10-22T24:00:00Z",
+      "2026-10-22T12:60:00Z",
+      "2026-10-22T12:00:60Z",
+      "2026-10-22T12:00:00+14:01",
+      "2026-10-22T12:00:00+15:00",
+      "2026-10-22T12:00:00+01:60",
+      "0000-01-01T12:00:00Z",
+      "0001-01-01T00:00:00+01:00",
+      "9999-12-31T23:59:59-01:00",
+      "2026-10-22T12:00:00.12345678Z",
+  ].map((timestamp) => [
+      `timestamp safety ${JSON.stringify(timestamp)}`,
+      claudePromptRow(COMPLETE_CLAUDE_PROMPT, { id: "unsafe" }, timestamp),
+      false,
+  ]),
   ['assistant invalid timestamp', claudePromptRow(COMPLETE_CLAUDE_PROMPT, { id: 'unsafe' }, 'invalid'), false],
   ['assistant missing timestamp', JSON.stringify({ type: 'assistant', message: { id: 'unsafe', model: 'claude-haiku-5-5', usage: COMPLETE_CLAUDE_PROMPT } }), false],
 ]
@@ -382,8 +413,8 @@ for (const [name, unsafe, invalidCounters] of CLAUDE_SAFETY_CASES) {
     assert.equal(snapshots.length, 0)
     assert.deepEqual(planSnapshotSubmissions(snapshots, [{ sourceId: 'claude-local@test-machine', runtime: 'claude', eventKey: 'prior-flat' }]), [])
   })
-  for (const legacyCache of [false, true]) {
-    test(`Claude safety main withholds ${name} with ${legacyCache ? 'version7 reparse' : 'cold cache'} and persisted hit`, async () => {
+  for (const cacheVersion of [null, 7, 8]) {
+    test(`Claude safety main withholds ${name} with ${cacheVersion ? `version${cacheVersion} reparse` : 'cold cache'} and persisted hit`, async () => {
       const root = await mkdtemp(join(tmpdir(), 'observatory-claude-safety-'))
       const path = join(root, 'claude.jsonl'), kimiPath = join(root, 'wire.jsonl'), statePath = join(root, 'state.json')
       const keys = ['OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES', 'OBSERVATORY_MACHINE', 'CLAUDE_HOME', 'KIMI_HOME']
@@ -402,8 +433,8 @@ for (const [name, unsafe, invalidCounters] of CLAUDE_SAFETY_CASES) {
         const valid = claudePromptRow(COMPLETE_CLAUDE_PROMPT)
         await writeFile(path, `${valid}\n${unsafe}`)
         await writeFile(kimiPath, JSON.stringify({ type: 'usage.record', time: 1787572800000, model: 'kimi-code/kimi-for-coding', usage: { inputOther: 10, output: 2, inputCacheRead: 20, inputCacheCreation: 3 } }))
-        if (legacyCache) {
-          await writeFile(statePath, JSON.stringify({ parseCacheVersion: 7, files: { claude: { [path]: { mtimeMs: 1, records: [{ ...parseClaude(valid)[0], inputTokens: 23, claudeInvalidCounters: false }] } } } }))
+        if (cacheVersion !== null) {
+          await writeFile(statePath, JSON.stringify({ parseCacheVersion: cacheVersion, files: { claude: { [path]: { mtimeMs: 1, records: [{ ...parseClaude(valid)[0], inputTokens: 23, date: '1970-01-01', occurredAtUtc: '1970-01-01T00:00:00.000Z', claudeInvalidCounters: false }] } } } }))
         }
         const discover = async dir => [{ path: dir.startsWith(process.env.CLAUDE_HOME) ? path : kimiPath, mtimeMs: 1 }]
         for (let run = 0; run < 2; run++) {
@@ -420,8 +451,9 @@ for (const [name, unsafe, invalidCounters] of CLAUDE_SAFETY_CASES) {
           assert.equal(warnings[0].warning.includes(root), false)
           assert.ok(activity.indexOf(warnings[0]) < activity.findIndex(item => item.url))
           const state = JSON.parse(await readFile(statePath, 'utf8'))
-          assert.equal(state.parseCacheVersion, 8)
-          assert.equal(state.files.claude[path].records[0].inputTokens, 100000, 'old version7 same-mtime usage must be reparsed')
+          assert.equal(state.parseCacheVersion, 9)
+          assert.equal(state.files.claude[path].records[0].inputTokens, 100000, 'old version7/8 same-mtime false-1970 usage must be reparsed')
+          assert.equal(state.files.claude[path].records[0].date, '2026-10-22')
           if (invalidCounters) { assert.ok(state.files.claude[path].records.some(row => row.claudeInvalidCounters)) }
           else { assert.equal(state.files.claude[path].incomplete, true) }
         }
@@ -433,6 +465,52 @@ for (const [name, unsafe, invalidCounters] of CLAUDE_SAFETY_CASES) {
     })
   }
 }
+
+test("Claude native instants preserve explicit zones fractions and UTC rollover", () => {
+    for (const [timestamp, expected] of [
+        ["2026-10-22T12:00:00Z", "2026-10-22T12:00:00.000Z"],
+        ["2026-10-22T12:00:00.1Z", "2026-10-22T12:00:00.100Z"],
+        ["2026-10-22T12:00:00.1234567Z", "2026-10-22T12:00:00.123Z"],
+        ["2026-10-22T00:30:00+01:00", "2026-10-21T23:30:00.000Z"],
+        ["2026-10-21T23:45:00-05:30", "2026-10-22T05:15:00.000Z"],
+        ["2026-10-22T00:00:00.9876543+14:00", "2026-10-21T10:00:00.987Z"],
+        ["2024-02-29T23:30:00-01:00", "2024-03-01T00:30:00.000Z"],
+        ["0001-01-01T00:00:00Z", "0001-01-01T00:00:00.000Z"],
+    ]) {
+        const records = parseClaude(
+            claudePromptRow(COMPLETE_CLAUDE_PROMPT, {}, timestamp),
+        )
+        assert.equal(records.incomplete, false)
+        assert.equal(records.length, 1)
+        assert.equal(records[0].occurredAtUtc, expected)
+        assert.equal(records[0].date, expected.slice(0, 10))
+        const [snapshot] = buildDailySnapshots(records, TEST_MACHINE)
+        assert.equal(snapshot.occurredAtUtc.slice(0, 10), expected.slice(0, 10))
+        assert.equal(
+            JSON.parse(snapshot.rawPayload).context,
+            "prompt_le_100000",
+        )
+    }
+})
+
+test("numeric Kimi timestamp compatibility is unchanged", () => {
+    const records = parseKimi(
+        JSON.stringify({
+            type: "usage.record",
+            time: 1787572800000,
+            model: "kimi-code/kimi-for-coding",
+            usage: {
+                inputOther: 10,
+                output: 2,
+                inputCacheRead: 20,
+                inputCacheCreation: 3,
+            },
+        }),
+    )
+    assert.equal(records.length, 1)
+    assert.equal(records[0].occurredAtUtc, "2026-08-24T12:00:00.000Z")
+    assert.equal(records[0].date, "2026-08-24")
+})
 
 test('Claude safety ignores nonusage rows and preserves genuinely missing evidence as unknown', () => {
   const nonusage = [
@@ -1064,7 +1142,7 @@ test('scanRecords rebuilds an unversioned matching-mtime cache instead of reusin
     const { records } = await scanRecords(cfg, state, new Set(['codex']))
 
     assert.deepEqual(records, [])
-    assert.equal(state.parseCacheVersion, 8)
+    assert.equal(state.parseCacheVersion, 9)
     assert.deepEqual(state.files.codex[path].records, [])
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -1125,7 +1203,7 @@ test('scanRecords handles transcript histories larger than the engine argument l
   }
   const files = Array.from({ length: 200 }, (_, index) => ({ path: `claude-${index}.jsonl`, mtimeMs: 1 }))
   const state = {
-    parseCacheVersion: 8,
+    parseCacheVersion: 9,
     files: {
       claude: Object.fromEntries(files.map(file => [file.path, {
         mtimeMs: file.mtimeMs,
@@ -1809,7 +1887,7 @@ test('scanRecords reparses a version-2 cache instead of reusing its stale record
 
     assert.deepEqual(records, [])
     assert.deepEqual([...incompleteSources], [])
-    assert.equal(state.parseCacheVersion, 8)
+    assert.equal(state.parseCacheVersion, 9)
     assert.deepEqual(state.files.codex[path].records, [])
   } finally {
     await rm(root, { recursive: true, force: true })
