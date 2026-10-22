@@ -29,6 +29,8 @@ public sealed record AuditRunView(
     byte[]? Result
 )
 {
+    public byte[]? SanitizedSummary { get; init; }
+    public string? OriginalResultHash { get; init; }
     public string Stage { get; init; } = "queued";
     public Instant CreatedAt { get; init; }
     public Instant? ServerCutoff { get; init; }
@@ -71,3 +73,13 @@ public sealed record AuditExportMaterialization(
     Instant MaterializedAt,
     Instant? EvidenceExpiresAt
 );
+
+public sealed record ExpiryCounts(int Captures, int Runs, int Uploads);
+
+public sealed record AuditRetentionDto(int? EvidenceDays, int? SummaryDays);
+
+public sealed record DeletionImpact(Guid CaptureId, string ImpactDigest, IReadOnlyList<Guid> AffectedRunIds);
+
+public sealed record DeleteResult(bool Deleted);
+
+public sealed record AuditExportLease(Guid Id, Instant ExpiresAt);

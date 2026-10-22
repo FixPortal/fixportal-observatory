@@ -4,6 +4,7 @@ import { isReadonly } from '../auth/msal'
 import { AuditRunWizard } from '../components/audit/AuditRunWizard'
 import { AuditRunHistory } from '../components/audit/AuditRunHistory'
 import { AuditRunDetails } from '../components/audit/AuditRunDetails'
+import { AuditRetentionPanel } from '../components/audit/AuditRetentionPanel'
 import { AuditMachineSetup } from '../components/audit/AuditMachineSetup'
 
 export function SelfAuditPage(): React.JSX.Element {
@@ -35,6 +36,7 @@ export function SelfAuditPage(): React.JSX.Element {
       <AuditRunWizard capabilities={capabilities.data} readOnly={readOnly} onRun={setSelected} />
       <AuditRunHistory selectedId={selected} onSelect={setSelected} />
       {!readOnly && <AuditMachineSetup />}
+      {!readOnly && <AuditRetentionPanel />}
     </div>
   )
 }

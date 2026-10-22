@@ -50,6 +50,8 @@ export interface AuditCoverageDto {
   diagnosticCodes: string[]
 }
 export interface AuditRun {
+  detailsAvailable?: boolean
+  replayAvailable?: boolean
   schemaVersion: 1
   id: string
   state: string
@@ -155,4 +157,14 @@ export interface AuditCredential {
   machineId: string
   credentialId: string
   secret: string
+}
+
+export interface AuditRetention {
+  evidenceDays: number | null
+  summaryDays: number | null
+}
+export interface AuditDeletionImpact {
+  captureId: string
+  impactDigest: string
+  affectedRunIds: string[]
 }

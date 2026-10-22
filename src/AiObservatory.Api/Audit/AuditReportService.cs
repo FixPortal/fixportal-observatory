@@ -5,18 +5,57 @@ using AiObservatory.Data.Audit;
 
 namespace AiObservatory.Api.Audit;
 
-public sealed class AuditReportService(AuditStore store)
+public sealed class AuditReportService(AuditStore store, IServiceScopeFactory scopes, NodaTime.IClock clock)
 {
     public async Task WriteBundleAsync(Guid runId, Stream destination, CancellationToken ct)
     {
-        var materialized = await store.MaterializeExportAsync(runId, ct);
-        var bundle = Validate(materialized);
-        await AuditBundleWriter.WriteAsync(destination, bundle, ct);
+        await using var session = await OpenAsync(runId, ct);
+        await using var zip = await PrepareBundleAsync(session);
+        await zip.CopyToAsync(destination, session.Token);
     }
 
-    public async Task<AuditEvidenceView> EvidenceAsync(Guid runId, CancellationToken ct)
+    public static async Task<FileStream> PrepareBundleAsync(AuditExportSession session)
     {
-        var retained = await store.MaterializeExportAsync(runId, ct);
+        var bundle = Validate(session.Materialized);
+        session.Token.ThrowIfCancellationRequested();
+        var file = AuditTemporaryBundleStream.Create();
+        try
+        {
+            // ZipArchive entry disposal writes small synchronous trailers. A seekable private temporary
+            // file preserves Task10's exact ZIP bytes and avoids synchronous HTTP I/O or an extra ZIP-sized RAM buffer.
+            await AuditBundleWriter.WriteAsync(file, bundle, session.Token);
+            session.Token.ThrowIfCancellationRequested();
+            file.Position = 0;
+            return file;
+        }
+        catch (Exception ex)
+        {
+            await DisposePrivateSpool(file);
+            if (ex is IOException or UnauthorizedAccessException)
+            {
+                throw new AuditStoreException("bundle_spool_unavailable", 503);
+            }
+            throw;
+        }
+    }
+
+    private static async Task DisposePrivateSpool(FileStream file)
+    {
+        try
+        {
+            await file.DisposeAsync();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new AuditStoreException("bundle_spool_unavailable", 503);
+        }
+    }
+
+    public Task<AuditExportSession> OpenAsync(Guid runId, CancellationToken ct) =>
+        AuditExportSession.OpenAsync(store, scopes, clock, runId, ct);
+
+    public static AuditEvidenceView Evidence(AuditExportMaterialization retained)
+    {
         var bundle = Validate(retained);
         return new(
             bundle,
@@ -25,7 +64,7 @@ public sealed class AuditReportService(AuditStore store)
         );
     }
 
-    private static AuditBundle Validate(AuditExportMaterialization materialized)
+    public static AuditBundle Validate(AuditExportMaterialization materialized)
     {
         try
         {

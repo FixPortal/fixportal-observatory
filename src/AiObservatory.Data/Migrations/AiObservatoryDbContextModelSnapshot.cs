@@ -172,6 +172,38 @@ namespace AiObservatory.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditExportReadLease", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Cancelled")
+                        .HasColumnType("boolean");
+
+                    b.Property<Instant>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("InstanceId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<long>("ReservedBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId");
+
+                    b.HasIndex("InstanceId", "ExpiresAt");
+
+                    b.ToTable("AuditExportReadLeases", (string)null);
+                });
+
             modelBuilder.Entity("AiObservatory.Data.Audit.AuditFindingRecord", b =>
                 {
                     b.Property<Guid>("RunId")
@@ -322,9 +354,15 @@ namespace AiObservatory.Data.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
+                    b.Property<byte[]>("SanitizedSummary")
+                        .HasColumnType("bytea");
+
                     b.Property<byte[]>("Scope")
                         .IsRequired()
                         .HasColumnType("bytea");
+
+                    b.Property<Instant?>("ServerCutoff")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Stage")
                         .IsRequired()
@@ -2114,6 +2152,15 @@ namespace AiObservatory.Data.Migrations
                     b.HasOne("AiObservatory.Data.Audit.AuditCaptureRequest", null)
                         .WithMany()
                         .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditExportReadLease", b =>
+                {
+                    b.HasOne("AiObservatory.Data.Audit.AuditRun", null)
+                        .WithMany()
+                        .HasForeignKey("RunId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

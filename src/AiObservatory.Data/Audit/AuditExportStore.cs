@@ -10,6 +10,7 @@ public sealed partial class AuditStore
             async () =>
             {
                 var now = _clock.GetCurrentInstant();
+                Require(await ExportByteCount(runId, ct) <= _options.MaxSnapshotBytes, "bundle_size_limit", 413);
                 var run = await _db.Set<AuditRun>()
                     .AsNoTracking()
                     .SingleOrDefaultAsync(r => r.Id == runId && r.InstanceId == _instanceId, ct);

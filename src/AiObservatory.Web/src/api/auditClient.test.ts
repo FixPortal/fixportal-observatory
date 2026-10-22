@@ -11,6 +11,11 @@ import {
   replayAuditRun,
   rotateAuditCredential,
   revokeAuditCredential,
+  getAuditRetention,
+  updateAuditRetention,
+  getAuditDeletionImpact,
+  deleteAuditCapture,
+  deleteAuditRun,
 } from './auditClient'
 import type { AuditEvidencePage } from './auditTypes'
 
@@ -177,6 +182,13 @@ test('share-key requests outrank Entra, and readonly authority refuses all privi
   expect(() => replayAuditRun('original')).toThrow('read only')
   expect(() => rotateAuditCredential('machine')).toThrow('read only')
   await expect(revokeAuditCredential('machine')).rejects.toThrow('read only')
+  expect(() => getAuditRetention()).toThrow('read only')
+  expect(() => updateAuditRetention({ evidenceDays: null, summaryDays: null })).toThrow('read only')
+  expect(() => getAuditDeletionImpact('capture')).toThrow('read only')
+  await expect(
+    deleteAuditCapture({ captureId: 'capture', impactDigest: hash, affectedRunIds: [] }),
+  ).rejects.toThrow('read only')
+  await expect(deleteAuditRun('run')).rejects.toThrow('read only')
   expect(requests).toHaveLength(1)
 })
 

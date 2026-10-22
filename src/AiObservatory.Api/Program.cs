@@ -65,10 +65,12 @@ builder.Services.AddScoped<AuditCredentialService>();
 builder.Services.AddScoped<AuditCaptureService>();
 builder.Services.AddScoped<AuditRunService>();
 builder.Services.AddScoped<AuditReportService>();
+builder.Services.AddScoped<AuditRetentionService>();
 builder.Services.AddScoped<AuditReadinessService>();
 builder.Services.AddScoped<AuditWorkerService>();
 builder.Services.AddSingleton<IAuditRunVerifier, AuditRunVerifier>();
 builder.Services.AddHostedService<AuditHostedWorker>();
+builder.Services.AddHostedService<AuditRetentionWorker>();
 
 // Owner allowlist for the Activity and GitHub tabs. Resolved once here, so every consumer sees
 // the same value, and bound from either the array or the delimited-scalar shape. Absent means
@@ -212,6 +214,7 @@ if (app.Services.GetRequiredService<IOptions<AuditOptions>>().Value.Enabled)
     app.MapAuditCaptureEndpoints();
     app.MapAuditRunEndpoints();
     app.MapAuditExportEndpoints();
+    app.MapAuditRetentionEndpoints();
     app.MapAuditEvidenceEndpoints();
     app.MapAuditPresentationProbeEndpoints();
 }

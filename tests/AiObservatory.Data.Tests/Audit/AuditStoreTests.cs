@@ -496,6 +496,328 @@ public sealed class AuditStoreTests : IAsyncLifetime
         (await _store.ReadCaptureAsync(captureId, Ct))!.ExpiresAt.Should().Be(Now.Plus(Duration.FromDays(36_500)));
     }
 
+    /// <summary>The exact detailed deadline hides canonical bytes and preserves only a separately identified safe summary.</summary>
+    [Fact]
+    public async Task Retention_ExactEvidenceAndSummaryBoundaries_RedactThenRemove()
+    {
+        var id = await Run();
+        var worker = (await _store.TryLeaseRunAsync(Guid.NewGuid(), Now, Ct))!;
+        (await PublishFrozen(worker)).Should().BeTrue();
+        var original = (await _store.GetRunAsync(id, Ct))!;
+        _clock.Advance(Duration.FromDays(90) - Duration.FromTicks(1));
+        (await _store.GetRunAsync(id, Ct))!.Result.Should().NotBeNull();
+        _clock.Advance(Duration.FromTicks(1));
+        var expired = (await _store.GetRunAsync(id, Ct))!;
+        expired.Result.Should().BeNull();
+        expired.SanitizedSummary.Should().NotBeNull();
+        expired.OriginalResultHash.Should().Be(AuditCanonicalJson.ContentHash(original.Result!));
+        await _store.ExpireAsync(_clock.GetCurrentInstant(), Ct);
+        (await _store.GetRunAsync(id, Ct))!.ServerCutoff.Should().Be(original.ServerCutoff);
+        _clock.Advance(Duration.FromDays(275) - Duration.FromTicks(1));
+        (await _store.GetRunAsync(id, Ct)).Should().NotBeNull();
+        _clock.Advance(Duration.FromTicks(1));
+        (await _store.GetRunAsync(id, Ct)).Should().BeNull();
+        (await _store.ExpireAsync(_clock.GetCurrentInstant(), Ct)).Runs.Should().Be(1);
+    }
+
+    /// <summary>Null retention remains indefinite through cleanup and existing retained capture deadlines never move on reuse.</summary>
+    [Fact]
+    public async Task Retention_IndefiniteAndReuse_KeepOriginalDeadlines()
+    {
+        var capture = await Capture();
+        var id = await _store.SealCaptureAsync(capture, Manifest(capture, [], 0), "seal", Ct);
+        await _store.UpdateRetentionAsync(null, null, Ct);
+        _clock.Advance(Duration.FromDays(1));
+        var run = await _store.CreateRunAsync(capture.Scope, [id], "reuse", false, _clock.GetCurrentInstant(), Ct);
+        (await _store.GetRunAsync(run, Ct))!.EvidenceExpiresAt.Should().Be(Now.Plus(Duration.FromDays(90)));
+        var reusedWorker = (await _store.TryLeaseRunAsync(Guid.NewGuid(), _clock.GetCurrentInstant(), Ct))!;
+        (await PublishFrozen(reusedWorker)).Should().BeTrue();
+        (await _store.GetRunAsync(run, Ct))!.EvidenceExpiresAt.Should().Be(Now.Plus(Duration.FromDays(90)));
+        var independent = await Run();
+        var worker = (await _store.TryLeaseRunAsync(Guid.NewGuid(), _clock.GetCurrentInstant(), Ct))!;
+        worker.RunId.Should().Be(independent);
+        (await PublishFrozen(worker)).Should().BeTrue();
+        _clock.Advance(Duration.FromDays(500));
+        await _store.ExpireAsync(_clock.GetCurrentInstant(), Ct);
+        (await _store.GetRunAsync(independent, Ct))!.Result.Should().NotBeNull();
+    }
+
+    /// <summary>A persistent cancelled export protects chunks until release while new readers and stale workers are fenced.</summary>
+    [Fact]
+    public async Task Retention_CaptureDeletion_CancelsCrossContextLeaseBeforePurging()
+    {
+        var capture = await Capture();
+        var bytes = Record(capture.MachineId);
+        var hash = AuditCanonicalJson.ContentHash(bytes);
+        await _store.PutChunkAsync(capture, 0, bytes, hash, Ct);
+        var id = await _store.SealCaptureAsync(capture, Manifest(capture, [hash], 1), "seal", Ct);
+        var first = await _store.CreateRunAsync(capture.Scope, [id], "first", false, Now, Ct);
+        var worker = (await _store.TryLeaseRunAsync(Guid.NewGuid(), Now, Ct))!;
+        (await PublishFrozen(worker)).Should().BeTrue();
+        var export = await _store.AcquireExportLeaseAsync(first, Ct);
+        var impact = await _store.GetDeletionImpactAsync(id, Ct);
+        var second = await _store.CreateRunAsync(capture.Scope, [id], "second", false, Now, Ct);
+        var stale = () => _store.FenceCaptureDeletionAsync(id, impact.ImpactDigest, Ct);
+        (await stale.Should().ThrowAsync<AuditStoreException>()).Which.StatusCode.Should().Be(412);
+        worker = (await _store.TryLeaseRunAsync(Guid.NewGuid(), Now, Ct))!;
+        impact = await _store.GetDeletionImpactAsync(id, Ct);
+        impact.AffectedRunIds.Should().BeEquivalentTo([first, second]);
+        await using var otherDb = new AiObservatoryDbContext(_options);
+        var other = new AuditStore(otherDb, _clock);
+        await other.FenceCaptureDeletionAsync(id, impact.ImpactDigest, Ct);
+        (await _store.ExportLeaseValidAsync(export.Id, Ct)).Should().BeFalse();
+        (await _store.TryPublishAsync(worker, Result(capture.MachineId), Ct)).Should().BeFalse();
+        var unavailable = () => _store.AcquireExportLeaseAsync(first, Ct);
+        (await unavailable.Should().ThrowAsync<AuditStoreException>()).Which.StatusCode.Should().Be(410);
+        (await _store.PurgeUnavailableCaptureAsync(id, Ct)).Should().BeFalse();
+        (
+            await _db
+                .Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM \"AuditEvidenceChunks\"")
+                .SingleAsync(Ct)
+        )
+            .Should()
+            .Be(1);
+        await _store.ReleaseExportLeaseAsync(export.Id, Ct);
+        (await other.PurgeUnavailableCaptureAsync(id, Ct)).Should().BeTrue();
+        (
+            await _db
+                .Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM \"AuditEvidenceChunks\"")
+                .SingleAsync(Ct)
+        )
+            .Should()
+            .Be(0);
+    }
+
+    /// <summary>Two bounded reservations reject rather than queue a third export, and the hard deadline is exact.</summary>
+    [Fact]
+    public async Task Retention_ExportCapacityAndDeadline_AreBounded()
+    {
+        var id = await Run();
+        (await PublishFrozen((await _store.TryLeaseRunAsync(Guid.NewGuid(), Now, Ct))!)).Should().BeTrue();
+        var first = await _store.AcquireExportLeaseAsync(id, Ct);
+        await _store.AcquireExportLeaseAsync(id, Ct);
+        var third = () => _store.AcquireExportLeaseAsync(id, Ct);
+        (await third.Should().ThrowAsync<AuditStoreException>()).Which.StatusCode.Should().Be(429);
+        _clock.Advance(Duration.FromMinutes(2) - Duration.FromTicks(1));
+        (await _store.ExportLeaseValidAsync(first.Id, Ct)).Should().BeTrue();
+        _clock.Advance(Duration.FromTicks(1));
+        (await _store.ExportLeaseValidAsync(first.Id, Ct)).Should().BeFalse();
+        (await _store.AcquireExportLeaseAsync(id, Ct)).Should().NotBeNull();
+    }
+
+    /// <summary>Removing one report never destroys a shared capture; removing its last reference does.</summary>
+    [Fact]
+    public async Task Retention_DeleteRun_RemovesOnlyUnreferencedChunks()
+    {
+        var capture = await Capture();
+        var bytes = Record(capture.MachineId);
+        var hash = AuditCanonicalJson.ContentHash(bytes);
+        await _store.PutChunkAsync(capture, 0, bytes, hash, Ct);
+        var id = await _store.SealCaptureAsync(capture, Manifest(capture, [hash], 1), "seal", Ct);
+        var first = await _store.CreateRunAsync(capture.Scope, [id], "one", false, Now, Ct);
+        var second = await _store.CreateRunAsync(capture.Scope, [id], "two", false, Now, Ct);
+        (await _store.DeleteRunAsync(first, Ct)).Should().BeTrue();
+        (await _store.ReadCaptureAsync(id, Ct))!.Chunks.Should().ContainSingle();
+        (await _store.GetRunAsync(second, Ct)).Should().NotBeNull();
+        (await _store.DeleteRunAsync(second, Ct)).Should().BeTrue();
+        (await _store.ReadCaptureAsync(id, Ct)).Should().BeNull();
+    }
+
+    /// <summary>Abandoned bytes expire exactly at the request's 24-hour boundary and cannot be sealed afterwards.</summary>
+    [Fact]
+    public async Task Retention_AbandonedUpload_Exact24HourBoundary()
+    {
+        var capture = await Capture();
+        var bytes = Record(capture.MachineId);
+        await _store.PutChunkAsync(capture, 0, bytes, AuditCanonicalJson.ContentHash(bytes), Ct);
+        _clock.Advance(Duration.FromHours(24) - Duration.FromTicks(1));
+        (await _store.ExpireAsync(_clock.GetCurrentInstant(), Ct)).Uploads.Should().Be(0);
+        _clock.Advance(Duration.FromTicks(1));
+        (await _store.ExpireAsync(_clock.GetCurrentInstant(), Ct)).Uploads.Should().Be(1);
+        var attempt = () => _store.SealCaptureAsync(capture, Manifest(capture, [], 0), "late", Ct);
+        (await attempt.Should().ThrowAsync<AuditStoreException>()).Which.StatusCode.Should().Be(409);
+        (
+            await _db
+                .Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM \"AuditEvidenceChunks\"")
+                .SingleAsync(Ct)
+        )
+            .Should()
+            .Be(0);
+    }
+
+    /// <summary>Assigned collecting captures belong in impact even before readiness pins their links.</summary>
+    [Fact]
+    public async Task Retention_CollectingAssignment_IsIncludedInDeletionImpact()
+    {
+        var machine = await Machine();
+        var run = await _store.CreateRunAsync(Scope(machine.MachineId), [], "collect", true, Now, Ct);
+        var capture = (await _store.TryClaimCaptureAsync(machine.MachineId, machine.CredentialId, Now, Ct))!;
+        var id = await _store.SealCaptureAsync(capture, Manifest(capture, [], 0), "seal", Ct);
+        var impact = await _store.GetDeletionImpactAsync(id, Ct);
+        impact.AffectedRunIds.Should().Contain(run);
+        await _store.DeleteCaptureAsync(id, impact.ImpactDigest, Ct);
+        (await _store.GetRunAsync(run, Ct))!.State.Should().Be("failed");
+        await _store.RefreshCollectingRunsAsync(Ct);
+        (await _store.TryLeaseRunAsync(Guid.NewGuid(), Now, Ct)).Should().BeNull();
+    }
+
+    /// <summary>Expired report storage drops all detailed references and price terms while ordinary accounting rows are byte-for-byte untouched.</summary>
+    [Fact]
+    public async Task Retention_Expiry_RemovesSensitiveDetailsAndPreservesOrdinaryLedgers()
+    {
+        var usage = new UsageEvent
+        {
+            Provider = Provider.Anthropic,
+            OccurredAt = Now,
+            IngestedAt = Now,
+            InputTokens = 9007199254740993,
+            CostUsd = 123.456m,
+            EventKey = "ordinary-event",
+        };
+        var category = new SpendCategory
+        {
+            Key = "synthetic",
+            DisplayName = "Synthetic",
+            ColorVar = "--accent",
+        };
+        var vendor = new SpendVendor { Key = "synthetic", DisplayName = "Synthetic" };
+        _db.AddRange(usage, category, vendor);
+        _db.Add(
+            new SpendEntry
+            {
+                VendorId = vendor.Id,
+                CategoryId = category.Id,
+                OccurredOn = new(2026, 10, 22),
+                Amount = 3.45m,
+                AmountGbp = 3.45m,
+                FxRate = 1,
+                RecordedAt = Now,
+            }
+        );
+        _db.Add(
+            new AiObservatory.Data.Audit.PricingApplication
+            {
+                EventId = usage.Id,
+                Revision = 1,
+                RevisionDigest = new string('c', 64),
+                Kind = "synthetic",
+                PricingDate = new(2026, 10, 22),
+                CostUsd = 123.456m,
+            }
+        );
+        await _db.SaveChangesAsync(Ct);
+        var ordinary = await OrdinaryRows();
+        var run = await Run();
+        var lease = (await _store.TryLeaseRunAsync(Guid.NewGuid(), Now, Ct))!;
+        var input = new AuditInput
+        {
+            SchemaVersion = 1,
+            VerifierVersion = "1",
+            RuleVersion = "1",
+            Scope = Scope(),
+        };
+        await _store.TryStoreSnapshotAsync(
+            lease,
+            AuditCanonicalJson.Serialize(input),
+            AuditComputationInput.ContentDigest(input),
+            Ct
+        );
+        var finding = new AuditFinding(
+            CheckCode.PricingArithmetic,
+            "synthetic",
+            "private-group",
+            ["private-record"],
+            "costUsd",
+            new(AuditValueKind.Decimal, "987.654"),
+            null,
+            null,
+            ValueUnit.Money,
+            "USD",
+            AccountingBasis.Notional,
+            "synthetic"
+        );
+        var result = Result() with
+        {
+            InputContentDigest = AuditComputationInput.ContentDigest(input),
+            Findings = [finding],
+            Checks =
+            [
+                new(
+                    CheckCode.SourceAccounting,
+                    CheckVerdict.Incomplete,
+                    new(1, 2, [new("source", "private-record", "synthetic")]),
+                    [finding]
+                )
+                {
+                    PricingTraces =
+                    [
+                        new(
+                            "private-record",
+                            "private-catalog",
+                            "private-rate",
+                            PriceMeter.Input,
+                            17,
+                            1000,
+                            987.654m,
+                            1,
+                            3,
+                            "USD"
+                        ),
+                    ],
+                },
+            ],
+        };
+        (await _store.TryPublishAsync(lease, result, Ct)).Should().BeTrue();
+        _clock.Advance(Duration.FromDays(90));
+        await _store.ExpireAsync(_clock.GetCurrentInstant(), Ct);
+        var view = (await _store.GetRunAsync(run, Ct))!;
+        var summary = System.Text.Encoding.UTF8.GetString(view.SanitizedSummary!);
+        summary
+            .Should()
+            .NotContain("private-record")
+            .And.NotContain("private-group")
+            .And.NotContain("private-catalog")
+            .And.NotContain("987.654");
+        view.OriginalResultHash.Should().Be(AuditCanonicalJson.ContentHash(AuditCanonicalJson.Serialize(result)));
+        (
+            await _db
+                .Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM \"AuditFindingRecords\"")
+                .SingleAsync(Ct)
+        )
+            .Should()
+            .Be(0);
+        (await OrdinaryRows()).Should().Equal(ordinary);
+    }
+
+    private async Task<string[]> OrdinaryRows()
+    {
+        return await _db
+            .Database.SqlQueryRaw<string>(
+                "SELECT to_jsonb(t)::text AS \"Value\" FROM \"UsageEvents\" t UNION ALL SELECT to_jsonb(t)::text FROM \"SpendEntries\" t UNION ALL SELECT to_jsonb(t)::text FROM \"PricingApplications\" t ORDER BY \"Value\""
+            )
+            .ToArrayAsync(Ct);
+    }
+
+    /// <summary>An oversized cohort cannot allocate an evidence body or leave a reservation consuming capacity.</summary>
+    [Fact]
+    public async Task Retention_ExportOversize_RejectsBeforeMaterializationAndReservation()
+    {
+        var run = await Run();
+        (await PublishFrozen((await _store.TryLeaseRunAsync(Guid.NewGuid(), Now, Ct))!)).Should().BeTrue();
+        var lowered = new AuditStore(_db, _clock, new() { MaxSnapshotBytes = 1 });
+        var acquire = () => lowered.AcquireExportLeaseAsync(run, Ct);
+        (await acquire.Should().ThrowAsync<AuditStoreException>()).Which.StatusCode.Should().Be(413);
+        var materialize = () => lowered.MaterializeExportAsync(run, Ct);
+        (await materialize.Should().ThrowAsync<AuditStoreException>()).Which.StatusCode.Should().Be(413);
+        (
+            await _db
+                .Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM \"AuditExportReadLeases\"")
+                .SingleAsync(Ct)
+        )
+            .Should()
+            .Be(0);
+    }
+
     private async Task<bool> PublishFrozen(RunLease lease)
     {
         var materialization = await _store.ReadSnapshotMaterializationAsync(lease, Ct);

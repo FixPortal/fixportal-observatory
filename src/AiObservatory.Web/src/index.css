@@ -319,6 +319,9 @@
   border-radius: var(--r-control);
   padding: var(--space-3);
 }
+#audit-deletion-heading {
+  scroll-margin-top: calc(var(--space-6) * 4);
+}
 .audit-secret code {
   display: block;
   overflow-wrap: anywhere;

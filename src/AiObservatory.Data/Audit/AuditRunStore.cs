@@ -180,6 +180,7 @@ public sealed partial class AuditStore
                 ExpiresAt = snapshot.ExpiresAt,
             }
         );
+        run.ServerCutoff = snapshot.FrozenAt;
         run.EvidenceExpiresAt = MinExpiry(run.EvidenceExpiresAt, snapshot.ExpiresAt);
     }
 
@@ -333,7 +334,10 @@ public sealed partial class AuditStore
     )
     {
         Require(limit is > 0 and <= 200, "invalid_page_limit", 400);
-        var query = _db.Set<AuditRun>().AsNoTracking().Where(r => r.InstanceId == _instanceId);
+        var now = _clock.GetCurrentInstant();
+        var query = _db.Set<AuditRun>()
+            .AsNoTracking()
+            .Where(r => r.InstanceId == _instanceId && (r.SummaryExpiresAt == null || r.SummaryExpiresAt > now));
         if (before is { } cutoff && beforeId is { } cursorId)
         {
             query = query.Where(r => r.CreatedAt < cutoff || r.CreatedAt == cutoff && r.Id.CompareTo(cursorId) < 0);
@@ -347,7 +351,11 @@ public sealed partial class AuditStore
         var results = new List<AuditRunView>();
         foreach (var id in ids)
         {
-            results.Add((await GetRunAsync(id, ct))!);
+            var run = await GetRunAsync(id, ct);
+            if (run != null)
+            {
+                results.Add(run);
+            }
         }
         return results;
     }
