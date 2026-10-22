@@ -1,15 +1,134 @@
 # Self-audit qualification — 2026-10-22
 
-Qualification remains partial. Review batch 64 corrects the reviewed accounting,
-coverage, capture-lifetime and report defects. Its focused regressions and fresh
-native replay and a full Windows run with serial module scheduling pass.
-Earlier parallel Windows runs remain **NONPASS**. Acceptance 7 remains blocked
-on a transactional snapshot of the actual installation database.
-No production data, network rule, deployment or feature setting was changed.
+Qualification now includes a consistent snapshot of the actual installation,
+export and deterministic replay, plus a passing full serial Windows lane on the
+corrected code. The audit result remains **Incomplete** where retained facts
+cannot establish source completeness, historical pricing or fresh presentation.
+Earlier projection-copy evidence and parallel Windows **NONPASS** results remain
+historical; they are not substituted for the current evidence.
 
-## Current qualification after follow-up review
+## Actual installation snapshot and corrected export
 
-The current qualified code is `499d668d87fc2740f9d852ad60cae87b625d9795`.
+The current exporter and replay code is
+`1cc5b4de76bd9c9b3df3c8782d90b2cc6166ff71`. The original completed run and
+immutable server snapshot were produced by
+`499d668d87fc2740f9d852ad60cae87b625d9795`. The correction caches immutable
+nullable-property annotations by reflected property, with thread-safe
+publication. It does not cache evidence values, omit validation or change
+canonical semantics, schema `1`, verifier `1.0.0` or rules `1`.
+
+With explicit authorization, a consistent read-only dump of the actual
+installation database was taken through a temporary rule limited to the current
+client address. The rule was removed immediately; an independent read confirmed
+its absence and that every pre-existing rule was unchanged. The installation
+was not migrated, repaired, repriced or re-ingested. The original dump and an
+owned post-audit copy are preserved privately outside Git and the user home.
+
+The snapshot came from PostgreSQL 16.15 using the pinned PostgreSQL 17.10 dump
+client. Restore to the owned PostgreSQL 16 server omitted exactly one client-only
+`SET transaction_timeout = 0` from a separate SQL copy; the original dump and all
+schema/data statements remain intact. Four existing audit migrations ran only
+on the owned copy. All original columns in 29 application tables were unchanged.
+The existing startup worker changed only `IsConfigured` and `IsAvailable` on one
+excluded billing-source status row because its optional client was unconfigured;
+the selected source statuses and all original row counts were unchanged. The
+audit therefore identifies the post-start owned-copy snapshot precisely. No
+historical pricing-application associations were manufactured.
+
+Fresh copies of the same 24 frozen files matched their preserved hashes. The
+companion sealed 13,863 sanitized records in 33.90 seconds for the completed
+2026-10-21 UTC window. The actual-copy run completed in 150.02 seconds. Its
+22,438,595-byte snapshot includes 87 catalogs and 11,993 rate records.
+
+| Check | Actual snapshot result |
+|---|---|
+| Event aggregation | Matched, 2 / 2 groups |
+| Source accounting | Incomplete, 0 / 31 groups |
+| Daily attribution | Incomplete, 0 / 32 groups |
+| Pricing arithmetic | Incomplete, 0 / 2 events |
+| Displayed totals | Incomplete, 0 / 12; `missing_presentation_probe` |
+| Billing reconciliation | Excluded |
+
+The overall result is **Incomplete**. Source/daily checks each retain 38
+last-usage disagreements; daily attribution records 191 boundary diagnostics.
+These are per-observation findings. Independent extraction remains qualified
+only for the supported shapes. Missing closure, unsupported source facts and an
+unknown surviving-history denominator prevent a completeness claim. Catalog
+presence does not establish which historical rates were applied: the selected
+events lack pricing-application evidence, so neither price arithmetic nor
+historical rate correctness is established. Agreement of stored event/aggregate
+groups is a separate result from those limitations.
+
+Fresh actual-database browser presentation was unavailable: automatic policy
+rejected the shell browser launch before execution, and the supported browser
+connector reported no available browser. No retry bypassed that restriction.
+The prior UI qualification under `499d668` below matched 11 / 11 values on its own
+projection-copy scope; it is not fresh actual-database UI evidence. Acceptance 7
+has actual consistent-snapshot numerical and replay evidence; the separate
+presentation limitation remains explicit.
+
+The first completed-state export on code `499d668` returned HTTP 500 near the
+unchanged two-minute export deadline. Repeated nullable-metadata reflection was
+isolated with a synthetic allocation regression: 1,024 rate facts allocated
+54,835,992 bytes before the correction and 1,065,496 afterward. Canonical golden,
+required-null, cross-type and concurrent checks pass. All 276 Audit tests and
+15 export integration cases passed; no validation or timeout was removed.
+
+One export of the same immutable run through corrected code returned HTTP 200
+with 25,930,244 bytes in 51.60 seconds. Its lease and reservation were released.
+Two Windows replays returned expected exit 3 in 33.07 and 32.29 seconds. Linux,
+with no network, read-only root and a 2 GiB limit, returned exit 3 in 45.03
+seconds. All three outputs exactly match both the bundle result and the original
+recorded database result, SHA-256
+`c679626fcee59a3f721b90b30c1257c27614a682149a067c9c2c1485d08d9688`.
+This establishes successful bounded export and canonical preservation for this
+cohort; it is not a repeatable throughput benchmark.
+
+The 13-entry bundle privacy check found none of 1,632 tested raw path strings,
+43,621 native identifiers or six credential values. Compatible runners and all
+prior immutable evidence remain separately preserved. The feature remains
+default-disabled; no deployment or production feature setting changed.
+
+## Current full Windows qualification on code 1cc5b4d
+
+One full Windows Release `--no-build` run on
+`1cc5b4de76bd9c9b3df3c8782d90b2cc6166ff71` completed all six modules with
+**2,327 passed, zero failed and one existing explicit skip; 2,328 total**.
+Actual exit was **0**. Wall time was **544.025 seconds (9m 04.025s)**; the runner
+reported 542.789 seconds. All six TRX counters and actual test entries agree.
+
+| Module | Passed | Existing skipped | Module duration |
+|---|---:|---:|---|
+| Audit | 276 | 0 | 9.288s |
+| Audit CLI | 8 | 0 | 9.721s |
+| Ingest | 568 | 0 | 1m 02.629s |
+| Data | 426 | 1 | 4m 47.822s |
+| API unit | 618 | 0 | 7.414s |
+| API Integration | 431 | 0 | 2m 40.332s |
+
+The command used `--max-parallel-test-modules 1` and the unchanged **five-minute
+per-module cap**, against the owned test database only. TRX intervals show no
+module overlap. No API, browser, replay or hashing workload overlapped the suite.
+There were no filters, retries, extra skips or timeout increases. The skipped
+case remains the existing explicit
+`QualificationRepricesEveryEligibleEventAndItsAggregate`; no historical data was
+repriced to make this audit pass. Source/index content and all six Release test
+assembly hashes were unchanged during the run. The solution build and changed
+C# formatting checks passed with zero build warnings or errors.
+
+The historical serial pass and parallel **NONPASS** below used different code.
+These single observations establish their respective outcomes, not a scheduling
+or disk-I/O root cause, repeatability guarantee or cross-version performance delta.
+
+The previously pending database-access and security-disposition authorizations
+were fulfilled. CodeRabbit and Gitar approved the preceding `d6a3e3f` head;
+the scoped GitGuardian false-positive disposition was verified. Those decisions
+do not substitute for review and CI of the later codec/export correction. This
+qualification document does not itself establish merge readiness.
+
+## Historical projection-copy qualification on code 499d668
+
+The code qualified at this earlier stage was `499d668d87fc2740f9d852ad60cae87b625d9795`.
 It corrects three follow-up findings: daily attribution at a session/window
 boundary, evidence-lock duration during capture byte transfer, and test-container
 cleanup after an owned template fails. A fresh native run qualifies these
@@ -79,13 +198,13 @@ SQL revision binding and fresh publication fences reject changed generations
 and authority. Multiple processes each have their own budget, and the serialized
 512 MiB ceiling remains distinct from a maximum-memory guarantee.
 
-Actual-installation acceptance 7 remains **PARTIAL/BLOCKED**. The actual database
-snapshot and GitGuardian disposition await explicit authorization, and an actual
-Gitar verdict has not been established. Default detailed paging, unsupported
+At this earlier qualification point, actual-installation acceptance 7 was
+**PARTIAL/BLOCKED**. The later authorized snapshot, export and replay evidence
+above closes the database-access gap. Default detailed paging, unsupported
 formats, real Entra, macOS execution and browser file-saving limits remain as
 documented below. The feature remains default-disabled.
 
-## Full Windows qualification with serial modules
+## Historical full Windows qualification on code 499d668
 
 A single full Windows Release run at source/documentation HEAD
 `fe4a47134361417c4a92815d27f89d53c1c481b3` used the existing test binaries from
@@ -127,9 +246,8 @@ This qualifies the sequential Windows lane. The historical parallel **NONPASS**
 below remains intact, including its reporting discrepancy. That baseline used
 different code, and only one serial run was measured: no performance delta,
 repeatability guarantee or sole-cause attribution to scheduling or disk I/O is
-established. Actual-installation acceptance 7 remains **PARTIAL/BLOCKED**.
-Fresh CodeRabbit and Gitar verdicts remain unverified, security disposition
-approval remains pending, and this test result does not establish merge readiness.
+established. This historical test run did not establish installation acceptance
+or merge readiness; the later actual-snapshot evidence is recorded above.
 
 ## Historical first review batch 64 qualification
 
@@ -404,8 +522,9 @@ gate above. Final review must assess the Windows nonpass independently.
 | Clarify an exact Int64 diagnostic fixture | Precision assertion preserved; historical scanner false-positive disposition remains separately pending |
 | Obtain the actual consistent installation database export | Blocked on connectivity/access; no firewall or cloud changes executed |
 
-Release qualification remains blocked on the actual installation database
-snapshot and its repeated full audit. Additional explicit limits are the observed
+At this historical qualification point, release qualification remained blocked
+on the installation snapshot and full audit, subsequently exercised above.
+Additional explicit limits were the observed
 unsupported Codex usage shape, default detailed paging cost, unavailable real
 Entra issuer validation, managed-browser file saving, and macOS execution.
 The deferred zero-GUID machine-rotation behavior remains a named
