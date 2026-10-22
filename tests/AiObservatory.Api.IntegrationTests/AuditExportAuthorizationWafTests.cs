@@ -319,6 +319,43 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
         Directory.GetFiles(Path.GetTempPath(), "aiobs-audit-*.zip").Except(temporaryBefore).Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task Retention_PreparedZip_CancelBeforeHttpExecution_ImmediatelyRemovesSpoolAndReleasesLease()
+    {
+        var id = await Seed();
+        using var scope = _factory.Services.CreateScope();
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var session = await scope
+            .ServiceProvider.GetRequiredService<AuditReportService>()
+            .OpenAsync(id, requestCancellation.Token);
+        await using var zip = await AuditReportService.PrepareBundleAsync(session);
+        var path = zip.Name;
+        File.Exists(path).Should().BeTrue();
+        var result = new AuditLeasedHttpResult(
+            session,
+            Microsoft.AspNetCore.Http.Results.Stream(zip, "application/zip", "synthetic-audit.zip")
+        );
+        await requestCancellation.CancelAsync();
+        await result.ExecuteAsync(
+            new Microsoft.AspNetCore.Http.DefaultHttpContext { RequestServices = scope.ServiceProvider }
+        );
+        var db = scope.ServiceProvider.GetRequiredService<AiObservatory.Data.AiObservatoryDbContext>();
+        (
+            await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
+                Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.SqlQueryRaw<int>(
+                    db.Database,
+                    "SELECT count(*)::int AS \"Value\" FROM \"AuditExportReadLeases\""
+                ),
+                Ct
+            )
+        )
+            .Should()
+            .Be(0);
+        File.Exists(path)
+            .Should()
+            .BeFalse("the HTTP wrapper owns private evidence even when its inner result never executes");
+    }
+
     private sealed class ExportGateStream(CancellationToken testToken) : Stream
     {
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);

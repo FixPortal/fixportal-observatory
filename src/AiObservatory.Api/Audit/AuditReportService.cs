@@ -21,6 +21,7 @@ public sealed class AuditReportService(AuditStore store, IServiceScopeFactory sc
         var file = AuditTemporaryBundleStream.Create();
         try
         {
+            session.OwnSpool(file);
             // ZipArchive entry disposal writes small synchronous trailers. A seekable private temporary
             // file preserves Task10's exact ZIP bytes and avoids synchronous HTTP I/O or an extra ZIP-sized RAM buffer.
             await AuditBundleWriter.WriteAsync(file, bundle, session.Token);

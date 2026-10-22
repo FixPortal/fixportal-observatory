@@ -11,6 +11,7 @@ public sealed class AuditExportSession : IAsyncDisposable
     private readonly AuditExportLease _lease;
     private readonly CancellationTokenSource _owned;
     private readonly Task _monitor;
+    private FileStream? _spool;
     public AuditExportMaterialization Materialized { get; }
     public CancellationToken Token => _owned.Token;
 
@@ -89,18 +90,43 @@ public sealed class AuditExportSession : IAsyncDisposable
         }
     }
 
+    internal void OwnSpool(FileStream spool)
+    {
+        if (_spool != null)
+        {
+            throw new InvalidOperationException("An export session already owns a spool.");
+        }
+        _spool = spool;
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _owned.CancelAsync();
         await _monitor;
-        using var releaseCeiling = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         try
         {
-            await _store.ReleaseExportLeaseAsync(_lease.Id, releaseCeiling.Token);
+            // The inner HTTP result may never execute. Close private evidence before releasing
+            // its durable reservation so deletion cannot finish while the prepared ZIP remains open.
+            if (_spool != null)
+            {
+                await _spool.DisposeAsync();
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new AuditStoreException("bundle_spool_unavailable", 503);
         }
         finally
         {
-            _owned.Dispose();
+            using var releaseCeiling = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await _store.ReleaseExportLeaseAsync(_lease.Id, releaseCeiling.Token);
+            }
+            finally
+            {
+                _owned.Dispose();
+            }
         }
     }
 }

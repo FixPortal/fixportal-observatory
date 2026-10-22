@@ -623,6 +623,59 @@ public sealed class AuditStoreTests : IAsyncLifetime
         (await _store.ReadCaptureAsync(id, Ct)).Should().BeNull();
     }
 
+    /// <summary>Indefinite captures assigned before readiness pinning must be erased only after their last run reference disappears.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Retention_DeleteCollectingRun_CleansAssignedIndefiniteCaptureAndPreservesSharedReferences(
+        bool shared
+    )
+    {
+        await _store.UpdateRetentionAsync(null, null, Ct);
+        var machine = await Machine();
+        var scope = Scope(machine.MachineId);
+        var collecting = await _store.CreateRunAsync(scope, [], "collecting", true, Now, Ct);
+        var lease = (await _store.TryClaimCaptureAsync(machine.MachineId, machine.CredentialId, Now, Ct))!;
+        var bytes = Record(machine.MachineId);
+        var hash = AuditCanonicalJson.ContentHash(bytes);
+        await _store.PutChunkAsync(lease, 0, bytes, hash, Ct);
+        var capture = await _store.SealCaptureAsync(lease, Manifest(lease, [hash], 1), "seal", Ct);
+        (await _store.ReadCaptureAsync(capture, Ct))!.ExpiresAt.Should().BeNull();
+        (
+            await _db
+                .Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM \"AuditRunCaptures\"")
+                .SingleAsync(Ct)
+        )
+            .Should()
+            .Be(0);
+        Guid? otherRun = shared ? await _store.CreateRunAsync(scope, [capture], "shared", false, Now, Ct) : null;
+        (await _store.DeleteRunAsync(collecting, Ct)).Should().BeTrue();
+        (await _store.GetRunAsync(collecting, Ct)).Should().BeNull();
+        if (otherRun is { } remaining)
+        {
+            var retained = (await _store.ReadCaptureAsync(capture, Ct))!;
+            retained.Chunks.Should().ContainSingle().Which.Should().Equal(bytes);
+            retained.Manifest.Should().Equal(Manifest(lease, [hash], 1));
+            (await _store.GetRunAsync(remaining, Ct)).Should().NotBeNull();
+            (await _store.DeleteRunAsync(remaining, Ct)).Should().BeTrue();
+        }
+        (await _store.ReadCaptureAsync(capture, Ct)).Should().BeNull();
+        (
+            await _db
+                .Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM \"AuditEvidenceChunks\"")
+                .SingleAsync(Ct)
+        )
+            .Should()
+            .Be(0);
+        (
+            await _db
+                .Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM \"AuditEvidenceCaptures\"")
+                .SingleAsync(Ct)
+        )
+            .Should()
+            .Be(0);
+    }
+
     /// <summary>Abandoned bytes expire exactly at the request's 24-hour boundary and cannot be sealed afterwards.</summary>
     [Fact]
     public async Task Retention_AbandonedUpload_Exact24HourBoundary()
