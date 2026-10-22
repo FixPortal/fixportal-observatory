@@ -63,7 +63,7 @@ The conversion uses the live USD to GBP rate in your browser, cached for about 1
 | `N in / M out`                          | Observed input tokens and output tokens.                                                                                                                                   |
 | `P% cache hit`                          | Cache-read tokens divided by observed input tokens, rounded to a whole percent. Shown only when cache-read tokens exist.                                                   |
 | `Cache savings`                         | The sum of server-reported cache savings, converted to GBP and labelled `server-reported, USD-derived`. `Not reported` if no bucket with cache traffic had a known saving. |
-| `N savings observation(s) not reported` | Usage records with cache traffic whose saving was not reported.                                                                                                                      |
+| `N savings observation(s) not reported` | Usage records with cache traffic whose saving was not reported.                                                                                                            |
 
 Observed input tokens are plain input tokens plus cache-read tokens plus cache-write tokens. The cache hit rate is therefore the share of all input that came from the cache. The `i` button beside the cache lines gives the same explanation.
 
@@ -112,7 +112,7 @@ The panel is titled `Provider usage share` and draws a donut chart. The toggle l
 | ---------- | ----------------------------------------------- | ------- |
 | `Notional` | Notional cost with a known value, in US dollars | Yes     |
 | `Tokens`   | Observed tokens                                 | No      |
-| `Records` | Usage record count                                   | No      |
+| `Records`  | Usage record count                              | No      |
 
 - A slice's share is its value divided by the total of all slices, as a percentage.
 - The tooltip reads `<amount> · <share>%`, with the share to one decimal place. In `Notional` mode the amount is in US dollars; the other modes show tokens or usage records.
