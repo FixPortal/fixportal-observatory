@@ -13,6 +13,7 @@ Observatory is a .NET 10 and React 19 dashboard with a PostgreSQL store. Provide
 
 - [Provider setup](docs/provider-setup.md) — every source, access requirement, and known unavailable capability.
 - [Truth and pricing](docs/truth-and-pricing.md) — source/scope/basis meanings and safe catalog refresh.
+- [Independent self-audit](docs/self-audit.md) — opt-in capture, coverage, retention and offline replay.
 - [Adding a provider](docs/adding-a-provider.md) — the compile-time adapter seam.
 - [Local producers](clients/README.md) — Codex, Copilot, Claude, Kimi, Gemini review, Antigravity, Grok, and PI sweeper setup.
 - [Postman collection](docs/observatory.postman_collection.json) — representative authenticated API requests.

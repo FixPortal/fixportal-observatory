@@ -2,6 +2,8 @@
 
 > Machine-local Codex, Copilot, Claude, Kimi, Gemini review, Antigravity, Grok, and PI telemetry guide as of 2026-10-18.
 
+For independent capture and machine-scoped polling, see the [self-audit operator guide](../docs/self-audit.md) and [companion protocol](audit/README.md).
+
 `observatory-sweep.mjs` reads installed CLI logs and posts cumulative daily/model snapshots to `POST /api/events`. It has no dependencies beyond Node 24+.
 
 Each posted snapshot carries explicit provenance so the API preserves its subscription/notional meaning:

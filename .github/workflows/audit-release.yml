@@ -1,0 +1,57 @@
+name: Audit verifier artifacts
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-artifacts-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package offline verifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Lint workflows (actionlint)
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2
+        with:
+          shellcheck: true
+      - name: Require reviewed default-branch ancestry
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: git merge-base --is-ancestor HEAD "origin/$DEFAULT_BRANCH"
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Qualify synthetic replay before packaging
+        run: |
+          dotnet build src/AiObservatory.Audit.Cli --configuration Release
+          node scripts/audit-replay-smoke.mjs
+          node --test tests/audit-release-contract.test.mjs
+          python3 -m unittest discover -s tests -p test_audit_package.py
+      - name: Publish framework-dependent runners
+        run: |
+          for rid in win-x64 linux-x64 osx-arm64; do
+            dotnet publish src/AiObservatory.Audit.Cli --configuration Release --runtime "$rid" --self-contained false -p:UseAppHost=false -p:DebugType=None -p:DebugSymbols=false -p:ContinuousIntegrationBuild=true -p:PathMap="$GITHUB_WORKSPACE=/_/src" --output "artifacts/publish/$rid"
+            python3 scripts/package-audit-runner.py --publish-dir "artifacts/publish/$rid" --output artifacts/audit-verifier --rid "$rid"
+          done
+      - name: Upload runner archives, identities and checksum manifests
+        uses: actions/upload-artifact@v7
+        with:
+          name: audit-verifier-${{ github.sha }}
+          path: artifacts/audit-verifier/*
+          if-no-files-found: error
+          retention-days: 90
