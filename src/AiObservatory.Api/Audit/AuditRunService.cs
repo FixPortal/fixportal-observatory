@@ -1,4 +1,5 @@
 using AiObservatory.Audit.Contracts;
+using AiObservatory.Audit.Serialization;
 using AiObservatory.Data.Audit;
 using NodaTime;
 
@@ -24,6 +25,14 @@ public sealed class AuditRunService(AuditStore store, IClock clock)
     )
     {
         var run = await store.GetRunAsync(id, ct) ?? throw new AuditStoreException("run_not_found", 404);
+        var scope = AuditCanonicalJson.Deserialize<AuditScope>(run.Scope);
+        if (
+            !scope.RequestedChecks.Contains(CheckCode.PresentationTotals)
+            || scope.ExcludedChecks.Contains(CheckCode.PresentationTotals)
+        )
+        {
+            throw new AuditStoreException("presentation_check_not_requested", 409);
+        }
         if (run.Result == null)
         {
             throw new AuditStoreException("report_unavailable", 409);
