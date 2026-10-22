@@ -1,3 +1,4 @@
+using AiObservatory.Audit;
 using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
 using AiObservatory.Data.Audit;
@@ -92,7 +93,7 @@ public sealed class AuditStoreTests : IAsyncLifetime
         next.Revision.Should().BeGreaterThan(old.Revision);
         (await _store.RenewRunLeaseAsync(old, _clock.GetCurrentInstant(), Ct)).Should().BeFalse();
         (await _store.TryPublishAsync(old, Result(), Ct)).Should().BeFalse();
-        (await _store.TryPublishAsync(next, Result(), Ct)).Should().BeTrue();
+        (await PublishFrozen(next)).Should().BeTrue();
     }
 
     /// <summary>Renewal extends live ownership but cannot revive expired ownership.</summary>
@@ -104,7 +105,7 @@ public sealed class AuditStoreTests : IAsyncLifetime
         _clock.Advance(Duration.FromMinutes(1));
         (await _store.RenewRunLeaseAsync(lease, _clock.GetCurrentInstant(), Ct)).Should().BeTrue();
         _clock.Advance(Duration.FromMinutes(4));
-        (await _store.TryPublishAsync(lease, Result(), Ct)).Should().BeTrue();
+        (await PublishFrozen(lease)).Should().BeTrue();
     }
 
     /// <summary>A permanently lost worker consumes at most three attempts and leaves diagnostics.</summary>
@@ -273,7 +274,7 @@ public sealed class AuditStoreTests : IAsyncLifetime
         (await _store.ReadCaptureAsync(idB, Ct))!.ExpiresAt.Should().BeNull();
         var run = await Run();
         var worker = (await _store.TryLeaseRunAsync(Guid.NewGuid(), Now, Ct))!;
-        (await _store.TryPublishAsync(worker, Result(), Ct)).Should().BeTrue();
+        (await PublishFrozen(worker)).Should().BeTrue();
         (await _store.GetRunAsync(run, Ct))!.SummaryExpiresAt.Should().BeNull();
     }
 
@@ -349,13 +350,26 @@ public sealed class AuditStoreTests : IAsyncLifetime
             Model = "synthetic-model",
             EventKey = "synthetic-event",
         };
-        _db.UsageEvents.Add(usage);
-        await _db.SaveChangesAsync(Ct);
-        _db.ChangeTracker.Clear();
-        var before = await _db.UsageEvents.AsNoTracking().SingleAsync(Ct);
+        // Seed the historical schema through its historical columns. The current model also
+        // maps Task8's later CurrentPricingRevision column, which does not exist at this point.
+        await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO "UsageEvents" ("Id","Provider","OccurredAt","IngestedAt","InputTokens","OutputTokens","CostUsd","RawPayload","Model","EventKey","SourceId","SourceKind","UsageScope","CostBasis","ObservedAt")
+            VALUES ({usage.Id},{usage.Provider.ToString()},{usage.OccurredAt},{usage.IngestedAt},{usage.InputTokens},{usage.OutputTokens},{usage.CostUsd},{usage.RawPayload}::jsonb,{usage.Model},{usage.EventKey},{usage.SourceId},{usage.SourceKind.ToString()},{usage.UsageScope.ToString()},{usage.CostBasis.ToString()},{usage.ObservedAt})
+            """,
+            Ct
+        );
+        var before = await _db
+            .Database.SqlQueryRaw<string>("SELECT to_jsonb(e)::text AS \"Value\" FROM \"UsageEvents\" e")
+            .SingleAsync(Ct);
         await migrator.MigrateAsync(cancellationToken: Ct);
+        var historicalAfter = await _db
+            .Database.SqlQueryRaw<string>(
+                "SELECT (to_jsonb(e)-'CurrentPricingRevision')::text AS \"Value\" FROM \"UsageEvents\" e"
+            )
+            .SingleAsync(Ct);
+        historicalAfter.Should().Be(before);
         var after = await _db.UsageEvents.AsNoTracking().SingleAsync(Ct);
-        after.Should().BeEquivalentTo(before);
         after.InputTokens.Should().Be(9007199254740993);
         after.SourceKind.Should().Be(AiObservatory.Data.Entities.SourceKind.Legacy);
         after.CostBasis.Should().Be(CostBasis.Unknown);
@@ -451,7 +465,7 @@ public sealed class AuditStoreTests : IAsyncLifetime
         (await _store.ReadCaptureAsync(captureId, Ct))!.ExpiresAt.Should().Be(Now.Plus(Duration.FromDays(90)));
         var run = await Run();
         var worker = (await _store.TryLeaseRunAsync(Guid.NewGuid(), Now, Ct))!;
-        (await _store.TryPublishAsync(worker, Result(), Ct)).Should().BeTrue();
+        (await PublishFrozen(worker)).Should().BeTrue();
         (await _store.GetRunAsync(run, Ct))!.SummaryExpiresAt.Should().Be(Now.Plus(Duration.FromDays(365)));
     }
 
@@ -480,6 +494,23 @@ public sealed class AuditStoreTests : IAsyncLifetime
         var lease = await Capture();
         var captureId = await _store.SealCaptureAsync(lease, Manifest(lease, [], 0), "seal", Ct);
         (await _store.ReadCaptureAsync(captureId, Ct))!.ExpiresAt.Should().Be(Now.Plus(Duration.FromDays(36_500)));
+    }
+
+    private async Task<bool> PublishFrozen(RunLease lease)
+    {
+        var materialization = await _store.ReadSnapshotMaterializationAsync(lease, Ct);
+        var input = new AuditInput
+        {
+            SchemaVersion = 1,
+            VerifierVersion = "1",
+            RuleVersion = "1",
+            Scope = materialization.Scope,
+        };
+        var bytes = AuditCanonicalJson.Serialize(input);
+        (await _store.TryStoreSnapshotAsync(lease, bytes, AuditComputationInput.ContentDigest(input), Ct))
+            .Should()
+            .BeTrue();
+        return await _store.TryPublishAsync(lease, new AuditVerifier().Verify(input), Ct);
     }
 
     private Task<Guid> Run() =>

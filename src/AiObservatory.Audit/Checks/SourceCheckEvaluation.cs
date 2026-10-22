@@ -27,25 +27,24 @@ internal sealed class SourceCheckEvaluation
                 : compatible;
         var unsupported = Coverage(input, code, expected, findings, gaps);
         var expectedMap = Groups(expected);
+        var unprovenSources = UnprovenSources(input, code, findings, gaps);
         var unplacedEventScopes = new HashSet<EventComparisonScope>();
         var actualMap =
             code == CheckCode.DailyAttribution
                 ? Groups(compatible)
                 : Events(input, code, findings, gaps, unplacedEventScopes);
         var keys = expectedMap.Keys.Union(actualMap.Keys).OrderBy(k => k.Id, StringComparer.Ordinal).ToArray();
-        var compared = 0L;
-        // Missing pricing dimensions can place an omitted posting in any pricing group
-        // with these remaining dimensions. Neither partial totals nor group absence prove a defect.
-        foreach (var key in keys.Where(key => !unplacedEventScopes.Contains(EventComparisonScope.From(key))))
-        {
-            var reference = expectedMap.GetValueOrDefault(key);
-            var actual = actualMap.GetValueOrDefault(key);
-            Compare(key, reference, actual, code, findings, gaps);
-            if (reference is not null && actual is not null)
-            {
-                compared++;
-            }
-        }
+        var compared = CompareProvenGroups(
+            input,
+            code,
+            findings,
+            gaps,
+            expectedMap,
+            actualMap,
+            keys,
+            unprovenSources,
+            unplacedEventScopes
+        );
         var hasDifferences =
             findings.Any(f =>
                 f.RuleCode is "source_accounting_difference" or "daily_attribution_difference"
@@ -54,7 +53,9 @@ internal sealed class SourceCheckEvaluation
                 && f.Actual is not null
             )
             || keys.Any(key =>
-                expectedMap.ContainsKey(key) != actualMap.ContainsKey(key) && !gaps.Any(g => g.SourceId == key.SourceId)
+                expectedMap.ContainsKey(key) != actualMap.ContainsKey(key)
+                && !unprovenSources.Contains(key.SourceId)
+                && !gaps.Any(g => g.SourceId == key.SourceId)
             );
         var verdict = ComparisonSupport.Verdict(hasDifferences ? 1 : 0, gaps.Count);
         if (
@@ -83,6 +84,105 @@ internal sealed class SourceCheckEvaluation
                 .ThenBy(f => f.Field, StringComparer.Ordinal)
                 .ToArray()
         );
+    }
+
+    private static long CompareProvenGroups(
+        AuditInput input,
+        CheckCode code,
+        List<AuditFinding> findings,
+        List<CoverageGap> gaps,
+        Dictionary<ComparisonKey, ComparisonGroup> expectedMap,
+        Dictionary<ComparisonKey, ComparisonGroup> actualMap,
+        ComparisonKey[] keys,
+        HashSet<string> unprovenSources,
+        HashSet<EventComparisonScope> unplacedEventScopes
+    )
+    {
+        var compared = 0L;
+        // Missing pricing dimensions can place an omitted posting in any pricing group
+        // with these remaining dimensions. Neither partial totals nor group absence prove a defect.
+        foreach (
+            var key in keys.Where(key =>
+                !unprovenSources.Contains(key.SourceId) && !unplacedEventScopes.Contains(EventComparisonScope.From(key))
+            )
+        )
+        {
+            var reference = expectedMap.GetValueOrDefault(key);
+            var actual = actualMap.GetValueOrDefault(key);
+            if (!RevisionAllowsComparison(input, key, reference, actual, code, findings, gaps))
+            {
+                continue;
+            }
+            Compare(key, reference, actual, code, findings, gaps);
+            if (reference is not null && actual is not null)
+            {
+                compared++;
+            }
+        }
+        return compared;
+    }
+
+    private static HashSet<string> UnprovenSources(
+        AuditInput input,
+        CheckCode code,
+        List<AuditFinding> findings,
+        List<CoverageGap> gaps
+    )
+    {
+        var sources = gaps.Where(g => g.DiagnosticCode is "incomplete_capture" or "no_usage_records")
+            .Select(g => g.SourceId)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (
+            var q in (input.SourceQualifications ?? []).Where(q =>
+                !q.AllowHistoricalMatch && (q.DiagnosticCode != "temporal_skew" || code == CheckCode.SourceAccounting)
+            )
+        )
+        {
+            sources.Add(q.SourceId);
+            AddGap(q.SourceId, q.DiagnosticCode, code, findings, gaps);
+        }
+        return sources;
+    }
+
+    private static bool RevisionAllowsComparison(
+        AuditInput input,
+        ComparisonKey key,
+        ComparisonGroup? reference,
+        ComparisonGroup? actual,
+        CheckCode code,
+        List<AuditFinding> findings,
+        List<CoverageGap> gaps
+    )
+    {
+        if (
+            code != CheckCode.SourceAccounting
+            || !(input.SourceQualifications ?? []).Any(q => q.SourceId == key.SourceId && q.AllowHistoricalMatch)
+        )
+        {
+            return true;
+        }
+        if (reference is null || actual is null || reference.Tokens != actual.Tokens)
+        {
+            AddGap(key.SourceId, "revision_unverified", code, findings, gaps, key.Id);
+            return false;
+        }
+        findings.Add(
+            new(
+                code,
+                "revision_unverified",
+                key.Id,
+                [],
+                "evidence",
+                null,
+                null,
+                null,
+                ValueUnit.Count,
+                null,
+                AccountingBasis.None,
+                "revision_unverified"
+            )
+        );
+        return true;
     }
 
     private static bool Coverage(

@@ -14,14 +14,21 @@ public sealed class AuditVerifier
             .Distinct()
             .Select(code => Evaluate(input, code))
             .ToArray();
+        CoverageGap[] evidenceGaps =
+            input.PartialEvidenceAcknowledged == true ? [new("all", "all", "partial_capture_acknowledged")] : [];
         var coverage = new AuditCoverage(
             ComparisonSupport.CountSum(checks.Select(c => c.Coverage.ComparedGroups)),
             ComparisonSupport.CountSum(checks.Select(c => c.Coverage.TotalGroups)),
-            checks.SelectMany(c => c.Coverage.Gaps).Distinct().ToArray()
+            checks.SelectMany(c => c.Coverage.Gaps).Concat(evidenceGaps).Distinct().ToArray()
         )
         {
             Exclusions = checks.SelectMany(c => c.Coverage.Exclusions).Distinct().ToArray(),
         };
+        var verdict = AuditVerdictReducer.Reduce(checks);
+        if (verdict == CheckVerdict.Matched && evidenceGaps.Length > 0)
+        {
+            verdict = CheckVerdict.Incomplete;
+        }
         var result = new AuditResult(
             1,
             AuditResultScope.FromScope(input.Scope),
@@ -31,7 +38,7 @@ public sealed class AuditVerifier
             checks,
             coverage,
             checks.SelectMany(c => c.Findings).ToArray(),
-            AuditVerdictReducer.Reduce(checks)
+            verdict
         );
         return AuditCanonicalJson.Deserialize<AuditResult>(AuditCanonicalJson.Serialize(result));
     }

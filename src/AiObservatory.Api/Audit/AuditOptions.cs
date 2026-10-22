@@ -6,4 +6,5 @@ public sealed class AuditOptions : AuditStoreOptions
 {
     public const string SectionName = "Audit";
     public bool Enabled { get; set; }
+    public bool WorkerEnabled { get; set; } = true;
 }

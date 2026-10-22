@@ -8,6 +8,105 @@ namespace AiObservatory.Audit.Tests.Sources;
 
 public sealed class SourceAccountingCheckTests
 {
+    [Fact]
+    public void PartialCapture_SubtotalsCannotProveTokenMismatch()
+    {
+        var record = SourceFixture.Claude();
+        var input = SourceFixture.Input(record);
+        input = input with
+        {
+            Captures = [input.Captures[0] with { SkippedFiles = 1, DiscoveredFiles = 2 }],
+            Events = [SourceFixture.Event(record, new(200, 40, 120, 80, 20, null))],
+        };
+        var outcome = new SourceAccountingCheck().Evaluate(input);
+        outcome.Verdict.Should().Be(CheckVerdict.Incomplete);
+        outcome.Findings.Should().NotContain(f => f.RuleCode == "source_accounting_difference");
+        new SourceAccountingCheck()
+            .Evaluate(AuditCanonicalJson.Deserialize<AuditInput>(AuditCanonicalJson.Serialize(input)))
+            .Should()
+            .BeEquivalentTo(outcome);
+    }
+
+    [Fact]
+    public void PartialSource_IndependentProvenSourceMismatchStillDominatesAndReplays()
+    {
+        var first = SourceFixture.Claude();
+        var second = first with { SourceId = "claude-second", SessionId = "s2" };
+        var partial = SourceFixture.Input(first);
+        var proven = SourceFixture.Input(second);
+        var input = partial with
+        {
+            Scope = partial.Scope with
+            {
+                Sources = [new(SourceFixture.Machine, first.SourceId), new(SourceFixture.Machine, second.SourceId)],
+            },
+            Records = [first, second],
+            Captures = [partial.Captures[0] with { DiscoveredFiles = 2, SkippedFiles = 1 }, proven.Captures[0]],
+            Events =
+            [
+                SourceFixture.Event(first, new(200, 40, 120, 80, 20, null)),
+                SourceFixture.Event(second, new(99, 20, 60, 40, 10, null)),
+            ],
+        };
+        var result = new AuditVerifier().Verify(input);
+        result.Verdict.Should().Be(CheckVerdict.Mismatched);
+        var difference = result
+            .Findings.Should()
+            .ContainSingle(f => f.RuleCode == "source_accounting_difference")
+            .Subject;
+        difference.Actual.Should().Be(new AuditValue(AuditValueKind.Integer, "99"));
+        var replay = new AuditVerifier().Verify(
+            AuditCanonicalJson.Deserialize<AuditInput>(AuditCanonicalJson.Serialize(input))
+        );
+        AuditCanonicalJson.Serialize(replay).Should().Equal(AuditCanonicalJson.Serialize(result));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void DailySourceAttribution_IndependentOfServerSweepAlignment(bool unknown)
+    {
+        var first = SourceFixture.Codex();
+        var later = first with
+        {
+            Sequence = 2,
+            Timestamp = first.Timestamp.AddHours(2),
+            Counters = new CodexCounters(180, 100, 30, 9, 210),
+        };
+        var input = SourceFixture.Input(first, later) with
+        {
+            SourceQualifications = [new(first.SourceId, unknown ? "revision_unverified" : "temporal_skew", unknown)],
+        };
+        new DailyAttributionCheck().Evaluate(input).Verdict.Should().Be(CheckVerdict.Mismatched);
+    }
+
+    [Theory]
+    [InlineData(true, 100, CheckVerdict.Matched)]
+    [InlineData(true, 99, CheckVerdict.Incomplete)]
+    [InlineData(false, 100, CheckVerdict.Incomplete)]
+    [InlineData(false, 99, CheckVerdict.Incomplete)]
+    public void FrozenTemporalQualification_UnknownRevisionAllowsOnlyLimitedHistoricalMatch(
+        bool unknown,
+        long tokens,
+        CheckVerdict verdict
+    )
+    {
+        var record = SourceFixture.Claude();
+        var input = SourceFixture.Input(record) with
+        {
+            Events = [SourceFixture.Event(record, new(tokens, 20, 60, 40, 10, null))],
+            SourceQualifications = [new(record.SourceId, unknown ? "revision_unverified" : "temporal_skew", unknown)],
+        };
+        var outcome = new SourceAccountingCheck().Evaluate(input);
+        outcome.Verdict.Should().Be(verdict);
+        outcome.Findings.Should().Contain(f => f.DiagnosticCode == (unknown ? "revision_unverified" : "temporal_skew"));
+        var bytes = AuditCanonicalJson.Serialize(input);
+        new SourceAccountingCheck()
+            .Evaluate(AuditCanonicalJson.Deserialize<AuditInput>(bytes))
+            .Should()
+            .BeEquivalentTo(outcome);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

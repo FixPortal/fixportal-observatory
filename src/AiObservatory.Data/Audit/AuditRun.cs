@@ -10,6 +10,9 @@ internal sealed class AuditRun
     public string IdempotencyKey { get; set; } = "";
     public string RequestHash { get; set; } = "";
     public string State { get; set; } = "queued";
+    public string Stage { get; set; } = "queued";
+    public bool PartialEvidenceAcknowledged { get; set; }
+    public Guid[] CaptureRequestIds { get; set; } = [];
     public long Revision { get; set; }
     public int Attempts { get; set; }
     public Guid? WorkerId { get; set; }
