@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
@@ -8,6 +9,10 @@ namespace AiObservatory.Audit.Serialization;
 
 internal static class AuditContractValidation
 {
+    // An annotation belongs to the declaring property, not its name or a particular evidence value.
+    // Lazy publication keeps concurrent readers from repeating reflection/attribute analysis.
+    private static readonly ConcurrentDictionary<PropertyInfo, Lazy<bool>> NullableProperties = new();
+
     internal static void Validate(object? value) => Visit(value, null, 0);
 
     private static void Visit(object? value, PropertyInfo? property, int depth)
@@ -17,7 +22,15 @@ internal static class AuditContractValidation
         {
             Require(
                 property != null
-                    && new NullabilityInfoContext().Create(property).ReadState == NullabilityState.Nullable,
+                    && NullableProperties
+                        .GetOrAdd(
+                            property,
+                            static member =>
+                                new(() =>
+                                    new NullabilityInfoContext().Create(member).ReadState == NullabilityState.Nullable
+                                )
+                        )
+                        .Value,
                 "required_value"
             );
             return;
