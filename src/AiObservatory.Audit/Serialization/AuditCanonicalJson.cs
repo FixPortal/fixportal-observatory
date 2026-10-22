@@ -15,8 +15,33 @@ public static class AuditCanonicalJson
     public static byte[] Serialize<T>(T value)
     {
         AuditContractValidation.Validate(value);
+        return SerializeEnvelope(value);
+    }
+
+    // Bundle envelopes have path/length fields, validated by the bounded bundle protocol instead.
+    internal static byte[] SerializeEnvelope<T>(T value)
+    {
         var element = JsonSerializer.SerializeToElement(value, Options);
         return CanonicalBytes(element, null);
+    }
+
+    internal static T DeserializeEnvelope<T>(ReadOnlySpan<byte> utf8)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(utf8.ToArray());
+            RejectDuplicateProperties(document.RootElement);
+            return JsonSerializer.Deserialize<T>(utf8, Options)
+                ?? throw new AuditValidationException("invalid_bundle_contract");
+        }
+        catch (JsonException)
+        {
+            throw new AuditValidationException("invalid_bundle_contract");
+        }
+        catch (NotSupportedException)
+        {
+            throw new AuditValidationException("invalid_bundle_contract");
+        }
     }
 
     public static T Deserialize<T>(ReadOnlySpan<byte> utf8)
@@ -152,6 +177,7 @@ public static class AuditCanonicalJson
         string[] fields = name switch
         {
             "records" => ["sourceId", "generation", "fileId", "sequence"],
+            "entries" => ["path"],
             "sources" => ["machineId", "sourceId"],
             "events" or "spend" => ["rowId"],
             "aggregates" or "compatibleGroups" or "chronologicalGroups" => ["key"],
@@ -193,6 +219,7 @@ public static class AuditCanonicalJson
         (string Field, string Collection)[] markers =
         [
             ("fileId", "records"),
+            ("path", "entries"),
             ("rowId", "events"),
             ("key", "aggregates"),
             ("captureId", "captures"),
