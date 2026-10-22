@@ -145,4 +145,83 @@ public sealed class VerdictTests
         result.Verdict.Should().Be(CheckVerdict.Incomplete);
         result.Coverage.Gaps.Should().Contain(g => g.DiagnosticCode == "unknown_token_comparison");
     }
+
+    [Fact]
+    public void MixedPricedAndUnplacedEvents_DoNotPromotePartialSumIntoMismatch()
+    {
+        var record = SourceFixture.Claude();
+        var placed = SourceFixture.Event(record, new(99, 20, 60, 40, 10, null));
+        var unplaced = SourceFixture.Event(record, new(1, 0, 0, 0, 0, null)) with { PricingApplication = null };
+        var input = SourceFixture.Input(record) with { Events = [placed, unplaced] };
+
+        var result = new SourceAccountingCheck().Evaluate(input);
+        result.Verdict.Should().Be(CheckVerdict.Incomplete);
+        result.Coverage.ComparedGroups.Should().Be(0);
+        result.Coverage.Gaps.Should().Contain(g => g.DiagnosticCode == "missing_pricing_dimensions");
+        result.Findings.Should().NotContain(f => f.RuleCode == "source_accounting_difference");
+
+        var classified = unplaced with { PricingApplication = placed.PricingApplication };
+        new SourceAccountingCheck()
+            .Evaluate(input with { Events = [placed, classified] })
+            .Verdict.Should()
+            .Be(CheckVerdict.Matched);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ClassifiedGroupMismatch_StillDominatesUnplacedEventsInAnotherDateOrSource(bool differentSource)
+    {
+        var first = SourceFixture.Claude();
+        var other = SourceFixture.Claude(2) with
+        {
+            MessageId = "m2",
+            SourceId = differentSource ? "other-local" : first.SourceId,
+            Timestamp = first.Timestamp.AddHours(2),
+        };
+        var placed = SourceFixture.Event(first, new(99, 20, 60, 40, 10, null));
+        var unplaced = SourceFixture.Event(first, new(1, 0, 0, 0, 0, null)) with { PricingApplication = null };
+        var otherEvent = SourceFixture.Event(other, new(99, 20, 60, 40, 10, null));
+        var input = SourceFixture.Input(first, other);
+        input = input with
+        {
+            Scope = input.Scope with
+            {
+                Sources = [new(SourceFixture.Machine, first.SourceId), new(SourceFixture.Machine, other.SourceId)],
+            },
+            Captures = input
+                .Captures.Select(c =>
+                    c with
+                    {
+                        Scope = c.Scope with
+                        {
+                            Sources =
+                            [
+                                new(SourceFixture.Machine, first.SourceId),
+                                new(SourceFixture.Machine, other.SourceId),
+                            ],
+                        },
+                        SourceFormats =
+                        [
+                            new(first.SourceId, first.SourceFormat, first.SourceVersion),
+                            new(other.SourceId, other.SourceFormat, other.SourceVersion),
+                        ],
+                    }
+                )
+                .ToArray(),
+            Events = [placed, unplaced, otherEvent],
+        };
+
+        var result = new SourceAccountingCheck().Evaluate(input);
+        result.Verdict.Should().Be(CheckVerdict.Mismatched);
+        result.Coverage.ComparedGroups.Should().Be(1);
+        result.Coverage.Gaps.Should().Contain(g => g.DiagnosticCode == "missing_pricing_dimensions");
+        var difference = result
+            .Findings.Should()
+            .ContainSingle(f => f.RuleCode == "source_accounting_difference" && f.Field == "inputTokens")
+            .Subject;
+        difference.Expected.Should().Be(new AuditValue(AuditValueKind.Integer, "100"));
+        difference.Actual.Should().Be(new AuditValue(AuditValueKind.Integer, "99"));
+        difference.Delta.Should().Be(new AuditValue(AuditValueKind.Integer, "-1"));
+    }
 }
