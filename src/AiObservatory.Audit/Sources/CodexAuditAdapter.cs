@@ -4,6 +4,8 @@ namespace AiObservatory.Audit.Sources;
 
 public sealed class CodexAuditAdapter : ISourceAuditAdapter
 {
+    internal const string DailyBoundaryDiagnostic = "daily_attribution_boundary";
+
     public SourceReconstruction Reconstruct(IReadOnlyList<SourceUsageRecord> records, AuditScope scope)
     {
         var facts = SourceAuditSupport.Prepare(records, scope, SourceTool.Codex);
@@ -54,6 +56,17 @@ public sealed class CodexAuditAdapter : ISourceAuditAdapter
         MarkProvisional(chronological, chronologicalStart, state.Provisional || !closed);
         if (!SourceAuditSupport.InScope(SourceAuditSupport.Date(finalRecord), scope))
         {
+            // These observed daily increments have no in-window final-day counterpart.
+            // Qualify only their comparison keys; the compatible final-day accounting stays unchanged.
+            var references = chronological
+                .Skip(chronologicalStart)
+                .SelectMany(group => group.EvidenceRefs)
+                .ToHashSet(StringComparer.Ordinal);
+            findings.AddRange(
+                observations
+                    .Where(record => references.Contains(SourceAuditSupport.Reference(record)))
+                    .Select(record => SourceAuditSupport.Gap(record, DailyBoundaryDiagnostic))
+            );
             return;
         }
         var finalProvider = Provider(finalRecord);

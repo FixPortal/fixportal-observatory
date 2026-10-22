@@ -65,12 +65,17 @@ public sealed partial class AuditStore
                     .AsNoTracking()
                     .Where(c => c.RequestId == request.Id)
                     .OrderBy(c => c.Index)
-                    .Select(c => new AuditSealChunk(c.Index, c.Sha256, c.Bytes))
+                    .Select(c => new SealChunkMetadata(c.Index, c.Sha256, c.Bytes.Length))
                     .ToArrayAsync(ct);
                 Require(
                     chunks.Length == parsed.ChunkHashes.Count && request.RecordCount == parsed.RecordCount,
                     "capture_count_mismatch",
                     409
+                );
+                Require(
+                    chunks.Sum(c => (long)c.Length) + original.Length <= _options.MaxCaptureBytes,
+                    "capture_size_limit",
+                    413
                 );
                 return new SealCandidate(request.Revision, chunks, null);
             },
@@ -81,8 +86,27 @@ public sealed partial class AuditStore
             return retained;
         }
 
+        // This one statement reads request revision and bytes from the same PostgreSQL snapshot.
+        // A reset/append before that snapshot returns no bytes, rather than loading a new generation
+        // under the old candidate's size budget. No evidence transaction spans the transfer.
+        var chunks = await _db.Set<AuditEvidenceChunk>()
+            .AsNoTracking()
+            .Where(c =>
+                c.RequestId == lease.RequestId
+                && _db.Set<AuditCaptureRequest>().Any(r => r.Id == lease.RequestId && r.Revision == candidate.Revision)
+            )
+            .OrderBy(c => c.Index)
+            .Select(c => new AuditSealChunk(c.Index, c.Sha256, c.Bytes))
+            .ToArrayAsync(ct);
+        Require(
+            chunks
+                .Select(c => new SealChunkMetadata(c.Index, c.Sha256, c.Bytes.Length))
+                .SequenceEqual(candidate.Chunks),
+            "capture_generation_changed",
+            409
+        );
         // No transaction or evidence lock spans hashing, parsing, canonicalization or membership checks.
-        await _captureValidator.ValidateAsync(parsed, candidate.Chunks, ct);
+        await _captureValidator.ValidateAsync(parsed, chunks, ct);
         ct.ThrowIfCancellationRequested();
         var manifestHash = AuditCanonicalJson.ContentHash(original);
         return await Transaction(
@@ -101,26 +125,9 @@ public sealed partial class AuditStore
                     .AsNoTracking()
                     .Where(c => c.RequestId == request.Id)
                     .OrderBy(c => c.Index)
-                    .Select(c => new
-                    {
-                        c.Index,
-                        c.Sha256,
-                        c.Bytes.Length,
-                    })
+                    .Select(c => new SealChunkMetadata(c.Index, c.Sha256, c.Bytes.Length))
                     .ToArrayAsync(ct);
-                Require(
-                    generation.Length == candidate.Chunks.Length
-                        && generation
-                            .Select(
-                                (c, i) =>
-                                    c.Index == candidate.Chunks[i].Index
-                                    && c.Sha256 == candidate.Chunks[i].Sha256
-                                    && c.Length == candidate.Chunks[i].Bytes.Length
-                            )
-                            .All(same => same),
-                    "capture_generation_changed",
-                    409
-                );
+                Require(generation.SequenceEqual(candidate.Chunks), "capture_generation_changed", 409);
                 var now = _clock.GetCurrentInstant();
                 Require(request.Deadline > now && request.LeaseExpiresAt > now, "capture_lease_expired", 410);
                 var retention = await Retention(ct);
@@ -164,5 +171,7 @@ public sealed partial class AuditStore
         return existing.Id;
     }
 
-    private sealed record SealCandidate(long Revision, AuditSealChunk[] Chunks, Guid? ExistingId);
+    private sealed record SealChunkMetadata(int Index, string Sha256, int Length);
+
+    private sealed record SealCandidate(long Revision, SealChunkMetadata[] Chunks, Guid? ExistingId);
 }

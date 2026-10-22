@@ -16,6 +16,7 @@ namespace AiObservatory.Testing;
 public sealed class PostgresTestAssemblyFixture : IAsyncLifetime
 {
     private PostgreSqlContainer? _container;
+    private string? _ownedConnection;
     private static readonly ConcurrentDictionary<string, Lazy<OwnedTemplateDatabase>> Templates = new(
         StringComparer.Ordinal
     );
@@ -95,26 +96,75 @@ public sealed class PostgresTestAssemblyFixture : IAsyncLifetime
                 ex
             );
         }
-        Environment.SetEnvironmentVariable("TEST_DB_CONNECTION", _container.GetConnectionString());
+        _ownedConnection = _container.GetConnectionString();
+        Environment.SetEnvironmentVariable("TEST_DB_CONNECTION", _ownedConnection);
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        foreach (var pending in Templates.Values)
-        {
-            if (pending.IsValueCreated)
+    public ValueTask DisposeAsync() =>
+        DisposeOwnedAsync(
+            Templates,
+            _container,
+            () =>
             {
-                await pending.Value.DisposeAsync();
+                if (_ownedConnection is { } owned && Environment.GetEnvironmentVariable("TEST_DB_CONNECTION") == owned)
+                {
+                    Environment.SetEnvironmentVariable("TEST_DB_CONNECTION", null);
+                }
+            }
+        );
+
+    internal static async ValueTask DisposeOwnedAsync(
+        ConcurrentDictionary<string, Lazy<OwnedTemplateDatabase>> templates,
+        IAsyncDisposable? container,
+        Action releaseConnection
+    )
+    {
+        var failures = new List<Exception>();
+        try
+        {
+            foreach (var entry in templates)
+            {
+                try
+                {
+                    if (entry.Value.IsValueCreated)
+                    {
+                        await entry.Value.Value.DisposeAsync();
+                    }
+                    templates.TryRemove(entry);
+                }
+                catch (Exception failure)
+                {
+                    // Retain this owner, including any initializer that outlived its bounded drain.
+                    failures.Add(failure);
+                }
             }
         }
-        Templates.Clear();
-        if (_container is null)
+        finally
         {
-            return;
+            if (container is not null)
+            {
+                try
+                {
+                    releaseConnection();
+                }
+                catch (Exception failure)
+                {
+                    failures.Add(failure);
+                }
+                try
+                {
+                    await container.DisposeAsync();
+                }
+                catch (Exception failure)
+                {
+                    failures.Add(failure);
+                }
+            }
         }
-
-        Environment.SetEnvironmentVariable("TEST_DB_CONNECTION", null);
-        await _container.DisposeAsync();
+        if (failures.Count > 0)
+        {
+            throw new AggregateException("Owned PostgreSQL test cleanup failed.", failures);
+        }
     }
 }
 
@@ -124,12 +174,14 @@ internal sealed class OwnedTemplateDatabase : IAsyncDisposable
     private readonly string _connection;
     private readonly Func<string, CancellationToken, Task> _delete;
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly TimeSpan _drainTimeout;
     internal Task<string> Initialization { get; }
 
     internal OwnedTemplateDatabase(
         string adminConnection,
         Func<string, CancellationToken, Task> migrate,
-        Func<string, CancellationToken, Task> delete
+        Func<string, CancellationToken, Task> delete,
+        TimeSpan? drainTimeout = null
     )
     {
         _connection = new NpgsqlConnectionStringBuilder(adminConnection)
@@ -138,6 +190,7 @@ internal sealed class OwnedTemplateDatabase : IAsyncDisposable
             Pooling = false,
         }.ConnectionString;
         _delete = delete;
+        _drainTimeout = drainTimeout ?? TimeSpan.FromSeconds(30);
         Initialization = Initialize(migrate);
         // Even a provider that ignores cancellation and outlives the bounded drain remains
         // owned by this object; its eventual fault is observed and Initialize cleans it up.
@@ -185,7 +238,7 @@ internal sealed class OwnedTemplateDatabase : IAsyncDisposable
         await _lifetime.CancelAsync();
         try
         {
-            await Initialization.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+            await Initialization.WaitAsync(_drainTimeout, CancellationToken.None);
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
         {
