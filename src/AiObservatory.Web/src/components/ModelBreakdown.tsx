@@ -10,7 +10,7 @@ import {
 } from '../config/providers'
 import { SearchIcon } from '../design/SearchIcon'
 import { formatGbp, useUsdToGbp } from '../lib/currency'
-import { observedTokens } from '../lib/costSummary'
+import { observedTokens, usageRecordExplanation } from '../lib/costSummary'
 import { providerColor } from '../theme/providerColors'
 
 /* eslint-disable react-refresh/only-export-components -- focused tests exercise the table's pure evidence grouping */
@@ -245,6 +245,7 @@ export function ModelBreakdown() {
         </div>
       </div>
 
+      <p>{usageRecordExplanation}</p>
       {visibleRows.length === 0 ? (
         <p className="panel-empty">No matching models found.</p>
       ) : (
@@ -264,7 +265,7 @@ export function ModelBreakdown() {
                 <th>Basis</th>
                 <SortableHeader
                   field="requests"
-                  label="Requests"
+                  label="Records"
                   sortField={sortField}
                   sortDirection={sortDirection}
                   onSort={sort}

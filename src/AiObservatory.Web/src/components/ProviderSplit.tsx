@@ -3,7 +3,7 @@ import type { ValueType } from 'recharts/types/component/DefaultTooltipContent'
 import type { DailyAggregate } from '../api/client'
 import { useAggregates } from '../api/queries'
 import { PROVIDER_ORDER, providerDisplayName } from '../config/providers'
-import { observedTokens } from '../lib/costSummary'
+import { observedTokens, usageRecordExplanation } from '../lib/costSummary'
 import { providerColor } from '../theme/providerColors'
 
 /* eslint-disable react-refresh/only-export-components -- focused tests exercise the chart's pure evidence shaping without Recharts internals */
@@ -79,7 +79,7 @@ const ChartInner = lazy(() =>
                 const measured =
                   mode === 'notional'
                     ? amount.toLocaleString(undefined, { style: 'currency', currency: 'USD' })
-                    : `${amount.toLocaleString()} ${mode === 'tokens' ? 'tokens' : 'requests'}`
+                    : `${amount.toLocaleString()} ${mode === 'tokens' ? 'tokens' : amount === 1 ? 'usage record' : 'usage records'}`
                 return `${measured} · ${share.toFixed(1)}%`
               }}
             />
@@ -115,11 +115,12 @@ export function ProviderSplit({ from, to }: Props) {
                 setMode(option)
               }}
             >
-              {option === 'notional' ? 'Notional' : option === 'tokens' ? 'Tokens' : 'Activity'}
+              {option === 'notional' ? 'Notional' : option === 'tokens' ? 'Tokens' : 'Records'}
             </button>
           ))}
         </div>
       </div>
+      {mode === 'activity' && <p>{usageRecordExplanation}</p>}
       {isLoading ? (
         <div style={{ height: 200 }} className="chart-skeleton" />
       ) : data.length === 0 ? (

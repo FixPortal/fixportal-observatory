@@ -10,22 +10,22 @@ The `Model breakdown` table lists usage for the same 31-day window as the rest o
 
 One row is one combination of provider, model, source, scope and basis. The same model under two bases, or from two sources, is two rows. Rows are never merged across bases, so each cost keeps its meaning. See [Concepts](/docs/concepts#why-totals-never-mix).
 
-| Column      | Meaning                                                                                    |
-| ----------- | ------------------------------------------------------------------------------------------ |
-| `Model`     | The model name, with a provider-coloured dot and the provider name under it.               |
-| `Source`    | The data source's display name.                                                            |
-| `Scope`     | `API`, `Subscription`, `Mixed` or `Unknown`.                                               |
-| `Basis`     | `Billed`, `Provider estimate`, `List-price estimate`, `Notional`, `None` or `Unknown`.     |
-| `Requests`  | Total requests in the window.                                                              |
-| `Cost`      | The row's cost in pounds, with a bar sized against the largest reported cost in the table. |
-| `Cost / 1M` | Cost per million observed tokens.                                                          |
+| Column      | Meaning                                                                                                                 |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `Model`     | The model name, with a provider-coloured dot and the provider name under it.                                            |
+| `Source`    | The data source's display name.                                                                                         |
+| `Scope`     | `API`, `Subscription`, `Mixed` or `Unknown`.                                                                            |
+| `Basis`     | `Billed`, `Provider estimate`, `List-price estimate`, `Notional`, `None` or `Unknown`.                                  |
+| `Records`   | Stored usage records in the window, including records corrected to zero. A record may summarize many provider requests. |
+| `Cost`      | The row's cost in pounds, with a bar sized against the largest reported cost in the table.                              |
+| `Cost / 1M` | Cost per million observed tokens.                                                                                       |
 
 ### How Cost and Cost / 1M are computed
 
 - **Cost** is the sum of the row's daily costs in US dollars, converted to pounds at the live rate. See [Concepts](/docs/concepts#currency).
-- A row has a reported cost when it has more requests than unknown-cost requests. Otherwise `Cost` reads `Not reported`.
-- A row with some unreported requests still shows its known cost, with a line such as `2 observations not reported`.
-- **Cost / 1M** is cost divided by observed tokens, multiplied by one million. Observed tokens are input, cache-read, cache-write and output tokens together. It is shown only when every request in the row has a cost and the row has tokens. Otherwise it reads `Not reported`.
+- A row has a reported cost when it has more records than unknown-cost records. Otherwise `Cost` reads `Not reported`.
+- A row with some records with unreported value still shows its known cost, with a line such as `2 observations not reported`.
+- **Cost / 1M** is cost divided by observed tokens, multiplied by one million. Observed tokens are input, cache-read, cache-write and output tokens together. It is shown only when every record in the row has a cost and the row has tokens. Otherwise it reads `Not reported`.
 - The tooltip on the `Cost / 1M` header says "Cost per 1 million input and output tokens". The calculation also includes cache-read and cache-write tokens in the divisor.
 - A row with basis `None` has a known cost of zero and shows `£0.00`.
 
@@ -33,7 +33,7 @@ One row is one combination of provider, model, source, scope and basis. The same
 
 - The `Search evidence...` box matches the model name, provider, source, scope and basis labels. It ignores case.
 - The provider chips, starting with `All`, filter to one provider. The chips list providers in a fixed order, with unknown providers last.
-- Click a column header to sort by `Model`, `Requests`, `Cost` or `Cost / 1M`; click again to reverse. The default is `Cost` descending. A first click on `Model` sorts ascending; the other columns sort descending first.
+- Click a column header to sort by `Model`, `Records`, `Cost` or `Cost / 1M`; click again to reverse. The default is `Cost` descending. A first click on `Model` sorts ascending; the other columns sort descending first.
 - Rows with no reported cost count as lower than any reported cost, so they come last when sorting `Cost` or `Cost / 1M` descending (the default for those columns) and first when ascending.
 - `No matching models found.` means the filters hide every row. `No usage data for this period.` means there were no aggregates at all.
 
@@ -45,7 +45,7 @@ The `Provider usage share` donut shows each provider's share of one measure. Use
 | ---------- | ----------------------------------------------- |
 | `Notional` | Notional cost with a known value, in US dollars |
 | `Tokens`   | Observed tokens                                 |
-| `Activity` | Request count                                   |
+| `Records`  | Usage record count                              |
 
 The chart is described in [Overview](/docs/overview#provider-usage-share). The tooltip shows the amount and the share together, with the share to one decimal place.
 

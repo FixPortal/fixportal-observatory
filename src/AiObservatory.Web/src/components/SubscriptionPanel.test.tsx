@@ -99,11 +99,11 @@ describe('SubscriptionPanel', () => {
     )
 
     expect(screen.getByText('Not reported')).toBeInTheDocument()
-    expect(screen.getByText('7 requests recorded · value not reported')).toBeInTheDocument()
+    expect(screen.getByText('7 usage records · value not reported')).toBeInTheDocument()
     expect(screen.queryByText('£0.00')).not.toBeInTheDocument()
   })
 
-  test('qualifies a partial monetary value with the unpriced request count', () => {
+  test('qualifies a partial monetary value with the unpriced record count', () => {
     mockData.aggregates = [
       {
         provider: 'google',
@@ -122,6 +122,6 @@ describe('SubscriptionPanel', () => {
     )
 
     expect(screen.getByText('£5.00')).toBeInTheDocument()
-    expect(screen.getByText(/2 requests not reported/)).toBeInTheDocument()
+    expect(screen.getByText(/2 records with unreported value/)).toBeInTheDocument()
   })
 })
