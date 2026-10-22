@@ -216,6 +216,39 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
             .Equal(AuditCanonicalJson.Serialize(offline.Result));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PresentationProbe_RequiresRequestedNonExcludedParentCheck(bool excluded)
+    {
+        var id = await Seed([CheckCode.EventAggregation], excluded ? [CheckCode.PresentationTotals] : []);
+        using var scope = _factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<AuditStore>();
+        var snapshot = (await store.ReadSnapshotAsync(id, Ct))!;
+        var input = AuditCanonicalJson.Deserialize<AuditInput>(snapshot.Bytes);
+        var probe = new FrozenPresentationProbe(
+            snapshot.Sha256,
+            "synthetic-build",
+            "synthetic-source",
+            AiObservatory.Audit.Checks.PresentationTotalsCheck.SummaryInputDigest(input),
+            []
+        );
+        using var admin = _factory.CreateAdminClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/audits/runs/{id}/presentation-probe")
+        {
+            Content = new StringContent(
+                "{\"schemaVersion\":1,\"probe\":" + Encoding.UTF8.GetString(AuditCanonicalJson.Serialize(probe)) + "}",
+                Encoding.UTF8,
+                "application/json"
+            ),
+        };
+        request.Headers.Add("Idempotency-Key", "disallowed-probe");
+        var response = await admin.SendAsync(request, Ct);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync(Ct)).Should().Contain("presentation_check_not_requested");
+        (await store.ListRunsAsync(null, null, 200, Ct)).Should().ContainSingle();
+    }
+
     [Fact]
     public async Task AlteredRetainedSnapshot_IsRejectedBeforeExport()
     {
@@ -398,7 +431,7 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
         }
     }
 
-    private async Task<Guid> Seed()
+    private async Task<Guid> Seed(CheckCode[]? requestedChecks = null, CheckCode[]? excludedChecks = null)
     {
         using var scope = _factory.Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<AuditStore>();
@@ -412,8 +445,8 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
                 new(2026, 10, 20),
                 new(2026, 10, 20),
                 [new(machine.MachineId, "synthetic")],
-                [CheckCode.PresentationTotals],
-                [],
+                requestedChecks ?? [CheckCode.PresentationTotals],
+                excludedChecks ?? [],
                 true
             ),
         };

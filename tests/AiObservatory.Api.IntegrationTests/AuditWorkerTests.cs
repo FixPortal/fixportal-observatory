@@ -86,6 +86,78 @@ public sealed class AuditWorkerTests : IAsyncLifetime
         run.DiagnosticCode.Should().Be("capture_deadline");
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task CancelCollectingRun_ReleasesCaptureCapacityAndFencesUploads(bool claimed, bool revisioned)
+    {
+        _audit.MaxOutstandingRequestsPerMachine = 1;
+        var machine = await _store.RegisterMachineAsync(new byte[32], Ct);
+        var id = await Runs.CreateAsync(new(Scope(machine.MachineId), [], true), "cancel-capture", Ct);
+        var lease = claimed
+            ? (await _store.TryClaimCaptureAsync(machine.MachineId, machine.CredentialId, Now, Ct))!
+            : null;
+        if (revisioned)
+        {
+            (await _store.CancelRunAsync(id, (await _store.GetRunAsync(id, Ct))!.Revision, Ct)).Should().BeTrue();
+        }
+        else
+        {
+            await _store.CancelRunAsync(id, Ct);
+        }
+        (await _store.TryClaimCaptureAsync(machine.MachineId, machine.CredentialId, Now, Ct)).Should().BeNull();
+        await Runs.CreateAsync(new(Scope(machine.MachineId), [], true), "next-capture", Ct);
+        if (lease != null)
+        {
+            byte[] bytes =
+            [
+                .. AuditCanonicalJson.Serialize(
+                    new SourceUsageRecord
+                    {
+                        MachineId = machine.MachineId,
+                        SourceId = "claude-local",
+                        SourceFormat = "claude-jsonl",
+                        SourceVersion = "1",
+                        Tool = SourceTool.Claude,
+                        Kind = UsageRecordKind.SessionMetadata,
+                        Generation = "g1",
+                        FileId = "synthetic-file",
+                        Sequence = 1,
+                        Timestamp = Now.ToDateTimeOffset(),
+                        Pricing = new(ServiceTier.Unknown, false, null, null),
+                        Closure = new(ClosureState.Unknown, null, null),
+                    }
+                ),
+                10,
+            ];
+            var upload = () => _store.PutChunkAsync(lease, 0, bytes, AuditCanonicalJson.ContentHash(bytes), Ct);
+            (await upload.Should().ThrowAsync<AuditStoreException>()).Which.Code.Should().Be("capture_lease_conflict");
+            var seal = () => Seal(lease);
+            (await seal.Should().ThrowAsync<AuditStoreException>()).Which.Code.Should().Be("capture_lease_conflict");
+        }
+    }
+
+    [Fact]
+    public async Task CancelCollectingRun_PreservesRequestNeededByAnotherActiveRun()
+    {
+        var machine = await _store.RegisterMachineAsync(new byte[32], Ct);
+        var first = await Runs.CreateAsync(new(Scope(machine.MachineId), [], true), "shared-first", Ct);
+        var lease = (await _store.TryClaimCaptureAsync(machine.MachineId, machine.CredentialId, Now, Ct))!;
+        var second = await Runs.CreateAsync(new(Scope(machine.MachineId), [], false), "shared-second", Ct);
+        // Arrange a shared dependency directly: the public wizard currently creates distinct requests.
+        await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE \"AuditRuns\" SET \"CaptureRequestIds\" = {new[] { lease.RequestId }}, \"State\" = 'collecting' WHERE \"Id\" = {second}",
+            Ct
+        );
+        _db.ChangeTracker.Clear();
+        await _store.CancelRunAsync(first, Ct);
+        await Seal(lease);
+        await Worker.ExecuteOneAsync(Guid.NewGuid(), Ct);
+        (await _store.GetRunAsync(second, Ct))!.State.Should().Be("completed");
+    }
+
     [Fact]
     public async Task Publication_RequiresImmutableInput()
     {

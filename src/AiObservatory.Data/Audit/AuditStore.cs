@@ -931,6 +931,40 @@ public sealed partial class AuditStore
 
     private async Task Complete(AuditRun run, string state, string? diagnostic, Instant now, CancellationToken ct)
     {
+        if (state == "cancelled")
+        {
+            // Cancellation shares the evidence transaction/lock with claims, uploads and seals.
+            // Retain a shared request while another active run still needs it.
+            var requests = await _db.Set<AuditCaptureRequest>()
+                .Where(r => run.CaptureRequestIds.Contains(r.Id) && (r.State == "pending" || r.State == "uploading"))
+                .ToArrayAsync(ct);
+            foreach (var request in requests)
+            {
+                if (
+                    await _db.Set<AuditRun>()
+                        .AnyAsync(
+                            other =>
+                                other.Id != run.Id
+                                && other.CaptureRequestIds.Contains(request.Id)
+                                && (
+                                    other.State == "collecting" || other.State == "queued" || other.State == "executing"
+                                ),
+                            ct
+                        )
+                )
+                {
+                    continue;
+                }
+                request.State = "expired";
+                request.Deadline = now;
+                request.LeaseToken = null;
+                request.LeaseExpiresAt = null;
+                request.Revision++;
+                request.UploadedBytes = 0;
+                request.RecordCount = 0;
+                await _db.Set<AuditEvidenceChunk>().Where(c => c.RequestId == request.Id).ExecuteDeleteAsync(ct);
+            }
+        }
         var retention = await Retention(ct);
         run.State = state;
         run.Stage = state;
