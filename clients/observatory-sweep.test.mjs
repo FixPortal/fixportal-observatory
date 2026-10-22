@@ -1178,67 +1178,174 @@ test('replacement plans active snapshots before tombstones in both lexical key d
   }
 })
 
-test('Claude band reconciliation converges after every persisted posting boundary and leaves one old posting', () => {
-  const records = parseClaude([
-    claudePromptRow({ input_tokens: 70000, cache_read_input_tokens: 10000, cache_creation_input_tokens: 20000,
-      cache_creation: { ephemeral_5m_input_tokens: 5000, ephemeral_1h_input_tokens: 15000 },
-      output_tokens: 3, thinking_tokens: 2 }, { id: 'lower' }),
-    claudePromptRow({ input_tokens: 100001, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 5, thinking_tokens: 4 }, { id: 'upper' }),
-    claudePromptRow({ input_tokens: 17, output_tokens: 7, thinking_tokens: 8 }, { id: 'unknown' }),
-    claudePromptRow({ input_tokens: 11, output_tokens: 2 }, { id: 'flat', model: 'claude-opus-5' }),
-  ].join('\n'))
-  const snapshots = buildDailySnapshots(records, TEST_MACHINE)
-  // Invented exact-cent amounts exercise cumulative corrections only; provider pricing
-  // and unknown-band admission are covered by the real Data service tests.
-  const cents = { prompt_le_100000: 12, prompt_gt_100000: 34, prompt_unknown: null, flat: 5 }
-  for (const snapshot of snapshots) {
-    const lane = snapshot.eventKey.split(':').at(-1)
-    const amount = lane === 'unknown' ? cents.flat : cents[lane]
-    snapshot.costUsd = amount === null ? null : amount / 100
-  }
-  const flatKey = 'claude:2026-10-22:claude-opus-5:unknown:unknown:unknown'
-  const oldKey = 'claude:2026-10-22:claude-haiku-5-5:unknown:unknown:unknown'
-  const old = { ...snapshots[0], eventKey: oldKey, inputTokens: 170018, outputTokens: 15,
-    cacheReadTokens: 10000, cacheWriteTokens: 20000, cacheWrite1hTokens: 15000, thoughtTokens: 14, costUsd: 0.99,
-    rawPayload: '{"source":"observatory-sweep","tool":"claude","machine":"test-machine","thinking_tokens":14}' }
-  const flat = snapshots.find(snapshot => snapshot.eventKey === flatKey)
-  const initial = [old, flat]
-  const firstPlan = planSnapshotSubmissions(snapshots, initial)
-  assert.deepEqual(firstPlan.map(item => item.active), [true, true, true, true, false])
-  assert.equal(firstPlan.at(-1).snapshot.eventKey, oldKey)
-  const identity = snapshot => `${snapshot.sourceId}\n${snapshot.eventKey}`
-  const totals = ledger => {
-    const rows = [...ledger.values()]
-    return [
-      ...['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'cacheWrite1hTokens', 'thoughtTokens']
-        .map(counter => rows.reduce((sum, row) => sum + (row[counter] ?? 0), 0)),
-      rows.reduce((sum, row) => sum + (row.costUsd === null ? 0 : Math.round(row.costUsd * 100)), 0),
-      rows.filter(row => row.costUsd === null && !JSON.parse(row.rawPayload).tombstone).length,
-    ]
-  }
-  const apply = (ledger, { snapshot }) => ledger.set(identity(snapshot), structuredClone(snapshot))
-  // Prefix 0 is before the first active; 1..4 stop after each active, including
-  // immediately before the zero correction; 5 stops immediately after it.
-  for (let stop = 0; stop <= firstPlan.length; stop++) {
-    let ledger = new Map(initial.map(snapshot => [identity(snapshot), structuredClone(snapshot)]))
-    for (const submission of firstPlan.slice(0, stop)) { apply(ledger, submission) }
-    if (stop === 4) {
-      assert.deepEqual(totals(ledger), [340047, 32, 20000, 40000, 30000, 28, 150, 1], 'active-first overlap contains both the old mixed row and all replacements')
+test("Claude band reconciliation converges after every persisted posting boundary and leaves one old posting", () => {
+    const records = parseClaude(
+        [
+            claudePromptRow(
+                {
+                    input_tokens: 70000,
+                    cache_read_input_tokens: 10000,
+                    cache_creation_input_tokens: 20000,
+                    cache_creation: {
+                        ephemeral_5m_input_tokens: 5000,
+                        ephemeral_1h_input_tokens: 15000,
+                    },
+                    output_tokens: 3,
+                    thinking_tokens: 2,
+                },
+                { id: "lower" },
+            ),
+            claudePromptRow(
+                {
+                    input_tokens: 100001,
+                    cache_read_input_tokens: 0,
+                    cache_creation_input_tokens: 0,
+                    output_tokens: 5,
+                    thinking_tokens: 4,
+                },
+                { id: "upper" },
+            ),
+            claudePromptRow(
+                { input_tokens: 17, output_tokens: 7, thinking_tokens: 8 },
+                { id: "unknown" },
+            ),
+            claudePromptRow(
+                { input_tokens: 11, output_tokens: 2 },
+                { id: "flat", model: "claude-opus-5" },
+            ),
+        ].join("\n"),
+    );
+    const snapshots = buildDailySnapshots(records, TEST_MACHINE);
+    // Invented exact-cent amounts exercise cumulative corrections only; provider pricing
+    // and unknown-band admission are covered by the real Data service tests.
+    const cents = {
+        prompt_le_100000: 12,
+        prompt_gt_100000: 34,
+        prompt_unknown: null,
+        flat: 5,
+    };
+    for (const snapshot of snapshots) {
+        const lane = snapshot.eventKey.split(":").at(-1);
+        const amount = lane === "unknown" ? cents.flat : cents[lane];
+        snapshot.costUsd = amount === null ? null : amount / 100;
     }
-    // Lose all in-memory/local state. The next planner sees only persisted server
-    // inventory, including zero-corrected rows; no remembered success is assumed.
-    ledger = new Map(JSON.parse(JSON.stringify([...ledger])).map(([key, row]) => [key, row]))
-    for (const submission of planSnapshotSubmissions(snapshots, [...ledger.values()])) { apply(ledger, submission) }
-    assert.deepEqual(totals(ledger), [170029, 17, 10000, 20000, 15000, 14, 51, 1], `stop=${stop}`)
-    assert.equal(ledger.size, 5, 'four current keys plus the retained old zero posting')
-    assert.equal(ledger.get(identity(old)).inputTokens, 0)
-    assert.equal(JSON.parse(ledger.get(identity(old)).rawPayload).tombstone, true)
-    assert.deepEqual(ledger.get(identity(flat)), flat, 'flat identity and payload remain unchanged')
-    const settled = [...ledger]
-    for (const submission of planSnapshotSubmissions(snapshots, [...ledger.values()])) { apply(ledger, submission) }
-    assert.deepEqual([...ledger], settled, 'another complete retry cannot add keys, tokens or money')
-  }
-})
+    const flatKey = "claude:2026-10-22:claude-opus-5:unknown:unknown:unknown";
+    const oldKey = "claude:2026-10-22:claude-haiku-5-5:unknown:unknown:unknown";
+    const old = {
+        ...snapshots[0],
+        eventKey: oldKey,
+        inputTokens: 170018,
+        outputTokens: 15,
+        cacheReadTokens: 10000,
+        cacheWriteTokens: 20000,
+        cacheWrite1hTokens: 15000,
+        thoughtTokens: 14,
+        costUsd: 0.99,
+        rawPayload:
+            '{"source":"observatory-sweep","tool":"claude","machine":"test-machine","thinking_tokens":14}',
+    };
+    const flat = snapshots.find((snapshot) => snapshot.eventKey === flatKey);
+    const initial = [old, flat];
+    const firstPlan = planSnapshotSubmissions(snapshots, initial);
+    assert.deepEqual(
+        firstPlan.map((item) => item.active),
+        [true, true, true, true, false],
+    );
+    assert.equal(firstPlan.at(-1).snapshot.eventKey, oldKey);
+    const identity = (snapshot) => `${snapshot.sourceId}\n${snapshot.eventKey}`;
+    const totals = (ledger) => {
+        const rows = [...ledger.values()];
+        return [
+            ...[
+                "inputTokens",
+                "outputTokens",
+                "cacheReadTokens",
+                "cacheWriteTokens",
+                "cacheWrite1hTokens",
+                "thoughtTokens",
+            ].map((counter) =>
+                rows.reduce((sum, row) => sum + (row[counter] ?? 0), 0),
+            ),
+            rows.reduce(
+                (sum, row) =>
+                    sum +
+                    (row.costUsd === null ? 0 : Math.round(row.costUsd * 100)),
+                0,
+            ),
+            rows.filter(
+                (row) =>
+                    row.costUsd === null &&
+                    !JSON.parse(row.rawPayload).tombstone,
+            ).length,
+        ];
+    };
+    const apply = (ledger, { snapshot }) =>
+        ledger.set(identity(snapshot), structuredClone(snapshot));
+    // Prefix 0 is before the first active; 1..4 stop after each active, including
+    // immediately before the zero correction; 5 stops immediately after it.
+    for (let stop = 0; stop <= firstPlan.length; stop++) {
+        let ledger = new Map(
+            initial.map((snapshot) => [
+                identity(snapshot),
+                structuredClone(snapshot),
+            ]),
+        );
+        for (const submission of firstPlan.slice(0, stop)) {
+            apply(ledger, submission);
+        }
+        if (stop === 4) {
+            assert.deepEqual(
+                totals(ledger),
+                [340047, 32, 20000, 40000, 30000, 28, 150, 1],
+                "active-first overlap contains both the old mixed row and all replacements",
+            );
+        }
+        // Lose all in-memory/local state. The next planner sees only persisted server
+        // inventory, including zero-corrected rows; no remembered success is assumed.
+        ledger = new Map(
+            JSON.parse(JSON.stringify([...ledger])).map(([key, row]) => [
+                key,
+                row,
+            ]),
+        );
+        for (const submission of planSnapshotSubmissions(snapshots, [
+            ...ledger.values(),
+        ])) {
+            apply(ledger, submission);
+        }
+        assert.deepEqual(
+            totals(ledger),
+            [170029, 17, 10000, 20000, 15000, 14, 51, 1],
+            `stop=${stop}`,
+        );
+        assert.equal(
+            ledger.size,
+            5,
+            "four current keys plus the retained old zero posting",
+        );
+        assert.equal(ledger.get(identity(old)).inputTokens, 0);
+        assert.equal(
+            JSON.parse(ledger.get(identity(old)).rawPayload).tombstone,
+            true,
+        );
+        assert.deepEqual(
+            ledger.get(identity(flat)),
+            flat,
+            "flat identity and payload remain unchanged",
+        );
+        const settled = [...ledger];
+        for (const submission of planSnapshotSubmissions(snapshots, [
+            ...ledger.values(),
+        ])) {
+            apply(ledger, submission);
+        }
+        assert.deepEqual(
+            [...ledger],
+            settled,
+            "another complete retry cannot add keys, tokens or money",
+        );
+    }
+});
 
 test('parseLocalSources defaults to the active lanes, and an explicit allowlist re-enables dormant ones', () => {
   assert.deepEqual([...parseLocalSources()].sort(), [...sweep.DEFAULT_LOCAL_SOURCES].sort())
