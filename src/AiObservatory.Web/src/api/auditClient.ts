@@ -3,6 +3,8 @@ import { isReadonly } from '../auth/msal'
 import { summarizeFrozenPresentation } from './auditPresentation'
 import type {
   AuditCapabilities,
+  AuditRetention,
+  AuditDeletionImpact,
   AuditCreated,
   AuditCredential,
   AuditEvidencePage,
@@ -153,4 +155,32 @@ export async function verifyAuditPresentation(id: string, signal?: AbortSignal) 
     values: summary.values,
   })
   return { ...evaluation, diagnosticCodes: summary.diagnosticCodes }
+}
+
+export function getAuditRetention() {
+  writable()
+  return json<AuditRetention>('/retention')
+}
+export function updateAuditRetention(value: AuditRetention) {
+  writable()
+  return json<AuditRetention>('/retention', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(value),
+  })
+}
+export function getAuditDeletionImpact(id: string) {
+  writable()
+  return json<AuditDeletionImpact>(`/captures/${encodeURIComponent(id)}/deletion-impact`)
+}
+export async function deleteAuditCapture(impact: AuditDeletionImpact) {
+  writable()
+  await requestApi(`/audits/captures/${encodeURIComponent(impact.captureId)}`, {
+    method: 'DELETE',
+    headers: { 'If-Match': '"' + impact.impactDigest + '"' },
+  })
+}
+export async function deleteAuditRun(id: string) {
+  writable()
+  await requestApi(`/audits/runs/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }

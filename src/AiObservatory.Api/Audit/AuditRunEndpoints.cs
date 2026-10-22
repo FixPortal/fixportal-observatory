@@ -228,11 +228,14 @@ public static class AuditRunEndpoints
 
     private static object Summary(AuditRunView run)
     {
-        var result = run.Result == null ? null : AuditCanonicalJson.Deserialize<AuditResult>(run.Result);
+        var resultBytes = run.Result ?? run.SanitizedSummary;
+        var result = resultBytes == null ? null : AuditCanonicalJson.Deserialize<AuditResult>(resultBytes);
         return new
         {
             schemaVersion = 1,
             run.Id,
+            detailsAvailable = run.Result != null,
+            replayAvailable = run.State == "completed" && run.Result != null,
             state = run.State == "executing" || run.State == "collecting" ? run.Stage : run.State,
             stage = run.Stage,
             run.Attempts,

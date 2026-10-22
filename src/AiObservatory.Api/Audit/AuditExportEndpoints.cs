@@ -31,11 +31,15 @@ public static class AuditExportEndpoints
             "/{id:guid}/report",
             async (Guid id, AuditStore store, CancellationToken ct) =>
             {
-                var result = await AuditViewerProjection.ResultAsync(store, id, ct);
+                var run = await store.ReadReportAsync(id, ct);
+                var result = AuditViewerProjection.FromRun(run);
                 var report = AuditViewerProjection.Wire(
                     new
                     {
                         schemaVersion = 1,
+                        detailsAvailable = run.Result != null,
+                        originalResultHash = run.OriginalResultHash,
+                        summaryKind = run.Result != null ? "detailedProjection" : "retainedSanitizedSummary",
                         result.Verdict,
                         result.VerifierVersion,
                         result.RuleVersion,
@@ -64,9 +68,20 @@ public static class AuditExportEndpoints
                 "/{id:guid}/bundle",
                 async (Guid id, AuditReportService service, CancellationToken ct) =>
                 {
-                    using var output = new MemoryStream();
-                    await service.WriteBundleAsync(id, output, ct);
-                    return Results.File(output.ToArray(), "application/zip", $"audit-{id:D}.zip");
+                    var session = await service.OpenAsync(id, ct);
+                    try
+                    {
+                        var zip = await AuditReportService.PrepareBundleAsync(session);
+                        return new AuditLeasedHttpResult(
+                            session,
+                            Results.Stream(zip, "application/zip", $"audit-{id:D}.zip")
+                        );
+                    }
+                    catch
+                    {
+                        await session.DisposeAsync();
+                        throw;
+                    }
                 }
             );
     }

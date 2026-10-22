@@ -74,6 +74,7 @@ public class AiObservatoryDbContext(DbContextOptions<AiObservatoryDbContext> opt
         modelBuilder.ApplyConfiguration(new AuditServerSnapshotConfiguration());
         modelBuilder.ApplyConfiguration(new AuditFindingRecordConfiguration());
         modelBuilder.ApplyConfiguration(new AuditRetentionSettingsConfiguration());
+        modelBuilder.ApplyConfiguration(new AuditExportReadLeaseConfiguration());
         modelBuilder.Entity<UsageEvent>(b =>
         {
             b.Property(e => e.Provider).HasConversion<string>();

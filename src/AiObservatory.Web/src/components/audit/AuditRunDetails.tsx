@@ -74,6 +74,8 @@ export function AuditRunDetails({
   const expired =
     run.replayExpiresAt !== null &&
     new Date(run.replayExpiresAt).getTime() <= systemClock.now().getTime()
+  const detailsAvailable = !expired && run.detailsAvailable !== false
+  const replayAvailable = detailsAvailable && run.replayAvailable !== false
   const actionError =
     actions.cancel.error ?? actions.proceed.error ?? actions.replay.error ?? actions.probe.error
   const reportAction = (
@@ -135,7 +137,7 @@ export function AuditRunDetails({
         <div>
           <dt>Replay deadline</dt>
           <dd>
-            {run.replayExpiresAt ?? 'Not reported'}
+            {run.replayExpiresAt ?? (detailsAvailable ? 'Indefinite' : 'Unavailable')}
             {expired && ' · expired'}
           </dd>
         </div>
@@ -205,7 +207,7 @@ export function AuditRunDetails({
               <>
                 <Button
                   variant="ghost"
-                  disabled={expired || actions.replay.isPending}
+                  disabled={!replayAvailable || actions.replay.isPending}
                   onClick={() => {
                     actions.replay.mutate(id, {
                       onSuccess: (value) => {
@@ -217,7 +219,7 @@ export function AuditRunDetails({
                   Replay retained inputs
                 </Button>
                 <Button
-                  disabled={expired || !presentationRequested || actions.probe.isPending}
+                  disabled={!detailsAvailable || !presentationRequested || actions.probe.isPending}
                   onClick={() => {
                     actions.probe.mutate(id, {
                       onSuccess: (value) => {
@@ -234,7 +236,7 @@ export function AuditRunDetails({
                 {reportAction}
                 <Button
                   variant="ghost"
-                  disabled={downloading}
+                  disabled={!detailsAvailable || downloading}
                   onClick={() => {
                     void download('bundle')
                   }}
@@ -265,8 +267,14 @@ export function AuditRunDetails({
       {(actionError ?? downloadError) && (
         <p role="alert">{actionError?.message ?? downloadError}</p>
       )}
-      <AuditFindingsTable id={id} ready={run.state === 'completed'} />
-      {!readOnly && run.state === 'completed' && (
+      {!detailsAvailable && run.state === 'completed' && (
+        <p className="audit-notice">
+          Detailed evidence is unavailable. Replay and detailed downloads are lost; the sanitized
+          report remains available until its summary deadline.
+        </p>
+      )}
+      <AuditFindingsTable id={id} ready={run.state === 'completed' && detailsAvailable} />
+      {!readOnly && run.state === 'completed' && detailsAvailable && (
         <CollapsiblePanel
           id={`audit-evidence-${id}`}
           title="Detailed sanitized evidence"

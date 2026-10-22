@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using AiObservatory.Api.Audit;
 using AiObservatory.Audit;
 using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
@@ -43,6 +44,42 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
     {
         await _factory.DisposeAsync();
         _ceiling.Dispose();
+    }
+
+    [Fact]
+    public async Task Retention_AdminOnlyFutureSettings_ViewerReportSurvivesExactDetailExpiry()
+    {
+        var id = await Seed();
+        using var admin = _factory.CreateAdminClient();
+        using var viewer = _factory.CreateReadOnlyClient();
+        var settings = await admin.GetFromJsonAsync<JsonElement>("/api/audits/retention", Ct);
+        settings.GetProperty("evidenceDays").GetInt32().Should().Be(90);
+        settings.GetProperty("summaryDays").GetInt32().Should().Be(365);
+        (await viewer.GetAsync("/api/audits/retention", Ct)).IsSuccessStatusCode.Should().BeFalse();
+        (await viewer.PatchAsJsonAsync("/api/audits/retention", new { evidenceDays = 1, summaryDays = 1 }, Ct))
+            .IsSuccessStatusCode.Should()
+            .BeFalse();
+        (await admin.PatchAsJsonAsync("/api/audits/retention", new { evidenceDays = 36501, summaryDays = 1 }, Ct))
+            .StatusCode.Should()
+            .Be(HttpStatusCode.BadRequest);
+        (
+            await admin.PatchAsJsonAsync(
+                "/api/audits/retention",
+                new { evidenceDays = (int?)null, summaryDays = (int?)null },
+                Ct
+            )
+        )
+            .StatusCode.Should()
+            .Be(HttpStatusCode.OK);
+        _clock.Advance(Duration.FromDays(90));
+        (await admin.GetAsync($"/api/audits/runs/{id}/bundle", Ct)).StatusCode.Should().Be(HttpStatusCode.Gone);
+        var report = await viewer.GetFromJsonAsync<JsonElement>($"/api/audits/runs/{id}/report", Ct);
+        report.GetProperty("detailsAvailable").GetBoolean().Should().BeFalse();
+        report.GetProperty("originalResultHash").GetString().Should().HaveLength(64);
+        report.GetProperty("findings").GetArrayLength().Should().Be(0);
+        report.ToString().Should().NotContain("secret-session").And.NotContain("pricingEquation");
+        _clock.Advance(Duration.FromDays(275));
+        (await viewer.GetAsync($"/api/audits/runs/{id}/report", Ct)).StatusCode.Should().Be(HttpStatusCode.Gone);
     }
 
     [Fact]
@@ -230,6 +267,98 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
             .Should()
             .BeTrue();
         total.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task Retention_ActiveExport_DeletionWaitsForCancellationAndReleaseOutsideLock()
+    {
+        var id = await Seed();
+        using var exportScope = _factory.Services.CreateScope();
+        var store = exportScope.ServiceProvider.GetRequiredService<AuditStore>();
+        var input = AuditCanonicalJson.Deserialize<AuditInput>((await store.ReadSnapshotAsync(id, Ct))!.Bytes);
+        var capture = input.Captures.Single().CaptureId;
+        var impact = await store.GetDeletionImpactAsync(capture, Ct);
+        var temporaryBefore = Directory.GetFiles(Path.GetTempPath(), "aiobs-audit-*.zip");
+        await using var output = new ExportGateStream(Ct);
+        var exporting = exportScope
+            .ServiceProvider.GetRequiredService<AuditReportService>()
+            .WriteBundleAsync(id, output, Ct);
+        await output.Started.Task.WaitAsync(Ct);
+        using var admin = _factory.CreateAdminClient();
+        using var deletion = new HttpRequestMessage(HttpMethod.Delete, $"/api/audits/captures/{capture}");
+        deletion.Headers.IfMatch.ParseAdd("\"" + impact.ImpactDigest + "\"");
+        var deleting = admin.SendAsync(deletion, Ct);
+        await output.Cancelled.Task.WaitAsync(Ct);
+        try
+        {
+            deleting
+                .IsCompleted.Should()
+                .BeFalse("the active writer has observed cancellation but not released its read lease");
+            (await admin.GetAsync($"/api/audits/runs/{id}/bundle", Ct)).StatusCode.Should().Be(HttpStatusCode.Gone);
+            using var checkScope = _factory.Services.CreateScope();
+            var db = checkScope.ServiceProvider.GetRequiredService<AiObservatory.Data.AiObservatoryDbContext>();
+            (
+                await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
+                    Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.SqlQueryRaw<int>(
+                        db.Database,
+                        "SELECT count(*)::int AS \"Value\" FROM \"AuditEvidenceChunks\""
+                    ),
+                    Ct
+                )
+            )
+                .Should()
+                .Be(2);
+        }
+        finally
+        {
+            output.Release.TrySetResult();
+        }
+        var failed = async () => await exporting;
+        await failed.Should().ThrowAsync<OperationCanceledException>();
+        (await deleting).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        Directory.GetFiles(Path.GetTempPath(), "aiobs-audit-*.zip").Except(temporaryBefore).Should().BeEmpty();
+    }
+
+    private sealed class ExportGateStream(CancellationToken testToken) : Stream
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() { }
+
+        public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override async ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            using var registration = cancellationToken.Register(() => Cancelled.TrySetResult());
+            Started.TrySetResult();
+            await Release.Task.WaitAsync(testToken);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
     }
 
     private async Task<Guid> Seed()

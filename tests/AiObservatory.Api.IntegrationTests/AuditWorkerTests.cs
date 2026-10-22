@@ -452,6 +452,53 @@ public sealed class AuditWorkerTests : IAsyncLifetime
         (await _store.GetRunAsync(id, Ct))!.Result.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Retention_VerificationInFlight_DeletionOrEvidenceExpiryFencesLiveWorker(bool delete)
+    {
+        var machine = await _store.RegisterMachineAsync(new byte[32], Ct);
+        await _store.CreateCaptureRequestAsync(machine.MachineId, Scope(machine.MachineId), Now, Ct);
+        var capture = await Seal(
+            (await _store.TryClaimCaptureAsync(machine.MachineId, machine.CredentialId, Now, Ct))!
+        );
+        _clock.Advance(Duration.FromDays(90) - Duration.FromMinutes(1));
+        var id = await Runs.CreateAsync(new(Scope(machine.MachineId), [capture], false), "retention-race", Ct);
+        var gate = new VerificationGate();
+        await using var workerDb = new AiObservatoryDbContext(_options);
+        var executing = new AuditWorkerService(
+            workerDb,
+            new(workerDb, _clock, _audit),
+            _clock,
+            Options.Create(_audit),
+            _options,
+            gate
+        ).ExecuteOneAsync(Guid.NewGuid(), Ct);
+        await gate.Reached.Task.WaitAsync(Ct);
+        try
+        {
+            if (delete)
+            {
+                await _store.DeleteCaptureAsync(capture, await _store.CaptureDeletionImpactAsync(capture, Ct), Ct);
+            }
+            else
+            {
+                _clock.Advance(Duration.FromMinutes(1));
+                await _store.ExpireAsync(_clock.GetCurrentInstant(), Ct);
+            }
+        }
+        finally
+        {
+            gate.Release.TrySetResult();
+        }
+        await executing;
+        var run = (await _store.GetRunAsync(id, Ct))!;
+        run.Result.Should().BeNull();
+        run.State.Should().Be("failed");
+        var replay = () => Runs.ReplayAsync(id, "retention-race-replay", Ct);
+        (await replay.Should().ThrowAsync<AuditStoreException>()).Which.StatusCode.Should().Be(410);
+    }
+
     private sealed class VerificationGate : IAuditRunVerifier
     {
         public TaskCompletionSource Reached { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);

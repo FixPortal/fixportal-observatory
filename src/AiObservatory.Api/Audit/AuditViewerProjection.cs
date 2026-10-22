@@ -70,12 +70,17 @@ public static class AuditViewerProjection
 
     public static async Task<AuditResult> ResultAsync(AuditStore store, Guid id, CancellationToken ct)
     {
-        var run = await store.GetRunAsync(id, ct) ?? throw new AuditStoreException("run_not_found", 404);
-        if (run.Result == null)
+        return FromRun(await store.ReadReportAsync(id, ct));
+    }
+
+    public static AuditResult FromRun(AuditRunView run)
+    {
+        var bytes = run.Result ?? run.SanitizedSummary;
+        if (bytes == null)
         {
             throw new AuditStoreException("report_unavailable", 409);
         }
-        return AuditCanonicalJson.Deserialize<AuditResult>(run.Result);
+        return AuditCanonicalJson.Deserialize<AuditResult>(bytes);
     }
 
     public static object Page<T>(IReadOnlyList<T> items, HttpRequest request, string binding)

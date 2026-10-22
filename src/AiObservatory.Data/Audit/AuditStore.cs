@@ -551,6 +551,7 @@ public sealed partial class AuditStore
     public Task<bool> TryPublishAsync(RunLease lease, AuditResult result, CancellationToken ct)
     {
         var bytes = AuditCanonicalJson.Serialize(result);
+        var summary = SanitizedResult(result);
         return Transaction(
             async () =>
             {
@@ -579,6 +580,8 @@ public sealed partial class AuditStore
                 }
                 Require(result.InputContentDigest == snapshot.InputContentDigest, "result_input_mismatch", 409);
                 run.Result = bytes;
+                run.SanitizedSummary = summary;
+                run.ServerCutoff = snapshot.FrozenAt;
                 run.ResultHash = AuditCanonicalJson.ContentHash(bytes);
                 await Complete(run, "completed", null, now, ct);
                 for (var i = 0; i < result.Findings.Count; i++)
@@ -658,7 +661,11 @@ public sealed partial class AuditStore
     public Task<AuditRunView?> GetRunAsync(Guid runId, CancellationToken ct) =>
         _db.Set<AuditRun>()
             .AsNoTracking()
-            .Where(x => x.Id == runId && x.InstanceId == _instanceId)
+            .Where(x =>
+                x.Id == runId
+                && x.InstanceId == _instanceId
+                && (x.SummaryExpiresAt == null || x.SummaryExpiresAt > _clock.GetCurrentInstant())
+            )
             .Select(x => new AuditRunView(
                 x.Id,
                 x.State,
@@ -667,15 +674,19 @@ public sealed partial class AuditStore
                 x.DiagnosticCode,
                 x.EvidenceExpiresAt,
                 x.SummaryExpiresAt,
-                x.Result
+                x.EvidenceExpiresAt != null && x.EvidenceExpiresAt <= _clock.GetCurrentInstant() ? null : x.Result
             )
             {
+                SanitizedSummary = x.SanitizedSummary,
+                OriginalResultHash = x.ResultHash,
                 Stage = x.Stage,
                 CreatedAt = x.CreatedAt,
-                ServerCutoff = _db.Set<AuditServerSnapshot>()
-                    .Where(s => s.RunId == x.Id)
-                    .Select(s => (Instant?)s.FrozenAt)
-                    .FirstOrDefault(),
+                ServerCutoff =
+                    x.ServerCutoff
+                    ?? _db.Set<AuditServerSnapshot>()
+                        .Where(s => s.RunId == x.Id)
+                        .Select(s => (Instant?)s.FrozenAt)
+                        .FirstOrDefault(),
                 Scope = x.Scope,
                 PredecessorRunId = x.PredecessorRunId,
                 EvaluationOfRunId = x.EvaluationOfRunId,
@@ -809,46 +820,15 @@ public sealed partial class AuditStore
     public Task<string> CaptureDeletionImpactAsync(Guid captureId, CancellationToken ct) =>
         Transaction(() => Impact(captureId, ct), ct);
 
-    public Task DeleteCaptureAsync(Guid captureId, string impactDigest, CancellationToken ct) =>
-        Transaction(
-            async () =>
-            {
-                Require(await Impact(captureId, ct) == impactDigest, "deletion_impact_changed", 412);
-                var capture = await _db.Set<AuditEvidenceCapture>().SingleOrDefaultAsync(x => x.Id == captureId, ct);
-                Require(capture != null, "capture_not_found", 404);
-                var now = _clock.GetCurrentInstant();
-                if (capture.DeletedAt != null)
-                {
-                    return true;
-                }
-                capture.DeletedAt = now;
-                capture.Manifest = [];
-                capture.Revision++;
-                await _db.Set<AuditEvidenceChunk>().Where(x => x.RequestId == capture.RequestId).ExecuteDeleteAsync(ct);
-                var runs = await _db.Set<AuditRun>()
-                    .Where(x =>
-                        _db.Set<AuditRunCapture>().Any(link => link.CaptureId == captureId && link.RunId == x.Id)
-                    )
-                    .ToListAsync(ct);
-                foreach (var run in runs)
-                {
-                    if (!IsTerminal(run.State))
-                    {
-                        await Complete(run, "failed", "evidence_deleted", now, ct);
-                    }
-                    else
-                    {
-                        run.Revision++;
-                        run.DiagnosticCode = "evidence_deleted";
-                    }
-                    run.EvidenceExpiresAt = now;
-                    await _db.Set<AuditServerSnapshot>().Where(x => x.RunId == run.Id).ExecuteDeleteAsync(ct);
-                }
-                await _db.SaveChangesAsync(ct);
-                return true;
-            },
-            ct
-        );
+    public async Task DeleteCaptureAsync(Guid captureId, string impactDigest, CancellationToken ct)
+    {
+        await FenceCaptureDeletionAsync(captureId, impactDigest, ct);
+        while (!await PurgeUnavailableCaptureAsync(captureId, ct))
+        {
+            // Export cancellation and release happen outside EvidenceLockKey.
+            await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
+        }
+    }
 
     public Task UpdateRetentionAsync(int? evidenceDays, int? summaryDays, CancellationToken ct)
     {
@@ -987,9 +967,8 @@ public sealed partial class AuditStore
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == captureId, ct);
         Require(capture != null, "capture_not_found", 404);
-        var runs = await _db.Set<AuditRun>()
+        var runs = await DependentRuns(captureId, capture.RequestId)
             .AsNoTracking()
-            .Where(x => _db.Set<AuditRunCapture>().Any(link => link.CaptureId == captureId && link.RunId == x.Id))
             .OrderBy(x => x.Id)
             .Select(x => new { x.Id, x.Revision })
             .ToListAsync(ct);

@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import type { AuditRun, AuditScope } from '../api/auditTypes'
 import { SelfAuditPage } from './SelfAuditPage'
 
 const auth = vi.hoisted(() => ({
@@ -13,7 +14,7 @@ const auth = vi.hoisted(() => ({
 vi.mock('../auth/msal', () => auth)
 const machine = '11111111-1111-1111-1111-111111111111'
 const runId = '22222222-2222-2222-2222-222222222222'
-const scope = {
+const scope: AuditScope = {
   from: '2026-10-15',
   to: '2026-10-21',
   sources: [{ machineId: machine, sourceId: 'claude-local' }],
@@ -23,10 +24,12 @@ const scope = {
   predecessorRunId: null,
   evaluationOfRunId: null,
 }
-const completed = {
+const completed: AuditRun = {
   schemaVersion: 1,
   id: runId,
   state: 'completed',
+  detailsAvailable: true,
+  replayAvailable: true,
   stage: 'completed',
   attempts: 1,
   diagnosticCode: null,
@@ -82,7 +85,8 @@ beforeEach(() => {
       if (errorPath && path.includes(errorPath))
         return new Response('Evidence expired', { status: 410 })
       let data: unknown
-      if (path === '/capabilities')
+      if (path === '/retention') data = { evidenceDays: 90, summaryDays: 365 }
+      else if (path === '/capabilities')
         data = {
           schemaVersion: 1,
           enabled: true,
@@ -273,9 +277,7 @@ test('expired replay is unavailable and report/export errors remain visible', as
   errorPath = '/report'
   await user.click(screen.getByRole('button', { name: 'Download report' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('Evidence expired')
-  errorPath = '/bundle'
-  await user.click(screen.getByRole('button', { name: 'Export evidence bundle' }))
-  expect(await screen.findByRole('alert')).toHaveTextContent('Evidence expired')
+  expect(screen.getByRole('button', { name: 'Export evidence bundle' })).toBeDisabled()
 })
 
 test('a scope which excluded displayed totals cannot submit a misleading presentation evaluation', async () => {
@@ -381,4 +383,25 @@ test('demo keeps its synthetic read-only label through discrepancy investigation
   await userEvent.click(await screen.findByRole('button', { name: /Open audit/ }))
   expect(screen.getByText('Synthetic audit data · read only')).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Start audit' })).not.toBeInTheDocument()
+})
+
+test('deleted indefinite evidence disables replay, export and probe while retaining the summary report', async () => {
+  run = {
+    ...completed,
+    replayExpiresAt: null,
+    evidenceExpiresAt: null,
+    detailsAvailable: false,
+    replayAvailable: false,
+  }
+  mount()
+  await userEvent.click(await screen.findByRole('button', { name: /Open audit/ }))
+  expect(await screen.findByRole('button', { name: 'Replay retained inputs' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Export evidence bundle' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Verify displayed totals' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Download report' })).toBeEnabled()
+  expect(screen.getByText(/Detailed evidence is unavailable/)).toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: /Detailed sanitized evidence/ }),
+  ).not.toBeInTheDocument()
+  expect(calls.some((c) => c.path.endsWith('/findings'))).toBe(false)
 })

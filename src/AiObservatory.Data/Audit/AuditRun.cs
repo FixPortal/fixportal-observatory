@@ -22,6 +22,8 @@ internal sealed class AuditRun
     public Instant? EvidenceExpiresAt { get; set; }
     public Instant? SummaryExpiresAt { get; set; }
     public byte[]? Result { get; set; }
+    public byte[]? SanitizedSummary { get; set; }
+    public Instant? ServerCutoff { get; set; }
     public string? ResultHash { get; set; }
     public string? DiagnosticCode { get; set; }
     public Guid? PredecessorRunId { get; set; }
