@@ -365,7 +365,10 @@ public sealed partial class AuditStore
             return false;
         }
         var captures = await _db.Set<AuditEvidenceCapture>()
-            .Where(c => _db.Set<AuditRunCapture>().Any(l => l.RunId == id && l.CaptureId == c.Id))
+            .Where(c =>
+                _db.Set<AuditRunCapture>().Any(l => l.RunId == id && l.CaptureId == c.Id)
+                || _db.Set<AuditRun>().Any(r => r.Id == id && r.CaptureRequestIds.Contains(c.RequestId))
+            )
             .ToArrayAsync(ct);
         await _db.Set<AuditRun>().Where(r => r.Id == id).ExecuteDeleteAsync(ct);
         foreach (var entry in _db.ChangeTracker.Entries<AuditRun>().Where(e => e.Entity.Id == id).ToArray())
