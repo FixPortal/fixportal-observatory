@@ -1,8 +1,9 @@
 using Microsoft.Extensions.Options;
+using NodaTime;
 
 namespace AiObservatory.Api.Audit;
 
-public sealed class AuditOptionsValidator : IValidateOptions<AuditOptions>
+public sealed class AuditOptionsValidator(IClock clock) : IValidateOptions<AuditOptions>
 {
     public ValidateOptionsResult Validate(string? name, AuditOptions options)
     {
@@ -10,7 +11,7 @@ public sealed class AuditOptionsValidator : IValidateOptions<AuditOptions>
         {
             return ValidateOptionsResult.Success;
         }
-        var errors = options.ValidationErrors();
+        var errors = options.ValidationErrors(clock.GetCurrentInstant());
         return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
     }
 }

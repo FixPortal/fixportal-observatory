@@ -1,10 +1,87 @@
 using AiObservatory.Api.Audit;
 using AwesomeAssertions;
+using NodaTime;
+using NodaTime.Testing;
 
 namespace AiObservatory.Api.Tests.Audit;
 
 public sealed class AuditOptionsTests
 {
+    /// <summary>Startup rejects finite expiries beyond the actual clock boundary without rejecting indefinite retention.</summary>
+    [Fact]
+    public void Validate_InstantBoundary_RejectsUnrepresentableExpiryAndAllowsIndefinite()
+    {
+        var validator = new AuditOptionsValidator(new FakeClock(Instant.MaxValue - Duration.FromHours(1)));
+        validator
+            .Validate(
+                null,
+                new()
+                {
+                    Enabled = true,
+                    EvidenceRetentionDays = 1,
+                    SummaryRetentionDays = null,
+                }
+            )
+            .Failed.Should()
+            .BeTrue();
+        validator
+            .Validate(
+                null,
+                new()
+                {
+                    Enabled = true,
+                    EvidenceRetentionDays = null,
+                    SummaryRetentionDays = 1,
+                }
+            )
+            .Failed.Should()
+            .BeTrue();
+        validator
+            .Validate(
+                null,
+                new()
+                {
+                    Enabled = true,
+                    EvidenceRetentionDays = null,
+                    SummaryRetentionDays = null,
+                }
+            )
+            .Succeeded.Should()
+            .BeTrue();
+    }
+
+    private static AuditOptionsValidator Validator() => new(new FakeClock(Instant.FromUtc(2026, 10, 22, 12, 0)));
+
+    /// <summary>Both Duration-overflow and Instant-overflow finite values are rejected before activation.</summary>
+    [Theory]
+    [InlineData(int.MaxValue)]
+    [InlineData(3_000_000)]
+    [InlineData(36_501)]
+    public void Validate_UnsupportedFiniteRetention_RejectsBothSettings(int days)
+    {
+        var validator = Validator();
+        validator.Validate(null, new() { Enabled = true, EvidenceRetentionDays = days }).Failed.Should().BeTrue();
+        validator.Validate(null, new() { Enabled = true, SummaryRetentionDays = days }).Failed.Should().BeTrue();
+    }
+
+    /// <summary>Finite values at the supported upper bound remain valid alongside explicit indefinite retention.</summary>
+    [Fact]
+    public void Validate_SupportedFiniteRetention_AcceptsBoundary()
+    {
+        Validator()
+            .Validate(
+                null,
+                new()
+                {
+                    Enabled = true,
+                    EvidenceRetentionDays = 36_500,
+                    SummaryRetentionDays = 36_500,
+                }
+            )
+            .Succeeded.Should()
+            .BeTrue();
+    }
+
     /// <summary>The dormant default still supplies all release limits when explicitly enabled.</summary>
     [Fact]
     public void Validate_Defaults_UsesApprovedBoundsAndDormantFlag()
@@ -25,9 +102,9 @@ public sealed class AuditOptionsTests
         options.RunLeaseRenewalInterval.Should().Be(TimeSpan.FromMinutes(1));
         options.EvidenceRetentionDays.Should().Be(90);
         options.SummaryRetentionDays.Should().Be(365);
-        new AuditOptionsValidator().Validate(null, options).Succeeded.Should().BeTrue();
+        Validator().Validate(null, options).Succeeded.Should().BeTrue();
         options.Enabled = true;
-        new AuditOptionsValidator().Validate(null, options).Succeeded.Should().BeTrue();
+        Validator().Validate(null, options).Succeeded.Should().BeTrue();
     }
 
     /// <summary>Zero or negative intervals cannot create immediately expired or immortal execution leases.</summary>
@@ -47,7 +124,7 @@ public sealed class AuditOptionsTests
         {
             var options = new AuditOptions { Enabled = true };
             typeof(AuditOptions).GetProperty(property)!.SetValue(options, TimeSpan.FromSeconds(seconds));
-            new AuditOptionsValidator().Validate(null, options).Failed.Should().BeTrue(property);
+            Validator().Validate(null, options).Failed.Should().BeTrue(property);
         }
     }
 
@@ -74,11 +151,11 @@ public sealed class AuditOptionsTests
             var member = typeof(AuditOptions).GetProperty(property)!;
             var current = Convert.ToInt64(member.GetValue(options));
             member.SetValue(options, Convert.ChangeType(current + 1, member.PropertyType));
-            new AuditOptionsValidator().Validate(null, options).Failed.Should().BeTrue(property);
+            Validator().Validate(null, options).Failed.Should().BeTrue(property);
             member.SetValue(options, Convert.ChangeType(0, member.PropertyType));
-            new AuditOptionsValidator().Validate(null, options).Failed.Should().BeTrue(property);
+            Validator().Validate(null, options).Failed.Should().BeTrue(property);
         }
-        new AuditOptionsValidator()
+        Validator()
             .Validate(null, new() { Enabled = true, RunLeaseRenewalInterval = TimeSpan.FromMinutes(5) })
             .Failed.Should()
             .BeTrue();
@@ -88,7 +165,7 @@ public sealed class AuditOptionsTests
     [Fact]
     public void Validate_RetentionAndDisabled_RespectsExplicitIndefinite()
     {
-        var validator = new AuditOptionsValidator();
+        var validator = Validator();
         validator
             .Validate(
                 null,
