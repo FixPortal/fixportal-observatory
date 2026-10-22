@@ -50,6 +50,10 @@ public sealed class PricingArithmeticCheck
             Gap("provider_formula_unsupported");
             return false;
         }
+        if (e.PricingApplication is { Kind: "ruleDerived" })
+        {
+            return EvaluateRuleDerived(input, e, Gap, findings);
+        }
         // Frozen typed catalogs do not contain the underlying first-party publication evidence.
         Gap("historical_rate_evidence_missing");
         if (e.PricingApplication is not { Kind: "catalog" })
@@ -69,10 +73,10 @@ public sealed class PricingArithmeticCheck
             Gap("pricing_dimensions_unknown");
             return false;
         }
-        var catalog = FrozenRateResolver.Catalog(input, e);
+        var catalog = FrozenRateResolver.Catalog(input, e, out var catalogDiagnostic);
         if (catalog == null || catalog.Currency != "USD")
         {
-            Gap("applied_catalog_missing");
+            Gap(catalogDiagnostic ?? "applied_catalog_missing");
             return false;
         }
         QualifySource(input, catalog, Gap);
@@ -86,6 +90,80 @@ public sealed class PricingArithmeticCheck
             return false;
         }
         return CompareTerms(input, e, catalog, terms, gaps, findings, traces);
+    }
+
+    private static bool EvaluateRuleDerived(
+        AuditInput input,
+        FrozenEvent e,
+        Action<string> gap,
+        List<AuditFinding> findings
+    )
+    {
+        var application = e.PricingApplication!;
+        if (application.RuleId != "exact-zero" || application.RuleVersion != "1")
+        {
+            gap("pricing_rule_unsupported");
+            return false;
+        }
+        if (application.SnapshotId != null || application.SnapshotHash != null)
+        {
+            gap("exact_zero_rule_provenance_invalid");
+            return false;
+        }
+        var counters = e.Tokens;
+        if (
+            counters.InputTokens != 0
+            || counters.OutputTokens != 0
+            || counters.CacheReadTokens != 0
+            || counters.CacheWriteTokens != 0
+            || counters.CacheWrite1hTokens != 0
+            || counters.ThoughtTokens != 0
+        )
+        {
+            gap("exact_zero_rule_counters_not_zero");
+            return false;
+        }
+        var costCompared = CompareExactZeroValue(input, e, "costUsd", e.CostUsd, gap, findings);
+        var savingsCompared = CompareExactZeroValue(input, e, "cacheSavingsUsd", e.CacheSavingsUsd, gap, findings);
+        return costCompared && savingsCompared;
+    }
+
+    private static bool CompareExactZeroValue(
+        AuditInput input,
+        FrozenEvent e,
+        string field,
+        decimal? actual,
+        Action<string> gap,
+        List<AuditFinding> findings
+    )
+    {
+        if (actual == null)
+        {
+            gap(field == "costUsd" ? "production_cost_missing" : "production_cache_savings_missing");
+            return false;
+        }
+        var tolerance =
+            input.Tolerances.SingleOrDefault(t => t.Name == "pricingArithmetic." + field)?.AbsoluteTolerance ?? 0m;
+        if (actual.Value > tolerance || actual.Value < -tolerance)
+        {
+            var key = e.RowId.ToString("D");
+            findings.Add(
+                ComparisonSupport.Finding(
+                    Code,
+                    field == "costUsd" ? "pricing_cost_difference" : "pricing_savings_difference",
+                    key,
+                    [key],
+                    field,
+                    ComparisonSupport.Money(0m),
+                    ComparisonSupport.Money(actual.Value),
+                    ComparisonSupport.Money(actual.Value),
+                    ValueUnit.Money,
+                    "USD",
+                    e.Provenance.CostBasis
+                )
+            );
+        }
+        return true;
     }
 
     private static void QualifySource(AuditInput input, FrozenPricing catalog, Action<string> gap)

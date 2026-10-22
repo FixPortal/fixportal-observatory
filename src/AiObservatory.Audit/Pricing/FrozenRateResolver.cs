@@ -5,14 +5,34 @@ namespace AiObservatory.Audit.Pricing;
 /// <summary>Only resolves the declared retained catalog. A content digest is not publication attestation.</summary>
 public static class FrozenRateResolver
 {
-    public static FrozenPricing? Catalog(AuditInput input, FrozenEvent e) =>
-        e.PricingApplication is { } app
-            ? input.PricingCatalogs.SingleOrDefault(c =>
+    public static FrozenPricing? Catalog(AuditInput input, FrozenEvent e) => Catalog(input, e, out _);
+
+    public static FrozenPricing? Catalog(AuditInput input, FrozenEvent e, out string? diagnostic)
+    {
+        diagnostic = "applied_catalog_missing";
+        if (e.PricingApplication is not { } app)
+        {
+            return null;
+        }
+        var candidates = input
+            .PricingCatalogs.Where(c =>
                 c.Id == app.SnapshotId
                 && c.ContentHash == app.SnapshotHash
                 && string.Equals(c.Provider, e.Provider, StringComparison.OrdinalIgnoreCase)
             )
-            : null;
+            .Take(2)
+            .ToArray();
+        if (candidates.Length != 1)
+        {
+            if (candidates.Length > 1)
+            {
+                diagnostic = "applied_catalog_ambiguous";
+            }
+            return null;
+        }
+        diagnostic = null;
+        return candidates[0];
+    }
 
     public static FrozenPriceRate? Rate(FrozenPricing catalog, FrozenEvent e, PriceMeter meter)
     {

@@ -1,4 +1,6 @@
+using AiObservatory.Audit.Bundles;
 using AiObservatory.Audit.Contracts;
+using AiObservatory.Audit.Serialization;
 using AwesomeAssertions;
 
 namespace AiObservatory.Audit.Tests.Checks;
@@ -360,6 +362,147 @@ public sealed class PricingArithmeticCheckTests
         var result = new AuditVerifier().Verify(input);
         result.Findings.Should().Contain(f => f.RuleCode == "pricing_cost_difference");
         result.Coverage.Gaps.Should().Contain(g => g.DiagnosticCode == "pricing_source_stale");
+    }
+
+    [Theory]
+    [InlineData(0, 0, null)]
+    [InlineData(1, 0, "costUsd")]
+    [InlineData(0, 1, "cacheSavingsUsd")]
+    public void FrozenExactZeroRule_ComparesCostAndSavingsWithoutCatalog(int cost, int savings, string? difference)
+    {
+        var input = ExactZeroFixture();
+        input = input with { Events = [input.Events[0] with { CostUsd = cost, CacheSavingsUsd = savings }] };
+        var result = new AuditVerifier().Verify(input);
+        result.Coverage.ComparedGroups.Should().Be(1);
+        if (difference == null)
+        {
+            result.Findings.Should().BeEmpty();
+            result.Verdict.Should().Be(CheckVerdict.Matched);
+        }
+        else
+        {
+            var finding = result.Findings.Single();
+            finding.Field.Should().Be(difference);
+            finding.Expected!.Value.Should().Be("0");
+            finding.Actual!.Value.Should().Be("1");
+            finding.Delta!.Value.Should().Be("1");
+            result.Verdict.Should().Be(CheckVerdict.Mismatched);
+        }
+    }
+
+    [Theory]
+    [InlineData(0, CheckVerdict.Incomplete)]
+    [InlineData(1, CheckVerdict.Mismatched)]
+    public void FrozenExactZeroRule_PreservesIndependentPartialEvidenceQualifier(int cost, CheckVerdict verdict)
+    {
+        var input = ExactZeroFixture() with { PartialEvidenceAcknowledged = true };
+        input = input with { Events = [input.Events[0] with { CostUsd = cost }] };
+        var result = new AuditVerifier().Verify(input);
+        result.Coverage.ComparedGroups.Should().Be(1);
+        result.Coverage.Gaps.Should().Contain(g => g.DiagnosticCode == "partial_capture_acknowledged");
+        result.Verdict.Should().Be(verdict);
+    }
+
+    [Theory]
+    [InlineData("rule")]
+    [InlineData("version")]
+    [InlineData("snapshot")]
+    [InlineData("input")]
+    [InlineData("output")]
+    [InlineData("read")]
+    [InlineData("write")]
+    [InlineData("hour")]
+    [InlineData("thought")]
+    [InlineData("unknown")]
+    public void FrozenExactZeroRule_RejectsUnprovenRuleOrCounters(string invalid)
+    {
+        var input = ExactZeroFixture();
+        var e = input.Events[0];
+        e = invalid switch
+        {
+            "rule" => e with { PricingApplication = e.PricingApplication! with { RuleId = "another-rule" } },
+            "version" => e with { PricingApplication = e.PricingApplication! with { RuleVersion = "2" } },
+            "snapshot" => e with { PricingApplication = e.PricingApplication! with { SnapshotId = "catalog" } },
+            "input" => e with { Tokens = e.Tokens with { InputTokens = 1 } },
+            "output" => e with { Tokens = e.Tokens with { OutputTokens = 1 } },
+            "read" => e with { Tokens = e.Tokens with { CacheReadTokens = 1 } },
+            "write" => e with { Tokens = e.Tokens with { CacheWriteTokens = 1 } },
+            "hour" => e with { Tokens = e.Tokens with { CacheWrite1hTokens = 1 } },
+            "thought" => e with { Tokens = e.Tokens with { ThoughtTokens = 1 } },
+            _ => e with { Tokens = e.Tokens with { ThoughtTokens = null } },
+        };
+        var result = new AuditVerifier().Verify(input with { Events = [e] });
+        result.Coverage.ComparedGroups.Should().Be(0);
+        result.Verdict.Should().Be(CheckVerdict.Incomplete);
+        result.Coverage.Gaps.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task CatalogIdentityAcrossTwoSources_RemainsCanonicalIncompleteAndOfflineDeterministic()
+    {
+        var input = Fixture() with
+        {
+            VerifierVersion = AuditVerifierIdentity.VerifierVersion,
+            RuleVersion = AuditVerifierIdentity.RuleVersion,
+        };
+        input = input with
+        {
+            PricingCatalogs =
+            [
+                input.PricingCatalogs[0],
+                input.PricingCatalogs[0] with
+                {
+                    SourceId = "pricing-secondary",
+                },
+            ],
+        };
+        input = AuditCanonicalJson.Deserialize<AuditInput>(AuditCanonicalJson.Serialize(input));
+        input.PricingCatalogs.Should().HaveCount(2);
+        var result = new AuditVerifier().Verify(input);
+        result.Coverage.ComparedGroups.Should().Be(0);
+        result.Coverage.Gaps.Should().Contain(g => g.DiagnosticCode == "applied_catalog_ambiguous");
+        result.Verdict.Should().Be(CheckVerdict.Incomplete);
+        using var first = new MemoryStream();
+        using var second = new MemoryStream();
+        var bundle = new AuditBundle(input, result, []);
+        await AuditBundleWriter.WriteAsync(first, bundle, TestContext.Current.CancellationToken);
+        await AuditBundleWriter.WriteAsync(second, bundle, TestContext.Current.CancellationToken);
+        first.ToArray().Should().Equal(second.ToArray());
+        first.Position = 0;
+        var replay = await AuditBundleReader.ReadBundleAsync(first, new(), TestContext.Current.CancellationToken);
+        AuditCanonicalJson
+            .Serialize(new AuditVerifier().Verify(replay.Input))
+            .Should()
+            .Equal(AuditCanonicalJson.Serialize(result));
+    }
+
+    private static AuditInput ExactZeroFixture()
+    {
+        var input = Fixture("OpenAi", 0, 0, 0, 0, 0);
+        var e = input.Events[0];
+        return input with
+        {
+            PricingCatalogs = [],
+            Events =
+            [
+                e with
+                {
+                    CostUsd = 0m,
+                    CacheSavingsUsd = 0m,
+                    PricingApplication = new(
+                        null,
+                        null,
+                        "exact-zero",
+                        e.PricingApplication!.Dimensions,
+                        CheckFixture.Day
+                    )
+                    {
+                        Kind = "ruleDerived",
+                        RuleVersion = "1",
+                    },
+                },
+            ],
+        };
     }
 
     internal static AuditInput Fixture(
