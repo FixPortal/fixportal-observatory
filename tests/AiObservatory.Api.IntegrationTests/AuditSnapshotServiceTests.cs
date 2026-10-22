@@ -11,6 +11,7 @@ using AiObservatory.Data.Repositories;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging.Abstractions;
 using NodaTime;
 using NodaTime.Testing;
 using Npgsql;
@@ -359,6 +360,111 @@ public sealed class AuditSnapshotServiceTests : IAsyncLifetime
         var input = AuditCanonicalJson.Deserialize<AuditInput>(retained.Bytes);
         input.Records.Should().ContainSingle().Which.Should().BeEquivalentTo(record);
         input.Captures.Should().ContainSingle().Which.ChunkHashes.Should().Equal(hash);
+        retained.InputContentDigest.Should().Be(AuditComputationInput.ContentDigest(input));
+    }
+
+    [Fact]
+    public async Task Snapshot_AnthropicNotionalDurationObservations_FreezeAnIndependentExactOrFallbackChoice()
+    {
+        var catalog = PricingCatalogJson.Serialize(
+            new AnthropicPriceCatalog(
+                "USD",
+                "https://example.com/pricing",
+                Now,
+                [
+                    new(
+                        "synthetic",
+                        ["synthetic"],
+                        new(2026, 10, 1),
+                        true,
+                        2m,
+                        10m,
+                        0.2m,
+                        2.5m,
+                        4m,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                    ),
+                ]
+            )
+        );
+        _db.PricingSnapshots.Add(
+            new()
+            {
+                Provider = Provider.Anthropic,
+                SourceId = PricingSourceIds.Claude,
+                ContentHash = new string('a', 64),
+                RetrievedAt = Now,
+                IsActive = true,
+                NormalizedCatalog = catalog,
+            }
+        );
+        await _db.SaveChangesAsync(Ct);
+        var store = new PricingSnapshotStore(_db);
+        var repository = new UsageRepository(
+            _db,
+            store,
+            new UsagePriceResolver(store, [new AnthropicPriceCalculator()], NullLogger<UsagePriceResolver>.Instance)
+        );
+        string[] observations =
+        [
+            "{}",
+            """{"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":100}}""",
+            """{"cache_creation":{"ephemeral_5m_input_tokens":100,"ephemeral_1h_input_tokens":0}}""",
+        ];
+        foreach (var raw in observations)
+        {
+            await repository.RecordEstimatedEventAsync(
+                new()
+                {
+                    Provider = Provider.Anthropic,
+                    Model = "synthetic",
+                    SourceId = "synthetic",
+                    SourceKind = SourceKind.LocalTelemetry,
+                    OccurredAt = Now,
+                    ObservedAt = Now,
+                    IngestedAt = Now,
+                    CostBasis = CostBasis.Notional,
+                    CacheWriteTokens = 100,
+                    CacheWrite1hTokens = 100,
+                    RawPayload = raw,
+                },
+                Ct
+            );
+        }
+        var lease = await Lease();
+        await new AuditSnapshotService(_db, _store, lease).CreateAsync(lease.RunId, Ct);
+        var retained = (await _store.ReadSnapshotAsync(lease.RunId, Ct))!;
+        var input = AuditCanonicalJson.Deserialize<AuditInput>(retained.Bytes);
+        input.Events.Should().HaveCount(3);
+        input
+            .Events.Should()
+            .OnlyContain(e =>
+                e.CacheDurations != null && e.Tokens.CacheWrite1hTokens == 100 && e.PricingApplication != null
+            );
+        input.Events.Count(e => e.CacheDurations == new CacheDurationObservation(null, null)).Should().Be(1);
+        input.Events.Count(e => e.CacheDurations == new CacheDurationObservation(100, 0)).Should().Be(1);
+        input.Events.Count(e => e.CacheDurations == new CacheDurationObservation(0, 100)).Should().Be(1);
+        foreach (var frozen in input.Events)
+        {
+            var observation = frozen.CacheDurations!;
+            var writes = frozen.Tokens.CacheWriteTokens!.Value;
+            var oneHour = frozen.Tokens.CacheWrite1hTokens!.Value;
+            var exact = observation.FiveMinuteTokens == writes - oneHour && observation.OneHourTokens == oneHour;
+            var effective1h = exact ? oneHour : 0;
+            var effective5m = writes - effective1h;
+            var rates = input
+                .PricingCatalogs.Single()
+                .Rates.Where(r => r.CatalogEntryKey == frozen.PricingApplication!.RuleId)
+                .ToArray();
+            var reference =
+                effective5m / 1_000_000m * rates.Single(r => r.Meter == PriceMeter.CacheWrite5m).UnitPrice
+                + effective1h / 1_000_000m * rates.Single(r => r.Meter == PriceMeter.CacheWrite1h).UnitPrice;
+            frozen.CostUsd.Should().Be(reference);
+        }
         retained.InputContentDigest.Should().Be(AuditComputationInput.ContentDigest(input));
     }
 

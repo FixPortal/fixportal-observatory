@@ -59,6 +59,7 @@ public static class AuditSnapshotProjector
         )
         {
             SourceDimensions = sourceDimensions,
+            CacheDurations = e.Provider == Provider.Anthropic ? PricingEvidence.ObserveCacheDurations(e) : null,
         };
     }
 

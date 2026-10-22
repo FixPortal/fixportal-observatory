@@ -25,6 +25,9 @@ public sealed record FrozenEvent(
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PricingDimensions? SourceDimensions { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CacheDurationObservation? CacheDurations { get; init; }
 }
 
 public sealed record UsageCounters(

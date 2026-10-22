@@ -10,6 +10,144 @@ namespace AiObservatory.Api.Tests.Audit;
 
 public sealed class AuditPricingProjectorTests
 {
+    [Theory]
+    [InlineData(Provider.OpenAI)]
+    [InlineData(Provider.Google)]
+    public void BatchEntries_BindSelectedKeyAndEffectiveDimensions(Provider provider)
+    {
+        var now = Instant.FromUtc(2026, 10, 22, 12, 0);
+        var usage = new UsageEvent
+        {
+            Provider = provider,
+            Model = "synthetic",
+            OccurredAt = now,
+            InputTokens = 1_000_000,
+            CostBasis = CostBasis.ListPriceEstimate,
+        };
+        string catalog;
+        IProviderPriceCalculator calculator;
+        if (provider == Provider.OpenAI)
+        {
+            catalog = PricingCatalogJson.Serialize(
+                new OpenAiPriceCatalog(
+                    "USD",
+                    "https://example.com/pricing",
+                    now,
+                    [
+                        new(
+                            "synthetic",
+                            ["synthetic"],
+                            new(2026, 10, 1),
+                            true,
+                            "batch",
+                            "short",
+                            "global",
+                            1m,
+                            0.25m,
+                            5m,
+                            1.5m
+                        ),
+                    ]
+                )
+            );
+            usage.RawPayload = """{"processing":"batch","context":"short","region":"global"}""";
+            calculator = new OpenAiPriceCalculator();
+        }
+        else
+        {
+            catalog = PricingCatalogJson.Serialize(
+                new GeminiDeveloperPriceCatalog(
+                    "USD",
+                    "https://example.com/pricing",
+                    now,
+                    [new("synthetic", ["synthetic"], new(2026, 10, 1), true, "batch", "short", 1m, 0.25m, 5m)]
+                )
+            );
+            usage.RawPayload = """{"service":"Gemini Developer API","tier":"batch","context":"short"}""";
+            calculator = new GooglePriceCalculator();
+        }
+        var applied = calculator.CalculateWithEvidence(usage, catalog)!;
+        applied.Dimensions.Batch.Should().BeTrue();
+        var frozen = AuditPricingProjector.Catalog(
+            new()
+            {
+                Provider = provider,
+                SourceId = "synthetic",
+                ContentHash = new string('a', 64),
+                RetrievedAt = now,
+                NormalizedCatalog = catalog,
+            }
+        );
+        frozen
+            .Rates.Should()
+            .OnlyContain(r => r.CatalogEntryKey == applied.RateKey && r.Dimensions == applied.Dimensions);
+    }
+
+    [Theory]
+    [InlineData("exact", 0L, 100L)]
+    [InlineData("missing", null, null)]
+    [InlineData("contradictory", 100L, 0L)]
+    public void AnthropicNotionalNonzeroOneHourWrites_FreezeDerivableDurationChoice(
+        string observation,
+        long? expected5m,
+        long? expected1h
+    )
+    {
+        var now = Instant.FromUtc(2026, 10, 22, 12, 0);
+        var catalog = PricingCatalogJson.Serialize(
+            new AnthropicPriceCatalog(
+                "USD",
+                "https://example.com/pricing",
+                now,
+                [
+                    new(
+                        "synthetic",
+                        ["synthetic"],
+                        new(2026, 10, 1),
+                        true,
+                        2m,
+                        10m,
+                        0.2m,
+                        2.5m,
+                        4m,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                    ),
+                ]
+            )
+        );
+        var raw = observation switch
+        {
+            "exact" => """{"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":100}}""",
+            "contradictory" => """{"cache_creation":{"ephemeral_5m_input_tokens":100,"ephemeral_1h_input_tokens":0}}""",
+            _ => "{}",
+        };
+        var usage = new UsageEvent
+        {
+            Provider = Provider.Anthropic,
+            Model = "synthetic",
+            OccurredAt = now,
+            ObservedAt = now,
+            IngestedAt = now,
+            CacheWriteTokens = 100,
+            CacheWrite1hTokens = 100,
+            CostBasis = CostBasis.Notional,
+            RawPayload = raw,
+        };
+        var quote = new AnthropicPriceCalculator().Calculate(usage, catalog)!;
+        usage.CostUsd = quote.CostUsd;
+        var frozen = AuditSnapshotProjector.Event(usage, null);
+        frozen.Tokens.CacheWrite1hTokens.Should().Be(100);
+        frozen
+            .CacheDurations.Should()
+            .Be(new AiObservatory.Audit.Contracts.CacheDurationObservation(expected5m, expected1h));
+        var exact = frozen.CacheDurations.FiveMinuteTokens == 0 && frozen.CacheDurations.OneHourTokens == 100;
+        frozen.CostUsd.Should().Be(exact ? 0.0004m : 0.00025m);
+    }
+
     [Fact]
     public void ReorderedCatalogEntry_BindsSelectedIdentityToFrozenRate()
     {
