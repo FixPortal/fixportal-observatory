@@ -25,7 +25,7 @@ function checkedRequest(request, configuration) {
   if ([...scope.requestedChecks, ...scope.excludedChecks].some(code => !CHECKS.has(code)) || scope.requestedChecks.some(code => scope.excludedChecks.includes(code))) throw new Error('invalid_capture_request');
   for (const source of scope.sources) {
     onlyKeys(source, ['machineId', 'sourceId']);
-    if (source.machineId !== request.machineId) throw new Error('invalid_capture_request');
+    if (source.machineId !== request.machineId || typeof source.sourceId !== 'string' || !source.sourceId.length) throw new Error('invalid_capture_request');
     identifier(source.sourceId);
   }
   for (const name of ['predecessorRunId', 'evaluationOfRunId']) if (scope[name] != null && !GUID.test(scope[name])) throw new Error('invalid_capture_request');
@@ -33,7 +33,9 @@ function checkedRequest(request, configuration) {
   if (typeof configuration.identityDirectory !== 'string' || !configuration.identityDirectory || !Array.isArray(configuration.sources)) throw new Error('invalid_capture_configuration');
   const configured = new Set();
   for (const source of configuration.sources) {
-    onlyKeys(source, ['sourceId', 'tool', 'roots']); identifier(source.sourceId);
+    onlyKeys(source, ['sourceId', 'tool', 'roots']);
+    if (typeof source.sourceId !== 'string' || !source.sourceId.length) throw new Error('invalid_capture_configuration');
+    identifier(source.sourceId);
     if (configured.has(source.sourceId) || !['claude', 'codex'].includes(source.tool) || !Array.isArray(source.roots) || !source.roots.length || source.roots.some(root => typeof root !== 'string' || !root)) throw new Error('invalid_capture_configuration');
     configured.add(source.sourceId);
   }
