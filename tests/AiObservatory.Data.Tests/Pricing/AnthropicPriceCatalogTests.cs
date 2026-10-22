@@ -98,6 +98,59 @@ public sealed class AnthropicPriceCatalogTests
         catalog.Resolve("claude-haiku-5-5", Start, Upper).Should().BeSameAs(upper);
     }
 
+    [Theory]
+    [InlineData("claude-haiku-5-5-20261001")]
+    [InlineData("haiku-retained-alias")]
+    public void OlderExactAliasCannotBypassNewBandedEra(string alias)
+    {
+        var flat = Entry(null) with { EffectiveFrom = new LocalDate(2026, 10, 1), Aliases = [alias] };
+        var lower = Entry(Lower) with { Aliases = ["claude-haiku-5-5"] };
+        var upper = Entry(Upper) with { Aliases = ["claude-haiku-5-5"] };
+        var catalog = Catalog(flat, lower, upper);
+        ((Action)catalog.Validate).Should().NotThrow();
+        catalog.Resolve(alias, Start.PlusDays(-1)).Should().BeSameAs(flat);
+        catalog.RequiresPromptContext(alias, Start.PlusDays(-1)).Should().BeFalse();
+        catalog.RequiresPromptContext(alias, Start.PlusDays(1)).Should().BeTrue();
+        catalog.Resolve(alias, Start.PlusDays(1)).Should().BeNull();
+        catalog.Resolve(alias, Start.PlusDays(1), "unknown").Should().BeNull();
+        catalog.Resolve(alias, Start.PlusDays(1), Lower).Should().BeSameAs(lower);
+        catalog.Resolve(alias, Start.PlusDays(1), Upper).Should().BeSameAs(upper);
+    }
+
+    [Fact]
+    public void DistinctCanonicalDatedModelKeepsItsOwnEra()
+    {
+        const string datedModel = "claude-haiku-5-5-20261001";
+        var distinct = Entry(null) with
+        {
+            ModelPrefix = datedModel,
+            Aliases = [datedModel],
+            EffectiveFrom = new LocalDate(2026, 10, 1),
+        };
+        var catalog = Catalog(distinct, Entry(Lower), Entry(Upper));
+        ((Action)catalog.Validate).Should().NotThrow();
+        catalog.Resolve(datedModel, Start.PlusDays(1)).Should().BeSameAs(distinct);
+        catalog.RequiresPromptContext(datedModel, Start.PlusDays(1)).Should().BeFalse();
+        catalog.RequiresPromptContext("claude-haiku-5-5", Start.PlusDays(1)).Should().BeTrue();
+    }
+
+    [Fact]
+    public void CompetingExplicitAliasesDoNotPickAnArbitraryFamily()
+    {
+        var first = Entry(null) with { Aliases = ["shared-alias"] };
+        var second = Entry(null) with
+        {
+            ModelPrefix = "claude-sonnet-5",
+            Aliases = ["shared-alias"],
+            EffectiveFrom = Start.PlusDays(1),
+        };
+        var catalog = Catalog(first, second);
+        ((Action)catalog.Validate).Should().NotThrow();
+        catalog.Resolve("shared-alias", Start.PlusDays(2)).Should().BeNull();
+        catalog.Resolve("claude-haiku-5-5", Start.PlusDays(2)).Should().BeSameAs(first);
+        catalog.Resolve("claude-sonnet-5", Start.PlusDays(2)).Should().BeSameAs(second);
+    }
+
     [Fact]
     public void BandedThenFlatEraDoesNotRetainContextRequirement()
     {

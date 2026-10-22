@@ -128,22 +128,38 @@ public sealed record AnthropicPriceCatalog(
             })
             .Where(match => match.Specificity > 0)
             .ToList();
+        if (matches.Count == 0)
+        {
+            return [];
+        }
+        var families = matches
+            .GroupBy(match => match.Entry.ModelPrefix, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new { Model = group.Key, Specificity = group.Max(match => match.Specificity) })
+            .ToList();
+        var specificity = families.Max(family => family.Specificity);
+        var candidates = families.Where(family => family.Specificity == specificity).ToList();
+        if (candidates.Count != 1)
+        {
+            // Equally specific aliases belonging to distinct canonical models are ambiguous.
+            return [];
+        }
+        var familyEntries = Entries.Where(entry =>
+            entry.ModelPrefix.Equals(candidates[0].Model, StringComparison.OrdinalIgnoreCase)
+        );
         var applicable = EffectiveWindow.ApplicableAt(
-            matches,
+            familyEntries,
             usageDate,
-            match => match.Entry.EffectiveFrom,
-            match => match.Entry.EffectiveDateIsProviderDeclared
+            entry => entry.EffectiveFrom,
+            entry => entry.EffectiveDateIsProviderDeclared
         );
         if (applicable.Count == 0)
         {
             return [];
         }
-        var specificity = applicable.Max(match => match.Specificity);
-        var family = applicable.Where(match => match.Specificity == specificity).ToList();
-        var date = family.Max(match => match.Entry.EffectiveFrom);
-        // Select the applicable model/window before the context, so an absent band cannot
-        // fall back to a historical flat entry in this catalog.
-        return family.Where(match => match.Entry.EffectiveFrom == date).Select(match => match.Entry).ToList();
+        var date = applicable.Max(entry => entry.EffectiveFrom);
+        // Resolve identity to its canonical family before selecting the era. A retained exact
+        // alias must not outrank a newer window for that same model merely by being longer.
+        return applicable.Where(entry => entry.EffectiveFrom == date).ToList();
     }
 
     private static bool MatchesModel(string model, string alias) =>
