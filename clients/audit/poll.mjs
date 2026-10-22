@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, lstat, readFile, rename, rm } from 'node:fs/promises';
+import { lstat, readFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { captureEvidence, writeCapture } from '../observatory-audit.mjs';
@@ -69,6 +69,7 @@ export async function pollOnce(configuration, dependencies = {}) {
       if (renewed.status !== 200) throw new Error('audit_lease_lost');
       const next = checkedLease(renewed.body, configuration.machineId);
       if (next.requestId !== lease.requestId || next.leaseToken !== lease.leaseToken) throw new Error('audit_lease_lost');
+      lease.expiresAt = next.expiresAt;
     }).catch(() => { renewalFailure = new Error('audit_lease_lost'); });
   }, 60000);
   const ensureLive = async () => { await renewing; if (renewalFailure) throw renewalFailure; if (dependencies.signal?.aborted) throw new Error('audit_poll_stopped'); };
@@ -96,10 +97,10 @@ export async function pollOnce(configuration, dependencies = {}) {
     }
     for (const chunk of capture.chunks) {
       await ensureLive();
-      await transport.request(`/api/audits/capture-requests/${lease.requestId}/chunks/${chunk.index}`, { method: 'PUT', body: chunk.ndjson, headers: { 'Content-Type': 'application/x-ndjson', 'X-Content-SHA256': chunk.sha256, 'X-Observatory-Audit-Lease': lease.leaseToken }, signal: dependencies.signal });
+      await transport.request(`/api/audits/capture-requests/${lease.requestId}/chunks/${chunk.index}`, { method: 'PUT', body: chunk.ndjson, headers: { 'Content-Type': 'application/x-ndjson', 'X-Content-SHA256': chunk.sha256, 'X-Observatory-Audit-Lease': lease.leaseToken }, signal: dependencies.signal, deadline: Date.parse(lease.expiresAt) });
     }
     await ensureLive();
-    await transport.request(`/api/audits/capture-requests/${lease.requestId}/seal`, { body: `{"schemaVersion":1,"manifest":${capture.manifestBytes.toString('utf8')},"sha256":"${sha256(capture.manifestBytes)}"}`, headers: { 'Content-Type': 'application/json', 'X-Observatory-Audit-Lease': lease.leaseToken, 'Idempotency-Key': sha256(capture.manifestBytes) }, signal: dependencies.signal });
+    await transport.request(`/api/audits/capture-requests/${lease.requestId}/seal`, { body: `{"schemaVersion":1,"manifest":${capture.manifestBytes.toString('utf8')},"sha256":"${sha256(capture.manifestBytes)}"}`, headers: { 'Content-Type': 'application/json', 'X-Observatory-Audit-Lease': lease.leaseToken, 'Idempotency-Key': sha256(capture.manifestBytes) }, signal: dependencies.signal, deadline: Date.parse(lease.expiresAt) });
     return 'sealed';
   } finally { clearInterval(timer); await renewing; }
 }

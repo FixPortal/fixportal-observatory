@@ -9,6 +9,31 @@ namespace AiObservatory.Api.Audit;
 
 public static class AuditViewerProjection
 {
+    public static object Coverage(AuditCoverage coverage, bool detailsAvailable) =>
+        new
+        {
+            comparedGroups = coverage.ComparedGroups.ToString(CultureInfo.InvariantCulture),
+            totalGroups = coverage.TotalGroups.ToString(CultureInfo.InvariantCulture),
+            diagnosticCodes = coverage.Gaps.Select(g => g.DiagnosticCode).Distinct(),
+            exclusions = coverage.Exclusions,
+            detailsAvailable = detailsAvailable || coverage.DetailsRetained == true,
+        };
+
+    public static object[] Checks(AuditResult result, bool detailsAvailable) =>
+        result
+            .Checks.Select(c =>
+                (object)
+                    new
+                    {
+                        c.Code,
+                        c.Verdict,
+                        supported = c.Verdict != CheckVerdict.Unsupported && c.Code != CheckCode.BillingReconciliation,
+                        executed = c.Verdict is not (CheckVerdict.Excluded or CheckVerdict.Unsupported),
+                        coverage = Coverage(c.Coverage, detailsAvailable),
+                    }
+            )
+            .ToArray();
+
     public static IReadOnlyList<object> Findings(AuditResult result) =>
         result
             .Findings.Select(f => new

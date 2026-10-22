@@ -33,6 +33,7 @@ public sealed record AuditRunView(
     public string? OriginalResultHash { get; init; }
     public string Stage { get; init; } = "queued";
     public Instant CreatedAt { get; init; }
+    public Instant? CompletedAt { get; init; }
     public Instant? ServerCutoff { get; init; }
     public byte[] Scope { get; init; } = [];
     public Guid? PredecessorRunId { get; init; }

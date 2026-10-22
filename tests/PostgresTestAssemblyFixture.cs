@@ -16,7 +16,9 @@ namespace AiObservatory.Testing;
 public sealed class PostgresTestAssemblyFixture : IAsyncLifetime
 {
     private PostgreSqlContainer? _container;
-    private static readonly ConcurrentDictionary<string, Lazy<Task<string>>> Templates = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, Lazy<OwnedTemplateDatabase>> Templates = new(
+        StringComparer.Ordinal
+    );
     private static int _templateMigrationPasses;
 
     public static int TemplateMigrationPasses => Volatile.Read(ref _templateMigrationPasses);
@@ -39,9 +41,11 @@ public sealed class PostgresTestAssemblyFixture : IAsyncLifetime
         var template = await Templates
             .GetOrAdd(
                 admin.ConnectionString,
-                _ => new Lazy<Task<string>>(() => MigrateTemplateAsync(admin.ConnectionString))
+                _ => new Lazy<OwnedTemplateDatabase>(() =>
+                    new OwnedTemplateDatabase(admin.ConnectionString, MigrateTemplateAsync, DeleteTemplateAsync)
+                )
             )
-            .Value.WaitAsync(ct);
+            .Value.Initialization.WaitAsync(ct);
         await using var connection = new NpgsqlConnection(admin.ConnectionString);
         await connection.OpenAsync(ct);
         // Both identifiers are generated test names; quote them independently of connection-string credentials.
@@ -52,29 +56,23 @@ public sealed class PostgresTestAssemblyFixture : IAsyncLifetime
         await command.ExecuteNonQueryAsync(ct);
     }
 
-    private static async Task<string> MigrateTemplateAsync(string adminConnection)
+    private static async Task MigrateTemplateAsync(string connection, CancellationToken ct)
     {
-        var template = new NpgsqlConnectionStringBuilder(adminConnection)
-        {
-            Database = $"aiobs_test_template_{Guid.NewGuid():N}",
-            Pooling = false,
-        };
         var options = new DbContextOptionsBuilder<AiObservatoryDbContext>()
-            .UseNpgsql(template.ConnectionString, o => o.UseNodaTime())
+            .UseNpgsql(connection, o => o.UseNodaTime())
             .Options;
         await using var db = new AiObservatoryDbContext(options);
-        try
-        {
-            await db.Database.MigrateAsync();
-            Interlocked.Increment(ref _templateMigrationPasses);
-            return template.Database;
-        }
-        catch
-        {
-            await db.Database.EnsureDeletedAsync();
-            throw;
-        }
-        // Pooling=false ensures disposal closes every template connection before CREATE DATABASE TEMPLATE.
+        await db.Database.MigrateAsync(ct);
+        Interlocked.Increment(ref _templateMigrationPasses);
+    }
+
+    private static async Task DeleteTemplateAsync(string connection, CancellationToken ct)
+    {
+        var options = new DbContextOptionsBuilder<AiObservatoryDbContext>()
+            .UseNpgsql(connection, o => o.UseNodaTime())
+            .Options;
+        await using var db = new AiObservatoryDbContext(options);
+        await db.Database.EnsureDeletedAsync(ct);
     }
 
     public async ValueTask InitializeAsync()
@@ -102,18 +100,12 @@ public sealed class PostgresTestAssemblyFixture : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
-        foreach (var (adminConnection, pending) in Templates)
+        foreach (var pending in Templates.Values)
         {
-            if (!pending.IsValueCreated || !pending.Value.IsCompletedSuccessfully)
+            if (pending.IsValueCreated)
             {
-                continue;
+                await pending.Value.DisposeAsync();
             }
-            var template = new NpgsqlConnectionStringBuilder(adminConnection) { Database = await pending.Value };
-            var options = new DbContextOptionsBuilder<AiObservatoryDbContext>()
-                .UseNpgsql(template.ConnectionString, o => o.UseNodaTime())
-                .Options;
-            await using var db = new AiObservatoryDbContext(options);
-            await db.Database.EnsureDeletedAsync();
         }
         Templates.Clear();
         if (_container is null)
@@ -123,5 +115,86 @@ public sealed class PostgresTestAssemblyFixture : IAsyncLifetime
 
         Environment.SetEnvironmentVariable("TEST_DB_CONNECTION", null);
         await _container.DisposeAsync();
+    }
+}
+
+/// <summary>Owns precisely one generated template and its started initialization.</summary>
+internal sealed class OwnedTemplateDatabase : IAsyncDisposable
+{
+    private readonly string _connection;
+    private readonly Func<string, CancellationToken, Task> _delete;
+    private readonly CancellationTokenSource _lifetime = new();
+    internal Task<string> Initialization { get; }
+
+    internal OwnedTemplateDatabase(
+        string adminConnection,
+        Func<string, CancellationToken, Task> migrate,
+        Func<string, CancellationToken, Task> delete
+    )
+    {
+        _connection = new NpgsqlConnectionStringBuilder(adminConnection)
+        {
+            Database = $"aiobs_test_template_{Guid.NewGuid():N}",
+            Pooling = false,
+        }.ConnectionString;
+        _delete = delete;
+        Initialization = Initialize(migrate);
+        // Even a provider that ignores cancellation and outlives the bounded drain remains
+        // owned by this object; its eventual fault is observed and Initialize cleans it up.
+        _ = Initialization.ContinueWith(
+            t =>
+            {
+                _ = t.Exception;
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
+    }
+
+    private async Task<string> Initialize(Func<string, CancellationToken, Task> migrate)
+    {
+        try
+        {
+            await migrate(_connection, _lifetime.Token);
+            _lifetime.Token.ThrowIfCancellationRequested();
+            return new NpgsqlConnectionStringBuilder(_connection).Database!;
+        }
+        catch (Exception original)
+        {
+            try
+            {
+                await Cleanup();
+            }
+            catch (Exception cleanup)
+            {
+                throw new AggregateException(original, cleanup);
+            }
+            throw;
+        }
+    }
+
+    private async Task Cleanup()
+    {
+        using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await _delete(_connection, budget.Token).WaitAsync(budget.Token);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _lifetime.CancelAsync();
+        try
+        {
+            await Initialization.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            // Initialize has finished exact-owned cleanup before propagating cancellation.
+            _lifetime.Dispose();
+            return;
+        }
+        // A timeout/fault propagates without discarding fixture ownership.
+        await Cleanup();
+        _lifetime.Dispose();
     }
 }

@@ -48,6 +48,15 @@ export interface AuditCoverageDto {
   comparedGroups: AuditToken
   totalGroups: AuditToken
   diagnosticCodes: string[]
+  exclusions?: { field: string; diagnosticCode: string }[]
+  detailsAvailable?: boolean
+}
+export interface AuditCheckResult {
+  code: AuditCheck
+  verdict: AuditVerdict | 'excluded'
+  supported: boolean
+  executed: boolean
+  coverage: AuditCoverageDto
 }
 export interface AuditRun {
   detailsAvailable?: boolean
@@ -62,6 +71,7 @@ export interface AuditRun {
   scope: AuditScope
   verdict: AuditVerdict | null
   coverage: AuditCoverageDto | null
+  checks?: AuditCheckResult[] | null
   verifierVersion: string | null
   ruleVersion: string | null
   inputContentDigest: string | null

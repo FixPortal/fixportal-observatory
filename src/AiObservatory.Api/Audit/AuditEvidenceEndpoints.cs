@@ -1,4 +1,5 @@
 using System.Text;
+using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
 using AiObservatory.Data.Audit;
 
@@ -37,7 +38,9 @@ public static class AuditEvidenceEndpoints
                             Add("event", bundle.Input.Events);
                         }
                         Add("aggregate", bundle.Input.Aggregates);
-                        Add("spend", bundle.Input.Spend);
+                        // The production presentation observation uses the same selected billed
+                        // cohort as the independent reference; detailed evidence retains every row.
+                        Add("spend", Spend(bundle.Input, presentation));
                         if (!presentation)
                         {
                             Add("sourceStatus", bundle.Input.SourceStatuses);
@@ -73,4 +76,16 @@ public static class AuditEvidenceEndpoints
                     }
                 }
             );
+
+    private static IReadOnlyList<FrozenSpend> Spend(AuditInput input, bool presentation) =>
+        !presentation
+            ? input.Spend
+            : input
+                .Spend.Where(s =>
+                    s.OccurredOn >= input.Scope.From
+                    && s.OccurredOn <= input.Scope.To
+                    && input.Scope.Sources.Any(source => source.SourceId == s.SourceId)
+                    && s.Provenance.CostBasis == AccountingBasis.Billed
+                )
+                .ToArray();
 }

@@ -13,7 +13,7 @@ const key = '11111111-1111-1111-1111-111111111111.' + 'ab'.repeat(32);
 const machineId = '11111111-1111-1111-1111-111111111111';
 const requestId = '22222222-2222-2222-2222-222222222222';
 const leaseToken = '33333333-3333-3333-3333-333333333333';
-const lease = () => ({ schemaVersion: 1, requestId, machineId, leaseToken, expiresAt: '2026-10-22T12:05:00Z', scope: { from: '2026-10-19', to: '2026-10-21', sources: [{ machineId, sourceId: 'claude-local' }], requestedChecks: ['sourceAccounting'], excludedChecks: [], allowPartial: false, predecessorRunId: null, evaluationOfRunId: null } });
+const lease = () => ({ schemaVersion: 1, requestId, machineId, leaseToken, expiresAt: new Date(Date.now() + 300000).toISOString(), scope: { from: '2026-10-19', to: '2026-10-21', sources: [{ machineId, sourceId: 'claude-local' }], requestedChecks: ['sourceAccounting'], excludedChecks: [], allowPartial: false, predecessorRunId: null, evaluationOfRunId: null } });
 
 async function server(t, handler) {
   const app = createServer(handler); app.listen(0, '127.0.0.1'); await once(app, 'listening');

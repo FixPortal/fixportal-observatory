@@ -35,7 +35,7 @@ public static class ReplayCommand
             {
                 ["result.json"] = canonical,
                 ["result.sha256"] = Encoding.UTF8.GetBytes(digest + "\n"),
-                ["report.txt"] = Encoding.UTF8.GetBytes(Report(result, digest, command.Reevaluate)),
+                ["report.txt"] = Encoding.UTF8.GetBytes(Report(result, input, digest, command.Reevaluate)),
             };
             if (command.Reevaluate)
             {
@@ -113,7 +113,7 @@ public static class ReplayCommand
         return new(args[1], output, reevaluate);
     }
 
-    private static string Report(AuditResult result, string digest, bool reevaluate)
+    private static string Report(AuditResult result, AuditInput input, string digest, bool reevaluate)
     {
         var text = new StringBuilder();
         text.Append(reevaluate ? "Reevaluation\n" : "Replay\n");
@@ -121,6 +121,21 @@ public static class ReplayCommand
             CultureInfo.InvariantCulture,
             $"Verdict: {result.Verdict}\nVerifier: {result.VerifierVersion}; rules: {result.RuleVersion}\nResult SHA-256: {digest}\n"
         );
+        text.Append(
+            CultureInfo.InvariantCulture,
+            $"Scope: {result.Scope.From:yyyy-MM-dd} through {result.Scope.To:yyyy-MM-dd} (UTC, inclusive)\nSources: {string.Join(", ", result.Scope.Sources.Select(s => s.SourceId).Distinct())}\nRequested checks: {string.Join(", ", result.Scope.RequestedChecks)}\nExcluded checks: {string.Join(", ", result.Scope.ExcludedChecks)}\nInput SHA-256: {result.InputContentDigest}\nServer cutoff: unavailable in frozen input\nCompletion time: unavailable in frozen input\n"
+        );
+        if (input.Captures.Count > 0)
+        {
+            text.Append(
+                CultureInfo.InvariantCulture,
+                $"Source scan observations: {input.Captures.Min(c => c.ScanStartedAt):O} through {input.Captures.Max(c => c.ScanEndedAt):O}\n"
+            );
+        }
+        else
+        {
+            text.Append("Source scan observations: unavailable\n");
+        }
         text.Append(
             CultureInfo.InvariantCulture,
             $"Coverage: {result.Coverage.ComparedGroups}/{result.Coverage.TotalGroups}\n"

@@ -28,6 +28,7 @@ internal sealed class SourceCheckEvaluation
         var unsupported = Coverage(input, code, expected, findings, gaps);
         var expectedMap = Groups(expected);
         var unprovenSources = UnprovenSources(input, code, findings, gaps);
+        var unprovenGroups = UnprovenGroups(input, findings);
         var unplacedEventScopes = new HashSet<EventComparisonScope>();
         var actualMap =
             code == CheckCode.DailyAttribution
@@ -43,6 +44,7 @@ internal sealed class SourceCheckEvaluation
             actualMap,
             keys,
             unprovenSources,
+            unprovenGroups,
             unplacedEventScopes
         );
         var hasDifferences =
@@ -55,6 +57,7 @@ internal sealed class SourceCheckEvaluation
             || keys.Any(key =>
                 expectedMap.ContainsKey(key) != actualMap.ContainsKey(key)
                 && !unprovenSources.Contains(key.SourceId)
+                && !unprovenGroups.Contains(key)
                 && !gaps.Any(g => g.SourceId == key.SourceId)
             );
         var verdict = ComparisonSupport.Verdict(hasDifferences ? 1 : 0, gaps.Count);
@@ -86,6 +89,30 @@ internal sealed class SourceCheckEvaluation
         );
     }
 
+    private static HashSet<ComparisonKey> UnprovenGroups(AuditInput input, List<AuditFinding> findings)
+    {
+        // A dropped record makes its accounting subtotal unknown, even when other
+        // records in that subtotal are complete. Unrelated keys remain comparable.
+        var missingReferences = findings
+            .Where(f => f.DiagnosticCode == "missing_counter")
+            .SelectMany(f => f.EvidenceRefs)
+            .ToHashSet(StringComparer.Ordinal);
+        return input
+            .Records.Where(r => missingReferences.Contains(SourceAuditSupport.Reference(r)))
+            .Select(r =>
+                ComparisonKey.From(
+                    SourceAuditSupport.Key(
+                        r,
+                        r.Tool == SourceTool.Claude ? "Anthropic" : CodexAuditAdapter.Provider(r) ?? "unknown",
+                        r.Tool == SourceTool.Codex && CodexAuditAdapter.Provider(r) == "DeepSeek"
+                            ? new(SourceKind.LocalTelemetry, UsageScope.Api, AccountingBasis.ListPriceEstimate)
+                            : SourceAuditSupport.Subscription
+                    )
+                )
+            )
+            .ToHashSet();
+    }
+
     private static long CompareProvenGroups(
         AuditInput input,
         CheckCode code,
@@ -95,6 +122,7 @@ internal sealed class SourceCheckEvaluation
         Dictionary<ComparisonKey, ComparisonGroup> actualMap,
         ComparisonKey[] keys,
         HashSet<string> unprovenSources,
+        HashSet<ComparisonKey> unprovenGroups,
         HashSet<EventComparisonScope> unplacedEventScopes
     )
     {
@@ -103,7 +131,9 @@ internal sealed class SourceCheckEvaluation
         // with these remaining dimensions. Neither partial totals nor group absence prove a defect.
         foreach (
             var key in keys.Where(key =>
-                !unprovenSources.Contains(key.SourceId) && !unplacedEventScopes.Contains(EventComparisonScope.From(key))
+                !unprovenSources.Contains(key.SourceId)
+                && !unprovenGroups.Contains(key)
+                && !unplacedEventScopes.Contains(EventComparisonScope.From(key))
             )
         )
         {

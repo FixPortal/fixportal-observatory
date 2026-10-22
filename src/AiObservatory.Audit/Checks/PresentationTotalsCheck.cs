@@ -131,7 +131,7 @@ public sealed class PresentationTotalsCheck
         var groups = events.GroupBy(e => new AggregateKey(
             DateOnly.FromDateTime(e.OccurredAt.UtcDateTime),
             e.Provider,
-            e.Model ?? "",
+            e.Model ?? "unknown",
             e.SourceId,
             e.Provenance.SourceKind,
             e.Provenance.UsageScope,

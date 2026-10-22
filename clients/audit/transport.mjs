@@ -18,20 +18,34 @@ export function createAuditTransport(configuration, dependencies = {}) {
       if (!['Content-Type', 'X-Content-SHA256', 'X-Observatory-Audit-Lease', 'Idempotency-Key'].includes(name) || typeof value !== 'string') throw new Error('invalid_audit_header');
       headers[name] = value;
     }
+    // At most three attempts, capped below the default five-minute capture lease.
+    // Each upload gets latency allowance plus 128 KiB/s, bounded at ninety seconds.
+    const bodyBytes = options.body == null ? 0 : Buffer.byteLength(options.body);
+    const attemptBudget = path.endsWith('/claim') ? 10000
+      : Math.min(90000, 10000 + Math.ceil(bodyBytes / (128 * 1024)) * 1000);
+    const deadline = Math.min(options.deadline ?? Infinity, Date.now() + 270750);
+    if (!Number.isFinite(deadline)) throw new Error('audit_transport_failed');
+    const remaining = () => deadline - Date.now() - 1000;
+    const retry = async attempt => {
+      const delay = 250 * 2 ** attempt;
+      if (options.signal?.aborted || remaining() <= delay) throw new Error('audit_transport_failed');
+      await (dependencies.sleep ?? sleep)(delay, undefined, { signal: options.signal });
+    };
     for (let attempt = 0; attempt < 3; attempt++) {
+      if (options.signal?.aborted || remaining() <= 0) throw new Error('audit_transport_failed');
       let response;
       try {
-        const timeout = AbortSignal.timeout(10000);
+        const timeout = AbortSignal.timeout(Math.floor(Math.min(attemptBudget, remaining())));
         const signal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
         response = await fetch(origin.origin + path, { method, headers, body: options.body, redirect: 'manual', signal });
       } catch {
         if (options.signal?.aborted || attempt === 2) throw new Error('audit_transport_failed');
-        await (dependencies.sleep ?? sleep)(250 * 2 ** attempt, undefined, { signal: options.signal }); continue;
+        await retry(attempt); continue;
       }
       if (response.status >= 300 && response.status < 400) { await response.body?.cancel(); throw new Error('audit_redirect_blocked'); }
       if (!response.ok) {
         await response.body?.cancel();
-        if ((response.status === 429 || response.status >= 500) && attempt < 2) { await (dependencies.sleep ?? sleep)(250 * 2 ** attempt, undefined, { signal: options.signal }); continue; }
+        if ((response.status === 429 || response.status >= 500) && attempt < 2) { await retry(attempt); continue; }
         throw new Error(`audit_http_${response.status}`);
       }
       const parts = []; let length = 0;

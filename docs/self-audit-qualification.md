@@ -23,8 +23,9 @@ instructions are in [Self-audit](self-audit.md).
 Release tests used .NET SDK 10.0.402, Node 24.19.0 and uniquely owned disposable
 PostgreSQL databases. The supplied database was never migrated, cleared or
 removed. Test templates are newly created, empty, fully migrated owned databases;
-each test receives an isolated clone. Dedicated unmigrated startup tests remain
-unmigrated. The production provenance foreign keys remain enforced.
+each database-owning factory or fixture receives an isolated clone. Tests in an
+API collection can share that factory and database. Dedicated unmigrated startup
+and historical migration tests retain their explicit migration boundaries. The production provenance foreign keys remain enforced.
 
 Frozen source copies and inventories were preserved before capture, with origin
 modification times, capture times and SHA-256 digests held privately. Additional

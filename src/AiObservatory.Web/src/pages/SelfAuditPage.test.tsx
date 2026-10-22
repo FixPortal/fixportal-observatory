@@ -427,3 +427,95 @@ test('deleted indefinite evidence disables replay, export and probe while retain
   ).not.toBeInTheDocument()
   expect(calls.some((c) => c.path.endsWith('/findings'))).toBe(false)
 })
+
+test('retained reports expose each check outcome, exact coverage and exclusions', async () => {
+  run = {
+    ...completed,
+    detailsAvailable: false,
+    checks: [
+      {
+        code: 'eventAggregation',
+        verdict: 'matched',
+        supported: true,
+        executed: true,
+        coverage: {
+          comparedGroups: '9007199254740993',
+          totalGroups: '9007199254740994',
+          diagnosticCodes: [],
+          exclusions: [
+            { field: 'thoughtTokens', diagnosticCode: 'aggregate_has_no_thought_tokens_column' },
+          ],
+          detailsAvailable: true,
+        },
+      },
+      {
+        code: 'pricingArithmetic',
+        verdict: 'incomplete',
+        supported: true,
+        executed: true,
+        coverage: {
+          comparedGroups: '0',
+          totalGroups: '1',
+          diagnosticCodes: ['historical_rate_evidence_missing'],
+          detailsAvailable: true,
+        },
+      },
+      {
+        code: 'billingReconciliation',
+        verdict: 'unsupported',
+        supported: false,
+        executed: false,
+        coverage: {
+          comparedGroups: '0',
+          totalGroups: '1',
+          diagnosticCodes: [],
+          detailsAvailable: true,
+        },
+      },
+      {
+        code: 'dailyAttribution',
+        verdict: 'excluded',
+        supported: true,
+        executed: false,
+        coverage: {
+          comparedGroups: '0',
+          totalGroups: '0',
+          diagnosticCodes: [],
+          detailsAvailable: true,
+        },
+      },
+    ],
+  }
+  mount()
+  await userEvent.click(await screen.findByRole('button', { name: /Open audit/ }))
+  const panel = await screen.findByRole('region', { name: 'Check results' })
+  for (const label of [
+    'Event aggregation',
+    'Pricing arithmetic',
+    'Billing reconciliation',
+    'Daily attribution',
+  ])
+    expect(within(panel).getByRole('heading', { name: label })).toBeInTheDocument()
+  for (const value of [
+    'matched',
+    'incomplete',
+    'unsupported',
+    'excluded',
+    'thoughtTokens',
+    'historical_rate_evidence_missing',
+  ])
+    expect(within(panel).getByText(value)).toBeInTheDocument()
+  expect(
+    within(panel).getByText('9007199254740993 / 9007199254740994 groups compared'),
+  ).toBeInTheDocument()
+  expect(within(panel).getByText('Excluded from this scope')).toBeInTheDocument()
+})
+
+test('legacy summaries say check outcomes are unavailable without inventing a match', async () => {
+  run = { ...completed, detailsAvailable: false }
+  mount()
+  await userEvent.click(await screen.findByRole('button', { name: /Open audit/ }))
+  expect(
+    await screen.findByText('Per-check results are unavailable for this report.'),
+  ).toBeInTheDocument()
+})

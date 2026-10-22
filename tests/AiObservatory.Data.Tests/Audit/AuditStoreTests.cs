@@ -38,7 +38,7 @@ public sealed class AuditStoreTests : IAsyncLifetime
             .UseNpgsql(connection, o => o.UseNodaTime())
             .Options;
         _db = new(_options);
-        await _db.Database.MigrateAsync(Ct);
+        await AiObservatory.Testing.PostgresTestAssemblyFixture.CloneMigratedDatabaseAsync(connection, Ct);
         _store = new(_db, _clock);
     }
 
@@ -840,6 +840,269 @@ public sealed class AuditStoreTests : IAsyncLifetime
             .Should()
             .Be(0);
         (await OrdinaryRows()).Should().Equal(ordinary);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task Review64_LastCollectingOwnerStopsPendingAndUploadedRequests(bool uploaded, bool proceed)
+    {
+        var machine = await Machine();
+        var run = await _store.CreateRunAsync(Scope(machine.MachineId), [], "review64", true, Now, Ct);
+        CaptureLease? lease = null;
+        var bytes = Record(machine.MachineId);
+        if (uploaded)
+        {
+            lease = (await _store.TryClaimCaptureAsync(machine.MachineId, machine.CredentialId, Now, Ct))!;
+            await _store.PutChunkAsync(lease, 0, bytes, AuditCanonicalJson.ContentHash(bytes), Ct);
+        }
+        if (proceed)
+        {
+            await _store.ProceedRunAsync(run, Ct);
+        }
+        else
+        {
+            (await _store.DeleteRunAsync(run, Ct)).Should().BeTrue();
+        }
+        (await _store.TryClaimCaptureAsync(machine.MachineId, machine.CredentialId, Now, Ct)).Should().BeNull();
+        (
+            await _db
+                .Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM \"AuditEvidenceChunks\"")
+                .SingleAsync(Ct)
+        )
+            .Should()
+            .Be(0);
+        if (lease != null)
+        {
+            var upload = () => _store.PutChunkAsync(lease, 0, bytes, AuditCanonicalJson.ContentHash(bytes), Ct);
+            await upload.Should().ThrowAsync<AuditStoreException>();
+            var seal = () =>
+                _store.SealCaptureAsync(lease, Manifest(lease, [AuditCanonicalJson.ContentHash(bytes)], 1), "late", Ct);
+            await seal.Should().ThrowAsync<AuditStoreException>();
+        }
+        await _store.CreateCaptureRequestAsync(machine.MachineId, Scope(machine.MachineId), Now, Ct);
+        await _store.CreateCaptureRequestAsync(machine.MachineId, Scope(machine.MachineId), Now, Ct);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Review64_SharedActiveRequestSurvivesUntilLastOwnerLeaves(bool proceed)
+    {
+        var machine = await Machine();
+        var first = await _store.CreateRunAsync(Scope(machine.MachineId), [], "first", true, Now, Ct);
+        var capture = (await _store.TryClaimCaptureAsync(machine.MachineId, machine.CredentialId, Now, Ct))!;
+        var second = await Run();
+        await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE \"AuditRuns\" SET \"CaptureRequestIds\" = {new[] { capture.RequestId }}, \"State\" = 'collecting' WHERE \"Id\" = {second}",
+            Ct
+        );
+        if (proceed)
+        {
+            await _store.ProceedRunAsync(first, Ct);
+        }
+        else
+        {
+            await _store.DeleteRunAsync(first, Ct);
+        }
+        var bytes = Record(capture.MachineId);
+        var hash = AuditCanonicalJson.ContentHash(bytes);
+        await _store.PutChunkAsync(capture, 0, bytes, hash, Ct);
+        await _store.DeleteRunAsync(second, Ct);
+        var repeated = () => _store.DeleteRunAsync(second, Ct);
+        (await repeated.Should().ThrowAsync<AuditStoreException>()).Which.Code.Should().Be("run_not_found");
+        var late = () => _store.PutChunkAsync(capture, 0, bytes, hash, Ct);
+        await late.Should().ThrowAsync<AuditStoreException>();
+        (
+            await _db
+                .Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM \"AuditEvidenceChunks\"")
+                .SingleAsync(Ct)
+        )
+            .Should()
+            .Be(0);
+    }
+
+    [Theory]
+    [InlineData("expiry")]
+    [InlineData("renew")]
+    public async Task Review64_SealValidationAllowsProgressAndFencesExpiredPublication(string action)
+    {
+        var capture = await Capture();
+        var bytes = Record(capture.MachineId);
+        var hash = AuditCanonicalJson.ContentHash(bytes);
+        await _store.PutChunkAsync(capture, 0, bytes, hash, Ct);
+        await Run();
+        var runLease = (await _store.TryLeaseRunAsync(Guid.NewGuid(), Now, Ct))!;
+        var gate = new GatedCaptureValidator();
+        var sealingStore = new AuditStore(_db, _clock, captureValidator: gate);
+        var seal = sealingStore.SealCaptureAsync(capture, Manifest(capture, [hash], 1), "seal", Ct);
+        await gate.Entered.Task.WaitAsync(Ct);
+        try
+        {
+            if (action == "expiry")
+            {
+                _clock.Advance(Duration.FromMinutes(6));
+                gate.Release.TrySetResult();
+                var observe = () => seal;
+                (await observe.Should().ThrowAsync<AuditStoreException>())
+                    .Which.Code.Should()
+                    .Be("capture_lease_expired");
+            }
+            else
+            {
+                await using var otherDb = new AiObservatoryDbContext(_options);
+                using var budget = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+                budget.CancelAfter(TimeSpan.FromSeconds(2));
+                var renewed = await new AuditStore(otherDb, _clock).RenewRunLeaseAsync(runLease, Now, budget.Token);
+                renewed.Should().BeTrue("validation must not monopolize the evidence fence");
+                gate.Release.TrySetResult();
+                await seal;
+            }
+        }
+        finally
+        {
+            gate.Release.TrySetResult();
+            try
+            {
+                await seal;
+            }
+            catch (AuditStoreException)
+            { /* Observe expected rejected publication during cleanup. */
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData("revoke", "credential_revoked")]
+    [InlineData("rotate", "credential_revoked")]
+    [InlineData("delete", "capture_lease_conflict")]
+    [InlineData("cancel", "capture_lease_conflict")]
+    [InlineData("replace", "capture_lease_conflict")]
+    [InlineData("append", "capture_generation_changed")]
+    [InlineData("retry", "")]
+    [InlineData("conflict", "")]
+    [InlineData("caller", "")]
+    public async Task Review64_SealRechecksFreshCredentialAndChunkGeneration(string action, string code)
+    {
+        var machine = await Machine();
+        var run = await _store.CreateRunAsync(Scope(machine.MachineId), [], "race", true, Now, Ct);
+        var capture = (await _store.TryClaimCaptureAsync(machine.MachineId, machine.CredentialId, Now, Ct))!;
+        var bytes = Record(capture.MachineId);
+        var hash = AuditCanonicalJson.ContentHash(bytes);
+        await _store.PutChunkAsync(capture, 0, bytes, hash, Ct);
+        var manifest = Manifest(capture, [hash], 1);
+        var gate = new GatedCaptureValidator();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var seal = new AuditStore(_db, _clock, captureValidator: gate).SealCaptureAsync(
+            capture,
+            manifest,
+            "seal",
+            cancellation.Token
+        );
+        await gate.Entered.Task.WaitAsync(Ct);
+        try
+        {
+            await using var writer = new AiObservatoryDbContext(_options);
+            var other = new AuditStore(writer, _clock);
+            switch (action)
+            {
+                case "revoke":
+                    await other.RevokeCredentialAsync(capture.CredentialId, Ct);
+                    break;
+                case "rotate":
+                    await other.RotateMachineCredentialAsync(capture.MachineId, new byte[32], Ct);
+                    break;
+                case "delete":
+                    await other.DeleteRunAsync(run, Ct);
+                    break;
+                case "cancel":
+                    var view = (await other.GetRunAsync(run, Ct))!;
+                    await other.CancelRunAsync(run, view.Revision, Ct);
+                    break;
+                case "replace":
+                    _clock.Advance(Duration.FromMinutes(6));
+                    (
+                        await other.TryClaimCaptureAsync(
+                            capture.MachineId,
+                            capture.CredentialId,
+                            _clock.GetCurrentInstant(),
+                            Ct
+                        )
+                    )!
+                        .Token.Should()
+                        .NotBe(capture.Token);
+                    break;
+                case "append":
+                    await other.PutChunkAsync(capture, 1, bytes, hash, Ct);
+                    break;
+                case "retry":
+                    await other.SealCaptureAsync(capture, manifest, "seal", Ct);
+                    break;
+                case "conflict":
+                    var altered = bytes.Concat(bytes).ToArray();
+                    var upload = () =>
+                        other.PutChunkAsync(capture, 0, altered, AuditCanonicalJson.ContentHash(altered), Ct);
+                    await upload.Should().ThrowAsync<AuditStoreException>();
+                    break;
+                case "caller":
+                    await cancellation.CancelAsync();
+                    break;
+            }
+            gate.Release.TrySetResult();
+            var observe = () => seal;
+            if (action == "caller")
+            {
+                await observe.Should().ThrowAsync<OperationCanceledException>();
+            }
+            else if (action is "retry" or "conflict")
+            {
+                (await seal).Should().Be(AuditCanonicalJson.Deserialize<CaptureManifest>(manifest).CaptureId);
+                (await other.SealCaptureAsync(capture, manifest, "seal", Ct)).Should().Be(await seal);
+            }
+            else
+            {
+                (await observe.Should().ThrowAsync<AuditStoreException>()).Which.Code.Should().Be(code);
+            }
+            var count = await writer
+                .Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM \"AuditEvidenceCaptures\"")
+                .SingleAsync(Ct);
+            count.Should().Be(action is "retry" or "conflict" ? 1 : 0);
+        }
+        finally
+        {
+            gate.Release.TrySetResult();
+            try
+            {
+                await seal;
+            }
+            catch (Exception ex) when (ex is AuditStoreException or OperationCanceledException)
+            { /* Observe fenced publication. */
+            }
+        }
+    }
+
+    private sealed class GatedCaptureValidator : AuditCaptureValidator
+    {
+        internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override async Task ValidateAsync(
+            CaptureManifest manifest,
+            IReadOnlyList<AuditSealChunk> chunks,
+            CancellationToken ct
+        )
+        {
+            Entered.TrySetResult();
+            await Release.Task.WaitAsync(ct);
+            await base.ValidateAsync(manifest, chunks, ct);
+        }
+    }
+
+    [Fact]
+    public void Review64_OrdinarySetupUsesMigratedTemplate()
+    {
+        AiObservatory.Testing.PostgresTestAssemblyFixture.TemplateMigrationPasses.Should().Be(1);
     }
 
     private async Task<string[]> OrdinaryRows()

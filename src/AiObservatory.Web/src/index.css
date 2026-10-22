@@ -2909,3 +2909,33 @@ td.budget-rules__actions {
   font-size: 0.75rem;
   overflow-wrap: anywhere;
 }
+
+.audit-check-results {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
+  margin-top: var(--space-4);
+}
+.audit-check-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: var(--space-4);
+}
+.audit-check-list > li {
+  border: 1px solid var(--border);
+  border-radius: var(--r-panel);
+  padding: var(--space-3);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.audit-check-list h3 {
+  margin: 0;
+}
+
+.audit-check-list .audit-verdict {
+  font-size: 1rem;
+}
+.audit-verdict--excluded {
+  color: var(--text-muted);
+}

@@ -8,14 +8,11 @@ public static class OpenAiAuditPricing
     {
         var t = e.Tokens;
         var read = t.CacheReadTokens ?? 0;
-        if (read > t.InputTokens || t.CacheWriteTokens is > 0)
-        {
-            throw new AuditValidationException("openai_token_subset_invalid");
-        }
         return
         [
-            (PriceMeter.Input, checked(t.InputTokens - read)),
+            (PriceMeter.Input, t.InputTokens),
             (PriceMeter.CacheRead, read),
+            (PriceMeter.CacheWrite5m, t.CacheWriteTokens ?? 0),
             (PriceMeter.Output, t.OutputTokens),
         ];
     }
