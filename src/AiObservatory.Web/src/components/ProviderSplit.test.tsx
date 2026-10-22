@@ -82,7 +82,7 @@ test('uses native accessible toggles and reports zero selected totals truthfully
   data.aggregates = [aggregate({ inputTokens: 100, outputTokens: 0, requestCount: 0 })]
   render(<ProviderSplit />)
   expect(screen.getByRole('button', { name: 'Notional' })).toHaveAttribute('aria-pressed', 'true')
-  const activity = screen.getByRole('button', { name: 'Activity' })
+  const activity = screen.getByRole('button', { name: 'Records' })
   activity.focus()
   expect(activity).toHaveFocus()
   await userEvent.keyboard('{Enter}')

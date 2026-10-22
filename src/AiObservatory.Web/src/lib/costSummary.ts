@@ -1,3 +1,6 @@
+export const usageRecordExplanation =
+  'Counts stored usage records, including records corrected to zero. A record may summarize many provider requests.'
+
 export interface CostAggregate {
   costBasis: string
   costUsd: number

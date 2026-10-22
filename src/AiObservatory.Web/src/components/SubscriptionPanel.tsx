@@ -1,6 +1,7 @@
 import { useClock } from '../lib/useClock'
 import { useState, useMemo, useCallback, useRef } from 'react'
 import { InfoPopover } from './InfoPopover'
+import { usageRecordExplanation } from '../lib/costSummary'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { patchExtraUsage, type Subscription } from '../api/client'
 import { useSubscriptions, useAggregates, localDate } from '../api/queries'
@@ -35,13 +36,13 @@ function usagePresentation(
     return {
       value: 'Not reported',
       ratio: 0,
-      label: `${requestCount.toLocaleString()} ${requestCount === 1 ? 'request' : 'requests'} recorded · value not reported`,
+      label: `${requestCount.toLocaleString()} ${requestCount === 1 ? 'usage record' : 'usage records'} · value not reported`,
     }
   }
   const ratio = totalGbp > 0 ? valueGbp / totalGbp : 0
   const unknownLabel =
     unknownCostCount > 0
-      ? ` · ${unknownCostCount.toLocaleString()} ${unknownCostCount === 1 ? 'request' : 'requests'} not reported`
+      ? ` · ${unknownCostCount.toLocaleString()} ${unknownCostCount === 1 ? 'record' : 'records'} with unreported value`
       : ''
   return {
     value: gbp(valueGbp),
@@ -255,6 +256,7 @@ export function SubscriptionPanel() {
           <div className="sub-panel-title-row">
             <span className="sub-panel-title">Subscriptions</span>
             <InfoPopover id="subscriptions-info" title="Subscriptions">
+              <p>{usageRecordExplanation}</p>
               <p>
                 Notional usage value applies current public API list prices to eligible subscription
                 activity. It is a comparison, not money charged.

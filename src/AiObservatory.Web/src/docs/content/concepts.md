@@ -75,7 +75,7 @@ A missing value is never shown as zero. Observatory distinguishes three situatio
 
 How "no cost" is tracked:
 
-- Every daily aggregate carries `requestCount` and `unknownCostCount`. The second is the number of requests in the aggregate whose cost the source did not report.
+- Every daily aggregate carries `requestCount` and `unknownCostCount`. They count stored usage records and records with unreported cost, respectively, including records corrected to zero. A record may summarize many provider requests.
 - A figure counts as reported only if `requestCount` is greater than `unknownCostCount`. Otherwise the card, table cell or chart shows `Not reported`.
 - A partly reported figure shows its known subtotal with a qualifier, for example `3 observations not reported`. The subtotal is real; the qualifier tells you it is incomplete.
 - Cache savings follow the same rule with their own unknown count.
