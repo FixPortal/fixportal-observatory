@@ -29,12 +29,8 @@ public static class AuditPricingProjector
 
     private static void AddEntry(List<FrozenPriceRate> rates, JsonElement e)
     {
-        var dimensions = new PricingDimensions(
-            Tier(Text(e, "processing") ?? Text(e, "tier")),
-            false,
-            Text(e, "region"),
-            null
-        )
+        var processingTier = Text(e, "processing") ?? Text(e, "tier");
+        var dimensions = new PricingDimensions(Tier(processingTier), processingTier == "batch", Text(e, "region"), null)
         {
             Processing = Text(e, "processing"),
             Context = Text(e, "context"),

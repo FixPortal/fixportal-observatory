@@ -253,6 +253,93 @@ public sealed class PricingApplicationTests : IAsyncLifetime
         (await _db.DailyAggregates.CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
     }
 
+    [Theory]
+    [InlineData("{}", null, null, false)]
+    [InlineData(
+        "{\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":100}}",
+        0L,
+        100L,
+        true
+    )]
+    [InlineData(
+        "{\"cache_creation\":{\"ephemeral_5m_input_tokens\":100,\"ephemeral_1h_input_tokens\":0}}",
+        100L,
+        0L,
+        false
+    )]
+    public async Task AnthropicNotionalCacheWrites_PersistInputsAndApplicationForIndependentDurationChoice(
+        string raw,
+        long? observed5m,
+        long? observed1h,
+        bool exact
+    )
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var entry = new AnthropicPriceEntry(
+            "synthetic",
+            ["synthetic"],
+            new(2026, 10, 1),
+            true,
+            2m,
+            10m,
+            0.2m,
+            2.5m,
+            4m,
+            null,
+            null,
+            null,
+            null,
+            null
+        );
+        var snapshot = new PricingSnapshot
+        {
+            Provider = Provider.Anthropic,
+            SourceId = PricingSourceIds.Claude,
+            ContentHash = new string('a', 64),
+            RetrievedAt = Now,
+            IsActive = true,
+            NormalizedCatalog = PricingCatalogJson.Serialize(
+                new AnthropicPriceCatalog("USD", "https://example.com/pricing", Now, [entry])
+            ),
+        };
+        _db.PricingSnapshots.Add(snapshot);
+        await _db.SaveChangesAsync(ct);
+        var store = new PricingSnapshotStore(_db);
+        var resolver = new UsagePriceResolver(
+            store,
+            [new AnthropicPriceCalculator()],
+            NullLogger<UsagePriceResolver>.Instance
+        );
+        var repository = new UsageRepository(_db, store, resolver);
+        await repository.RecordEstimatedEventAsync(
+            new()
+            {
+                Provider = Provider.Anthropic,
+                Model = "synthetic",
+                OccurredAt = Now,
+                ObservedAt = Now,
+                IngestedAt = Now,
+                CostBasis = CostBasis.Notional,
+                CacheWriteTokens = 100,
+                CacheWrite1hTokens = 100,
+                RawPayload = raw,
+            },
+            ct
+        );
+        var stored = await _db.UsageEvents.AsNoTracking().SingleAsync(ct);
+        var application = await _db.PricingApplications.SingleAsync(ct);
+        PricingEvidence
+            .ObserveCacheDurations(stored)
+            .Should()
+            .Be(new AiObservatory.Audit.Contracts.CacheDurationObservation(observed5m, observed1h));
+        stored.CacheWrite1hTokens.Should().Be(100);
+        application.RevisionDigest.Should().Be(PricingEvidence.RevisionDigest(stored));
+        application.SnapshotId.Should().Be(snapshot.Id);
+        application.RateKey.Should().Be(PricingEvidence.RateKey(entry));
+        application.CostUsd.Should().Be(exact ? 0.0004m : 0.00025m);
+        stored.CostUsd.Should().Be(application.CostUsd);
+    }
+
     private static UsageEvent Event(string key) =>
         new()
         {

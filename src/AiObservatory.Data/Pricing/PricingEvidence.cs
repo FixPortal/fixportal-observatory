@@ -66,6 +66,26 @@ public static class PricingEvidence
         };
     }
 
+    public static CacheDurationObservation ObserveCacheDurations(UsageEvent usage)
+    {
+        using var json = ProviderPricingJson.Evidence(usage.RawPayload);
+        long? Count(string name)
+        {
+            var root = json.RootElement;
+            return
+                root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("cache_creation", out var creation)
+                && creation.ValueKind == JsonValueKind.Object
+                && creation.TryGetProperty(name, out var observed)
+                && observed.ValueKind == JsonValueKind.Number
+                && observed.TryGetInt64(out var count)
+                && count >= 0
+                ? count
+                : null;
+        }
+        return new(Count("ephemeral_5m_input_tokens"), Count("ephemeral_1h_input_tokens"));
+    }
+
     public static string RateKey<T>(T entry)
     {
         // PostgreSQL jsonb can reorder properties and normalize numeric lexemes. Identity must survive that round-trip.

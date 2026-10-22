@@ -10,6 +10,17 @@ namespace AiObservatory.Audit.Tests.Serialization;
 public sealed class ProjectionContractTests
 {
     [Fact]
+    public void InspectedMissingCacheDurations_RemainDistinctFromUnfrozenLegacyEvidence()
+    {
+        var input = CompleteInput();
+        var row = input.Events[0];
+        var inspected = input with { Events = [row with { CacheDurations = new(null, null) }, input.Events[1]] };
+        AuditComputationInput.ContentDigest(inspected).Should().NotBe(AuditComputationInput.ContentDigest(input));
+        var roundTrip = AuditCanonicalJson.Deserialize<AuditInput>(AuditCanonicalJson.Serialize(inspected));
+        roundTrip.Events[0].CacheDurations.Should().Be(new CacheDurationObservation(null, null));
+    }
+
+    [Fact]
     public void FinancialObservation_ConflictingRowIdentity_IsRejected()
     {
         var input = CompleteInput();
@@ -38,6 +49,7 @@ public sealed class ProjectionContractTests
     }
 
     [Theory]
+    [InlineData("cacheDurations")]
     [InlineData("source")]
     [InlineData("dimensions")]
     [InlineData("application")]
@@ -51,6 +63,7 @@ public sealed class ProjectionContractTests
         var catalog = input.PricingCatalogs[0];
         var changed = extension switch
         {
+            "cacheDurations" => input with { Events = [row with { CacheDurations = new(0, 100) }, input.Events[1]] },
             "source" => input with
             {
                 Events = [row with { SourceDimensions = application.Dimensions }, input.Events[1]],
@@ -117,7 +130,8 @@ public sealed class ProjectionContractTests
             .Should()
             .NotContain("sourceDimensions")
             .And.NotContain("catalogEntryKey")
-            .And.NotContain("financialObservations");
+            .And.NotContain("financialObservations")
+            .And.NotContain("cacheDurations");
         originalBytes.Should().Contain("\"region\":null", "existing version-one nulls remain explicit");
         AuditComputationInput.ContentDigest(changed).Should().NotBe(AuditComputationInput.ContentDigest(input));
         var roundTrip = AuditCanonicalJson.Deserialize<AuditInput>(AuditCanonicalJson.Serialize(changed));
