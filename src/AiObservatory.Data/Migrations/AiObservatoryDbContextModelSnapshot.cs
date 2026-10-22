@@ -23,6 +23,390 @@ namespace AiObservatory.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditCaptureRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CredentialId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("Deadline")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant?>("LeaseExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("LeaseToken")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("MachineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("RecordCount")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("Scope")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<long>("UploadedBytes")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CredentialId");
+
+                    b.HasIndex("MachineId", "State", "Deadline");
+
+                    b.ToTable("AuditCaptureRequests", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_AuditRequest_Counts", "\"UploadedBytes\" >= 0 AND \"UploadedBytes\" <= 536870912 AND \"RecordCount\" >= 0 AND \"RecordCount\" <= 1000000 AND \"Revision\" >= 0");
+
+                            t.HasCheckConstraint("CK_AuditRequest_State", "\"State\" IN ('pending','uploading','sealed','expired')");
+                        });
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditEvidenceCapture", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Generation")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<Guid>("MachineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("Manifest")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ManifestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SealKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Instant>("SealedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("MachineId");
+
+                    b.HasIndex("RequestId")
+                        .IsUnique();
+
+                    b.HasIndex("RequestId", "SealKey")
+                        .IsUnique();
+
+                    b.ToTable("AuditEvidenceCaptures", (string)null);
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditEvidenceChunk", b =>
+                {
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Index")
+                        .HasColumnType("integer");
+
+                    b.Property<byte[]>("Bytes")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<long>("RecordCount")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("RequestId", "Index");
+
+                    b.HasIndex("RequestId", "Index", "Sha256")
+                        .IsUnique();
+
+                    b.ToTable("AuditEvidenceChunks", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_AuditChunk_Bounds", "\"Index\" >= 0 AND \"Index\" < 10000 AND octet_length(\"Bytes\") > 0 AND octet_length(\"Bytes\") <= 8388608 AND \"RecordCount\" > 0 AND \"RecordCount\" <= 1000000");
+
+                            t.HasCheckConstraint("CK_AuditChunk_Hash", "\"Sha256\" ~ '^[0-9a-f]{64}$'");
+                        });
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditFindingRecord", b =>
+                {
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Index")
+                        .HasColumnType("integer");
+
+                    b.Property<byte[]>("Finding")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.HasKey("RunId", "Index");
+
+                    b.ToTable("AuditFindingRecords", (string)null);
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditMachine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AuditMachines", (string)null);
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditMachineCredential", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("MachineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<byte[]>("SecretHash")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MachineId");
+
+                    b.ToTable("AuditMachineCredentials", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_AuditCredential_Hash", "octet_length(\"SecretHash\") = 32");
+                        });
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditRetentionSettings", b =>
+                {
+                    b.Property<string>("InstanceId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int?>("EvidenceDays")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("SummaryDays")
+                        .HasColumnType("integer");
+
+                    b.HasKey("InstanceId");
+
+                    b.ToTable("AuditRetentionSettings", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_AuditRetention_Days", "(\"EvidenceDays\" IS NULL OR \"EvidenceDays\" > 0) AND (\"SummaryDays\" IS NULL OR \"SummaryDays\" > 0) AND \"Revision\" >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<Instant?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DiagnosticCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid?>("EvaluationOfRunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Instant?>("EvidenceExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("InstanceId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Instant?>("LeaseExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("PredecessorRunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<byte[]>("Result")
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ResultHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("Scope")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Instant?>("SummaryExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("WorkerId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EvaluationOfRunId");
+
+                    b.HasIndex("PredecessorRunId");
+
+                    b.HasIndex("SummaryExpiresAt");
+
+                    b.HasIndex("InstanceId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("InstanceId", "State", "CreatedAt", "Id");
+
+                    b.ToTable("AuditRuns", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_AuditRun_Attempts", "\"Attempts\" BETWEEN 0 AND 3 AND \"Revision\" >= 0");
+
+                            t.HasCheckConstraint("CK_AuditRun_State", "\"State\" IN ('collecting','queued','executing','completed','cancelled','failed')");
+                        });
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditRunCapture", b =>
+                {
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CaptureId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("RunId", "CaptureId");
+
+                    b.HasIndex("CaptureId");
+
+                    b.ToTable("AuditRunCaptures", (string)null);
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditServerSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("Bytes")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<Instant?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Instant>("FrozenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("InputContentDigest")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId")
+                        .IsUnique();
+
+                    b.ToTable("AuditServerSnapshots", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_AuditSnapshot_Bounds", "octet_length(\"Bytes\") <= 536870912 AND \"Revision\" >= 0");
+                        });
+                });
+
             modelBuilder.Entity("AiObservatory.Data.Entities.AdversarialReviewFinding", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1618,6 +2002,99 @@ namespace AiObservatory.Data.Migrations
 
                             t.HasCheckConstraint("CK_UsageEvent_ThoughtTokens_NonNegative", "\"ThoughtTokens\" IS NULL OR \"ThoughtTokens\" >= 0");
                         });
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditCaptureRequest", b =>
+                {
+                    b.HasOne("AiObservatory.Data.Audit.AuditMachineCredential", null)
+                        .WithMany()
+                        .HasForeignKey("CredentialId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("AiObservatory.Data.Audit.AuditMachine", null)
+                        .WithMany()
+                        .HasForeignKey("MachineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditEvidenceCapture", b =>
+                {
+                    b.HasOne("AiObservatory.Data.Audit.AuditMachine", null)
+                        .WithMany()
+                        .HasForeignKey("MachineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AiObservatory.Data.Audit.AuditCaptureRequest", null)
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditEvidenceChunk", b =>
+                {
+                    b.HasOne("AiObservatory.Data.Audit.AuditCaptureRequest", null)
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditFindingRecord", b =>
+                {
+                    b.HasOne("AiObservatory.Data.Audit.AuditRun", null)
+                        .WithMany()
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditMachineCredential", b =>
+                {
+                    b.HasOne("AiObservatory.Data.Audit.AuditMachine", null)
+                        .WithMany()
+                        .HasForeignKey("MachineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditRun", b =>
+                {
+                    b.HasOne("AiObservatory.Data.Audit.AuditRun", null)
+                        .WithMany()
+                        .HasForeignKey("EvaluationOfRunId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("AiObservatory.Data.Audit.AuditRun", null)
+                        .WithMany()
+                        .HasForeignKey("PredecessorRunId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditRunCapture", b =>
+                {
+                    b.HasOne("AiObservatory.Data.Audit.AuditEvidenceCapture", null)
+                        .WithMany()
+                        .HasForeignKey("CaptureId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AiObservatory.Data.Audit.AuditRun", null)
+                        .WithMany()
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.AuditServerSnapshot", b =>
+                {
+                    b.HasOne("AiObservatory.Data.Audit.AuditRun", null)
+                        .WithMany()
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("AiObservatory.Data.Entities.AdversarialReviewFindingParticipant", b =>
