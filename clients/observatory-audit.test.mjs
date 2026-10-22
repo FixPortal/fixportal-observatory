@@ -236,3 +236,57 @@ test('optional local raw-file hash includes original UTF-8 BOM bytes', async t =
   assert.equal(result.records.length, 1);
   assert.equal(result.local.rawHashes[0].sha256, createHash('sha256').update(bytes).digest('hex'));
 });
+
+for (const [name, value] of [['null', null], ['omitted', undefined], ['empty', '']]) {
+  for (const target of ['request', 'configuration', 'both']) {
+    test(`required source ID ${name} in ${target} is rejected with sanitized validation`, async t => {
+      const { config, request, root } = await workspace(t);
+      await writeFile(join(root, 'synthetic.jsonl'), claude());
+      if (target !== 'configuration') request.scope.sources[0].sourceId = value;
+      if (target !== 'request') config.sources[0].sourceId = value;
+      if (value === undefined) {
+        if (target !== 'configuration') delete request.scope.sources[0].sourceId;
+        if (target !== 'request') delete config.sources[0].sourceId;
+      }
+      const expected = target === 'configuration' ? 'invalid_capture_configuration' : 'invalid_capture_request';
+      await assert.rejects(() => captureEvidence(request, config), { message: expected });
+    });
+  }
+}
+
+for (const failedType of ['turn_context', 'session_meta']) {
+  test(`rejected Codex ${failedType} invalidates stale facts until valid context recovers`, () => {
+    const native = codex().split('\n').map(line => JSON.parse(line));
+    const originalTurn = { ...native[1], payload: { ...native[1].payload, speed: 'fast', inference_geo: 'us', region: 'us', model_context_window: 200000 } };
+    const usage = native[2];
+    const rejected = { type: failedType, timestamp: '2026-10-20T02:00:00Z', payload: { id: 'session-rejected', model: secret, model_provider: 'deepseek', service_tier: 'flex' } };
+    const recovered = { type: failedType, timestamp: '2026-10-20T03:00:00Z', payload: { id: 'session-recovered', parent_session_id: 'parent-recovered', model: 'glm-4.6', model_provider: 'zai', service_tier: 'flex', speed: 'fast', inference_geo: 'eu', region: 'eu', model_context_window: 100000 } };
+    const withoutInlineDimensions = { ...usage, payload: { ...usage.payload, info: { ...usage.payload.info } } };
+    delete withoutInlineDimensions.payload.info.model_context_window;
+    const result = extractCodexEvidence([native[0], originalTurn, withoutInlineDimensions, rejected, withoutInlineDimensions, recovered, withoutInlineDimensions].map(JSON.stringify).join('\n'), context());
+    const facts = result.records.filter(record => record.counters);
+    assert.equal(facts.length, 3);
+    assert.equal(facts[0].model, 'gpt-5-codex');
+    assert.equal(facts[0].provider, 'openai');
+    assert.equal(facts[0].pricing.sourceServiceTier, 'priority');
+    assert.equal(facts[1].model, null);
+    assert.equal(facts[1].provider, null);
+    assert.deepEqual(facts[1].pricing, { tier: 'unknown', batch: false, region: null, contextTokens: null, sourceServiceTier: null, speed: null, inferenceGeo: null });
+    if (failedType === 'session_meta') {
+      assert.equal(facts[1].sessionId, null);
+      assert.equal(facts[1].parentId, null);
+      assert.notEqual(facts[2].sessionId, facts[0].sessionId);
+    } else {
+      assert.equal(facts[1].sessionId, facts[0].sessionId);
+      assert.equal(facts[1].parentId, facts[0].parentId);
+      assert.equal(facts[2].sessionId, facts[0].sessionId);
+      assert.equal(facts[2].pricing.sourceServiceTier, 'flex');
+      assert.equal(facts[2].pricing.region, 'eu');
+      assert.equal(facts[2].pricing.contextTokens, 100000n);
+    }
+    assert.equal(facts[2].model, 'glm-4.6');
+    assert.equal(facts[2].provider, 'zai');
+    assert.ok(result.diagnostics.some(diagnostic => diagnostic.code === 'invalid_source_identifier'));
+    assert.doesNotMatch(canonical(result), /PLANTED|sk-secret|home\/private/);
+  });
+}

@@ -15,14 +15,19 @@ export function extractCodexEvidence(text, identityContext) {
     if (!native || typeof native !== 'object' || Array.isArray(native)) throw new Error('unsupported_source_format');
     const payload = native.payload;
     if (native.type === 'session_meta') {
+      // Even a rejected replacement declares a session boundary: old identities/context cannot survive it.
+      state = {};
       if (!payload || !payload.id) throw new Error('missing_session_identity');
       const next = { sessionId: payload.id, parentSessionId: payload.parent_session_id ?? payload.source?.subagent?.thread_spawn?.parent_thread_id, model: payload.model, provider: payload.model_provider };
       const record = recordBase('codex', identityContext, sequence, native, next);
       state = next; records.push(record); return true;
     }
     if (native.type === 'turn_context') {
+      const previousProvider = state.provider;
+      // Session identities remain trustworthy, but a rejected turn makes its model/provider/pricing unknown.
+      state = { sessionId: state.sessionId, parentSessionId: state.parentSessionId };
       if (!payload || typeof payload !== 'object') throw new Error('invalid_usage_shape');
-      const next = { ...state, model: payload.model, provider: payload.model_provider ?? state.provider, service_tier: payload.service_tier, speed: payload.speed, inference_geo: payload.inference_geo, region: payload.region, model_context_window: payload.model_context_window };
+      const next = { ...state, model: payload.model, provider: payload.model_provider ?? previousProvider, service_tier: payload.service_tier, speed: payload.speed, inference_geo: payload.inference_geo, region: payload.region, model_context_window: payload.model_context_window };
       const record = recordBase('codex', identityContext, sequence, native, next);
       state = next; records.push(record); return true;
     }
