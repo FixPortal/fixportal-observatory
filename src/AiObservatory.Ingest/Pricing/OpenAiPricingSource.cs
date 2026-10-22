@@ -132,8 +132,24 @@ public sealed class OpenAiPricingSource : IPricingSource, IDisposable
         var entries = new List<OpenAiPriceEntry>();
         var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         ParseTable(lines, "### Standard pricing data", "standard", observedOn, entries, keys, durations);
-        ParseTable(lines, durations ? "#### Batch" : "### Batch pricing data", "batch", observedOn, entries, keys, durations);
-        ParseTable(lines, durations ? "#### Flex" : "### Flex pricing data", "flex", observedOn, entries, keys, durations);
+        ParseTable(
+            lines,
+            durations ? "#### Batch" : "### Batch pricing data",
+            "batch",
+            observedOn,
+            entries,
+            keys,
+            durations
+        );
+        ParseTable(
+            lines,
+            durations ? "#### Flex" : "### Flex pricing data",
+            "flex",
+            observedOn,
+            entries,
+            keys,
+            durations
+        );
         ParseTable(lines, "### Fast pricing data", "fast", observedOn, entries, keys, durations);
         if (
             RequiredLanes.Any(required =>

@@ -1,3 +1,4 @@
+using System.Globalization;
 using NodaTime;
 
 namespace AiObservatory.Data.Pricing.Catalogs;
@@ -73,9 +74,7 @@ public sealed record OpenAiPriceCatalog(
                     string.Equals(entry.Processing, processing, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(entry.Context, context, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(entry.Region, region, StringComparison.OrdinalIgnoreCase)
-                    && entry
-                        .Aliases.Prepend(entry.ModelPrefix)
-                        .Any(alias => model.StartsWith(alias, StringComparison.OrdinalIgnoreCase))
+                    && entry.Aliases.Prepend(entry.ModelPrefix).Any(alias => MatchesModel(model, alias))
                 ),
                 usageDate,
                 entry => entry.EffectiveFrom,
@@ -84,12 +83,24 @@ public sealed record OpenAiPriceCatalog(
             .OrderByDescending(entry =>
                 entry
                     .Aliases.Prepend(entry.ModelPrefix)
-                    .Where(alias => model.StartsWith(alias, StringComparison.OrdinalIgnoreCase))
+                    .Where(alias => MatchesModel(model, alias))
                     .Max(alias => alias.Length)
             )
             .ThenByDescending(entry => entry.EffectiveFrom)
             .FirstOrDefault();
     }
+
+    private static bool MatchesModel(string model, string alias) =>
+        string.Equals(model, alias, StringComparison.OrdinalIgnoreCase)
+        || model.Length == alias.Length + 11
+            && model.StartsWith(alias + "-", StringComparison.OrdinalIgnoreCase)
+            && DateOnly.TryParseExact(
+                model.AsSpan(alias.Length + 1),
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out _
+            );
 }
 
 public sealed record OpenAiPriceEntry(

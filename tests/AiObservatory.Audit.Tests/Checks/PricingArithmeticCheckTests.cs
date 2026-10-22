@@ -15,10 +15,16 @@ public sealed class PricingArithmeticCheckTests
         var input = Fixture(writes: writes);
         input = input with
         {
-            PricingCatalogs = input.PricingCatalogs.Select(c => c with
-            {
-                Rates = c.Rates.Where(r => r.Meter is not (PriceMeter.CacheWrite5m or PriceMeter.CacheWrite1h)).ToArray(),
-            }).ToArray(),
+            PricingCatalogs = input
+                .PricingCatalogs.Select(c =>
+                    c with
+                    {
+                        Rates = c
+                            .Rates.Where(r => r.Meter is not (PriceMeter.CacheWrite5m or PriceMeter.CacheWrite1h))
+                            .ToArray(),
+                    }
+                )
+                .ToArray(),
         };
         var result = new AuditVerifier().Verify(input);
         var costFindings = result.Findings.Where(f => f.RuleCode == "pricing_cost_difference").ToArray();
@@ -29,7 +35,10 @@ public sealed class PricingArithmeticCheckTests
         else
         {
             costFindings.Should().BeEmpty();
-            result.Checks.Single(c => c.Code == CheckCode.PricingArithmetic).Verdict.Should().Be(CheckVerdict.Incomplete);
+            result
+                .Checks.Single(c => c.Code == CheckCode.PricingArithmetic)
+                .Verdict.Should()
+                .Be(CheckVerdict.Incomplete);
         }
     }
 
