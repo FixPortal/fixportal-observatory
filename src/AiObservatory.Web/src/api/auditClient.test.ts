@@ -4,6 +4,13 @@ import {
   verifyAuditPresentation,
   downloadAudit,
   issueAuditCredential,
+  getAuditEvidence,
+  createAuditRun,
+  cancelAuditRun,
+  proceedAuditRun,
+  replayAuditRun,
+  rotateAuditCredential,
+  revokeAuditCredential,
 } from './auditClient'
 import type { AuditEvidencePage } from './auditTypes'
 
@@ -78,6 +85,7 @@ beforeEach(() => {
   )
 })
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
 })
@@ -147,25 +155,59 @@ test('share-key requests outrank Entra, and readonly authority refuses all privi
   await expect(verifyAuditPresentation('original')).rejects.toThrow('read only')
   await expect(downloadAudit('original', 'bundle')).rejects.toThrow('read only')
   expect(() => issueAuditCredential()).toThrow('read only')
+  expect(() => getAuditEvidence('original')).toThrow('read only')
+  expect(() =>
+    createAuditRun({
+      scope: {
+        from: '2026-10-15',
+        to: '2026-10-21',
+        sources: [{ machineId: 'machine', sourceId: 'claude-local' }],
+        requestedChecks: ['sourceAccounting'],
+        excludedChecks: [],
+        allowPartial: false,
+        predecessorRunId: null,
+        evaluationOfRunId: null,
+      },
+      captureIds: [],
+      requestFreshCapture: false,
+    }),
+  ).toThrow('read only')
+  await expect(cancelAuditRun('original')).rejects.toThrow('read only')
+  await expect(proceedAuditRun('original')).rejects.toThrow('read only')
+  expect(() => replayAuditRun('original')).toThrow('read only')
+  expect(() => rotateAuditCredential('machine')).toThrow('read only')
+  await expect(revokeAuditCredential('machine')).rejects.toThrow('read only')
   expect(requests).toHaveLength(1)
 })
 
-test('report downloads use authenticated blob responses without credentials in URLs', async () => {
-  const create = vi.fn(() => 'blob:synthetic-report')
-  const revoke = vi.fn()
-  vi.stubGlobal(
-    'URL',
-    class extends URL {
-      static override createObjectURL = create
-      static override revokeObjectURL = revoke
-    },
-  )
-  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-  await downloadAudit('original', 'report')
-  expect(requests[0]!.url).toBe('/api/audits/runs/original/report')
-  expect(requests[0]!.init.headers).toEqual({ Authorization: 'Bearer entra' })
-  expect(create).toHaveBeenCalledWith(expect.any(Blob))
-  expect(click).toHaveBeenCalledOnce()
-  expect(revoke).toHaveBeenCalledWith('blob:synthetic-report')
-  click.mockRestore()
-})
+test.each(['administrator', 'viewer'])(
+  'report downloads use authenticated blob responses without credentials in URLs for %s',
+  async (authority) => {
+    if (authority === 'viewer') {
+      auth.isReadonly = true
+      auth.urlApiKey = 'viewer'
+    }
+    const create = vi.fn(() => 'blob:synthetic-report')
+    const revoke = vi.fn()
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static override createObjectURL = create
+        static override revokeObjectURL = revoke
+      },
+    )
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    await downloadAudit('original', 'report')
+    expect(requests[0]!.url).toBe('/api/audits/runs/original/report')
+    expect(requests[0]!.init.headers).toEqual(
+      authority === 'viewer'
+        ? { 'X-Observatory-Key': 'viewer' }
+        : { Authorization: 'Bearer entra' },
+    )
+    if (authority === 'viewer') expect(auth.getAccessToken).not.toHaveBeenCalled()
+    expect(create).toHaveBeenCalledWith(expect.any(Blob))
+    expect(click).toHaveBeenCalledOnce()
+    expect(revoke).toHaveBeenCalledWith('blob:synthetic-report')
+    click.mockRestore()
+  },
+)

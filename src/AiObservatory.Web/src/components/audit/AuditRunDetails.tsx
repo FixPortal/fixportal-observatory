@@ -76,6 +76,17 @@ export function AuditRunDetails({
     new Date(run.replayExpiresAt).getTime() <= systemClock.now().getTime()
   const actionError =
     actions.cancel.error ?? actions.proceed.error ?? actions.replay.error ?? actions.probe.error
+  const reportAction = (
+    <Button
+      variant="ghost"
+      disabled={downloading}
+      onClick={() => {
+        void download('report')
+      }}
+    >
+      Download report
+    </Button>
+  )
   return (
     <section className="panel audit-details" aria-label="Selected audit">
       <div className="audit-heading">
@@ -220,15 +231,7 @@ export function AuditRunDetails({
                     ? 'Verifying displayed totals…'
                     : 'Verify displayed totals'}
                 </Button>
-                <Button
-                  variant="ghost"
-                  disabled={downloading}
-                  onClick={() => {
-                    void download('report')
-                  }}
-                >
-                  Download report
-                </Button>
+                {reportAction}
                 <Button
                   variant="ghost"
                   disabled={downloading}
@@ -251,6 +254,7 @@ export function AuditRunDetails({
           )}
         </div>
       )}
+      {readOnly && run.state === 'completed' && <div className="audit-actions">{reportAction}</div>}
       {!readOnly && run.state === 'completed' && !presentationRequested && (
         <p className="audit-muted">
           Include Displayed totals in a new audit scope before submitting a presentation

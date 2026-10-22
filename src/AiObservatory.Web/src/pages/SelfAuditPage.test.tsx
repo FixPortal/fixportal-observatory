@@ -68,6 +68,8 @@ beforeEach(() => {
   vi.useRealTimers()
   vi.stubEnv('VITE_DEMO_BANNER', 'false')
   auth.isReadonly = false
+  auth.urlApiKey = ''
+  auth.getAccessToken.mockClear()
   calls.length = 0
   errorPath = ''
   historyPage = false
@@ -169,6 +171,7 @@ beforeEach(() => {
   )
 })
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
   vi.useRealTimers()
@@ -297,8 +300,9 @@ test('machine credentials appear once, can be dismissed, rotated and revoked wit
   await waitFor(() => expect(screen.queryByText('one-time-secret')).not.toBeInTheDocument())
 })
 
-test('viewer share authority with an Entra session hides every mutation, export and probe', async () => {
+test('viewer share authority with an Entra session offers sanitized reports while hiding privileged actions', async () => {
   auth.isReadonly = true
+  auth.urlApiKey = 'viewer'
   mount()
   await userEvent.click(await screen.findByRole('button', { name: /Open audit/ }))
   expect(await screen.findByRole('table', { name: 'Audit findings' })).toBeInTheDocument()
@@ -306,13 +310,68 @@ test('viewer share authority with an Entra session hides every mutation, export 
     'Start audit',
     'Replay retained inputs',
     'Verify displayed totals',
-    'Download report',
     'Export evidence bundle',
     'Issue machine credential',
     'Cancel audit',
   ])
     expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Download report' })).toBeEnabled()
+  expect(
+    screen.queryByRole('button', { name: /Detailed sanitized evidence/ }),
+  ).not.toBeInTheDocument()
   expect(calls.every((c) => !c.init.method || c.init.method === 'GET')).toBe(true)
+})
+
+test('viewer can download a sanitized report after evidence expiry and sees report failures without gaining privileged access', async () => {
+  auth.isReadonly = true
+  auth.urlApiKey = 'viewer'
+  run = {
+    ...completed,
+    replayExpiresAt: '2020-01-01T00:00:00Z',
+    evidenceExpiresAt: '2020-01-01T00:00:00Z',
+  }
+  const create = vi.fn(() => 'blob:synthetic-viewer-report')
+  const revoke = vi.fn()
+  vi.stubGlobal(
+    'URL',
+    class extends URL {
+      static override readonly createObjectURL = create
+      static override readonly revokeObjectURL = revoke
+    },
+  )
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  mount()
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /Open audit/ }))
+  await user.click(await screen.findByRole('button', { name: 'Download report' }))
+  await waitFor(() => {
+    expect(click).toHaveBeenCalledOnce()
+  })
+  expect(create).toHaveBeenCalledWith(expect.any(Blob))
+  expect(revoke).toHaveBeenCalledWith('blob:synthetic-viewer-report')
+  expect(calls.find((call) => call.path.endsWith('/report'))?.init.headers).toEqual({
+    'X-Observatory-Key': 'viewer',
+  })
+  expect(auth.getAccessToken).not.toHaveBeenCalled()
+  errorPath = '/report'
+  await user.click(screen.getByRole('button', { name: 'Download report' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Evidence expired')
+  for (const name of [
+    'Export evidence bundle',
+    'Verify displayed totals',
+    'Replay retained inputs',
+    'Start audit',
+    'Cancel audit',
+    'Issue machine credential',
+  ])
+    expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: /Detailed sanitized evidence/ }),
+  ).not.toBeInTheDocument()
+  expect(calls.every((call) => !call.init.method || call.init.method === 'GET')).toBe(true)
+  expect(calls.some((call) => /\/(bundle|evidence|presentation-probe)$/.test(call.path))).toBe(
+    false,
+  )
 })
 
 test('demo keeps its synthetic read-only label through discrepancy investigation', async () => {

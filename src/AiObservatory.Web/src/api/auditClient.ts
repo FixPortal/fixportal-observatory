@@ -101,7 +101,7 @@ export async function revokeAuditCredential(id: string): Promise<void> {
   await requestApi(`/audits/machines/${encodeURIComponent(id)}/credential`, { method: 'DELETE' })
 }
 export async function downloadAudit(id: string, kind: 'report' | 'bundle'): Promise<void> {
-  writable()
+  if (kind === 'bundle') writable()
   const response = await requestApi(`/audits/runs/${encodeURIComponent(id)}/${kind}`)
   const href = URL.createObjectURL(await response.blob())
   const anchor = document.createElement('a')
