@@ -1,5 +1,6 @@
 using AiObservatory.Audit.Checks;
 using AiObservatory.Audit.Contracts;
+using AiObservatory.Audit.Serialization;
 using AiObservatory.Audit.Sources;
 using AwesomeAssertions;
 
@@ -7,6 +8,37 @@ namespace AiObservatory.Audit.Tests.Sources;
 
 public sealed class SourceAccountingCheckTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void IndependentSourceDimensions_ReconcileWithoutHistoricalCatalogAssociation(bool wrongCatalogDimensions)
+    {
+        var record = SourceFixture.Claude();
+        var frozen = SourceFixture.Event(record, new(100, 20, 60, 40, 10, null));
+        frozen = frozen with
+        {
+            SourceDimensions = record.Pricing,
+            PricingApplication = wrongCatalogDimensions
+                ? frozen.PricingApplication! with
+                {
+                    Dimensions = new(ServiceTier.Fast, true, "us", 1),
+                }
+                : null,
+        };
+        var input = SourceFixture.Input(record) with { Events = [frozen] };
+        new SourceAccountingCheck().Evaluate(input).Verdict.Should().Be(CheckVerdict.Matched);
+        if (!wrongCatalogDimensions)
+        {
+            input.Events[0].PricingApplication.Should().BeNull();
+        }
+        AuditComputationInput
+            .ContentDigest(input)
+            .Should()
+            .NotBe(
+                AuditComputationInput.ContentDigest(input with { Events = [frozen with { SourceDimensions = null }] })
+            );
+    }
+
     [Fact]
     public void SeparateSessionsAndGenerations_ConsolidateAtCompleteStoredComparisonKey()
     {

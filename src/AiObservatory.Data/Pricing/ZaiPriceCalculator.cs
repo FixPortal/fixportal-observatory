@@ -7,7 +7,10 @@ public sealed class ZaiPriceCalculator : IProviderPriceCalculator
 {
     public Provider Provider => Provider.Zai;
 
-    public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog)
+    public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog) =>
+        CalculateWithEvidence(usage, normalizedCatalog)?.Quote;
+
+    public CalculatedPrice? CalculateWithEvidence(UsageEvent usage, string normalizedCatalog)
     {
         if (string.IsNullOrWhiteSpace(usage.Model))
         {
@@ -39,7 +42,12 @@ public sealed class ZaiPriceCalculator : IProviderPriceCalculator
             + PerMillion(cacheRead, entry.CacheRead ?? 0m)
             + PerMillion(usage.OutputTokens, entry.Output);
         var savings = PerMillion(cacheRead, entry.Input - (entry.CacheRead ?? 0m));
-        return new UsagePriceQuote(cost, savings);
+        return PricingEvidence.Result(
+            new UsagePriceQuote(cost, savings),
+            entry,
+            PricingEvidence.Dimensions(usage),
+            pricingDate
+        );
     }
 
     private static decimal PerMillion(long tokens, decimal rate) => tokens / 1_000_000m * rate;

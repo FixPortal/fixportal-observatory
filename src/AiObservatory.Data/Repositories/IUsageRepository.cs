@@ -98,6 +98,11 @@ public interface IUsageRepository
     /// </param>
     /// <param name="quote">The price calculated from <paramref name="priced"/>.</param>
     /// <param name="ct">Cancellation token.</param>
+    Task UpdateEventPricingWithEvidenceAsync(
+        UsageEvent priced,
+        ResolvedPriceApplication? application,
+        CancellationToken ct = default
+    );
     Task UpdateEventPricingAsync(UsageEvent priced, UsagePriceQuote? quote, CancellationToken ct = default);
 
     /// <summary>

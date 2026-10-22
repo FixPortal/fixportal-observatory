@@ -9,6 +9,121 @@ namespace AiObservatory.Audit.Tests.Serialization;
 
 public sealed class ProjectionContractTests
 {
+    [Fact]
+    public void FinancialObservation_ConflictingRowIdentity_IsRejected()
+    {
+        var input = CompleteInput();
+        var row = new FrozenFinancialObservation(
+            input.Spend[0].RowId,
+            "billing",
+            "openai",
+            "opaque",
+            new(2026, 10, 1),
+            null,
+            input.Spend[0].Provenance,
+            "USD",
+            1m,
+            0m,
+            1m,
+            Timestamp
+        );
+        var action = () =>
+            AuditCanonicalJson.Serialize(
+                input with
+                {
+                    FinancialObservations = [row, row with { GrossAmount = 2m, NetAmount = 2m }],
+                }
+            );
+        action.Should().Throw<AuditValidationException>().Which.Code.Should().Be("conflicting_identity");
+    }
+
+    [Theory]
+    [InlineData("source")]
+    [InlineData("dimensions")]
+    [InlineData("application")]
+    [InlineData("catalog")]
+    [InlineData("financial")]
+    public void OptionalEvidenceExtensions_WhenPresent_BindIntoComputationIdentity(string extension)
+    {
+        var input = CompleteInput();
+        var row = input.Events[0];
+        var application = row.PricingApplication!;
+        var catalog = input.PricingCatalogs[0];
+        var changed = extension switch
+        {
+            "source" => input with
+            {
+                Events = [row with { SourceDimensions = application.Dimensions }, input.Events[1]],
+            },
+            "dimensions" => input with
+            {
+                Events =
+                [
+                    row with
+                    {
+                        PricingApplication = application with
+                        {
+                            Dimensions = application.Dimensions with { Processing = "standard" },
+                        },
+                    },
+                    input.Events[1],
+                ],
+            },
+            "application" => input with
+            {
+                Events =
+                [
+                    row with
+                    {
+                        PricingApplication = application with { Kind = "catalog", RuleVersion = "2" },
+                    },
+                    input.Events[1],
+                ],
+            },
+            "catalog" => input with
+            {
+                PricingCatalogs =
+                [
+                    catalog with
+                    {
+                        Rates = [catalog.Rates[0] with { CatalogEntryKey = Hash }],
+                    },
+                    input.PricingCatalogs[1],
+                ],
+            },
+            _ => input with
+            {
+                FinancialObservations =
+                [
+                    new(
+                        input.Spend[0].RowId,
+                        "billing",
+                        "openai",
+                        "opaque",
+                        new(2026, 10, 1),
+                        null,
+                        input.Spend[0].Provenance,
+                        "USD",
+                        1m,
+                        0m,
+                        1m,
+                        Timestamp
+                    ),
+                ],
+            },
+        };
+        var originalBytes = Encoding.UTF8.GetString(AuditCanonicalJson.Serialize(input));
+        originalBytes
+            .Should()
+            .NotContain("sourceDimensions")
+            .And.NotContain("catalogEntryKey")
+            .And.NotContain("financialObservations");
+        originalBytes.Should().Contain("\"region\":null", "existing version-one nulls remain explicit");
+        AuditComputationInput.ContentDigest(changed).Should().NotBe(AuditComputationInput.ContentDigest(input));
+        var roundTrip = AuditCanonicalJson.Deserialize<AuditInput>(AuditCanonicalJson.Serialize(changed));
+        AuditComputationInput.ContentDigest(roundTrip).Should().Be(AuditComputationInput.ContentDigest(changed));
+    }
+
     /// <summary>Downstream checks see the same normalized facts for equivalent duplicate/shuffled wire inputs.</summary>
     [Fact]
     public void Deserialize_DuplicateAndShuffledFacts_ReturnsNormalizedGraph()

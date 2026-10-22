@@ -7,7 +7,10 @@ public sealed class GooglePriceCalculator : IProviderPriceCalculator
 {
     public Provider Provider => Provider.Google;
 
-    public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog)
+    public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog) =>
+        CalculateWithEvidence(usage, normalizedCatalog)?.Quote;
+
+    public CalculatedPrice? CalculateWithEvidence(UsageEvent usage, string normalizedCatalog)
     {
         using var evidence = ProviderPricingJson.Evidence(usage.RawPayload);
         var isNotional = usage.CostBasis == CostBasis.Notional;
@@ -43,7 +46,12 @@ public sealed class GooglePriceCalculator : IProviderPriceCalculator
         var cost = tokens / 1_000_000m * entry.Rate;
         if (cacheLane.Equals("none", StringComparison.OrdinalIgnoreCase))
         {
-            return new UsagePriceQuote(cost, 0m);
+            return PricingEvidence.Result(
+                new UsagePriceQuote(cost, 0m),
+                entry,
+                PricingEvidence.Dimensions(usage),
+                usageDate
+            );
         }
 
         var counterfactual = catalog
@@ -58,13 +66,18 @@ public sealed class GooglePriceCalculator : IProviderPriceCalculator
             )
             .OrderByDescending(candidate => candidate.EffectiveFrom)
             .FirstOrDefault();
-        return new UsagePriceQuote(
-            cost,
-            counterfactual is null ? null : tokens / 1_000_000m * (counterfactual.Rate - entry.Rate)
+        return PricingEvidence.Result(
+            new UsagePriceQuote(
+                cost,
+                counterfactual is null ? null : tokens / 1_000_000m * (counterfactual.Rate - entry.Rate)
+            ),
+            entry,
+            PricingEvidence.Dimensions(usage),
+            usageDate
         );
     }
 
-    private static UsagePriceQuote? CalculateDeveloperApi(
+    private static CalculatedPrice? CalculateDeveloperApi(
         UsageEvent usage,
         System.Text.Json.JsonElement evidence,
         string normalizedCatalog,
@@ -96,7 +109,19 @@ public sealed class GooglePriceCalculator : IProviderPriceCalculator
         var cached = (usage.CacheReadTokens ?? 0) / 1_000_000m * entry.CachedInput;
         var output = (usage.OutputTokens + (usage.ThoughtTokens ?? 0)) / 1_000_000m * entry.Output;
         var savings = (usage.CacheReadTokens ?? 0) / 1_000_000m * (entry.Input - entry.CachedInput);
-        return new UsagePriceQuote(input + cached + output, savings);
+        return PricingEvidence.Result(
+            new UsagePriceQuote(input + cached + output, savings),
+            entry,
+            PricingEvidence.Dimensions(usage) with
+            {
+                Service = "gemini_developer_api",
+                Context = context,
+                Tier = Enum.TryParse<AiObservatory.Audit.Contracts.ServiceTier>(tier, true, out var parsedTier)
+                    ? parsedTier
+                    : AiObservatory.Audit.Contracts.ServiceTier.Unknown,
+            },
+            pricingDate
+        );
     }
 
     private static bool TryGetTokens(UsageEvent usage, string modality, string cacheLane, out long tokens)

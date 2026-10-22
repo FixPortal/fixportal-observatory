@@ -110,7 +110,8 @@ public sealed class PricingRepricingService(
         var skipped = new Dictionary<(Provider Provider, string Model), int>();
         foreach (var usage in events)
         {
-            var quote = await resolver.ResolveAsync(usage, snapshotsBySourceId, cancellationToken);
+            var application = await resolver.ResolveWithEvidenceAsync(usage, snapshotsBySourceId, cancellationToken);
+            var quote = application?.Quote;
             if (quote is null && usage.CostUsd is not null)
             {
                 // No snapshot covers this event (e.g. a model every retained catalog has dropped).
@@ -122,9 +123,13 @@ public sealed class PricingRepricingService(
                 continue;
             }
 
-            if (usage.CostUsd != quote?.CostUsd || usage.CacheSavingsUsd != quote?.CacheSavingsUsd)
+            if (
+                application is not null
+                || usage.CostUsd != quote?.CostUsd
+                || usage.CacheSavingsUsd != quote?.CacheSavingsUsd
+            )
             {
-                await repository.UpdateEventPricingAsync(usage, quote, cancellationToken);
+                await repository.UpdateEventPricingWithEvidenceAsync(usage, application, cancellationToken);
             }
         }
 

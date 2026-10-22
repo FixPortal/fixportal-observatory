@@ -31,7 +31,12 @@ public sealed record AuditRunView(
 
 public sealed record RetainedCapture(byte[] Manifest, IReadOnlyList<byte[]> Chunks, Instant? ExpiresAt);
 
-public sealed record RetainedSnapshot(byte[] Bytes, string Sha256, string InputContentDigest, Instant? ExpiresAt);
+public sealed record RetainedSnapshot(byte[] Bytes, string Sha256, string InputContentDigest, Instant? ExpiresAt)
+{
+    public Guid SnapshotId { get; init; }
+}
+
+public sealed record SnapshotMaterialization(AuditScope Scope, IReadOnlyList<RetainedCapture> Captures);
 
 public sealed class AuditStoreException(string code, int statusCode) : Exception(code)
 {

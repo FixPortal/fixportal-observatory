@@ -407,6 +407,63 @@ namespace AiObservatory.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("AiObservatory.Data.Audit.PricingApplication", b =>
+                {
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("Revision")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal?>("CacheSavingsUsd")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal?>("CostUsd")
+                        .HasColumnType("numeric");
+
+                    b.Property<byte[]>("Dimensions")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateOnly>("PricingDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("RateKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("RevisionDigest")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("RuleVersion")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("SnapshotHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("SnapshotId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("EventId", "Revision");
+
+                    b.HasIndex("SnapshotId");
+
+                    b.ToTable("PricingApplications", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PricingApplication_Revision", "\"Revision\" > 0");
+                        });
+                });
+
             modelBuilder.Entity("AiObservatory.Data.Entities.AdversarialReviewFinding", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1919,6 +1976,9 @@ namespace AiObservatory.Data.Migrations
                     b.Property<decimal?>("CostUsd")
                         .HasColumnType("numeric");
 
+                    b.Property<long>("CurrentPricingRevision")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("EventKey")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
@@ -2095,6 +2155,20 @@ namespace AiObservatory.Data.Migrations
                         .HasForeignKey("RunId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("AiObservatory.Data.Audit.PricingApplication", b =>
+                {
+                    b.HasOne("AiObservatory.Data.Entities.UsageEvent", null)
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AiObservatory.Data.Entities.PricingSnapshot", null)
+                        .WithMany()
+                        .HasForeignKey("SnapshotId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("AiObservatory.Data.Entities.AdversarialReviewFindingParticipant", b =>

@@ -7,7 +7,10 @@ public sealed class OpenAiPriceCalculator : IProviderPriceCalculator
 {
     public Provider Provider => Provider.OpenAI;
 
-    public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog)
+    public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog) =>
+        CalculateWithEvidence(usage, normalizedCatalog)?.Quote;
+
+    public CalculatedPrice? CalculateWithEvidence(UsageEvent usage, string normalizedCatalog)
     {
         if (string.IsNullOrWhiteSpace(usage.Model))
         {
@@ -50,7 +53,20 @@ public sealed class OpenAiPriceCalculator : IProviderPriceCalculator
             PerMillion(cacheRead + cacheWrite, entry.Input)
             - PerMillion(cacheRead, entry.CachedInput ?? 0m)
             - PerMillion(cacheWrite, entry.CacheWrite ?? 0m);
-        return new UsagePriceQuote(cost, cacheSavings);
+        return PricingEvidence.Result(
+            new UsagePriceQuote(cost, cacheSavings),
+            entry,
+            PricingEvidence.Dimensions(usage) with
+            {
+                Tier = Enum.TryParse<AiObservatory.Audit.Contracts.ServiceTier>(processing, true, out var resolvedTier)
+                    ? resolvedTier
+                    : AiObservatory.Audit.Contracts.ServiceTier.Unknown,
+                Processing = processing,
+                Context = context,
+                Region = region,
+            },
+            pricingDate
+        );
     }
 
     private static decimal PerMillion(long tokens, decimal rate) => tokens / 1_000_000m * rate;

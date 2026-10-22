@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace AiObservatory.Audit.Contracts;
 
 public sealed record AuditInput
@@ -10,6 +12,9 @@ public sealed record AuditInput
     public IReadOnlyList<SourceUsageRecord> Records { get; init; } = [];
     public IReadOnlyList<FrozenEvent> Events { get; init; } = [];
     public IReadOnlyList<FrozenAggregate> Aggregates { get; init; } = [];
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<FrozenFinancialObservation>? FinancialObservations { get; init; }
     public IReadOnlyList<FrozenSpend> Spend { get; init; } = [];
     public IReadOnlyList<FrozenSourceStatus> SourceStatuses { get; init; } = [];
     public IReadOnlyList<FrozenPricing> PricingCatalogs { get; init; } = [];

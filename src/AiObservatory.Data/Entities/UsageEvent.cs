@@ -4,6 +4,7 @@ namespace AiObservatory.Data.Entities;
 
 public sealed class UsageEvent
 {
+    public long CurrentPricingRevision { get; set; }
     public Guid Id { get; init; } = Guid.NewGuid();
     public Provider Provider { get; set; }
     public Instant OccurredAt { get; set; }

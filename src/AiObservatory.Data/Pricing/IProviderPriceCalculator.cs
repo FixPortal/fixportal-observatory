@@ -9,6 +9,7 @@ public interface IProviderPriceCalculator
 {
     Provider Provider { get; }
     UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog);
+    CalculatedPrice? CalculateWithEvidence(UsageEvent usage, string normalizedCatalog);
 }
 
 internal static class ProviderPricingJson

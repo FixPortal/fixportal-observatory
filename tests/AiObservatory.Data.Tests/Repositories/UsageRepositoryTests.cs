@@ -180,8 +180,16 @@ public class UsageRepositoryTests : IAsyncLifetime
             .Should()
             .BeEquivalentTo(
                 corrected,
-                options => options.Excluding(e => e.Id).Excluding(e => e.IngestedAt).Excluding(e => e.RawPayload)
+                options =>
+                    options
+                        .Excluding(e => e.Id)
+                        .Excluding(e => e.IngestedAt)
+                        .Excluding(e => e.RawPayload)
+                        .Excluding(e => e.CurrentPricingRevision)
             );
+        saved
+            .CurrentPricingRevision.Should()
+            .Be(2, "the correction appends one application revision and its duplicate is a no-op");
         using var savedPayload = JsonDocument.Parse(saved.RawPayload);
         using var expectedPayload = JsonDocument.Parse(corrected.RawPayload);
         JsonElement.DeepEquals(savedPayload.RootElement, expectedPayload.RootElement).Should().BeTrue();

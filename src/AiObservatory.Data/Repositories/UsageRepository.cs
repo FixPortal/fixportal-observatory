@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AiObservatory.Audit.Serialization;
 using AiObservatory.Data.Entities;
 using AiObservatory.Data.Pricing;
 using Microsoft.EntityFrameworkCore;
@@ -46,9 +47,10 @@ public class UsageRepository(
             async (usage, cancellationToken) =>
             {
                 await pricingStore.AcquireSharedActivationLockAsync(usage, cancellationToken);
-                var quote = await priceResolver.ResolveAsync(usage, cancellationToken);
-                usage.CostUsd = quote?.CostUsd;
-                usage.CacheSavingsUsd = quote?.CacheSavingsUsd;
+                var application = await priceResolver.ResolveWithEvidenceAsync(usage, cancellationToken);
+                usage.CostUsd = application?.Quote.CostUsd;
+                usage.CacheSavingsUsd = application?.Quote.CacheSavingsUsd;
+                return application;
             },
             ct
         );
@@ -57,7 +59,7 @@ public class UsageRepository(
     private async Task<RecordEventResult> RecordPreparedEventAsync(
         UsageEvent evt,
         string? rawEventKey,
-        Func<UsageEvent, CancellationToken, Task>? beforeWrite,
+        Func<UsageEvent, CancellationToken, Task<ResolvedPriceApplication?>>? beforeWrite,
         CancellationToken ct
     )
     {
@@ -73,10 +75,7 @@ public class UsageRepository(
             await using var tx = await ctx.Database.BeginTransactionAsync(ct);
             try
             {
-                if (beforeWrite is not null)
-                {
-                    await beforeWrite(evt, ct);
-                }
+                var application = beforeWrite is null ? null : await beforeWrite(evt, ct);
 
                 var existing = await FindEventForKeyLookupAsync(
                     evt.Provider,
@@ -86,7 +85,7 @@ public class UsageRepository(
                     ct
                 );
                 evt = ReconcileStoredKey(evt, existing);
-                var result = await ApplyLockedSnapshotAsync(existing, evt, sourceSuppliedCost, ct);
+                var result = await ApplyLockedSnapshotAsync(existing, evt, sourceSuppliedCost, ct, application);
                 if (result.Disposition != RecordEventDisposition.Unchanged || result.WatermarkAdvanced)
                 {
                     await ctx.SaveChangesAsync(ct);
@@ -185,7 +184,21 @@ public class UsageRepository(
         return storedEventKey == rawEventKey ? evt : CopyWithEventKey(evt, storedEventKey);
     }
 
-    public async Task UpdateEventPricingAsync(UsageEvent priced, UsagePriceQuote? quote, CancellationToken ct = default)
+    public Task UpdateEventPricingAsync(UsageEvent priced, UsagePriceQuote? quote, CancellationToken ct = default) =>
+        UpdatePricingAsync(priced, quote, null, ct);
+
+    public Task UpdateEventPricingWithEvidenceAsync(
+        UsageEvent priced,
+        ResolvedPriceApplication? application,
+        CancellationToken ct = default
+    ) => UpdatePricingAsync(priced, application?.Quote, application, ct);
+
+    private async Task UpdatePricingAsync(
+        UsageEvent priced,
+        UsagePriceQuote? quote,
+        ResolvedPriceApplication? application,
+        CancellationToken ct
+    )
     {
         ArgumentNullException.ThrowIfNull(priced);
         IDbContextTransaction? transaction = null;
@@ -209,7 +222,7 @@ public class UsageRepository(
                     // next pass rather than overwrite a newer figure.
                     || existing.CostUsd != priced.CostUsd
                     || existing.CacheSavingsUsd != priced.CacheSavingsUsd
-                    || existing.CostUsd == quote?.CostUsd && existing.CacheSavingsUsd == quote?.CacheSavingsUsd
+                    || await SameApplicationAsync(existing, quote, application, ct)
                 )
                 {
                     if (transaction is not null)
@@ -224,6 +237,7 @@ public class UsageRepository(
                 var previousCacheSavingsUsd = existing.CacheSavingsUsd;
                 existing.CostUsd = quote?.CostUsd;
                 existing.CacheSavingsUsd = quote?.CacheSavingsUsd;
+                AppendApplication(existing, application, "unassociated");
                 await ApplyRepricingCostDeltaAsync(existing, previousCostUsd, previousCacheSavingsUsd, ct);
                 await ctx.SaveChangesAsync(ct);
                 if (transaction is not null)
@@ -244,15 +258,48 @@ public class UsageRepository(
         }
     }
 
+    private async Task<bool> SameApplicationAsync(
+        UsageEvent usage,
+        UsagePriceQuote? quote,
+        ResolvedPriceApplication? application,
+        CancellationToken ct
+    )
+    {
+        if (usage.CostUsd != quote?.CostUsd || usage.CacheSavingsUsd != quote?.CacheSavingsUsd)
+        {
+            return false;
+        }
+        if (application is null)
+        {
+            return true;
+        }
+        return await ctx
+            .PricingApplications.AsNoTracking()
+            .AnyAsync(
+                a =>
+                    a.EventId == usage.Id
+                    && a.Revision == usage.CurrentPricingRevision
+                    && a.SnapshotId == application.SnapshotId
+                    && a.SnapshotHash == application.SnapshotHash
+                    && a.RateKey == application.RateKey
+                    && a.RuleVersion == application.PricingRuleVersion
+                    && a.PricingDate == application.PricingDate,
+                ct
+            );
+    }
+
     private async Task<RecordEventResult> ApplyLockedSnapshotAsync(
         UsageEvent? existing,
         UsageEvent evt,
         bool sourceSuppliedCost,
-        CancellationToken ct
+        CancellationToken ct,
+        ResolvedPriceApplication? application = null,
+        bool operatorCorrection = false
     )
     {
         if (existing is null)
         {
+            AppendApplication(evt, application, ApplicationKind(operatorCorrection, sourceSuppliedCost));
             ctx.UsageEvents.Add(evt);
             await ApplyAggregateDeltaAsync(evt, +1, ct);
             return new RecordEventResult(evt.Id, RecordEventDisposition.Created);
@@ -265,31 +312,7 @@ public class UsageRepository(
 
         if (CanonicalEquals(existing, evt))
         {
-            var wrote = false;
-            // CanonicalEquals excludes ObservedAt, so an identical replay would otherwise leave the
-            // stored watermark behind and a delayed stale snapshot with an ObservedAt between the
-            // two would then pass the ordering guard above. Advance the watermark (never backwards)
-            // without touching values or aggregates.
-            if (evt.ObservedAt > existing.ObservedAt)
-            {
-                existing.ObservedAt = evt.ObservedAt;
-                wrote = true;
-            }
-
-            // An identical replay whose source supplied a cost re-asserts source authority over a
-            // manual correction even though every canonical value matches: the source figure and
-            // the corrected figure agree, so the CorrectedAt marker is stale. Clear it exactly as
-            // the changed-values path below does, or a later cost-less replay keeps preserving a
-            // figure the operator no longer authored.
-            if (sourceSuppliedCost && existing.CorrectedAt is not null)
-            {
-                existing.CorrectedAt = null;
-                wrote = true;
-            }
-
-            // WatermarkAdvanced doubles as "Unchanged but wrote state that must persist" — it is
-            // what drives SaveChanges and the no-op rollback in the caller.
-            return new RecordEventResult(existing.Id, RecordEventDisposition.Unchanged, WatermarkAdvanced: wrote);
+            return await ApplyUnchangedSnapshotAsync(existing, evt, sourceSuppliedCost, operatorCorrection, ct);
         }
 
         // A manual cost correction (the CorrectedAt marker) outranks a replay whose source
@@ -317,8 +340,122 @@ public class UsageRepository(
             existing.CorrectedAt = null;
         }
 
+        AppendApplication(
+            existing,
+            preserveCorrectedCost ? null : application,
+            ApplicationKind(preserveCorrectedCost || operatorCorrection, sourceSuppliedCost)
+        );
         await ApplyAggregateDeltaAsync(existing, +1, ct);
         return new RecordEventResult(existing.Id, RecordEventDisposition.Corrected);
+    }
+
+    private async Task<RecordEventResult> ApplyUnchangedSnapshotAsync(
+        UsageEvent existing,
+        UsageEvent evt,
+        bool sourceSuppliedCost,
+        bool operatorCorrection,
+        CancellationToken ct
+    )
+    {
+        var wrote = false;
+        // CanonicalEquals excludes ObservedAt, so an identical replay would otherwise leave the
+        // stored watermark behind and a delayed stale snapshot with an ObservedAt between the
+        // two would then pass the ordering guard above. Advance the watermark (never backwards)
+        // without touching values or aggregates.
+        if (evt.ObservedAt > existing.ObservedAt)
+        {
+            existing.ObservedAt = evt.ObservedAt;
+            wrote = true;
+        }
+
+        // An identical replay whose source supplied a cost re-asserts source authority over a
+        // manual correction even though every canonical value matches: the source figure and
+        // the corrected figure agree, so the CorrectedAt marker is stale. Clear it exactly as
+        // the changed-values path below does, or a later cost-less replay keeps preserving a
+        // figure the operator no longer authored.
+        if (sourceSuppliedCost && existing.CorrectedAt is not null)
+        {
+            existing.CorrectedAt = null;
+            wrote = true;
+        }
+
+        var applicationWritten = await UpdateUnchangedApplicationAsync(
+            existing,
+            sourceSuppliedCost,
+            operatorCorrection,
+            ct
+        );
+
+        // WatermarkAdvanced doubles as "Unchanged but wrote state that must persist" — it is
+        // what drives SaveChanges and the no-op rollback in the caller.
+        return new RecordEventResult(
+            existing.Id,
+            RecordEventDisposition.Unchanged,
+            WatermarkAdvanced: wrote || applicationWritten
+        );
+    }
+
+    private async Task<bool> UpdateUnchangedApplicationAsync(
+        UsageEvent existing,
+        bool sourceSuppliedCost,
+        bool operatorCorrection,
+        CancellationToken ct
+    )
+    {
+        if (operatorCorrection)
+        {
+            AppendApplication(existing, null, "correction");
+            return true;
+        }
+        if (!sourceSuppliedCost)
+        {
+            return false;
+        }
+        if (
+            !await ctx.PricingApplications.AnyAsync(
+                a => a.EventId == existing.Id && a.Revision == existing.CurrentPricingRevision && a.Kind != "source",
+                ct
+            )
+        )
+        {
+            return false;
+        }
+        AppendApplication(existing, null, "source");
+        return true;
+    }
+
+    private static string ApplicationKind(bool preserveCorrection, bool sourceSuppliedCost)
+    {
+        if (preserveCorrection)
+        {
+            return "correction";
+        }
+        return sourceSuppliedCost ? "source" : "unassociated";
+    }
+
+    private static string ResolvedKind(ResolvedPriceApplication application) =>
+        application.RuleDerived ? "ruleDerived" : "catalog";
+
+    private void AppendApplication(UsageEvent usage, ResolvedPriceApplication? application, string kind)
+    {
+        usage.CurrentPricingRevision = checked(usage.CurrentPricingRevision + 1);
+        ctx.PricingApplications.Add(
+            new()
+            {
+                EventId = usage.Id,
+                Revision = usage.CurrentPricingRevision,
+                RevisionDigest = PricingEvidence.RevisionDigest(usage),
+                Kind = application is null ? kind : ResolvedKind(application),
+                SnapshotId = application?.SnapshotId,
+                SnapshotHash = application?.SnapshotHash,
+                RateKey = application?.RateKey,
+                Dimensions = AuditCanonicalJson.Serialize(application?.Dimensions ?? PricingEvidence.Dimensions(usage)),
+                PricingDate = application?.PricingDate ?? DateOnly.FromDateTime(usage.OccurredAt.ToDateTimeUtc()),
+                RuleVersion = application?.PricingRuleVersion ?? "1",
+                CostUsd = usage.CostUsd,
+                CacheSavingsUsd = usage.CacheSavingsUsd,
+            }
+        );
     }
 
     private async Task ApplyAggregateDeltaAsync(UsageEvent evt, int sign, CancellationToken ct)
@@ -564,7 +701,8 @@ public class UsageRepository(
     // reads return the same stored text unless a correction rewrote it, and a spurious mismatch only defers
     // one event by one pass. Compare structurally if a producer starts rewriting payload text in place.
     private static bool PricingInputsEqual(UsageEvent locked, UsageEvent priced) =>
-        locked.Provider == priced.Provider
+        locked.CurrentPricingRevision == priced.CurrentPricingRevision
+        && locked.Provider == priced.Provider
         && locked.OccurredAt == priced.OccurredAt
         && locked.Model == priced.Model
         && locked.InputTokens == priced.InputTokens
@@ -802,7 +940,13 @@ public class UsageRepository(
 
             var oldCostUsd = existing.CostUsd;
             var replacement = CopyWithCost(existing, newCostUsd, newCacheSavingsUsd ?? existing.CacheSavingsUsd);
-            await ApplyLockedSnapshotAsync(existing, replacement, sourceSuppliedCost: true, ct);
+            await ApplyLockedSnapshotAsync(
+                existing,
+                replacement,
+                sourceSuppliedCost: true,
+                ct,
+                operatorCorrection: true
+            );
 
             // The marker is set on the tracked row directly: CopyCanonicalValues never copies
             // CorrectedAt from a replay, so the stamp survives until a source post carrying an

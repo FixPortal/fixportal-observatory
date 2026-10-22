@@ -645,6 +645,12 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
 
     private sealed class ThrowingOnModelCalculator(string boomModel) : IProviderPriceCalculator
     {
+        public CalculatedPrice? CalculateWithEvidence(UsageEvent usage, string normalizedCatalog)
+        {
+            Calculate(usage, normalizedCatalog);
+            return new OpenAiPriceCalculator().CalculateWithEvidence(usage, normalizedCatalog);
+        }
+
         private readonly OpenAiPriceCalculator _inner = new();
 
         public Provider Provider => _inner.Provider;

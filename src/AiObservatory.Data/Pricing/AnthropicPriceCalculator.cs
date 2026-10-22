@@ -8,7 +8,10 @@ public sealed class AnthropicPriceCalculator : IProviderPriceCalculator
 {
     public Provider Provider => Provider.Anthropic;
 
-    public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog)
+    public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog) =>
+        CalculateWithEvidence(usage, normalizedCatalog)?.Quote;
+
+    public CalculatedPrice? CalculateWithEvidence(UsageEvent usage, string normalizedCatalog)
     {
         if (string.IsNullOrWhiteSpace(usage.Model))
         {
@@ -81,7 +84,22 @@ public sealed class AnthropicPriceCalculator : IProviderPriceCalculator
                 - PerMillion(cacheWrite5m, cacheWrite5mRate)
                 - PerMillion(cacheWrite1h, cacheWrite1hRate)
             ) * multiplier.Value;
-        return new UsagePriceQuote(cost, cacheSavings);
+        return PricingEvidence.Result(
+            new UsagePriceQuote(cost, cacheSavings),
+            entry,
+            PricingEvidence.Dimensions(usage) with
+            {
+                Tier =
+                    tier == "standard"
+                        ? AiObservatory.Audit.Contracts.ServiceTier.Standard
+                        : AiObservatory.Audit.Contracts.ServiceTier.Unknown,
+                SourceServiceTier = tier,
+                Batch = tier == "batch",
+                Speed = speed,
+                InferenceGeo = geography,
+            },
+            pricingDate
+        );
     }
 
     private static bool TryDimensions(
