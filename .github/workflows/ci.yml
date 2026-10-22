@@ -104,6 +104,9 @@ jobs:
         env:
           TEST_DB_CONNECTION: "Host=localhost;Database=aiobs_test;Username=postgres;Password=postgres"
 
+      - name: Qualify offline synthetic replay (built CLI)
+        run: node scripts/audit-replay-smoke.mjs
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
@@ -175,10 +178,14 @@ jobs:
           node --test
           tests/deploy-contract.test.mjs
           tests/docs-contract.test.mjs
+          tests/audit-release-contract.test.mjs
           tests/public-restore-contract.test.mjs
           clients/observatory-sweep.test.mjs
           clients/observatory-audit.test.mjs
           clients/audit-poll.test.mjs
+
+      - name: Offline runner packaging contracts (stdlib only)
+        run: python3 -m unittest discover -s tests -p test_audit_package.py
 
   gate-coverage:
     name: Gate coverage

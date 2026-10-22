@@ -27,6 +27,7 @@ export const CHAPTER_GROUPS: readonly ChapterGroup[] = [
       'suggestions',
       'adversarial-review',
       'reporting',
+      'self-audit',
       'spend',
       'activity',
       'github',
