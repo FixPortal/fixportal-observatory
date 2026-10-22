@@ -1,4 +1,7 @@
 /// <reference types="vite/client" />
+/** Build-time hashes of the actual frontend sources and production summary/formatter. */
+declare const __AUDIT_BUILD_ID__: string
+declare const __AUDIT_SOURCE_ID__: string
 
 interface ImportMetaEnv {
   /** Absolute API base for production (cross-origin); unset in dev (Vite proxy). */

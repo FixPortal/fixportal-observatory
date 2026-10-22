@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { DailyAggregate, SpendEntry } from '../api/client'
 import { summarizeCosts } from './costSummary'
+import fixture from '../../../../tests/AiObservatory.Audit.Tests/Fixtures/dashboard-summary.v1.json'
 
 const aggregate = (overrides: Partial<DailyAggregate>): DailyAggregate => ({
   date: '2026-08-24',
@@ -39,6 +40,26 @@ const spend = (amountGbp: number): SpendEntry => ({
 })
 
 describe('summarizeCosts', () => {
+  test('executes the shared independent literal fixture through the production summary', () => {
+    const actual = summarizeCosts(
+      fixture.events.map((event) =>
+        aggregate({
+          costBasis: event.basis,
+          costUsd: Number(event.costUsd ?? '0'),
+          cacheSavingsUsd: Number(event.savingsUsd ?? '0'),
+          cacheWriteTokens: 3,
+          requestCount: 1,
+          unknownCostCount: event.costUsd === null && event.basis !== 'none' ? 1 : 0,
+          unknownCacheSavingsCount: event.savingsUsd === null && event.basis !== 'none' ? 1 : 0,
+        }),
+      ),
+      fixture.spend.map((entry) => ({ amountGbp: Number(entry.amountGbp) })),
+    )
+    for (const expected of fixture.expected.filter((value) => value.field !== 'billedNative')) {
+      expect(String(actual[expected.field as keyof typeof actual])).toBe(expected.unroundedValue)
+    }
+    expect('billedNative' in actual).toBe(false)
+  })
   test('keeps billed, estimated, notional, and unknown observations separate', () => {
     const rows = [
       aggregate({ costBasis: 'billed', costUsd: 99, requestCount: 1 }),

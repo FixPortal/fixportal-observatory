@@ -18,6 +18,7 @@ const authMock = vi.hoisted(() => ({
 }))
 
 vi.mock('../api/queries', () => ({ useDashboardStatus: () => dashboardStatus }))
+vi.mock('../api/auditQueries', () => ({ useAuditCapabilities: () => ({ data: null }) }))
 vi.mock('../theme/useTheme', () => ({ useTheme: () => ({ mode: 'dark', setMode: vi.fn() }) }))
 vi.mock('../auth/msal', () => ({ authEnabled: true, isReadonly: true, ...authMock }))
 vi.mock('../components/SummaryCards', () => ({

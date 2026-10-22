@@ -19,9 +19,17 @@ import { ApiError } from '../api/client'
 import { authEnabled, isReadonly, signIn, TokenAcquisitionTimeoutError } from '../auth/msal'
 import { useTheme } from '../theme/useTheme'
 import { DOCS_ROOT, isDocsPath, keepSearch } from '../docs/docsRoute'
+import { useAuditCapabilities } from '../api/auditQueries'
 
 type DashboardTab =
-  'overview' | 'adversarial-review' | 'reporting' | 'activity' | 'github' | 'spend' | 'docs'
+  | 'overview'
+  | 'adversarial-review'
+  | 'reporting'
+  | 'activity'
+  | 'github'
+  | 'spend'
+  | 'self-audit'
+  | 'docs'
 
 const TABS: { id: DashboardTab; label: string; readonlyHidden?: boolean }[] = [
   { id: 'overview', label: 'Overview' },
@@ -30,12 +38,16 @@ const TABS: { id: DashboardTab; label: string; readonlyHidden?: boolean }[] = [
   { id: 'activity', label: 'Activity', readonlyHidden: true },
   { id: 'github', label: 'GitHub', readonlyHidden: true },
   { id: 'spend', label: 'Spend', readonlyHidden: true },
+  { id: 'self-audit', label: 'Self-audit' },
   { id: 'docs', label: 'Docs' },
 ]
 
 // recharts is heavy and the charts sit below the fold — code-split them so the
 // initial payload (nav + summary cards) paints without the chart library.
 const DocsPage = lazy(() => import('../docs/DocsPage').then((m) => ({ default: m.DocsPage })))
+const SelfAuditPage = lazy(() =>
+  import('./SelfAuditPage').then((m) => ({ default: m.SelfAuditPage })),
+)
 const SpendChart = lazy(() =>
   import('../components/SpendChart').then((m) => ({ default: m.SpendChart })),
 )
@@ -88,13 +100,17 @@ function ErrorBanner({
 }
 
 export function Dashboard() {
+  const audit = useAuditCapabilities()
   const { isError, isLoading, isRetrying, isAutomaticallyRetrying, error, retry } =
     useDashboardStatus()
   const { mode, setMode } = useTheme()
   const [tab, setTab] = useState<DashboardTab>(() =>
     isDocsPath(window.location.pathname) ? 'docs' : 'overview',
   )
-  const visibleTabs = TABS.filter((t) => !(t.readonlyHidden && isReadonly))
+  const visibleTabs = TABS.filter(
+    (t) =>
+      !(t.readonlyHidden && isReadonly) && (t.id !== 'self-audit' || audit.data?.enabled === true),
+  )
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
   // Every root tab shares /, so history cannot say which one Back should return to.
   const lastRootTab = useRef<DashboardTab>('overview')
@@ -234,6 +250,11 @@ export function Dashboard() {
           {tab === 'activity' && <ActivityPage />}
           {tab === 'github' && <GitHubPage />}
           {tab === 'spend' && <SpendPage />}
+          {tab === 'self-audit' && audit.data?.enabled && (
+            <Suspense fallback={<div className="chart-skeleton" />}>
+              <SelfAuditPage />
+            </Suspense>
+          )}
           {tab === 'docs' && (
             <Suspense fallback={<div className="chart-skeleton" />}>
               <DocsPage />
