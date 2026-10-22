@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "events": [
+    { "basis": "listPriceEstimate", "costUsd": "1.005", "savingsUsd": "-0.125" },
+    { "basis": "providerEstimated", "costUsd": "2.50", "savingsUsd": "0.25" },
+    { "basis": "notional", "costUsd": "4.00", "savingsUsd": null },
+    { "basis": "unknown", "costUsd": "0.75", "savingsUsd": "0" },
+    { "basis": "notional", "costUsd": null, "savingsUsd": null },
+    { "basis": "none", "costUsd": null, "savingsUsd": null }
+  ],
+  "spend": [
+    { "currency": "USD", "amount": "10", "amountGbp": "8" },
+    { "currency": "USD", "amount": "-2", "amountGbp": "-1.6" },
+    { "currency": "EUR", "amount": "5", "amountGbp": "4.25" }
+  ],
+  "expected": [
+    { "field": "billedNative", "groupKey": "EUR", "unroundedValue": "5", "formattedValue": "5.00", "currency": "EUR" },
+    { "field": "billedNative", "groupKey": "USD", "unroundedValue": "8", "formattedValue": "8.00", "currency": "USD" },
+    { "field": "billedGbp", "groupKey": "all", "unroundedValue": "10.65", "formattedValue": "10.65", "currency": "GBP" },
+    { "field": "listPriceEstimateUsd", "groupKey": "all", "unroundedValue": "1.005", "formattedValue": "1.01", "currency": "USD" },
+    { "field": "providerEstimateUsd", "groupKey": "all", "unroundedValue": "2.5", "formattedValue": "2.50", "currency": "USD" },
+    { "field": "notionalUsd", "groupKey": "all", "unroundedValue": "4", "formattedValue": "4.00", "currency": "USD" },
+    { "field": "unclassifiedUsd", "groupKey": "all", "unroundedValue": "0.75", "formattedValue": "0.75", "currency": "USD" },
+    { "field": "cacheSavingsUsd", "groupKey": "all", "unroundedValue": "0.125", "formattedValue": "0.13", "currency": "USD" },
+    { "field": "unknownCostObservations", "groupKey": "all", "unroundedValue": "1", "formattedValue": "1", "currency": "XXX" },
+    { "field": "unknownListPriceObservations", "groupKey": "all", "unroundedValue": "0", "formattedValue": "0", "currency": "XXX" },
+    { "field": "unknownProviderEstimateObservations", "groupKey": "all", "unroundedValue": "0", "formattedValue": "0", "currency": "XXX" },
+    { "field": "unknownNotionalObservations", "groupKey": "all", "unroundedValue": "1", "formattedValue": "1", "currency": "XXX" },
+    { "field": "unknownCacheSavingsObservations", "groupKey": "all", "unroundedValue": "2", "formattedValue": "2", "currency": "XXX" }
+  ],
+  "missingQualifiers": ["unknown_cost", "unknown_cache_savings", "unclassified_cost"]
+}
