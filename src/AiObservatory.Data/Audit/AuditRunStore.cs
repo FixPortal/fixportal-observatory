@@ -1,3 +1,4 @@
+using System.Globalization;
 using AiObservatory.Audit;
 using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
@@ -317,14 +318,43 @@ public sealed partial class AuditStore
         return results;
     }
 
-    public async Task<IReadOnlyList<AvailableAuditCapture>> AvailableCapturesAsync(CancellationToken ct) =>
-        await _db.Set<AuditEvidenceCapture>()
+    public async Task<AuditCaptureDiscovery> AvailableCapturesAsync(
+        SourceSelection selection,
+        DateOnly from,
+        DateOnly to,
+        CancellationToken ct
+    )
+    {
+        const int choiceLimit = 200;
+        var now = _clock.GetCurrentInstant();
+        var anyMachine = selection.MachineId == Guid.Empty;
+        var fromText = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var toText = to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        // Seal validates manifest.Scope == request.Scope. Search that bounded metadata in
+        // PostgreSQL before limiting or transferring manifests; evidence chunks are never read.
+        var captures = await _db.Set<AuditEvidenceCapture>()
+            .FromSqlInterpolated(
+                $"""
+                SELECT c.* FROM "AuditEvidenceCaptures" AS c
+                INNER JOIN "AuditCaptureRequests" AS r ON r."Id"=c."RequestId"
+                WHERE c."DeletedAt" IS NULL AND (c."ExpiresAt" IS NULL OR c."ExpiresAt">{now})
+                    AND ({anyMachine} OR c."MachineId"={selection.MachineId})
+                    AND (convert_from(r."Scope",'UTF8')::jsonb->>'from')<={fromText}
+                    AND (convert_from(r."Scope",'UTF8')::jsonb->>'to')>={toText}
+                    AND EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(convert_from(r."Scope",'UTF8')::jsonb->'sources') AS scoped_source
+                        WHERE scoped_source->>'sourceId'={selection.SourceId}
+                    )
+                """
+            )
             .AsNoTracking()
-            .Where(c => c.DeletedAt == null && (c.ExpiresAt == null || c.ExpiresAt > _clock.GetCurrentInstant()))
             .OrderByDescending(c => c.SealedAt)
-            .Take(200)
+            .ThenByDescending(c => c.Id)
+            .Take(choiceLimit + 1)
             .Select(c => new AvailableAuditCapture(c.Id, c.MachineId, c.Manifest, c.ExpiresAt))
             .ToArrayAsync(ct);
+        return new(captures.Take(choiceLimit).ToArray(), captures.Length > choiceLimit);
+    }
 
     public async Task<(AuditScope Scope, Guid[] CaptureIds)> ReplaySelectionAsync(Guid id, CancellationToken ct)
     {

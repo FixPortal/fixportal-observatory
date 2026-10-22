@@ -662,6 +662,50 @@ public sealed class AuditWorkerTests : IAsyncLifetime
         }
     }
 
+    [Fact]
+    public async Task Readiness_FiltersMachineSourceAndDatesBeforeBoundingCaptureChoices()
+    {
+        _ceiling.CancelAfter(TimeSpan.FromSeconds(90));
+        var selected = await _store.RegisterMachineAsync(new byte[32], Ct);
+        var other = await _store.RegisterMachineAsync(new byte[32], Ct);
+        var requested = Scope(selected.MachineId);
+        async Task<Guid> Capture(MachineRegistration machine, AuditScope scope)
+        {
+            var now = _clock.GetCurrentInstant();
+            await _store.CreateCaptureRequestAsync(machine.MachineId, scope, now, Ct);
+            var lease = (await _store.TryClaimCaptureAsync(machine.MachineId, machine.CredentialId, now, Ct))!;
+            var id = await Seal(lease);
+            _clock.Advance(Duration.FromSeconds(1));
+            return id;
+        }
+        var retained = await Capture(selected, requested);
+        for (var index = 0; index < 100; index++)
+        {
+            await Capture(other, Scope(other.MachineId));
+        }
+        for (var index = 0; index < 100; index++)
+        {
+            await Capture(selected, requested with { From = new(2026, 10, 8), To = new(2026, 10, 14) });
+        }
+        await Capture(selected, requested with { Sources = [new(selected.MachineId, "unrelated-local")] });
+        var service = new AuditReadinessService(_db, _store, _clock, Options.Create(_audit));
+        var readiness = (await service.GetAsync(requested, Ct)).Sources.Single();
+        readiness.CaptureIds.Should().Equal(retained);
+        readiness.DiagnosticCodes.Should().NotContain("capture_missing");
+        readiness.DiagnosticCodes.Should().NotContain("capture_choices_truncated");
+        var allMachines = (
+            await service.GetAsync(requested with { Sources = [new(Guid.Empty, "claude-local")] }, Ct)
+        ).Sources.Single();
+        allMachines.CaptureIds.Should().HaveCount(101).And.Contain(retained);
+        for (var index = 0; index < 201; index++)
+        {
+            await Capture(selected, requested);
+        }
+        var bounded = (await service.GetAsync(requested, Ct)).Sources.Single();
+        bounded.CaptureIds.Should().HaveCount(200).And.NotContain(retained);
+        bounded.DiagnosticCodes.Should().Contain("capture_choices_truncated").And.NotContain("capture_missing");
+    }
+
     private async Task<Guid> Seal(CaptureLease lease, string generation = "g1")
     {
         var manifest = new CaptureManifest(

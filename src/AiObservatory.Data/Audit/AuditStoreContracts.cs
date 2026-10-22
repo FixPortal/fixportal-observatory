@@ -37,6 +37,8 @@ public sealed record AuditRunView(
     public Guid? EvaluationOfRunId { get; init; }
 }
 
+public sealed record AuditCaptureDiscovery(IReadOnlyList<AvailableAuditCapture> Captures, bool ChoicesTruncated);
+
 public sealed record AvailableAuditCapture(Guid Id, Guid MachineId, byte[] Manifest, Instant? ExpiresAt);
 
 public sealed record RetainedCapture(byte[] Manifest, IReadOnlyList<byte[]> Chunks, Instant? ExpiresAt);
