@@ -48,9 +48,9 @@ The three cards above share the same rules.
 | Value                                   | The sum of known costs for that basis, converted from USD to GBP at the current rate.       |
 | `Not reported`                          | No aggregate of that basis has a known cost in the window.                                  |
 | `USD basis; shown in GBP when reported` | The stored values are US dollars; the card converts them for display.                       |
-| `N observation(s) not reported`         | N requests in that basis had no cost. The value above still includes the requests that did. |
+| `N observation(s) not reported`         | N usage records in that basis had no cost. The value above still includes records that did. |
 
-An aggregate contributes only when it has more requests than unknown-cost requests. A partly priced aggregate contributes its known subtotal, and the qualifier line tells you it is incomplete.
+An aggregate contributes only when it has more records than unknown-cost records. A partly priced aggregate contributes its known subtotal, and the qualifier line tells you it is incomplete.
 
 The conversion uses the live USD to GBP rate in your browser, cached for about 12 hours, with a fixed fallback of 0.79 if the rate service is unreachable. The `Billed spend` card does not use this rate; its GBP values are already stored. See [Concepts](/docs/concepts#currency).
 
@@ -63,7 +63,7 @@ The conversion uses the live USD to GBP rate in your browser, cached for about 1
 | `N in / M out`                          | Observed input tokens and output tokens.                                                                                                                                   |
 | `P% cache hit`                          | Cache-read tokens divided by observed input tokens, rounded to a whole percent. Shown only when cache-read tokens exist.                                                   |
 | `Cache savings`                         | The sum of server-reported cache savings, converted to GBP and labelled `server-reported, USD-derived`. `Not reported` if no bucket with cache traffic had a known saving. |
-| `N savings observation(s) not reported` | Cache-traffic requests whose saving was not reported.                                                                                                                      |
+| `N savings observation(s) not reported` | Usage records with cache traffic whose saving was not reported.                                                                                                                      |
 
 Observed input tokens are plain input tokens plus cache-read tokens plus cache-write tokens. The cache hit rate is therefore the share of all input that came from the cache. The `i` button beside the cache lines gives the same explanation.
 
@@ -112,10 +112,10 @@ The panel is titled `Provider usage share` and draws a donut chart. The toggle l
 | ---------- | ----------------------------------------------- | ------- |
 | `Notional` | Notional cost with a known value, in US dollars | Yes     |
 | `Tokens`   | Observed tokens                                 | No      |
-| `Activity` | Request count                                   | No      |
+| `Records` | Usage record count                                   | No      |
 
 - A slice's share is its value divided by the total of all slices, as a percentage.
-- The tooltip reads `<amount> · <share>%`, with the share to one decimal place. In `Notional` mode the amount is in US dollars; the other modes show tokens or requests.
+- The tooltip reads `<amount> · <share>%`, with the share to one decimal place. In `Notional` mode the amount is in US dollars; the other modes show tokens or usage records.
 - Slices follow a fixed provider order, with unknown providers last.
 - If the total is zero or nothing qualifies, the panel reads `Not reported for this period.`
 
