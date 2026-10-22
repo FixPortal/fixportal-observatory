@@ -179,7 +179,7 @@ public static class AuditCanonicalJson
             "records" => ["sourceId", "generation", "fileId", "sequence"],
             "entries" => ["path"],
             "sources" => ["machineId", "sourceId"],
-            "events" or "spend" => ["rowId"],
+            "events" or "spend" or "financialObservations" => ["rowId"],
             "aggregates" or "compatibleGroups" or "chronologicalGroups" => ["key"],
             "captures" => ["captureId"],
             "sourceFormats" => ["sourceId", "format", "version"],

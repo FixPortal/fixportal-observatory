@@ -7,7 +7,10 @@ public sealed class KimiPriceCalculator : IProviderPriceCalculator
 {
     public Provider Provider => Provider.Moonshot;
 
-    public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog)
+    public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog) =>
+        CalculateWithEvidence(usage, normalizedCatalog)?.Quote;
+
+    public CalculatedPrice? CalculateWithEvidence(UsageEvent usage, string normalizedCatalog)
     {
         if (string.IsNullOrWhiteSpace(usage.Model))
         {
@@ -60,7 +63,16 @@ public sealed class KimiPriceCalculator : IProviderPriceCalculator
                 + PerMillion(usage.OutputTokens, entry.Output)
             ) * multiplier;
         var savings = PerMillion(cacheRead, entry.CacheMiss - entry.CacheHit) * multiplier;
-        return new UsagePriceQuote(cost, savings);
+        return PricingEvidence.Result(
+            new UsagePriceQuote(cost, savings),
+            entry,
+            PricingEvidence.Dimensions(usage) with
+            {
+                HighSpeed = highSpeed,
+                Batch = batch,
+            },
+            pricingDate
+        );
     }
 
     private static decimal PerMillion(long tokens, decimal rate) => tokens / 1_000_000m * rate;

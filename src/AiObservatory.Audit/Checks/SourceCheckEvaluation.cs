@@ -236,21 +236,24 @@ internal sealed class SourceCheckEvaluation
             )
             .ToArray();
         foreach (
-            var scope in events.Where(e => e.PricingApplication is null).Select(EventComparisonScope.From).Distinct()
+            var scope in events
+                .Where(e => e.SourceDimensions is null && e.PricingApplication is null)
+                .Select(EventComparisonScope.From)
+                .Distinct()
         )
         {
             unplacedEventScopes.Add(scope);
             AddGap(scope.SourceId, "missing_pricing_dimensions", code, findings, gaps, scope.Id);
         }
         return events
-            .Where(e => e.PricingApplication is not null)
+            .Where(e => e.SourceDimensions is not null || e.PricingApplication is not null)
             .GroupBy(e => new ComparisonKey(
                 e.SourceId,
                 DateOnly.FromDateTime(e.OccurredAt.UtcDateTime),
                 e.Provider,
                 e.Model,
                 e.Provenance,
-                e.PricingApplication!.Dimensions
+                e.SourceDimensions ?? e.PricingApplication!.Dimensions
             ))
             .ToDictionary(
                 g => g.Key,

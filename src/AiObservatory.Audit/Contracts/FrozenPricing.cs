@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace AiObservatory.Audit.Contracts;
 
 /// <summary>Typed pricing facts preserve effective windows and source identity without arbitrary catalog JSON.</summary>
@@ -24,7 +26,11 @@ public sealed record FrozenPriceRate(
     long UnitTokens,
     decimal UnitPrice,
     decimal? RegionMultiplier
-);
+)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CatalogEntryKey { get; init; }
+}
 
 public enum PriceMeter
 {

@@ -40,12 +40,30 @@ public sealed class UsagePriceResolver
         UsageEvent usage,
         Dictionary<string, List<PricingSnapshot>>? snapshotsBySourceId,
         CancellationToken cancellationToken
+    ) => (await ResolveWithEvidenceAsync(usage, snapshotsBySourceId, cancellationToken))?.Quote;
+
+    public Task<ResolvedPriceApplication?> ResolveWithEvidenceAsync(UsageEvent usage, CancellationToken ct = default) =>
+        ResolveWithEvidenceAsync(usage, null, ct);
+
+    internal async Task<ResolvedPriceApplication?> ResolveWithEvidenceAsync(
+        UsageEvent usage,
+        Dictionary<string, List<PricingSnapshot>>? snapshotsBySourceId,
+        CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(usage);
         if (IsExactZeroUsage(usage))
         {
-            return new UsagePriceQuote(0m, 0m);
+            return new(
+                new UsagePriceQuote(0m, 0m),
+                null,
+                null,
+                "exact-zero",
+                PricingEvidence.Dimensions(usage),
+                DateOnly.FromDateTime(usage.OccurredAt.ToDateTimeUtc()),
+                "1",
+                true
+            );
         }
 
         if (!_calculators.TryGetValue(usage.Provider, out var calculator))
@@ -66,10 +84,18 @@ public sealed class UsagePriceResolver
         // quote.
         foreach (var snapshot in snapshots)
         {
-            var quote = calculator.Calculate(usage, snapshot.NormalizedCatalog);
+            var quote = calculator.CalculateWithEvidence(usage, snapshot.NormalizedCatalog);
             if (quote is not null)
             {
-                return quote;
+                return new(
+                    quote.Quote,
+                    snapshot.Id,
+                    snapshot.ContentHash,
+                    quote.RateKey,
+                    quote.Dimensions,
+                    quote.PricingDate,
+                    "1"
+                );
             }
         }
 

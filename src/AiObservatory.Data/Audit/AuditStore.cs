@@ -661,6 +661,42 @@ public sealed class AuditStore
             ))
             .SingleOrDefaultAsync(ct);
 
+    /// <summary>Copies immutable capture bytes under the evidence lock and the caller's ownership fence.</summary>
+    public Task<SnapshotMaterialization> ReadSnapshotMaterializationAsync(RunLease lease, CancellationToken ct) =>
+        Transaction(
+            async () =>
+            {
+                var now = _clock.GetCurrentInstant();
+                var run = await FindLiveRun(lease, now, ct);
+                Require(run is not null && await EvidenceAvailable(lease.RunId, now, ct), "snapshot_lease_lost", 409);
+                var captureIds = await _db.Set<AuditRunCapture>()
+                    .AsNoTracking()
+                    .Where(x => x.RunId == lease.RunId)
+                    .Select(x => x.CaptureId)
+                    .ToArrayAsync(ct);
+                var captures = new List<RetainedCapture>();
+                long totalBytes = 0;
+                foreach (var id in captureIds)
+                {
+                    var capture = await _db.Set<AuditEvidenceCapture>().AsNoTracking().SingleAsync(x => x.Id == id, ct);
+                    var chunkBytes = await _db.Set<AuditEvidenceChunk>()
+                        .Where(x => x.RequestId == capture.RequestId)
+                        .SumAsync(x => (long)x.Bytes.Length, ct);
+                    totalBytes = checked(totalBytes + capture.Manifest.LongLength + chunkBytes);
+                    Require(totalBytes <= _options.MaxSnapshotBytes, "snapshot_size_limit", 413);
+                    var chunks = await _db.Set<AuditEvidenceChunk>()
+                        .AsNoTracking()
+                        .Where(x => x.RequestId == capture.RequestId)
+                        .OrderBy(x => x.Index)
+                        .Select(x => x.Bytes)
+                        .ToArrayAsync(ct);
+                    captures.Add(new(capture.Manifest, chunks, capture.ExpiresAt));
+                }
+                return new SnapshotMaterialization(AuditCanonicalJson.Deserialize<AuditScope>(run.Scope), captures);
+            },
+            ct
+        );
+
     public Task<bool> TryStoreSnapshotAsync(
         RunLease lease,
         byte[] bytes,
@@ -735,7 +771,10 @@ public sealed class AuditStore
                 return await _db.Set<AuditServerSnapshot>()
                     .AsNoTracking()
                     .Where(x => x.RunId == runId)
-                    .Select(x => new RetainedSnapshot(x.Bytes, x.Sha256, x.InputContentDigest, x.ExpiresAt))
+                    .Select(x => new RetainedSnapshot(x.Bytes, x.Sha256, x.InputContentDigest, x.ExpiresAt)
+                    {
+                        SnapshotId = x.Id,
+                    })
                     .SingleOrDefaultAsync(ct);
             },
             ct

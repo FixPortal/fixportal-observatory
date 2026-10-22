@@ -21,7 +21,10 @@ public sealed class DeepSeekPriceCalculator : IProviderPriceCalculator
 {
     public Provider Provider => Provider.DeepSeek;
 
-    public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog)
+    public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog) =>
+        CalculateWithEvidence(usage, normalizedCatalog)?.Quote;
+
+    public CalculatedPrice? CalculateWithEvidence(UsageEvent usage, string normalizedCatalog)
     {
         if (string.IsNullOrWhiteSpace(usage.Model))
         {
@@ -44,7 +47,12 @@ public sealed class DeepSeekPriceCalculator : IProviderPriceCalculator
             + PerMillion(cacheRead, entry.CacheRead)
             + PerMillion(usage.OutputTokens, entry.Output);
         var savings = PerMillion(cacheRead, entry.Input - entry.CacheRead);
-        return new UsagePriceQuote(cost, savings);
+        return PricingEvidence.Result(
+            new UsagePriceQuote(cost, savings),
+            entry,
+            PricingEvidence.Dimensions(usage),
+            pricingDate
+        );
     }
 
     private static decimal PerMillion(long tokens, decimal rate) => tokens / 1_000_000m * rate;

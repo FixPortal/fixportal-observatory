@@ -31,6 +31,7 @@ public class AiObservatoryDbContext(DbContextOptions<AiObservatoryDbContext> opt
     private static readonly Guid CopilotVendorId = Guid.Parse("22222222-2222-2222-2222-222222222211");
     private static readonly Guid GitHubVendorId = Guid.Parse("22222222-2222-2222-2222-222222222212");
 
+    public DbSet<PricingApplication> PricingApplications => Set<PricingApplication>();
     public DbSet<UsageEvent> UsageEvents => Set<UsageEvent>();
     public DbSet<DailyAggregate> DailyAggregates => Set<DailyAggregate>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
@@ -62,6 +63,7 @@ public class AiObservatoryDbContext(DbContextOptions<AiObservatoryDbContext> opt
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.ApplyConfiguration(new PricingApplicationConfiguration());
         modelBuilder.ApplyConfiguration(new AuditMachineConfiguration());
         modelBuilder.ApplyConfiguration(new AuditMachineCredentialConfiguration());
         modelBuilder.ApplyConfiguration(new AuditCaptureRequestConfiguration());
