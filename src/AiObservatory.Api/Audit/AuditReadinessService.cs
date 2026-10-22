@@ -23,15 +23,17 @@ public sealed class AuditReadinessService(
         {
             throw new AuditStoreException("invalid_scope_dates", 400);
         }
-        var captures = await store.AvailableCapturesAsync(ct);
         var sourceIds = scope.Sources.Select(s => s.SourceId).Distinct().ToArray();
         var statuses = await db
             .SourceSyncStates.AsNoTracking()
             .Where(s => sourceIds.Contains(s.SourceId))
             .ToArrayAsync(ct);
+        var fresh = await FreshPricingProvidersAsync(ct);
         var result = new List<AuditSourceReadinessDto>();
         foreach (var selection in scope.Sources)
         {
+            var discovery = await store.AvailableCapturesAsync(selection, scope.From, scope.To, ct);
+            var captures = discovery.Captures;
             var matching = captures
                 .Where(c => selection.MachineId == Guid.Empty || c.MachineId == selection.MachineId)
                 .Select(c => (Capture: c, Manifest: AuditCanonicalJson.Deserialize<CaptureManifest>(c.Manifest)))
@@ -46,6 +48,11 @@ public sealed class AuditReadinessService(
             {
                 diagnostics.Add("capture_missing");
             }
+            if (discovery.ChoicesTruncated)
+            {
+                diagnostics.Add("capture_choices_truncated");
+            }
+            diagnostics.AddRange(PricingDiagnostics(selection.SourceId, captures, fresh));
             diagnostics.AddRange(matching.SelectMany(c => CaptureDiagnostics(c.Manifest, selection.SourceId)));
             var status = statuses.FirstOrDefault(s => s.SourceId == selection.SourceId);
             diagnostics.AddRange(StatusDiagnostics(status));
@@ -61,25 +68,21 @@ public sealed class AuditReadinessService(
                 )
             );
         }
+        return new(1, result, options.Value.MaxRunWindowDays, options.Value.MaxSnapshotBytes);
+    }
+
+    private async Task<HashSet<Provider>> FreshPricingProvidersAsync(CancellationToken ct)
+    {
         var activePricing = await db
             .PricingSnapshots.AsNoTracking()
             .Where(p => p.IsActive)
             .GroupBy(p => p.Provider)
             .Select(g => new { Provider = g.Key, RetrievedAt = g.Max(p => p.RetrievedAt) })
             .ToArrayAsync(ct);
-        var fresh = activePricing
+        return activePricing
             .Where(p => p.RetrievedAt >= clock.GetCurrentInstant().Minus(Duration.FromHours(48)))
             .Select(p => p.Provider)
             .ToHashSet();
-        result = result
-            .Select(r =>
-                r with
-                {
-                    DiagnosticCodes = [.. r.DiagnosticCodes, .. PricingDiagnostics(r.SourceId, captures, fresh)],
-                }
-            )
-            .ToList();
-        return new(1, result, options.Value.MaxRunWindowDays, options.Value.MaxSnapshotBytes);
     }
 
     private static IEnumerable<string> PricingDiagnostics(
