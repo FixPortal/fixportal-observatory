@@ -37,6 +37,12 @@ public sealed class ClaudeAuditAdapter : ISourceAuditAdapter
     {
         if (copies.Select(r => r.SourceVersion).Distinct(StringComparer.Ordinal).Skip(1).Any())
         {
+            // Prepare validates every timestamp. Only wholly out-of-period copies
+            // can be ignored; disagreement must never select an authoritative version.
+            if (copies.All(r => !SourceAuditSupport.InScope(SourceAuditSupport.Date(r), scope)))
+            {
+                return;
+            }
             findings.Add(SourceAuditSupport.Gap(copies[0], "mixed_source_versions"));
             return;
         }

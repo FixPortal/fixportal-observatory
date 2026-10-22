@@ -1,3 +1,5 @@
+using System.Text.Json.Nodes;
+using AiObservatory.Audit.Checks;
 using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
 using AiObservatory.Audit.Sources;
@@ -194,6 +196,146 @@ public sealed class ClaudeAuditAdapterTests
         );
         result.CompatibleGroups.Should().BeEmpty();
         result.Coverage.Gaps.Should().Contain(g => g.DiagnosticCode == "mixed_source_versions");
+    }
+
+    [Theory]
+    [InlineData(-1, -1, false)]
+    [InlineData(-1, -1, true)]
+    [InlineData(2, 2, false)]
+    [InlineData(2, 2, true)]
+    [InlineData(-1, 2, false)]
+    [InlineData(-1, 2, true)]
+    public void MixedVersionsWhollyOutsideScopeDoNotChangeReconstructionOrChecks(
+        int firstDay,
+        int secondDay,
+        bool reverse
+    )
+    {
+        var record = SourceFixture.Claude();
+        var first = record with
+        {
+            FileId = "outside-v1",
+            MessageId = "outside",
+            Timestamp = record.Timestamp.AddDays(firstDay),
+        };
+        var second = first with
+        {
+            FileId = "outside-v2",
+            SourceVersion = "2",
+            Timestamp = record.Timestamp.AddDays(secondDay),
+        };
+        SourceUsageRecord[] records = reverse ? [record, second, first] : [record, first, second];
+        var adapter = new ClaudeAuditAdapter();
+        var control = adapter.Reconstruct([record], SourceFixture.Scope());
+        control.CompatibleGroups.Should().ContainSingle();
+        control.Coverage.Gaps.Should().BeEmpty();
+        AuditCanonicalJson
+            .Serialize(adapter.Reconstruct(records, SourceFixture.Scope()))
+            .Should()
+            .Equal(AuditCanonicalJson.Serialize(control));
+
+        var input = SourceFixture.Input(record);
+        input = input with
+        {
+            Captures =
+            [
+                input.Captures[0] with
+                {
+                    SourceFormats =
+                    [
+                        new(record.SourceId, record.SourceFormat, "1"),
+                        new(record.SourceId, record.SourceFormat, "2"),
+                    ],
+                },
+            ],
+            Events = [SourceFixture.Event(record, new(100, 20, 60, 40, 10, null))],
+        };
+        var check = new SourceAccountingCheck();
+        var withOutside = input with
+        {
+            Records = records,
+            Captures = [input.Captures[0] with { RecordCount = records.Length }],
+        };
+        var matched = check.Evaluate(input);
+        matched.Verdict.Should().Be(CheckVerdict.Matched);
+        AuditCanonicalJson.Serialize(check.Evaluate(withOutside)).Should().Equal(AuditCanonicalJson.Serialize(matched));
+        var daily = new DailyAttributionCheck();
+        var dailyControl = daily.Evaluate(input);
+        dailyControl.Verdict.Should().Be(CheckVerdict.Matched);
+        AuditCanonicalJson
+            .Serialize(daily.Evaluate(withOutside))
+            .Should()
+            .Equal(AuditCanonicalJson.Serialize(dailyControl));
+
+        var missing = input with { Events = [] };
+        var missingControl = check.Evaluate(missing);
+        missingControl.Verdict.Should().Be(CheckVerdict.Mismatched);
+        missingControl.Findings.Should().Contain(f => f.Field == "groupPresence");
+        AuditCanonicalJson
+            .Serialize(check.Evaluate(withOutside with { Events = [] }))
+            .Should()
+            .Equal(AuditCanonicalJson.Serialize(missingControl));
+    }
+
+    [Theory]
+    [InlineData(0, 0, false)]
+    [InlineData(0, 0, true)]
+    [InlineData(-1, 0, false)]
+    [InlineData(-1, 0, true)]
+    [InlineData(1, 2, false)]
+    [InlineData(1, 2, true)]
+    public void MixedVersionsWithAnyCopyInsideScopeRemainAmbiguous(int firstDay, int secondDay, bool reverse)
+    {
+        var record = Prospective(100001, 0, 0);
+        var first = record with { Timestamp = record.Timestamp.AddDays(firstDay) };
+        var second = record with
+        {
+            SourceVersion = "1",
+            FileId = "old",
+            Timestamp = record.Timestamp.AddDays(secondDay),
+        };
+        var result = new ClaudeAuditAdapter().Reconstruct(
+            reverse ? [second, first] : [first, second],
+            SourceFixture.Scope()
+        );
+        result.CompatibleGroups.Should().BeEmpty();
+        result.ChronologicalGroups.Should().BeEmpty();
+        result.Coverage.Gaps.Should().ContainSingle().Which.DiagnosticCode.Should().Be("mixed_source_versions");
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("default")]
+    [InlineData("unparseable")]
+    [InlineData("non-utc")]
+    public void MixedVersionsCannotUseInvalidTimestampAsOutsideScopeProof(string fault)
+    {
+        var record = SourceFixture.Claude() with { Timestamp = SourceFixture.Claude().Timestamp.AddDays(-1) };
+        var node = JsonNode.Parse(AuditCanonicalJson.Serialize(record with { SourceVersion = "2", FileId = "other" }))!;
+        if (fault == "missing")
+        {
+            node.AsObject().Remove("timestamp");
+        }
+        else
+        {
+            node["timestamp"] = fault switch
+            {
+                "default" => "0001-01-01T00:00:00Z",
+                "non-utc" => "2026-10-19T23:00:00+01:00",
+                _ => "invalid",
+            };
+        }
+        var action = () =>
+            new ClaudeAuditAdapter().Reconstruct(
+                [
+                    record,
+                    AuditCanonicalJson.Deserialize<SourceUsageRecord>(
+                        System.Text.Encoding.UTF8.GetBytes(node.ToJsonString())
+                    ),
+                ],
+                SourceFixture.Scope()
+            );
+        action.Should().Throw<AuditValidationException>();
     }
 
     [Fact]
