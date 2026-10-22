@@ -747,6 +747,183 @@ public sealed class UsagePriceResolverTests : IAsyncLifetime
         quote!.CostUsd.Should().Be(1.85m);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CurrentNotionalMissingBandCannotFallBackToRetainedFlatCatalog(bool prospective)
+    {
+        await InstallClaudeHistory();
+        var usage = ClaudeContextFixture.Event(prospective ? ClaudeContextFixture.Raw(null) : "{}");
+        usage.OccurredAt = Instant.FromUtc(2026, 9, 20, 0, 0);
+        (await Resolver().ResolveWithEvidenceAsync(usage, TestContext.Current.CancellationToken)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(ClaudeContextFixture.Lower)]
+    [InlineData(ClaudeContextFixture.Upper)]
+    public async Task CurrentBandedEraCannotUseFlatFallback(string? context)
+    {
+        var (_, current) = await InstallClaudeHistory();
+        var usage = ClaudeContextFixture.Event(ClaudeContextFixture.Raw(context, speed: "fast"));
+        // The upper band's fast lane is deliberately unavailable, unlike the retained flat lane.
+        var quote = await Resolver().ResolveWithEvidenceAsync(usage, TestContext.Current.CancellationToken);
+        if (context != ClaudeContextFixture.Lower)
+        {
+            quote.Should().BeNull();
+            return;
+        }
+        quote.Should().NotBeNull();
+        quote.SnapshotId.Should().Be(current.Id);
+        quote.SnapshotHash.Should().Be(current.ContentHash);
+        quote.RateKey.Should().Be(PricingEvidence.RateKey(ClaudeContextFixture.Entry(context)));
+        quote.Dimensions.Context.Should().Be(context);
+        quote.Quote.CostUsd.Should().Be(10m);
+        quote.PricingRuleVersion.Should().Be("1");
+    }
+
+    [Fact]
+    public async Task HistoricalDatedListPriceUsesApplicableFlatEra()
+    {
+        var (retained, _) = await InstallClaudeHistory();
+        var usage = ClaudeContextFixture.Event(
+            """{"service_tier":"standard","speed":"standard","inference_geo":"global"}"""
+        );
+        usage.CostBasis = CostBasis.ListPriceEstimate;
+        usage.OccurredAt = Instant.FromUtc(2026, 9, 20, 0, 0);
+        var quote = await Resolver().ResolveWithEvidenceAsync(usage, TestContext.Current.CancellationToken);
+        quote.Should().NotBeNull();
+        quote.SnapshotId.Should().Be(retained.Id);
+        quote
+            .RateKey.Should()
+            .Be(PricingEvidence.RateKey(ClaudeContextFixture.Entry(null) with { EffectiveFrom = new(2026, 9, 1) }));
+        quote.Dimensions.Context.Should().BeNull();
+        quote.Quote.CostUsd.Should().Be(2m);
+        quote.PricingDate.Should().Be(new DateOnly(2026, 9, 20));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(ClaudeContextFixture.Lower)]
+    public async Task ProspectiveTieredClaimCannotUseOnlyInstalledLegacyFlatCatalog(string? context)
+    {
+        await InstallClaudeHistory(legacyOnly: true);
+        var usage = ClaudeContextFixture.Event(ClaudeContextFixture.Raw(context));
+        (await Resolver().ResolveWithEvidenceAsync(usage, TestContext.Current.CancellationToken)).Should().BeNull();
+        usage.InputTokens = 0;
+        var zero = await Resolver().ResolveWithEvidenceAsync(usage, TestContext.Current.CancellationToken);
+        zero!.RuleDerived.Should().BeTrue();
+        zero.PricingRuleVersion.Should().Be("1");
+        zero.Quote.CostUsd.Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task CurrentDatedBandedEraCannotFallBackToFlatWhenBandIsMissing()
+    {
+        await InstallClaudeHistory();
+        var usage = ClaudeContextFixture.Event(
+            """{"service_tier":"standard","speed":"standard","inference_geo":"global"}"""
+        );
+        usage.CostBasis = CostBasis.ListPriceEstimate;
+        (await Resolver().ResolveWithEvidenceAsync(usage, TestContext.Current.CancellationToken)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("{\"claude_prompt_context_version\":\"2\",\"context\":\"prompt_le_100000\"}")]
+    [InlineData("{\"claude_prompt_context_basis\":\"daily_total\",\"context\":\"prompt_le_100000\"}")]
+    [InlineData("{\"claude_prompt_context_version\":1,\"context\":\"prompt_le_100000\"}")]
+    [InlineData(
+        "{\"claude_prompt_context_version\":\"1\",\"claude_prompt_context_basis\":\"deduplicated_message_group\",\"context\":\"PROMPT_LE_100000\"}"
+    )]
+    public async Task InvalidProspectiveClaimCannotRegainLegacyFlatQuote(string raw)
+    {
+        await InstallClaudeHistory(legacyOnly: true);
+        var usage = ClaudeContextFixture.Event(raw);
+        (await Resolver().ResolveWithEvidenceAsync(usage, TestContext.Current.CancellationToken)).Should().BeNull();
+        new AnthropicPriceCalculator()
+            .CalculateWithEvidence(
+                usage,
+                PricingCatalogJson.Serialize(ClaudeContextFixture.Catalog(ClaudeContextFixture.Entry(null)))
+            )
+            .Should()
+            .BeNull();
+    }
+
+    private async Task<(PricingSnapshot Retained, PricingSnapshot Current)> InstallClaudeHistory(
+        bool legacyOnly = false
+    )
+    {
+        var retained = new PricingSnapshot
+        {
+            Provider = Provider.Anthropic,
+            SourceId = PricingSourceIds.Claude,
+            RetrievedAt = Instant.FromUtc(2026, 9, 1, 12, 0),
+            IsActive = legacyOnly,
+            ContentHash = new string('a', 64),
+            NormalizedCatalog = PricingCatalogJson.Serialize(
+                ClaudeContextFixture.Catalog(
+                    ClaudeContextFixture.Entry(null) with
+                    {
+                        EffectiveFrom = new(2026, 9, 1),
+                    }
+                ) with
+                {
+                    RetrievedAt = Instant.FromUtc(2026, 9, 1, 12, 0),
+                }
+            ),
+        };
+        var current = new PricingSnapshot
+        {
+            Provider = Provider.Anthropic,
+            SourceId = PricingSourceIds.Claude,
+            RetrievedAt = ClaudeContextFixture.Now,
+            IsActive = true,
+            ContentHash = new string('b', 64),
+            NormalizedCatalog = PricingCatalogJson.Serialize(
+                ClaudeContextFixture.Catalog(
+                    ClaudeContextFixture.Entry(ClaudeContextFixture.Lower),
+                    ClaudeContextFixture.Entry(ClaudeContextFixture.Upper) with
+                    {
+                        FastInput = null,
+                        FastOutput = null,
+                    }
+                )
+            ),
+        };
+        _db.PricingSnapshots.Add(retained);
+        if (!legacyOnly)
+        {
+            _db.PricingSnapshots.Add(current);
+        }
+        await _db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        return (retained, current);
+    }
+
+    [Fact]
+    public async Task ApplicableActiveFlatEraIsNotOverriddenByOlderBandedSnapshot()
+    {
+        var (retained, current) = await InstallClaudeHistory();
+        var flat = PricingCatalogJson.Serialize(ClaudeContextFixture.Catalog(ClaudeContextFixture.Entry(null)));
+        await _db
+            .PricingSnapshots.Where(s => s.Id == retained.Id)
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(p => p.NormalizedCatalog, ClaudeContextFixture.Json()),
+                TestContext.Current.CancellationToken
+            );
+        await _db
+            .PricingSnapshots.Where(s => s.Id == current.Id)
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(p => p.NormalizedCatalog, flat),
+                TestContext.Current.CancellationToken
+            );
+        var quote = await Resolver()
+            .ResolveWithEvidenceAsync(ClaudeContextFixture.Event("{}"), TestContext.Current.CancellationToken);
+        quote.Should().NotBeNull();
+        quote.SnapshotId.Should().Be(current.Id);
+        quote.RateKey.Should().Be(PricingEvidence.RateKey(ClaudeContextFixture.Entry(null)));
+        quote.Dimensions.Context.Should().BeNull();
+    }
+
     private UsagePriceResolver Resolver(ILogger<UsagePriceResolver>? logger = null) =>
         new(
             _store,

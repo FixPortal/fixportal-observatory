@@ -27,7 +27,7 @@ public sealed class AnthropicPriceCalculator : IProviderPriceCalculator
 
         var catalog = PricingCatalogJson.Deserialize<AnthropicPriceCatalog>(normalizedCatalog);
         var pricingDate = isNotional ? catalog.RetrievedAt.InUtc().Date : usage.OccurredAt.InUtc().Date;
-        var entry = catalog.Resolve(usage.Model, pricingDate);
+        var entry = ResolveEntry(usage, evidence.RootElement, catalog, pricingDate);
         if (entry is null)
         {
             return null;
@@ -97,9 +97,26 @@ public sealed class AnthropicPriceCalculator : IProviderPriceCalculator
                 Batch = tier == "batch",
                 Speed = speed,
                 InferenceGeo = geography,
+                Context = entry.Context,
             },
             pricingDate
         );
+    }
+
+    private static AnthropicPriceEntry? ResolveEntry(
+        UsageEvent usage,
+        JsonElement evidence,
+        AnthropicPriceCatalog catalog,
+        NodaTime.LocalDate date
+    )
+    {
+        var context = PricingEvidence.ClaudePromptContext(usage, evidence);
+        var entry = catalog.Resolve(usage.Model!, date, context);
+        return
+            entry?.Context is null
+            && PricingEvidence.RequiresProspectiveClaudePromptContext(usage, evidence, catalog, date)
+            ? null
+            : entry;
     }
 
     private static bool TryDimensions(

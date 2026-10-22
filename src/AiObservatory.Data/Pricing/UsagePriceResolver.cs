@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using AiObservatory.Data.Entities;
+using AiObservatory.Data.Pricing.Catalogs;
 using Microsoft.Extensions.Logging;
 
 namespace AiObservatory.Data.Pricing;
@@ -79,13 +80,20 @@ public sealed class UsagePriceResolver
             return null;
         }
 
+        // Anchor Notional admission to the active valuation date before trying any retained
+        // catalog. Recomputing this requirement from each old snapshot would reopen flat rates.
+        var requiresClaudeContext = RequiresClaudeContext(usage, snapshots);
+
         // The active snapshot comes first, but a refresh that retires this model must not make
         // the event unpriceable: fall through to older retained snapshots until one produces a
         // quote.
         foreach (var snapshot in snapshots)
         {
             var quote = calculator.CalculateWithEvidence(usage, snapshot.NormalizedCatalog);
-            if (quote is not null)
+            if (
+                quote is not null
+                && (!requiresClaudeContext || quote.Dimensions.Context is "prompt_le_100000" or "prompt_gt_100000")
+            )
             {
                 return new(
                     quote.Quote,
@@ -101,6 +109,35 @@ public sealed class UsagePriceResolver
 
         WarnOnce(usage, MissingDimensions(usage));
         return null;
+    }
+
+    private static bool RequiresClaudeContext(UsageEvent usage, IReadOnlyList<PricingSnapshot> snapshots)
+    {
+        if (usage.Provider != Provider.Anthropic || usage.Model is null)
+        {
+            return false;
+        }
+        var date =
+            usage.CostBasis == CostBasis.Notional
+                ? snapshots[0].RetrievedAt.InUtc().Date
+                : usage.OccurredAt.InUtc().Date;
+        using var evidence = ProviderPricingJson.Evidence(usage.RawPayload);
+        foreach (var snapshot in snapshots)
+        {
+            var catalog = PricingCatalogJson.Deserialize<AnthropicPriceCatalog>(snapshot.NormalizedCatalog);
+            if (
+                catalog.RequiresPromptContext(usage.Model, date)
+                || PricingEvidence.RequiresProspectiveClaudePromptContext(usage, evidence.RootElement, catalog, date)
+            )
+            {
+                return true;
+            }
+            if (catalog.Resolve(usage.Model, date) is not null)
+            {
+                return false;
+            }
+        }
+        return false;
     }
 
     private void WarnOnce(UsageEvent usage, string missing)

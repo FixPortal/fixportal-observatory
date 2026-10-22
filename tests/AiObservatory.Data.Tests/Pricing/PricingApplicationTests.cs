@@ -340,6 +340,128 @@ public sealed class PricingApplicationTests : IAsyncLifetime
         stored.CostUsd.Should().Be(application.CostUsd);
     }
 
+    [Fact]
+    public async Task MissingClaudeBandRetainsKnownCostWithoutNewSuccessfulApplication()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var snapshot = new PricingSnapshot
+        {
+            Provider = Provider.Anthropic,
+            SourceId = PricingSourceIds.Claude,
+            RetrievedAt = ClaudeContextFixture.Now,
+            ContentHash = new string('d', 64),
+            IsActive = true,
+            NormalizedCatalog = ClaudeContextFixture.Json(),
+        };
+        _db.PricingSnapshots.Add(snapshot);
+        await _db.SaveChangesAsync(ct);
+        var store = new PricingSnapshotStore(_db);
+        var resolver = new UsagePriceResolver(
+            store,
+            [new AnthropicPriceCalculator()],
+            NullLogger<UsagePriceResolver>.Instance
+        );
+        var repository = new UsageRepository(_db, store, resolver);
+        var known = ClaudeContextFixture.Event(ClaudeContextFixture.Raw(null));
+        known.CostUsd = 9m;
+        var unknown = ClaudeContextFixture.Event(ClaudeContextFixture.Raw(null));
+        var billed = ClaudeContextFixture.Event(ClaudeContextFixture.Raw(ClaudeContextFixture.Lower));
+        billed.CostBasis = CostBasis.Billed;
+        billed.CostUsd = 7m;
+        var provider = ClaudeContextFixture.Event(ClaudeContextFixture.Raw(ClaudeContextFixture.Upper));
+        provider.CostBasis = CostBasis.ProviderEstimated;
+        provider.CostUsd = 8m;
+        foreach (var usage in new[] { known, unknown, billed, provider })
+        {
+            await repository.RecordEventAsync(usage, ct);
+        }
+        var before = await _db.PricingApplications.CountAsync(ct);
+        var knownRevision = (
+            await _db.UsageEvents.AsNoTracking().SingleAsync(u => u.Id == known.Id, ct)
+        ).CurrentPricingRevision;
+        await new PricingRepricingService(_db, repository, resolver, store).RepriceProviderAsync(
+            Provider.Anthropic,
+            ct
+        );
+        var rows = await _db.UsageEvents.AsNoTracking().ToDictionaryAsync(u => u.Id, ct);
+        rows[known.Id].CostUsd.Should().Be(9m);
+        rows[known.Id].CurrentPricingRevision.Should().Be(knownRevision);
+        rows[unknown.Id].CostUsd.Should().BeNull();
+        rows[billed.Id].CostUsd.Should().Be(7m);
+        rows[provider.Id].CostUsd.Should().Be(8m);
+        rows.Values.Should().OnlyContain(u => u.InputTokens == 1_000_000);
+        (await _db.PricingApplications.CountAsync(ct)).Should().Be(before);
+        (await _db.PricingApplications.CountAsync(a => a.SnapshotId != null, ct)).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ContextChangeInvalidatesRepricingPublication(bool changeMarker)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var snapshot = new PricingSnapshot
+        {
+            Provider = Provider.Anthropic,
+            SourceId = PricingSourceIds.Claude,
+            RetrievedAt = ClaudeContextFixture.Now,
+            ContentHash = new string('c', 64),
+            IsActive = true,
+            NormalizedCatalog = ClaudeContextFixture.Json(),
+        };
+        _db.PricingSnapshots.Add(snapshot);
+        await _db.SaveChangesAsync(ct);
+        var store = new PricingSnapshotStore(_db);
+        var resolver = new UsagePriceResolver(
+            store,
+            [new AnthropicPriceCalculator()],
+            NullLogger<UsagePriceResolver>.Instance
+        );
+        var repository = new UsageRepository(_db, store, resolver);
+        var usage = ClaudeContextFixture.Event(ClaudeContextFixture.Raw(ClaudeContextFixture.Lower));
+        usage.CostUsd = 9m;
+        await repository.RecordEventAsync(usage, ct);
+        var priced = await _db.UsageEvents.AsNoTracking().SingleAsync(ct);
+        var quote = await resolver.ResolveWithEvidenceAsync(priced, ct);
+        quote.Should().NotBeNull();
+        quote.RateKey.Should().Be(PricingEvidence.RateKey(ClaudeContextFixture.Entry(ClaudeContextFixture.Lower)));
+        var applications = await _db.PricingApplications.CountAsync(ct);
+        var correctedRaw = changeMarker
+            ? ClaudeContextFixture.Raw(ClaudeContextFixture.Lower).Replace("\"1\"", "\"2\"", StringComparison.Ordinal)
+            : ClaudeContextFixture.Raw(ClaudeContextFixture.Upper);
+        // Interleave a source correction after the unlocked read and before publication.
+        // Only RawPayload changes: every other fence input, revision and amount stays equal.
+        await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE \"UsageEvents\" SET \"RawPayload\" = {correctedRaw}::jsonb WHERE \"Id\" = {priced.Id}",
+            ct
+        );
+        await repository.UpdateEventPricingWithEvidenceAsync(priced, quote, ct);
+        var current = await _db.UsageEvents.AsNoTracking().SingleAsync(ct);
+        current.CostUsd.Should().Be(9m);
+        current.CurrentPricingRevision.Should().Be(priced.CurrentPricingRevision);
+        (await _db.PricingApplications.CountAsync(ct)).Should().Be(applications);
+        PricingEvidence.RevisionDigest(current).Should().NotBe(PricingEvidence.RevisionDigest(priced));
+        var correctedQuote = await resolver.ResolveWithEvidenceAsync(current, ct);
+        if (changeMarker)
+        {
+            correctedQuote.Should().BeNull();
+            return;
+        }
+        correctedQuote.Should().NotBeNull();
+        correctedQuote
+            .RateKey.Should()
+            .Be(PricingEvidence.RateKey(ClaudeContextFixture.Entry(ClaudeContextFixture.Upper)));
+        await repository.UpdateEventPricingWithEvidenceAsync(current, correctedQuote, ct);
+        (await _db.UsageEvents.AsNoTracking().SingleAsync(ct)).CostUsd.Should().Be(4m);
+        var application = await _db.PricingApplications.SingleAsync(
+            a => a.EventId == current.Id && a.Revision > priced.CurrentPricingRevision,
+            ct
+        );
+        application.RateKey.Should().Be(correctedQuote.RateKey);
+        application.SnapshotId.Should().Be(snapshot.Id);
+        application.RuleVersion.Should().Be("1");
+    }
+
     private static UsageEvent Event(string key) =>
         new()
         {
