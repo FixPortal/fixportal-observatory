@@ -89,10 +89,11 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
         var lines = Lines(document);
         var observedOn = retrievedAt.InUtc().Date;
         var baseRows = TableRows(lines, "## Model pricing", ModelColumns);
-        var entries = new Dictionary<string, AnthropicPriceEntry>(StringComparer.OrdinalIgnoreCase);
+        var entries = new Dictionary<(string Model, string? Context), AnthropicPriceEntry>();
         foreach (var row in baseRows)
         {
-            var model = NormalizeModel(row[0]);
+            var lane = ParseModelLane(row[0]);
+            var model = lane.Model;
             var entry = new AnthropicPriceEntry(
                 model,
                 [model],
@@ -108,8 +109,11 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
                 null,
                 null,
                 SupportsUsInference(model) ? 1.1m : null
-            );
-            if (!entries.TryAdd(model, entry))
+            )
+            {
+                Context = lane.Context,
+            };
+            if (!entries.TryAdd(lane, entry))
             {
                 throw new InvalidDataException("Claude pricing contains a duplicate or overlapping model.");
             }
@@ -121,10 +125,14 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
         ApplyBatchRates(entries, TableRows(lines, "### Batch processing", BatchColumns));
         if (
             RequiredModels.Any(model =>
-                !entries.TryGetValue(model, out var entry) || entry.BatchInput is null || entry.BatchOutput is null
+                !entries.TryGetValue((model, null), out var entry)
+                || entry.BatchInput is null
+                || entry.BatchOutput is null
             )
             || RequiredFastModels.Any(model =>
-                !entries.TryGetValue(model, out var entry) || entry.FastInput is null || entry.FastOutput is null
+                !entries.TryGetValue((model, null), out var entry)
+                || entry.FastInput is null
+                || entry.FastOutput is null
             )
         )
         {
@@ -138,24 +146,28 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
             entries
                 .Values.OrderByDescending(entry => entry.ModelPrefix.Length)
                 .ThenBy(entry => entry.ModelPrefix)
+                .ThenBy(entry => entry.Context, StringComparer.Ordinal)
                 .ToList()
         );
         catalog.Validate();
         return catalog;
     }
 
-    private static void ApplyBatchRates(Dictionary<string, AnthropicPriceEntry> entries, IReadOnlyList<string[]> rows)
+    private static void ApplyBatchRates(
+        Dictionary<(string Model, string? Context), AnthropicPriceEntry> entries,
+        IReadOnlyList<string[]> rows
+    )
     {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<(string Model, string? Context)>();
         foreach (var row in rows)
         {
-            var model = NormalizeModel(row[0]);
-            if (!seen.Add(model) || !entries.TryGetValue(model, out var entry))
+            var lane = ParseModelLane(row[0]);
+            if (!seen.Add(lane) || !entries.TryGetValue(lane, out var entry))
             {
                 throw new InvalidDataException("Claude Batch pricing contains an unknown or duplicate model.");
             }
 
-            entries[model] = entry with { BatchInput = ParseRate(row[1]), BatchOutput = ParseRate(row[2]) };
+            entries[lane] = entry with { BatchInput = ParseRate(row[1]), BatchOutput = ParseRate(row[2]) };
         }
 
         if (!seen.SetEquals(entries.Keys))
@@ -164,20 +176,23 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
         }
     }
 
-    private static void ApplyFastRates(Dictionary<string, AnthropicPriceEntry> entries, IReadOnlyList<string[]> rows)
+    private static void ApplyFastRates(
+        Dictionary<(string Model, string? Context), AnthropicPriceEntry> entries,
+        IReadOnlyList<string[]> rows
+    )
     {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<(string Model, string? Context)>();
         foreach (var row in rows)
         {
             foreach (var displayName in row[0].Split(" / ", StringSplitOptions.RemoveEmptyEntries))
             {
-                var model = NormalizeModel(displayName);
-                if (!seen.Add(model) || !entries.TryGetValue(model, out var entry))
+                var lane = ParseModelLane(displayName);
+                if (!seen.Add(lane) || !entries.TryGetValue(lane, out var entry))
                 {
                     throw new InvalidDataException("Claude fast pricing contains an unknown or duplicate model.");
                 }
 
-                entries[model] = entry with { FastInput = ParseRate(row[1]), FastOutput = ParseRate(row[2]) };
+                entries[lane] = entry with { FastInput = ParseRate(row[1]), FastOutput = ParseRate(row[2]) };
             }
         }
     }
@@ -259,8 +274,8 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
 
     private static decimal ParseRate(string rawValue)
     {
-        const string suffix = " / MTok";
         var value = StripTrailingFootnote(rawValue);
+        var suffix = value.EndsWith(" USD / MTok", StringComparison.Ordinal) ? " USD / MTok" : " / MTok";
         if (
             !value.StartsWith('$')
             || !value.EndsWith(suffix, StringComparison.Ordinal)
@@ -277,6 +292,29 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
         }
 
         return rate;
+    }
+
+    private static (string Model, string? Context) ParseModelLane(string value)
+    {
+        // Recognize the observed qualifier before presentation normalization can erase it.
+        var suffix = value.IndexOf(" (", StringComparison.Ordinal);
+        var qualifier = suffix < 0 ? null : value[suffix..];
+        var context = qualifier switch
+        {
+            " (for prompts up to 100,000 tokens)" => "prompt_le_100000",
+            " (for prompts over 100,000 tokens)" => "prompt_gt_100000",
+            _ => null,
+        };
+        if (context is null && value.Contains("prompt", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("Claude pricing contains an unsupported prompt qualifier.");
+        }
+        var model = NormalizeModel(value);
+        if (context is not null && model != "claude-haiku-5-5")
+        {
+            throw new InvalidDataException("Claude prompt bands are only supported for Haiku 5.5.");
+        }
+        return (model, context);
     }
 
     private static string NormalizeModel(string value)

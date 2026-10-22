@@ -1,4 +1,7 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using AiObservatory.Data.Entities;
 using AiObservatory.Data.Pricing;
 using AiObservatory.Data.Pricing.Catalogs;
@@ -170,6 +173,215 @@ public sealed class ClaudePricingSourceTests
         var act = () => ClaudePricingSource.Parse(document, RetrievedAt);
 
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void TwoBandsPreserveModelAndExactJoins()
+    {
+        var catalog = ClaudePricingSource.Parse(ReadFixture("claude-context-pricing.md"), RetrievedAt);
+        var lanes = catalog.Entries.Where(entry => entry.ModelPrefix == "claude-haiku-5-5").ToList();
+        lanes.Should().HaveCount(2);
+        lanes.Select(entry => entry.Context).Should().BeEquivalentTo("prompt_le_100000", "prompt_gt_100000");
+        foreach (var entry in lanes)
+        {
+            entry.Aliases.Should().Equal("claude-haiku-5-5");
+            using var json = JsonDocument.Parse(PricingCatalogJson.Serialize(entry));
+            var context = json.RootElement.GetProperty("context").GetString();
+            if (context == "prompt_le_100000")
+            {
+                entry.Input.Should().Be(1m);
+                entry.Output.Should().Be(11m);
+                entry.CacheRead.Should().Be(0.1m);
+                entry.CacheWrite5m.Should().Be(1.25m);
+                entry.CacheWrite1h.Should().Be(2m);
+                entry.BatchInput.Should().Be(0.4m);
+                entry.BatchOutput.Should().Be(4.4m);
+                entry.FastInput.Should().BeNull();
+                entry.FastOutput.Should().BeNull();
+            }
+            else
+            {
+                context.Should().Be("prompt_gt_100000");
+                entry.Input.Should().Be(3m);
+                entry.Output.Should().Be(33m);
+                entry.CacheRead.Should().Be(0.3m);
+                entry.CacheWrite5m.Should().Be(3.75m);
+                entry.CacheWrite1h.Should().Be(6m);
+                entry.BatchInput.Should().Be(0.9m);
+                entry.BatchOutput.Should().Be(9.9m);
+                entry.FastInput.Should().Be(7m);
+                entry.FastOutput.Should().Be(77m);
+            }
+            entry.UsInferenceMultiplier.Should().Be(1.1m);
+        }
+    }
+
+    [Fact]
+    public void ParserAcceptsExplicitUsdUnitsObservedInFastPricing()
+    {
+        var document = ReadFixture("claude-context-pricing.md")
+            .Replace(" / MTok", " USD / MTok", StringComparison.Ordinal);
+        var catalog = ClaudePricingSource.Parse(document, RetrievedAt);
+        var upper = catalog.Resolve("claude-haiku-5-5", ObservedOn, "prompt_gt_100000");
+        upper!.Input.Should().Be(3m);
+        upper.FastInput.Should().Be(7m);
+        upper.FastOutput.Should().Be(77m);
+    }
+
+    [Theory]
+    [InlineData(" EUR / MTok")]
+    [InlineData(" USDX / MTok")]
+    [InlineData(" USD / KTok")]
+    public void ExplicitCurrencyAndUnitStillFailClosed(string unit)
+    {
+        var document = ReadFixture("claude-context-pricing.md")
+            .Replace("$77 / MTok", "$77" + unit, StringComparison.Ordinal);
+        var act = () => ClaudePricingSource.Parse(document, RetrievedAt);
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [Fact]
+    public void ParserKeepsRetrievedDateAsObservationForEveryLane()
+    {
+        var catalog = ClaudePricingSource.Parse(ReadFixture("claude-context-pricing.md"), RetrievedAt);
+        catalog.RetrievedAt.Should().Be(RetrievedAt);
+        catalog
+            .Entries.Should()
+            .OnlyContain(entry => entry.EffectiveFrom == ObservedOn && !entry.EffectiveDateIsProviderDeclared);
+        catalog.Entries.Should().OnlyContain(entry => entry.BatchInput > 0 && entry.BatchOutput > 0);
+        var lanes = catalog.Entries.Where(entry => entry.ModelPrefix == "claude-haiku-5-5").ToList();
+        lanes.Select(entry => entry.Context).Should().BeEquivalentTo("prompt_le_100000", "prompt_gt_100000");
+        catalog.Resolve("claude-haiku-5-5", ObservedOn).Should().BeNull();
+        catalog.Resolve("claude-haiku-5-5", ObservedOn, "prompt_le_100000").Should().NotBeNull();
+        catalog.Resolve("claude-haiku-5-5", ObservedOn, "prompt_gt_100000").Should().NotBeNull();
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"Parsed entries={catalog.Entries.Count}; banded={lanes.Count}; normalizedSha256={Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(PricingCatalogJson.Serialize(catalog))))}"
+        );
+    }
+
+    [Theory]
+    [InlineData("unit")]
+    [InlineData("cache-multiplier")]
+    [InlineData("geography")]
+    [InlineData("duplicate-batch")]
+    [InlineData("duplicate-fast")]
+    public void BandedDocumentRetainsRateCacheGeographyAndModifierGuards(string mutation)
+    {
+        var document = ReadFixture("claude-context-pricing.md");
+        const string batch = "| Claude Haiku 5.5 (for prompts over 100,000 tokens) | $0.9 / MTok | $9.9 / MTok |";
+        const string fast = "| Claude Haiku 5.5 (for prompts over 100,000 tokens) | $7 / MTok | $77 / MTok |";
+        document = mutation switch
+        {
+            "unit" => document.Replace("$33 / MTok", "$33 / KTok", StringComparison.Ordinal),
+            "cache-multiplier" => document.Replace(
+                "1.25x base input price",
+                "1.5x base input price",
+                StringComparison.Ordinal
+            ),
+            "geography" => document.Replace(
+                "incurs a 1.1x multiplier",
+                "incurs a 1.2x multiplier",
+                StringComparison.Ordinal
+            ),
+            "duplicate-batch" => document.Replace(batch, $"{batch}\n{batch}", StringComparison.Ordinal),
+            "duplicate-fast" => document.Replace(fast, $"{fast}\n{fast}", StringComparison.Ordinal),
+            _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
+        };
+        var act = () => ClaudePricingSource.Parse(document, RetrievedAt);
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [Fact]
+    public void LegacyCatalogBytesAndKeysUnchanged()
+    {
+        var catalog = ClaudePricingSource.Parse(Fixture(), RetrievedAt);
+        var entry = catalog.Resolve("claude-opus-5-20260801", ObservedOn)!;
+        var usage = new UsageEvent
+        {
+            Provider = Provider.Anthropic,
+            Model = "claude-opus-5-20260801",
+            OccurredAt = RetrievedAt,
+            InputTokens = 123,
+            OutputTokens = 45,
+            CacheReadTokens = 67,
+            CacheWriteTokens = 89,
+            CacheWrite1hTokens = 10,
+            CostBasis = CostBasis.ListPriceEstimate,
+            RawPayload = "{}",
+        };
+        PricingCatalogJson
+            .Serialize(entry)
+            .Should()
+            .Be(
+                """{"modelPrefix":"claude-opus-5","aliases":["claude-opus-5"],"effectiveFrom":"2026-08-24","effectiveDateIsProviderDeclared":false,"input":5,"output":25,"cacheRead":0.50,"cacheWrite5m":6.25,"cacheWrite1h":10,"batchInput":2.50,"batchOutput":12.50,"fastInput":10,"fastOutput":50,"usInferenceMultiplier":1.1}"""
+            );
+        Convert
+            .ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(PricingCatalogJson.Serialize(catalog))))
+            .Should()
+            .Be("57e8eab0d379347862f600895ecc9003846d47ad15a62f5fdb54b01a1d64656f");
+        PricingEvidence.RateKey(entry).Should().Be("898764ce6b58de6fcbb77d58c2030e9b868fa9e39f53805209e3bc8b7b16584e");
+        PricingEvidence
+            .RevisionDigest(usage)
+            .Should()
+            .Be("7480b5d57289a678d4633ea3fe75e2df55e3f540cd53c986925613cd3270afd1");
+    }
+
+    [Theory]
+    [InlineData("duplicate-band")]
+    [InlineData("incomplete-pair")]
+    [InlineData("incomplete-batch")]
+    [InlineData("flat-and-banded")]
+    [InlineData("unknown-threshold")]
+    [InlineData("unknown-wording")]
+    [InlineData("unsupported-model")]
+    [InlineData("unknown-fast-threshold")]
+    public void ParserRejectsAmbiguousPromptLanes(string mutation)
+    {
+        var document = ReadFixture("claude-context-pricing.md");
+        const string lower =
+            "| Claude Haiku 5.5 (for prompts up to 100,000 tokens) | $1 / MTok | $1.25 / MTok | $2 / MTok | $0.1 / MTok | $11 / MTok |";
+        document = mutation switch
+        {
+            "duplicate-band" => document.Replace(lower, $"{lower}\n{lower}", StringComparison.Ordinal),
+            "incomplete-pair" => string.Join(
+                '\n',
+                document.Split('\n').Where(line => !line.Contains("for prompts over", StringComparison.Ordinal))
+            ),
+            "incomplete-batch" => document.Replace(
+                "| Claude Haiku 5.5 (for prompts over 100,000 tokens) | $0.9 / MTok | $9.9 / MTok |",
+                "",
+                StringComparison.Ordinal
+            ),
+            "flat-and-banded" => document.Replace(
+                lower,
+                $"{lower}\n{lower.Replace(" (for prompts up to 100,000 tokens)", "", StringComparison.Ordinal)}",
+                StringComparison.Ordinal
+            ),
+            "unknown-threshold" => document.Replace("100,000", "200,000", StringComparison.Ordinal),
+            "unknown-wording" => document.Replace(
+                "for prompts up to",
+                "for prompt lengths under",
+                StringComparison.Ordinal
+            ),
+            "unsupported-model" => document.Replace("Claude Haiku 5.5", "Claude Haiku 6", StringComparison.Ordinal),
+            "unknown-fast-threshold" => document.Replace(
+                "| Claude Haiku 5.5 (for prompts over 100,000 tokens) | $7",
+                "| Claude Haiku 5.5 (for prompts over 200,000 tokens) | $7",
+                StringComparison.Ordinal
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
+        };
+        var act = () => ClaudePricingSource.Parse(document, RetrievedAt);
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [Fact]
+    public void UnknownThresholdQualifierFailsEvenWithoutDuplicateRows()
+    {
+        var document = Fixture()
+            .Replace("Claude Sonnet 5", "Claude Sonnet 5 (for prompts up to 200,000 tokens)", StringComparison.Ordinal);
+        var act = () => ClaudePricingSource.Parse(document, RetrievedAt);
+        act.Should().Throw<InvalidDataException>();
     }
 
     private static string Mutate(string document, string mutation)
