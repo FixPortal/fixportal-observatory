@@ -2,6 +2,10 @@ namespace AiObservatory.Audit.Contracts;
 
 public sealed record AuditCoverage(long ComparedGroups, long TotalGroups, IReadOnlyList<CoverageGap> Gaps)
 {
+    [System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+    )]
+    public bool? DetailsRetained { get; init; }
     public IReadOnlyList<CoverageExclusion> Exclusions { get; init; } = [];
 }
 

@@ -25,6 +25,10 @@ public static class AuditMachineEndpoints
             async (Guid id, HttpRequest request, AuditCredentialService service, CancellationToken ct) =>
             {
                 using var body = await AuditCaptureProtocol.Envelope(request, false, ct);
+                if (id == Guid.Empty)
+                {
+                    throw new AuditStoreException("machine_not_found", 404);
+                }
                 return Results.Ok(await service.IssueAsync(id, ct));
             }
         );

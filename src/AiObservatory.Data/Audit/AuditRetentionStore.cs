@@ -14,7 +14,18 @@ public sealed partial class AuditStore
     private static byte[] SanitizedResult(AuditResult result)
     {
         static AuditCoverage SafeCoverage(AuditCoverage coverage) =>
-            new(coverage.ComparedGroups, coverage.TotalGroups, []);
+            new(
+                coverage.ComparedGroups,
+                coverage.TotalGroups,
+                coverage
+                    .Gaps.Select(g => new CoverageGap(g.SourceId, "retained", g.DiagnosticCode))
+                    .Distinct()
+                    .ToArray()
+            )
+            {
+                Exclusions = coverage.Exclusions,
+                DetailsRetained = true,
+            };
         return AuditCanonicalJson.Serialize(
             result with
             {

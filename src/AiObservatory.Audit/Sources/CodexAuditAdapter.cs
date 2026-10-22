@@ -42,11 +42,7 @@ public sealed class CodexAuditAdapter : ISourceAuditAdapter
         }
         var finalRecord = state.FinalRecord;
         var finalTokens = state.FinalTokens;
-        if (
-            finalRecord is null
-            || finalTokens is null
-            || !SourceAuditSupport.InScope(SourceAuditSupport.Date(finalRecord), scope)
-        )
+        if (finalRecord is null || finalTokens is null)
         {
             return;
         }
@@ -56,6 +52,10 @@ public sealed class CodexAuditAdapter : ISourceAuditAdapter
             findings.Add(SourceAuditSupport.Gap(finalRecord, "missing_closure"));
         }
         MarkProvisional(chronological, chronologicalStart, state.Provisional || !closed);
+        if (!SourceAuditSupport.InScope(SourceAuditSupport.Date(finalRecord), scope))
+        {
+            return;
+        }
         var finalProvider = Provider(finalRecord);
         if (finalProvider is not null)
         {

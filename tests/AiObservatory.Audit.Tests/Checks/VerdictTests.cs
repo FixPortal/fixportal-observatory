@@ -149,7 +149,10 @@ public sealed class VerdictTests
     {
         var record = SourceFixture.Claude();
         var placed = SourceFixture.Event(record, new(99, 20, 60, 40, 10, null));
-        var unplaced = SourceFixture.Event(record, new(1, 0, 0, 0, 0, null)) with { PricingApplication = null };
+        var unplaced = SourceFixture.Event(record, new(1, 0, 0, 0, 0, null), posting: 1) with
+        {
+            PricingApplication = null,
+        };
         var input = SourceFixture.Input(record) with { Events = [placed, unplaced] };
 
         var result = new SourceAccountingCheck().Evaluate(input);
@@ -178,7 +181,10 @@ public sealed class VerdictTests
             Timestamp = first.Timestamp.AddHours(2),
         };
         var placed = SourceFixture.Event(first, new(99, 20, 60, 40, 10, null));
-        var unplaced = SourceFixture.Event(first, new(1, 0, 0, 0, 0, null)) with { PricingApplication = null };
+        var unplaced = SourceFixture.Event(first, new(1, 0, 0, 0, 0, null), posting: 1) with
+        {
+            PricingApplication = null,
+        };
         var otherEvent = SourceFixture.Event(other, new(99, 20, 60, 40, 10, null));
         var input = SourceFixture.Input(first, other);
         input = input with

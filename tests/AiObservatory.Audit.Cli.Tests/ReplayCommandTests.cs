@@ -42,6 +42,30 @@ public sealed class ReplayCommandTests
             .And.Contain("Coverage");
     }
 
+    [Fact]
+    public async Task Review64_ReadableReportIdentifiesScopeAndAvailableObservationContext()
+    {
+        using var directory = new TestDirectory();
+        var bundle = await Golden();
+        var output = Path.Combine(directory.Path, "scope");
+        var path = await Write(directory, bundle);
+        (await Run("replay", path, "--output", output)).ExitCode.Should().Be(3);
+        var report = await File.ReadAllTextAsync(
+            Path.Combine(output, "report.txt"),
+            TestContext.Current.CancellationToken
+        );
+        report
+            .Should()
+            .Contain(bundle.Input.Scope.From.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
+            .And.Contain(bundle.Input.Scope.To.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
+            .And.Contain(bundle.Input.Scope.Sources[0].SourceId)
+            .And.Contain("Requested checks:")
+            .And.Contain("Excluded checks:")
+            .And.Contain(bundle.Result.InputContentDigest)
+            .And.Contain("Server cutoff: unavailable")
+            .And.Contain("Completion time: unavailable");
+    }
+
     /// <summary>Unknown versions and options fail with a sanitized exit code and create no outputs.</summary>
     [Theory]
     [InlineData("--verifier-version", "9.0.0")]

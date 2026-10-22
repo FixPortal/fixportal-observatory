@@ -45,7 +45,7 @@ internal static class CheckFixture
             new(
                 Day,
                 "provider",
-                "",
+                "unknown",
                 "local",
                 SourceKind.LocalTelemetry,
                 UsageScope.Subscription,

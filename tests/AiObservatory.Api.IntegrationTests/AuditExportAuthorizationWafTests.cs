@@ -47,6 +47,125 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Review64_PresentationSpendUsesFrozenSelectedBilledScopeAcrossPages()
+    {
+        var id = await Seed(aggregateCount: 205, spendCohort: true);
+        using var admin = _factory.CreateAdminClient();
+        async Task<List<JsonElement>> Drain(string projection)
+        {
+            var rows = new List<JsonElement>();
+            string? cursor = null;
+            do
+            {
+                var page = await admin.GetFromJsonAsync<JsonElement>(
+                    $"/api/audits/runs/{id}/evidence?limit=200{projection}"
+                        + (cursor == null ? "" : "&cursor=" + cursor),
+                    Ct
+                );
+                rows.AddRange(page.GetProperty("items").EnumerateArray());
+                cursor = page.GetProperty("nextCursor").GetString();
+            } while (cursor != null);
+            return rows;
+        }
+        var actual = (await Drain("&projection=presentation"))
+            .Where(r => r.GetProperty("kind").GetString() == "spend")
+            .ToArray();
+        actual.Should().HaveCount(2);
+        actual
+            .Select(r => r.GetProperty("record").GetProperty("currency").GetString())
+            .Should()
+            .BeEquivalentTo("GBP", "USD");
+        actual
+            .Select(r => r.GetProperty("record").GetProperty("amountGbp").GetString())
+            .Should()
+            .BeEquivalentTo("10", "4");
+        (await Drain("")).Count(r => r.GetProperty("kind").GetString() == "spend").Should().Be(5);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Review64_ReportsAndSummaryRetainScopeCheckInventoryAndSafeCoverage(bool expired)
+    {
+        var id = await Seed(
+            requestedChecks: [CheckCode.EventAggregation, CheckCode.PricingArithmetic, CheckCode.BillingReconciliation],
+            excludedChecks: [CheckCode.DailyAttribution],
+            resultTransform: result =>
+                result with
+                {
+                    Checks = result
+                        .Checks.Select(c =>
+                            c.Code == CheckCode.EventAggregation
+                                ? c with
+                                {
+                                    Verdict = CheckVerdict.Matched,
+                                    Coverage = new(
+                                        9007199254740993,
+                                        9007199254740993,
+                                        [new("synthetic", "secret-group", "safe_gap")]
+                                    )
+                                    {
+                                        Exclusions = [new("machineAttribution", "machine_not_in_aggregate_key")],
+                                    },
+                                }
+                                : c
+                        )
+                        .ToArray(),
+                }
+        );
+        if (expired)
+        {
+            _clock.Advance(Duration.FromDays(91));
+            using var scope = _factory.Services.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<AuditStore>().ExpireAsync(_clock.GetCurrentInstant(), Ct);
+        }
+        using var viewer = _factory.CreateReadOnlyClient();
+        var report = await viewer.GetFromJsonAsync<JsonElement>($"/api/audits/runs/{id}/report", Ct);
+        report.GetProperty("scope").GetProperty("from").GetString().Should().Be("2026-10-20");
+        report
+            .GetProperty("scope")
+            .GetProperty("sources")[0]
+            .GetProperty("sourceId")
+            .GetString()
+            .Should()
+            .Be("synthetic");
+        report.GetProperty("scope").GetProperty("excludedChecks")[0].GetString().Should().Be("dailyAttribution");
+        report.GetProperty("serverCutoff").ValueKind.Should().Be(JsonValueKind.String);
+        report.GetProperty("completedAt").ValueKind.Should().Be(JsonValueKind.String);
+        report.GetProperty("inputContentDigest").GetString().Should().HaveLength(64);
+        var summary = await viewer.GetFromJsonAsync<JsonElement>($"/api/audits/runs/{id}", Ct);
+        foreach (var document in new[] { report, summary })
+        {
+            var checks = document.GetProperty("checks").EnumerateArray().ToArray();
+            checks
+                .Select(c => c.GetProperty("verdict").GetString())
+                .Should()
+                .BeEquivalentTo("matched", "incomplete", "unsupported", "excluded");
+            var aggregation = checks.Single(c => c.GetProperty("code").GetString() == "eventAggregation");
+            aggregation
+                .GetProperty("coverage")
+                .GetProperty("comparedGroups")
+                .GetString()
+                .Should()
+                .Be("9007199254740993");
+            aggregation
+                .GetProperty("coverage")
+                .GetProperty("exclusions")[0]
+                .GetProperty("field")
+                .GetString()
+                .Should()
+                .Be("machineAttribution");
+            aggregation.GetProperty("coverage").GetProperty("diagnosticCodes")[0].GetString().Should().Be("safe_gap");
+            document
+                .GetRawText()
+                .Should()
+                .NotContain("secret-group")
+                .And.NotContain("secret-file")
+                .And.NotContain("secret-session");
+        }
+    }
+
+    [Fact]
     public async Task Retention_AdminOnlyFutureSettings_ViewerReportSurvivesExactDetailExpiry()
     {
         var id = await Seed();
@@ -492,7 +611,9 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
     private async Task<Guid> Seed(
         CheckCode[]? requestedChecks = null,
         CheckCode[]? excludedChecks = null,
-        int aggregateCount = 0
+        int aggregateCount = 0,
+        bool spendCohort = false,
+        Func<AuditResult, AuditResult>? resultTransform = null
     )
     {
         using var scope = _factory.Services.CreateScope();
@@ -563,6 +684,42 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
                 ))
                 .ToArray(),
         };
+        if (spendCohort)
+        {
+            FrozenSpend Spend(string source, AccountingBasis basis, string currency, decimal gbp, int day) =>
+                new(
+                    Guid.NewGuid(),
+                    source,
+                    null,
+                    null,
+                    null,
+                    machine.MachineId,
+                    machine.MachineId,
+                    new(2026, 10, day),
+                    null,
+                    null,
+                    new(SourceKind.Manual, UsageScope.Api, basis),
+                    currency,
+                    gbp,
+                    gbp,
+                    1m,
+                    null,
+                    timestamp,
+                    timestamp,
+                    new('a', 64)
+                );
+            input = input with
+            {
+                Spend =
+                [
+                    Spend("synthetic", AccountingBasis.Billed, "GBP", 10m, 20),
+                    Spend("synthetic", AccountingBasis.Billed, "USD", 4m, 20),
+                    Spend("other", AccountingBasis.Billed, "GBP", 20m, 20),
+                    Spend("synthetic", AccountingBasis.Notional, "GBP", 30m, 20),
+                    Spend("synthetic", AccountingBasis.Billed, "GBP", 40m, 19),
+                ],
+            };
+        }
         var source = new SourceUsageRecord
         {
             MachineId = machine.MachineId,
@@ -634,7 +791,8 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
         )
             .Should()
             .BeTrue();
-        (await store.TryPublishAsync(lease!, new AuditVerifier().Verify(input), Ct)).Should().BeTrue();
+        var result = new AuditVerifier().Verify(input);
+        (await store.TryPublishAsync(lease!, resultTransform?.Invoke(result) ?? result, Ct)).Should().BeTrue();
         return id;
     }
 

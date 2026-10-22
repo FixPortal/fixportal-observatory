@@ -18,12 +18,14 @@ public sealed partial class AuditStore
     private readonly IClock _clock;
     private readonly AuditStoreOptions _options;
     private readonly string _instanceId;
+    private readonly AuditCaptureValidator _captureValidator;
 
     public AuditStore(
         AiObservatoryDbContext db,
         IClock clock,
         AuditStoreOptions? options = null,
-        string instanceId = "default"
+        string instanceId = "default",
+        AuditCaptureValidator? captureValidator = null
     )
     {
         _db = db;
@@ -32,6 +34,7 @@ public sealed partial class AuditStore
         Require(_options.ValidationErrors(clock.GetCurrentInstant()).Count == 0, "invalid_audit_options", 400);
         ValidateKey(instanceId);
         _instanceId = instanceId;
+        _captureValidator = captureValidator ?? new();
     }
 
     public Task<MachineRegistration> RegisterMachineAsync(byte[] credentialHash, CancellationToken ct)
@@ -235,7 +238,7 @@ public sealed partial class AuditStore
         Require(bytes.Length > 0 && bytes.Length <= _options.MaxChunkBytes, "chunk_size_limit", 413);
         var original = bytes.ToArray();
         Require(AuditCanonicalJson.ContentHash(original) == sha256, "chunk_hash_mismatch", 400);
-        var records = ParseRecords(original);
+        var records = ParseRecords(original, ct);
         return Transaction(
             async () =>
             {
@@ -272,103 +275,6 @@ public sealed partial class AuditStore
                 );
                 await _db.SaveChangesAsync(ct);
                 return true;
-            },
-            ct
-        );
-    }
-
-    public Task<Guid> SealCaptureAsync(CaptureLease lease, byte[] manifest, string idempotencyKey, CancellationToken ct)
-    {
-        ValidateKey(idempotencyKey);
-        Require(manifest.Length <= 1024 * 1024, "manifest_size_limit", 413);
-        var original = manifest.ToArray();
-        var parsed = AuditCanonicalJson.Deserialize<CaptureManifest>(original);
-        Require(original.AsSpan().SequenceEqual(AuditCanonicalJson.Serialize(parsed)), "noncanonical_manifest", 400);
-        return Transaction(
-            async () =>
-            {
-                var request = await RequireCaptureLease(lease, allowSealed: true, ct);
-                var existing = await _db.Set<AuditEvidenceCapture>()
-                    .SingleOrDefaultAsync(x => x.RequestId == lease.RequestId, ct);
-                if (existing != null)
-                {
-                    Require(
-                        existing.DeletedAt == null
-                            && existing.SealKey == idempotencyKey
-                            && existing.Manifest.AsSpan().SequenceEqual(original),
-                        "seal_retry_conflict",
-                        409
-                    );
-                    return existing.Id;
-                }
-                Require(
-                    parsed.RequestId == request.Id
-                        && parsed.MachineId == request.MachineId
-                        && AuditCanonicalJson.Serialize(parsed.Scope).AsSpan().SequenceEqual(request.Scope),
-                    "manifest_scope_mismatch",
-                    409
-                );
-                var chunks = await _db.Set<AuditEvidenceChunk>()
-                    .Where(x => x.RequestId == request.Id)
-                    .OrderBy(x => x.Index)
-                    .ToListAsync(ct);
-                Require(request.UploadedBytes + original.Length <= _options.MaxCaptureBytes, "capture_size_limit", 413);
-                Require(
-                    chunks.Count == parsed.ChunkHashes.Count && request.RecordCount == parsed.RecordCount,
-                    "capture_count_mismatch",
-                    409
-                );
-                var recordHashes =
-                    new Dictionary<(string SourceId, string Generation, string FileId, long Sequence), string>();
-                for (var index = 0; index < chunks.Count; index++)
-                {
-                    var chunk = chunks[index];
-                    Require(
-                        chunk.Index == index
-                            && chunk.Sha256 == parsed.ChunkHashes[index]
-                            && AuditCanonicalJson.ContentHash(chunk.Bytes) == chunk.Sha256,
-                        "capture_chunk_mismatch",
-                        409
-                    );
-                    foreach (var record in ParseRecords(chunk.Bytes))
-                    {
-                        Require(
-                            record.MachineId == parsed.MachineId
-                                && record.Generation == parsed.Generation
-                                && parsed.Scope.Sources.Any(x =>
-                                    x.MachineId == record.MachineId && x.SourceId == record.SourceId
-                                )
-                                && parsed.SourceFormats.Any(x =>
-                                    x.SourceId == record.SourceId
-                                    && x.Format == record.SourceFormat
-                                    && x.Version == record.SourceVersion
-                                ),
-                            "capture_record_membership",
-                            409
-                        );
-                        ValidateRecordIdentity(record, recordHashes);
-                    }
-                }
-                var now = _clock.GetCurrentInstant();
-                var retention = await Retention(ct);
-                _db.Add(
-                    new AuditEvidenceCapture
-                    {
-                        Id = parsed.CaptureId,
-                        RequestId = request.Id,
-                        MachineId = request.MachineId,
-                        Generation = parsed.Generation,
-                        Manifest = original,
-                        ManifestHash = AuditCanonicalJson.ContentHash(original),
-                        SealKey = idempotencyKey,
-                        SealedAt = now,
-                        ExpiresAt = Expiry(now, retention.EvidenceDays),
-                    }
-                );
-                request.State = "sealed";
-                request.Revision++;
-                await _db.SaveChangesAsync(ct);
-                return parsed.CaptureId;
             },
             ct
         );
@@ -681,6 +587,7 @@ public sealed partial class AuditStore
                 OriginalResultHash = x.ResultHash,
                 Stage = x.Stage,
                 CreatedAt = x.CreatedAt,
+                CompletedAt = x.CompletedAt,
                 ServerCutoff =
                     x.ServerCutoff
                     ?? _db.Set<AuditServerSnapshot>()
@@ -931,40 +838,7 @@ public sealed partial class AuditStore
 
     private async Task Complete(AuditRun run, string state, string? diagnostic, Instant now, CancellationToken ct)
     {
-        if (state == "cancelled")
-        {
-            // Cancellation shares the evidence transaction/lock with claims, uploads and seals.
-            // Retain a shared request while another active run still needs it.
-            var requests = await _db.Set<AuditCaptureRequest>()
-                .Where(r => run.CaptureRequestIds.Contains(r.Id) && (r.State == "pending" || r.State == "uploading"))
-                .ToArrayAsync(ct);
-            foreach (var request in requests)
-            {
-                if (
-                    await _db.Set<AuditRun>()
-                        .AnyAsync(
-                            other =>
-                                other.Id != run.Id
-                                && other.CaptureRequestIds.Contains(request.Id)
-                                && (
-                                    other.State == "collecting" || other.State == "queued" || other.State == "executing"
-                                ),
-                            ct
-                        )
-                )
-                {
-                    continue;
-                }
-                request.State = "expired";
-                request.Deadline = now;
-                request.LeaseToken = null;
-                request.LeaseExpiresAt = null;
-                request.Revision++;
-                request.UploadedBytes = 0;
-                request.RecordCount = 0;
-                await _db.Set<AuditEvidenceChunk>().Where(c => c.RequestId == request.Id).ExecuteDeleteAsync(ct);
-            }
-        }
+        await FenceOrphanRequests(run, now, ct);
         var retention = await Retention(ct);
         run.State = state;
         run.Stage = state;
@@ -974,6 +848,40 @@ public sealed partial class AuditStore
         run.Revision++;
         run.WorkerId = null;
         run.LeaseExpiresAt = null;
+    }
+
+    private async Task FenceOrphanRequests(AuditRun run, Instant now, CancellationToken ct)
+    {
+        // Orphan fencing shares the evidence transaction/lock with claims, uploads and seals.
+        // Retain a shared request while another active run still needs it.
+        var requests = await _db.Set<AuditCaptureRequest>()
+            .Where(r => run.CaptureRequestIds.Contains(r.Id) && (r.State == "pending" || r.State == "uploading"))
+            .ToArrayAsync(ct);
+        foreach (var request in requests)
+        {
+            if (
+                await _db.Set<AuditRun>()
+                    .AnyAsync(
+                        other =>
+                            other.Id != run.Id
+                            && !other.PartialEvidenceAcknowledged
+                            && other.CaptureRequestIds.Contains(request.Id)
+                            && (other.State == "collecting" || other.State == "queued" || other.State == "executing"),
+                        ct
+                    )
+            )
+            {
+                continue;
+            }
+            request.State = "expired";
+            request.Deadline = now;
+            request.LeaseToken = null;
+            request.LeaseExpiresAt = null;
+            request.Revision++;
+            request.UploadedBytes = 0;
+            request.RecordCount = 0;
+            await _db.Set<AuditEvidenceChunk>().Where(c => c.RequestId == request.Id).ExecuteDeleteAsync(ct);
+        }
     }
 
     private async Task<AuditRetentionSettings> Retention(CancellationToken ct)
@@ -1049,22 +957,7 @@ public sealed partial class AuditStore
         return bytes;
     }
 
-    private static void ValidateRecordIdentity(
-        SourceUsageRecord record,
-        IDictionary<(string SourceId, string Generation, string FileId, long Sequence), string> recordHashes
-    )
-    {
-        var identity = (record.SourceId, record.Generation, record.FileId, record.Sequence);
-        var hash = AuditCanonicalJson.ContentHash(AuditCanonicalJson.Serialize(record));
-        Require(
-            !recordHashes.TryGetValue(identity, out var existing) || existing == hash,
-            "capture_record_identity_conflict",
-            409
-        );
-        recordHashes[identity] = hash;
-    }
-
-    private static IReadOnlyList<SourceUsageRecord> ParseRecords(byte[] bytes)
+    internal static IReadOnlyList<SourceUsageRecord> ParseRecords(byte[] bytes, CancellationToken ct = default)
     {
         var records = new List<SourceUsageRecord>();
         var start = 0;
@@ -1075,6 +968,7 @@ public sealed partial class AuditStore
                 continue;
             }
             Require(index > start && index - start <= 1024 * 1024, "invalid_chunk_records", 400);
+            ct.ThrowIfCancellationRequested();
             var line = bytes.AsSpan(start, index - start);
             var record = AuditCanonicalJson.Deserialize<SourceUsageRecord>(line);
             Require(line.SequenceEqual(AuditCanonicalJson.Serialize(record)), "noncanonical_chunk", 400);

@@ -54,6 +54,26 @@ public sealed class AuditCaptureEndpointsWafTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Review64_RotationRejectsSentinelAndUnknownWithoutRegistering()
+    {
+        using var admin = _factory.CreateAdminClient();
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+        var before = await db
+            .Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM \"AuditMachines\"")
+            .SingleAsync(Ct);
+        foreach (var id in new[] { Guid.Empty, Guid.NewGuid() })
+        {
+            (await admin.PostAsJsonAsync($"/api/audits/machines/{id}/rotate", new { schemaVersion = 1 }, Ct))
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NotFound);
+        }
+        (await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM \"AuditMachines\"").SingleAsync(Ct))
+            .Should()
+            .Be(before);
+    }
+
+    [Fact]
     public async Task Provision_Rotate_Revoke_IsAdminOnlyAndSecretIsScoped()
     {
         using var viewer = _factory.CreateReadOnlyClient();

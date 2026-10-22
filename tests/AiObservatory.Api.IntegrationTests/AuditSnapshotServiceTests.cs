@@ -469,6 +469,104 @@ public sealed class AuditSnapshotServiceTests : IAsyncLifetime
         retained.InputContentDigest.Should().Be(AuditComputationInput.ContentDigest(input));
     }
 
+    [Theory]
+    [InlineData(1000, 0, "0.0042")]
+    [InlineData(100, 0, "0.0024")]
+    [InlineData(100, 40, "0.0025")]
+    public async Task Review64_ProductionOpenAiPriceAndApplicationReplayIndependently(
+        long inputTokens,
+        long writes,
+        string expected
+    )
+    {
+        _db.PricingSnapshots.Add(
+            new()
+            {
+                Provider = Provider.OpenAI,
+                SourceId = PricingSourceIds.OpenAi,
+                ContentHash = new string('b', 64),
+                RetrievedAt = Now,
+                IsActive = true,
+                NormalizedCatalog = PricingCatalogJson.Serialize(
+                    new OpenAiPriceCatalog(
+                        "USD",
+                        "https://example.com/pricing",
+                        Now,
+                        [
+                            new(
+                                "synthetic",
+                                ["synthetic"],
+                                new(2026, 10, 1),
+                                true,
+                                "standard",
+                                "short",
+                                "global",
+                                2m,
+                                1m,
+                                20m,
+                                2.5m
+                            ),
+                        ]
+                    )
+                ),
+            }
+        );
+        await _db.SaveChangesAsync(Ct);
+        var prices = new PricingSnapshotStore(_db);
+        var repository = new UsageRepository(
+            _db,
+            prices,
+            new UsagePriceResolver(prices, [new OpenAiPriceCalculator()], NullLogger<UsagePriceResolver>.Instance)
+        );
+        var usage = Event(1);
+        usage.InputTokens = inputTokens;
+        usage.OutputTokens = 100;
+        usage.CacheReadTokens = 200;
+        usage.CacheWriteTokens = writes;
+        await repository.RecordEstimatedEventAsync(usage, Ct);
+        var lease = await Lease();
+        await new AuditSnapshotService(_db, _store, lease).CreateAsync(lease.RunId, Ct);
+        var input = AuditCanonicalJson.Deserialize<AuditInput>(
+            (await _store.ReadSnapshotAsync(lease.RunId, Ct))!.Bytes
+        );
+        input = input with { Scope = input.Scope with { RequestedChecks = [CheckCode.PricingArithmetic] } };
+        var frozen = input.Events.Should().ContainSingle().Subject;
+        frozen.CostUsd.Should().Be(decimal.Parse(expected, System.Globalization.CultureInfo.InvariantCulture));
+        frozen.PricingApplication.Should().NotBeNull();
+        frozen.PricingApplication.SnapshotId.Should().NotBeNull();
+        var check = new AiObservatory.Audit.Checks.PricingArithmeticCheck();
+        check.Evaluate(input).Findings.Should().BeEmpty();
+        var corrupt = check.Evaluate(input with { Events = [frozen with { CostUsd = frozen.CostUsd + 1m }] });
+        corrupt.Verdict.Should().Be(CheckVerdict.Mismatched);
+        corrupt.Findings.Should().Contain(f => f.Field == "costUsd");
+    }
+
+    [Fact]
+    public async Task Review64_ProductionNullAndUnknownModelsShareFrozenAggregate()
+    {
+        var repository = new UsageRepository(_db);
+        var first = Event(1);
+        first.Model = null;
+        var second = Event(2);
+        second.Model = "unknown";
+        await repository.RecordEventAsync(first, Ct);
+        await repository.RecordEventAsync(second, Ct);
+        var lease = await Lease();
+        await new AuditSnapshotService(_db, _store, lease).CreateAsync(lease.RunId, Ct);
+        var input = AuditCanonicalJson.Deserialize<AuditInput>(
+            (await _store.ReadSnapshotAsync(lease.RunId, Ct))!.Bytes
+        );
+        var aggregate = input.Aggregates.Should().ContainSingle().Subject;
+        aggregate.Key.Model.Should().Be("unknown");
+        aggregate.InputTokens.Should().Be(3);
+        var check = new AiObservatory.Audit.Checks.EventAggregationCheck();
+        check.Evaluate(input).Verdict.Should().Be(CheckVerdict.Matched);
+        check
+            .Evaluate(input with { Aggregates = [aggregate with { InputTokens = 4 }] })
+            .Findings.Should()
+            .ContainSingle();
+    }
+
     private sealed class SnapshotGate : DbCommandInterceptor
     {
         public TaskCompletionSource Reached { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);

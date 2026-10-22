@@ -51,7 +51,7 @@ public sealed class EventAggregationCheck
         new(
             DateOnly.FromDateTime(e.OccurredAt.UtcDateTime),
             e.Provider,
-            e.Model ?? "",
+            e.Model ?? "unknown",
             e.SourceId,
             e.Provenance.SourceKind,
             e.Provenance.UsageScope,

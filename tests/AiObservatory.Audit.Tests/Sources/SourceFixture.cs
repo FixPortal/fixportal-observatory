@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
 
@@ -66,8 +68,8 @@ internal static class SourceFixture
                 .GroupBy(r => r.Generation)
                 .Select(g => new CaptureManifest(
                     1,
-                    Guid.NewGuid(),
-                    Guid.NewGuid(),
+                    Identity("capture", g.Key, g.First().SourceId, g.First().MachineId),
+                    Identity("request", g.Key, g.First().SourceId, g.First().MachineId),
                     Machine,
                     g.Key,
                     "test-1",
@@ -89,9 +91,17 @@ internal static class SourceFixture
                 .ToArray(),
         };
 
-    internal static FrozenEvent Event(SourceUsageRecord record, UsageCounters counters) =>
+    internal static FrozenEvent Event(SourceUsageRecord record, UsageCounters counters, int posting = 0) =>
         new(
-            Guid.NewGuid(),
+            Identity(
+                "event",
+                record.MachineId,
+                record.SourceId,
+                record.Generation,
+                record.FileId,
+                record.Sequence,
+                posting
+            ),
             null,
             record.SourceId,
             new(SourceKind.LocalTelemetry, UsageScope.Subscription, AccountingBasis.Notional),
@@ -116,6 +126,9 @@ internal static class SourceFixture
                 DateOnly.FromDateTime(record.Timestamp.UtcDateTime)
             )
         );
+
+    private static Guid Identity(string domain, params object[] fields) =>
+        new(SHA256.HashData(Encoding.UTF8.GetBytes(domain + "|" + string.Join("|", fields))).AsSpan(0, 16));
 
     private static T LoadCounters<T>(string name) =>
         AuditCanonicalJson.Deserialize<T>(

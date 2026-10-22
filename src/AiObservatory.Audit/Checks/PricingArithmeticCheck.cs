@@ -16,6 +16,10 @@ public sealed class PricingArithmeticCheck
         }
         var events = ComparisonSupport.Events(input);
         var gaps = new List<CoverageGap>();
+        if (events.Count == 0)
+        {
+            gaps.Add(new("pricing", "pricing", "no_pricing_evidence"));
+        }
         var findings = new List<AuditFinding>();
         var traces = new List<PricingEquationTrace>();
         var compared = events.LongCount(e => EvaluateEvent(input, e, gaps, findings, traces));

@@ -6,6 +6,7 @@ import { systemClock } from '../../lib/clock'
 import { Button } from '../../design/Button'
 import { CollapsiblePanel } from '../CollapsiblePanel'
 import { AuditCoverage } from './AuditCoverage'
+import { AuditCheckResults } from './AuditCheckResults'
 import { AuditFindingsTable } from './AuditFindingsTable'
 import { auditCheckLabels } from './auditLabels'
 
@@ -111,6 +112,7 @@ export function AuditRunDetails({
         {run.scope.requestedChecks.map((check) => auditCheckLabels[check]).join(', ')}.
       </p>
       <AuditCoverage coverage={run.coverage} verdict={run.verdict} />
+      <AuditCheckResults checks={run.checks} />
       {active && (
         <p role="status">
           {collecting

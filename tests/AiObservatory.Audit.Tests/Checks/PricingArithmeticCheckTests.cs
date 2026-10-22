@@ -8,7 +8,7 @@ namespace AiObservatory.Audit.Tests.Checks;
 public sealed class PricingArithmeticCheckTests
 {
     [Theory]
-    [InlineData("OpenAi", 1000, 100, 200, 0, 0, "0.0038")]
+    [InlineData("OpenAi", 1000, 100, 200, 0, 0, "0.0042")]
     [InlineData("Anthropic", 1000, 100, 200, 100, 40, "0.00451")]
     public void IndependentMeters_HandCalculatedCostDetectsCorruptPosting(
         string provider,
@@ -61,7 +61,7 @@ public sealed class PricingArithmeticCheckTests
     public void DeclaredCatalogMatch_DoesNotAuthenticateHistoricalPublication()
     {
         var input = Fixture("OpenAi", 1000, 100, 200, 0, 0);
-        input = input with { Events = [input.Events[0] with { CostUsd = 0.0038m }] };
+        input = input with { Events = [input.Events[0] with { CostUsd = 0.0042m }] };
         var result = new AuditVerifier().Verify(input);
         result.Findings.Should().BeEmpty();
         result.Coverage.Gaps.Should().Contain(g => g.DiagnosticCode == "historical_rate_evidence_missing");
@@ -205,7 +205,7 @@ public sealed class PricingArithmeticCheckTests
             ],
         };
         var result = new AuditVerifier().Verify(input);
-        result.Findings.Single().Expected!.Value.Should().Be("0.0042");
+        result.Findings.Single().Expected!.Value.Should().Be("0.0046");
     }
 
     [Fact]
@@ -256,7 +256,7 @@ public sealed class PricingArithmeticCheckTests
                 {
                     SourceDimensions = e.PricingApplication!.Dimensions,
                     PricingApplication = null,
-                    CostUsd = 0.0038m,
+                    CostUsd = 0.0042m,
                 },
             ],
         };

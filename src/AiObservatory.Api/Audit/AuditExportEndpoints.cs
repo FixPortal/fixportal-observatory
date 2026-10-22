@@ -40,17 +40,16 @@ public static class AuditExportEndpoints
                         detailsAvailable = run.Result != null,
                         originalResultHash = run.OriginalResultHash,
                         summaryKind = run.Result != null ? "detailedProjection" : "retainedSanitizedSummary",
+                        result.Scope,
+                        result.InputContentDigest,
+                        serverCutoff = run.ServerCutoff?.ToDateTimeOffset(),
+                        completedAt = run.CompletedAt?.ToDateTimeOffset(),
+                        observationContext = run.ServerCutoff == null ? "unavailable" : "serverSnapshotCutoff",
                         result.Verdict,
                         result.VerifierVersion,
                         result.RuleVersion,
-                        checks = result.Checks.Select(c => new
-                        {
-                            c.Code,
-                            c.Verdict,
-                            c.Coverage.ComparedGroups,
-                            c.Coverage.TotalGroups,
-                            diagnosticCodes = c.Coverage.Gaps.Select(g => g.DiagnosticCode).Distinct(),
-                        }),
+                        coverage = AuditViewerProjection.Coverage(result.Coverage, run.Result != null),
+                        checks = AuditViewerProjection.Checks(result, run.Result != null),
                         findings = AuditViewerProjection.Findings(result),
                     }
                 );

@@ -243,14 +243,9 @@ public static class AuditRunEndpoints
             createdAt = run.CreatedAt.ToDateTimeOffset(),
             scope = AuditCanonicalJson.Deserialize<AuditScope>(run.Scope),
             verdict = result?.Verdict,
-            coverage = result == null
-                ? null
-                : new
-                {
-                    comparedGroups = result.Coverage.ComparedGroups.ToString(CultureInfo.InvariantCulture),
-                    totalGroups = result.Coverage.TotalGroups.ToString(CultureInfo.InvariantCulture),
-                    diagnosticCodes = result.Coverage.Gaps.Select(g => g.DiagnosticCode).Distinct(),
-                },
+            coverage = result == null ? null : AuditViewerProjection.Coverage(result.Coverage, run.Result != null),
+            checks = result == null ? null : AuditViewerProjection.Checks(result, run.Result != null),
+            completedAt = run.CompletedAt?.ToDateTimeOffset(),
             result?.VerifierVersion,
             result?.RuleVersion,
             result?.InputContentDigest,

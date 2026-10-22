@@ -269,6 +269,10 @@ public sealed partial class AuditStore
             run.EvidenceExpiresAt = MinExpiry(run.EvidenceExpiresAt, capture.ExpiresAt);
         }
         run.PartialEvidenceAcknowledged = proceed && !ready;
+        if (run.PartialEvidenceAcknowledged)
+        {
+            await FenceOrphanRequests(run, now, ct);
+        }
         run.State = "queued";
         run.DiagnosticCode = ready ? null : "partial_capture_acknowledged";
         run.Revision++;
