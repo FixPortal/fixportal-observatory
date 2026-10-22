@@ -13,6 +13,8 @@ Self-audit compares retained local usage facts with a frozen Observatory snapsho
 3. Install Node 24 or later and configure explicit source roots, a dedicated identity directory and private state directory. The companion performs no home-directory discovery.
 4. Start the companion, then create a run from the dashboard's Audit page. Inspect readiness before acknowledging partial captures. The default range is the previous seven completed UTC days; the maximum is 31 days.
 
+For each selected extractor, enter the exact configured `sourceId` in the wizard. A machine-specific source ID can differ from `claude-local` or `codex-local`; the extractor family and the source instance are separate choices.
+
 ```sh
 node clients/observatory-audit.mjs poll --config <private-local-config.json>
 ```

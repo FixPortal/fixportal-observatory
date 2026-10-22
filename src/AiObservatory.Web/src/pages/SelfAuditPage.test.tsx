@@ -226,6 +226,28 @@ test('retains capture choices and acknowledges offline partial collection explic
   expect(request.requestFreshCapture).toBe(true)
 })
 
+test('uses the explicit configured source instance independently of the extractor family', async () => {
+  mount()
+  const user = userEvent.setup()
+  const source = await screen.findByLabelText('Configured source ID for claude')
+  await user.clear(source)
+  await user.type(screen.getByLabelText('Machine ID for this scope'), machine)
+  expect(screen.getByRole('button', { name: 'Start audit' })).toBeDisabled()
+  await user.type(source, 'native-usage@synthetic-machine')
+  await user.click(screen.getByRole('button', { name: 'Start audit' }))
+  await waitFor(() => {
+    expect(calls.some((c) => c.path === '/runs' && c.init.method === 'POST')).toBe(true)
+  })
+  const request = JSON.parse(
+    calls.find((c) => c.path === '/runs' && c.init.method === 'POST')!.init.body as string,
+  )
+  expect(request.scope.sources).toEqual([
+    { machineId: machine, sourceId: 'native-usage@synthetic-machine' },
+  ])
+  expect(screen.getByRole('checkbox', { name: /claude-local/ })).toBeChecked()
+  expect(calls.some((c) => c.path.includes('sources=native-usage%40synthetic-machine'))).toBe(true)
+})
+
 test('shows exact coverage and findings with expected/actual/delta, currency and basis', async () => {
   mount()
   await userEvent.click(await screen.findByRole('button', { name: /Open audit/ }))

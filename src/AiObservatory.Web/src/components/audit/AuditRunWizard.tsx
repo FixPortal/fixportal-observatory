@@ -31,6 +31,7 @@ export function AuditRunWizard({
   const [dates, setDates] = useState(() => completedDays(7, clock))
   const [preset, setPreset] = useState<7 | 31 | 90 | 'custom'>(7)
   const [sources, setSources] = useState(['claude-local'])
+  const [configuredSourceIds, setConfiguredSourceIds] = useState<Record<string, string>>({})
   const [checks, setChecks] = useState<AuditCheck[]>(['sourceAccounting'])
   const [machineId, setMachineId] = useState('')
   const [captureIds, setCaptureIds] = useState<string[]>([])
@@ -39,10 +40,17 @@ export function AuditRunWizard({
   const actions = useAuditActions()
   const days = (dates.to.getTime() - dates.from.getTime()) / 86400000 + 1
   const validDates = days >= 1 && days <= 31
+  const selectedSourceIds = sources.map((source) => configuredSourceIds[source] ?? source)
+  const validSources =
+    selectedSourceIds.length > 0 &&
+    new Set(selectedSourceIds).size === selectedSourceIds.length &&
+    selectedSourceIds.every(
+      (source) => /^[A-Za-z0-9_:.@|=-]{1,256}$/.test(source) && !source.includes('..'),
+    )
   const scope: AuditScope = {
     from: dates.from.toISOString().slice(0, 10),
     to: dates.to.toISOString().slice(0, 10),
-    sources: [...sources].sort().map((sourceId) => ({ machineId, sourceId })),
+    sources: [...selectedSourceIds].sort().map((sourceId) => ({ machineId, sourceId })),
     requestedChecks: [...checks].sort(),
     excludedChecks: capabilities.checks
       .map((check) => check.code)
@@ -52,7 +60,7 @@ export function AuditRunWizard({
     predecessorRunId: null,
     evaluationOfRunId: null,
   }
-  const readiness = useAuditReadiness(scope, validDates && sources.length > 0)
+  const readiness = useAuditReadiness(scope, validDates && validSources)
   const validMachine =
     /^(?!00000000-0000-0000-0000-000000000000)[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(
       machineId,
@@ -108,6 +116,23 @@ export function AuditRunWizard({
                   />
                   {source.tool}-local {source.supported ? '' : '· unsupported'}
                 </label>
+                {sources.includes(`${source.tool}-local`) && (
+                  <label className="audit-field">
+                    Configured source ID for {source.tool}
+                    <input
+                      value={configuredSourceIds[`${source.tool}-local`] ?? `${source.tool}-local`}
+                      maxLength={256}
+                      spellCheck={false}
+                      onChange={(e) => {
+                        setConfiguredSourceIds((prior) => ({
+                          ...prior,
+                          [`${source.tool}-local`]: e.target.value.trim(),
+                        }))
+                        setCaptureIds([])
+                      }}
+                    />
+                  </label>
+                )}
                 {source.reasonCode && <code className="audit-muted">{source.reasonCode}</code>}
               </div>
             ))}
@@ -130,6 +155,11 @@ export function AuditRunWizard({
               </div>
             </CollapsiblePanel>
           )}
+          <p className="audit-muted">
+            Use the exact source ID from your companion configuration and source inventory. Each
+            selected source needs its own ID; the extractor name does not identify a machine.
+          </p>
+          {!validSources && <p role="alert">Choose distinct, nonempty configured source IDs.</p>}
         </fieldset>
         <fieldset>
           <legend>Checks</legend>
@@ -190,11 +220,11 @@ export function AuditRunWizard({
           </label>
         </>
       )}
-      {readiness.isPending && validDates && sources.length > 0 && (
+      {readiness.isPending && validDates && validSources && (
         <p role="status">Checking readiness…</p>
       )}
       {readiness.error && <p role="alert">Readiness unavailable: {readiness.error.message}</p>}
-      {readiness.data && validDates && sources.length > 0 && (
+      {readiness.data && validDates && validSources && (
         <AuditReadiness
           readiness={readiness.data}
           selected={captureIds}
@@ -215,7 +245,7 @@ export function AuditRunWizard({
           disabled={
             !validDates ||
             !validMachine ||
-            !sources.length ||
+            !validSources ||
             !checks.length ||
             !readiness.data ||
             readiness.isFetching ||
