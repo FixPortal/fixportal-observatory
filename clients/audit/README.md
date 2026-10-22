@@ -1,6 +1,6 @@
 # Local usage evidence companion
 
-Requires Node 24+. This separate companion captures allowlisted usage facts for offline audits. It has no polling, upload, collector import, normalization, or daily accounting.
+Requires Node 24+. This separate companion captures allowlisted usage facts for offline audits and can poll the machine-scoped capture API. It imports no collector, normalization, or daily accounting code.
 
 Run `node clients/observatory-audit.mjs capture --request <local-request.json> --output <new-local-directory>`. Existing output directories are refused. Exit codes: 0 capture scan completed, 3 incomplete scan, 4 sanitized failure. A completed scan does not prove source closure or complete historical usage; the verifier evaluates those separately. Empty scans are incomplete.
 
@@ -16,4 +16,12 @@ The dedicated identity directory/key is restricted to the current OS user (0700/
 
 `extractClaudeEvidence(text, identityContext)` and `extractCodexEvidence(text, identityContext)` return `{ records, diagnostics }` source facts, never normalized totals. `captureEvidence(request, configuration, dependencies)` and `writeCapture(capture, outputDirectory)` provide local capture and persistence. The only capture dependency overrides are `readFile` (fault-injection seam) and `now` (Date-returning clock).
 
-Run `node --test clients/observatory-audit.test.mjs` and `dotnet run --project tests/AiObservatory.Audit.Tests -- --filter-class '*NodeCaptureTests'` for synthetic extraction and Node→.NET canonical/bundle checks.
+For coordinated capture, an administrator first enables validated `Audit:Enabled` settings and provisions a machine with `POST /api/audits/machines` and `{ "schemaVersion": 1 }`. Create/rotate responses reveal the dedicated machine credential once. Store it in a private local configuration file; the ordinary Observatory API key does not authorize machine routes. A read-only key still forbids provisioning mutations when an authenticated human session is also present. Rotation or `DELETE /api/audits/machines/{id}/credential` revokes the old credential immediately, including active captures. Capture-request creation is reserved for the audit run orchestration layer.
+
+Run `node clients/observatory-audit.mjs poll --config <private-local-config.json>` continuously, or append `--once` for scheduled invocation. The configuration contains `origin` (HTTPS origin only, without a path/query), `key` (issued machine credential), `machineId`, dedicated `stateDirectory`, `identityDirectory`, and the same explicit `sources`/optional `limits` as local capture. `allowLoopbackHttp: true` permits HTTP only for explicit loopback development. No environment credential discovery, server-provided roots, URLs, or commands are accepted.
+
+An idle companion polls every 60 seconds with at most five seconds of jitter; an active capture renews its lease every minute. Requests use only the configured origin, block redirects, have ten-second timeouts and at most three attempts for network/429/server failures, and log only fixed status codes. One-shot mode exits after its assigned capture (or one idle claim), returning 0 on success and 4 on sanitized failure.
+
+Before uploading, the companion atomically retains the complete original package below `stateDirectory/<requestId>-<leaseToken>/`. A restarted companion reuses those exact bytes for the live token, even if source files changed; damaged retained packages fail closed. Keep the private state directory intact during capture. Expired ownership produces a fresh token and atomically resets the server's unsealed partial chunks and counters. Already sealed evidence remains immutable. State directories have private OS permissions; local retained packages are not automatically pruned by this companion. Only manifest and original chunk bytes are transmitted; `local.json` remains local.
+
+Run `node --test clients/observatory-audit.test.mjs clients/audit-poll.test.mjs` and `dotnet run --project tests/AiObservatory.Audit.Tests -- --filter-class '*NodeCaptureTests'` for synthetic extraction, transport/polling, and Node→.NET canonical/bundle checks.

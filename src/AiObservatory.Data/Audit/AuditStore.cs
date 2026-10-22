@@ -74,6 +74,73 @@ public sealed class AuditStore
             ct
         );
 
+    public async Task<AuditCredentialView?> FindCredentialAsync(Guid credentialId, CancellationToken ct) =>
+        await _db.Set<AuditMachineCredential>()
+            .AsNoTracking()
+            .Where(x => x.Id == credentialId)
+            .Select(x => new AuditCredentialView(x.MachineId, x.Id, x.SecretHash, x.RevokedAt != null))
+            .SingleOrDefaultAsync(ct);
+
+    public Task<MachineRegistration> RotateMachineCredentialAsync(Guid machineId, byte[] hash, CancellationToken ct)
+    {
+        Require(hash.Length == 32, "invalid_credential_hash", 400);
+        var original = hash.ToArray();
+        return Transaction(
+            async () =>
+            {
+                Require(await _db.Set<AuditMachine>().AnyAsync(x => x.Id == machineId, ct), "machine_not_found", 404);
+                await RevokeMachineCredentials(machineId, ct);
+                var credential = new AuditMachineCredential
+                {
+                    Id = Guid.NewGuid(),
+                    MachineId = machineId,
+                    SecretHash = original,
+                    CreatedAt = _clock.GetCurrentInstant(),
+                };
+                _db.Add(credential);
+                await _db.SaveChangesAsync(ct);
+                return new MachineRegistration(machineId, credential.Id);
+            },
+            ct
+        );
+    }
+
+    public Task RevokeMachineCredentialAsync(Guid machineId, CancellationToken ct) =>
+        Transaction(
+            async () =>
+            {
+                await RevokeMachineCredentials(machineId, ct);
+                return true;
+            },
+            ct
+        );
+
+    private Task<int> RevokeMachineCredentials(Guid machineId, CancellationToken ct) =>
+        _db.Set<AuditMachineCredential>()
+            .Where(x => x.MachineId == machineId && x.RevokedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, _clock.GetCurrentInstant()), ct);
+
+    public Task<CaptureLease> ResolveCaptureLeaseAsync(
+        Guid requestId,
+        Guid machineId,
+        Guid credentialId,
+        Guid token,
+        CancellationToken ct
+    ) =>
+        Transaction(
+            async () =>
+            {
+                var candidate = new CaptureLease(requestId, machineId, credentialId, token, default, null!);
+                var request = await RequireCaptureLease(candidate, allowSealed: true, ct);
+                return candidate with
+                {
+                    ExpiresAt = request.LeaseExpiresAt!.Value,
+                    Scope = AuditCanonicalJson.Deserialize<AuditScope>(request.Scope),
+                };
+            },
+            ct
+        );
+
     public Task<Guid> CreateCaptureRequestAsync(Guid machineId, AuditScope scope, Instant now, CancellationToken ct)
     {
         var bytes = ValidateScope(scope);
@@ -135,6 +202,11 @@ public sealed class AuditStore
                 }
                 if (request.LeaseExpiresAt <= now || request.CredentialId != credentialId || request.LeaseToken == null)
                 {
+                    // A new scan must not inherit retained partial bytes from an expired owner.
+                    // Live-token retry leaves both bytes and counters unchanged; sealed requests are never selected.
+                    await _db.Set<AuditEvidenceChunk>().Where(x => x.RequestId == request.Id).ExecuteDeleteAsync(ct);
+                    request.UploadedBytes = 0;
+                    request.RecordCount = 0;
                     request.LeaseToken = Guid.NewGuid();
                 }
                 request.CredentialId = credentialId;

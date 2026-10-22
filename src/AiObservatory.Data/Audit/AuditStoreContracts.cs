@@ -16,6 +16,8 @@ public sealed record CaptureLease(
 
 public sealed record MachineRegistration(Guid MachineId, Guid CredentialId);
 
+public sealed record AuditCredentialView(Guid MachineId, Guid CredentialId, byte[] SecretHash, bool Revoked);
+
 public sealed record AuditRunView(
     Guid Id,
     string State,

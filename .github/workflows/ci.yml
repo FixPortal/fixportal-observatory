@@ -178,6 +178,7 @@ jobs:
           tests/public-restore-contract.test.mjs
           clients/observatory-sweep.test.mjs
           clients/observatory-audit.test.mjs
+          clients/audit-poll.test.mjs
 
   gate-coverage:
     name: Gate coverage
