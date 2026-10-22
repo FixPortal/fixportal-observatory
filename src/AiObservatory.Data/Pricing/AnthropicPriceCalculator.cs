@@ -11,7 +11,14 @@ public sealed class AnthropicPriceCalculator : IProviderPriceCalculator
     public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog) =>
         CalculateWithEvidence(usage, normalizedCatalog)?.Quote;
 
-    public CalculatedPrice? CalculateWithEvidence(UsageEvent usage, string normalizedCatalog)
+    public CalculatedPrice? CalculateWithEvidence(UsageEvent usage, string normalizedCatalog) =>
+        CalculateWithEvidence(usage, normalizedCatalog, allowHistoricalFlatClaim: false);
+
+    internal CalculatedPrice? CalculateWithEvidence(
+        UsageEvent usage,
+        string normalizedCatalog,
+        bool allowHistoricalFlatClaim
+    )
     {
         if (string.IsNullOrWhiteSpace(usage.Model))
         {
@@ -27,7 +34,7 @@ public sealed class AnthropicPriceCalculator : IProviderPriceCalculator
 
         var catalog = PricingCatalogJson.Deserialize<AnthropicPriceCatalog>(normalizedCatalog);
         var pricingDate = isNotional ? catalog.RetrievedAt.InUtc().Date : usage.OccurredAt.InUtc().Date;
-        var entry = ResolveEntry(usage, evidence.RootElement, catalog, pricingDate);
+        var entry = ResolveEntry(usage, evidence.RootElement, catalog, pricingDate, allowHistoricalFlatClaim);
         if (entry is null)
         {
             return null;
@@ -107,7 +114,8 @@ public sealed class AnthropicPriceCalculator : IProviderPriceCalculator
         UsageEvent usage,
         JsonElement evidence,
         AnthropicPriceCatalog catalog,
-        NodaTime.LocalDate date
+        NodaTime.LocalDate date,
+        bool allowHistoricalFlatClaim
     )
     {
         var context = PricingEvidence.ClaudePromptContext(usage, evidence);
@@ -115,6 +123,8 @@ public sealed class AnthropicPriceCalculator : IProviderPriceCalculator
         return
             entry?.Context is null
             && PricingEvidence.RequiresProspectiveClaudePromptContext(usage, evidence, catalog, date)
+            && !allowHistoricalFlatClaim
+            && !PricingEvidence.AllowsHistoricalClaudeFlatQuote(usage, evidence, catalog, date)
             ? null
             : entry;
     }

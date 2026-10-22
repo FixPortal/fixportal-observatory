@@ -803,6 +803,187 @@ public sealed class UsagePriceResolverTests : IAsyncLifetime
     }
 
     [Theory]
+    [InlineData("claude-haiku-5-5", false, false)]
+    [InlineData("claude-haiku-5-5-20261022", false, false)]
+    [InlineData("claude-haiku-5-5", true, false)]
+    [InlineData("claude-haiku-5-5", false, true)]
+    public async Task ClaimedHistoricalListPriceUsesExplicitActiveBandHistory(
+        string model,
+        bool sameCatalog,
+        bool cached
+    )
+    {
+        var (retained, current) = await InstallClaudeHistory();
+        var flat = ClaudeContextFixture.Entry(null) with { EffectiveFrom = new(2026, 9, 1) };
+        if (sameCatalog)
+        {
+            await _db
+                .PricingSnapshots.Where(s => s.Id == current.Id)
+                .ExecuteUpdateAsync(
+                    s =>
+                        s.SetProperty(
+                            p => p.NormalizedCatalog,
+                            PricingCatalogJson.Serialize(
+                                ClaudeContextFixture.Catalog(
+                                    flat,
+                                    ClaudeContextFixture.Entry(ClaudeContextFixture.Lower),
+                                    ClaudeContextFixture.Entry(ClaudeContextFixture.Upper)
+                                )
+                            )
+                        ),
+                    TestContext.Current.CancellationToken
+                );
+        }
+        var usage = ClaudeContextFixture.Event(ClaudeContextFixture.Raw(ClaudeContextFixture.Upper));
+        usage.Model = model;
+        usage.CostBasis = CostBasis.ListPriceEstimate;
+        usage.OccurredAt = Instant.FromUtc(2026, 9, 20, 0, 0);
+        var resolver = Resolver();
+        var quote = cached
+            ? await (Task<ResolvedPriceApplication?>)
+                typeof(UsagePriceResolver)
+                    .GetMethod(
+                        nameof(UsagePriceResolver.ResolveWithEvidenceAsync),
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
+                        [
+                            typeof(UsageEvent),
+                            typeof(Dictionary<string, List<PricingSnapshot>>),
+                            typeof(CancellationToken),
+                        ]
+                    )!
+                    .Invoke(
+                        resolver,
+                        [usage, new Dictionary<string, List<PricingSnapshot>>(), TestContext.Current.CancellationToken]
+                    )!
+            : await resolver.ResolveWithEvidenceAsync(usage, TestContext.Current.CancellationToken);
+        quote.Should().NotBeNull();
+        quote.SnapshotId.Should().Be(sameCatalog ? current.Id : retained.Id);
+        quote.SnapshotHash.Should().Be(sameCatalog ? current.ContentHash : retained.ContentHash);
+        quote.RateKey.Should().Be(PricingEvidence.RateKey(flat));
+        quote.Dimensions.Context.Should().BeNull();
+        quote.Quote.CostUsd.Should().Be(2m);
+        quote.PricingDate.Should().Be(new DateOnly(2026, 9, 20));
+        quote.PricingRuleVersion.Should().Be("1");
+        // The same historical date cannot turn a legacy-only calculator into band-history evidence.
+        new AnthropicPriceCalculator()
+            .CalculateWithEvidence(usage, PricingCatalogJson.Serialize(ClaudeContextFixture.Catalog(flat)))
+            .Should()
+            .BeNull();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RetainedOrUndeclaredBandHistoryCannotAdmitHistoricalClaim(bool undeclared)
+    {
+        var (retained, current) = await InstallClaudeHistory();
+        var flat = ClaudeContextFixture.Entry(null) with { EffectiveFrom = new(2026, 9, 1) };
+        var currentCatalog = undeclared
+            ? ClaudeContextFixture.Catalog(
+                ClaudeContextFixture.Entry(ClaudeContextFixture.Lower) with
+                {
+                    EffectiveDateIsProviderDeclared = false,
+                },
+                ClaudeContextFixture.Entry(ClaudeContextFixture.Upper) with
+                {
+                    EffectiveDateIsProviderDeclared = false,
+                    FastInput = null,
+                    FastOutput = null,
+                }
+            )
+            : ClaudeContextFixture.Catalog(flat);
+        await _db
+            .PricingSnapshots.Where(s => s.Id == current.Id)
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(p => p.NormalizedCatalog, PricingCatalogJson.Serialize(currentCatalog)),
+                TestContext.Current.CancellationToken
+            );
+        if (!undeclared)
+        {
+            // Older inactive bands are not permission for an active legacy-only catalog.
+            await _db
+                .PricingSnapshots.Where(s => s.Id == retained.Id)
+                .ExecuteUpdateAsync(
+                    s =>
+                        s.SetProperty(
+                            p => p.NormalizedCatalog,
+                            PricingCatalogJson.Serialize(
+                                ClaudeContextFixture.Catalog(
+                                    flat,
+                                    ClaudeContextFixture.Entry(ClaudeContextFixture.Lower),
+                                    ClaudeContextFixture.Entry(ClaudeContextFixture.Upper)
+                                )
+                            )
+                        ),
+                    TestContext.Current.CancellationToken
+                );
+        }
+        var usage = ClaudeContextFixture.Event(ClaudeContextFixture.Raw(ClaudeContextFixture.Upper, speed: "fast"));
+        usage.CostBasis = CostBasis.ListPriceEstimate;
+        usage.OccurredAt = Instant.FromUtc(2026, 9, 20, 0, 0);
+        (await Resolver().ResolveWithEvidenceAsync(usage, TestContext.Current.CancellationToken)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("claude_prompt_context_version", "2", false)]
+    [InlineData("claude_prompt_context_version", "2", true)]
+    [InlineData("claude_prompt_context_version", 1, false)]
+    [InlineData("claude_prompt_context_basis", "daily_total", false)]
+    [InlineData("context", "PROMPT_LE_100000", false)]
+    [InlineData("context", null, false)]
+    public async Task InvalidHistoricalClaimCannotUseExplicitActiveBandHistory(
+        string field,
+        object? value,
+        bool sameCatalog
+    )
+    {
+        var (_, current) = await InstallClaudeHistory();
+        if (sameCatalog)
+        {
+            await _db
+                .PricingSnapshots.Where(s => s.Id == current.Id)
+                .ExecuteUpdateAsync(
+                    s =>
+                        s.SetProperty(
+                            p => p.NormalizedCatalog,
+                            PricingCatalogJson.Serialize(
+                                ClaudeContextFixture.Catalog(
+                                    ClaudeContextFixture.Entry(null) with
+                                    {
+                                        EffectiveFrom = new(2026, 9, 1),
+                                    },
+                                    ClaudeContextFixture.Entry(ClaudeContextFixture.Lower),
+                                    ClaudeContextFixture.Entry(ClaudeContextFixture.Upper)
+                                )
+                            )
+                        ),
+                    TestContext.Current.CancellationToken
+                );
+        }
+        var raw = System.Text.Json.Nodes.JsonNode.Parse(ClaudeContextFixture.Raw(ClaudeContextFixture.Lower))!;
+        raw[field] = JsonSerializer.SerializeToNode(value);
+        var usage = ClaudeContextFixture.Event(raw.ToJsonString());
+        usage.CostBasis = CostBasis.ListPriceEstimate;
+        usage.OccurredAt = Instant.FromUtc(2026, 9, 20, 0, 0);
+        (await Resolver().ResolveWithEvidenceAsync(usage, TestContext.Current.CancellationToken)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(CostBasis.Notional)]
+    [InlineData(CostBasis.ListPriceEstimate)]
+    public async Task ClaimedBandedValuationCannotUseRetainedFlatWhenSelectedBandLaneIsMissing(CostBasis basis)
+    {
+        await InstallClaudeHistory();
+        var usage = ClaudeContextFixture.Event(ClaudeContextFixture.Raw(ClaudeContextFixture.Upper, speed: "fast"));
+        usage.CostBasis = basis;
+        if (basis == CostBasis.Notional)
+        {
+            usage.OccurredAt = Instant.FromUtc(2026, 9, 20, 0, 0);
+        }
+        (await Resolver().ResolveWithEvidenceAsync(usage, TestContext.Current.CancellationToken)).Should().BeNull();
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData(ClaudeContextFixture.Lower)]
     public async Task ProspectiveTieredClaimCannotUseOnlyInstalledLegacyFlatCatalog(string? context)

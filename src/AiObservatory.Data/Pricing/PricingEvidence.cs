@@ -125,6 +125,24 @@ public static class PricingEvidence
                 ?.ModelPrefix.Equals("claude-haiku-5-5", StringComparison.OrdinalIgnoreCase) == true;
     }
 
+    internal static bool AllowsHistoricalClaudeFlatQuote(
+        UsageEvent usage,
+        JsonElement root,
+        AnthropicPriceCatalog catalog,
+        LocalDate date
+    ) =>
+        usage.CostBasis == CostBasis.ListPriceEstimate
+        && usage.Model is not null
+        && ClaudePromptContext(usage, root) is not null
+        && catalog.Entries.Any(entry =>
+            entry.Context is not null
+            && entry.EffectiveDateIsProviderDeclared
+            && entry.EffectiveFrom > date
+            && entry.ModelPrefix.Equals("claude-haiku-5-5", StringComparison.OrdinalIgnoreCase)
+            && catalog.Resolve(usage.Model, entry.EffectiveFrom, entry.Context) is { Context: not null } resolved
+            && resolved.ModelPrefix.Equals(entry.ModelPrefix, StringComparison.OrdinalIgnoreCase)
+        );
+
     public static CacheDurationObservation ObserveCacheDurations(UsageEvent usage)
     {
         using var json = ProviderPricingJson.Evidence(usage.RawPayload);

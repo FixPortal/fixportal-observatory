@@ -9,6 +9,7 @@ import { extractCodexEvidence } from './audit/codex-evidence.mjs';
 import { loadIdentity, identityContext } from './audit/identity.mjs';
 import { parseLossless } from './audit/lossless-json.mjs';
 import { canonical, utcTimestamp, sha256 } from './audit/protocol.mjs';
+import * as protocol from './audit/protocol.mjs';
 import { pollOnce } from './audit/poll.mjs';
 import { captureEvidence, writeCapture } from './observatory-audit.mjs';
 
@@ -46,6 +47,13 @@ test('Claude copies retain native inclusive/subset counters and exact integer le
   assert.equal(result.records[0].pricing.inferenceGeo, 'us');
   assert.equal(result.records[0].closure.state, 'unknown');
   assert.doesNotMatch(canonical(result), /PLANTED|sk-secret|home\/private/);
+});
+
+test('source version map fixes the public producer contract', () => {
+  assert.deepEqual(protocol.SOURCE_VERSIONS, { claude: '2', codex: '1' });
+  assert.equal(Object.isFrozen(protocol.SOURCE_VERSIONS), true);
+  assert.equal(extractClaudeEvidence(claude(), context()).records[0].sourceVersion, protocol.SOURCE_VERSIONS.claude);
+  assert.equal(extractCodexEvidence(codex(), context()).records[0].sourceVersion, protocol.SOURCE_VERSIONS.codex);
 });
 
 test('prospective captures advertise exact emitted versions and remain facts only', async t => {

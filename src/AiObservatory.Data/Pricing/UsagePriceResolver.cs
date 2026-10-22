@@ -82,14 +82,22 @@ public sealed class UsagePriceResolver
 
         // Anchor Notional admission to the active valuation date before trying any retained
         // catalog. Recomputing this requirement from each old snapshot would reopen flat rates.
-        var requiresClaudeContext = RequiresClaudeContext(usage, snapshots);
+        var allowHistoricalFlatClaim = await AllowsHistoricalClaudeFlatQuoteAsync(
+            usage,
+            snapshotsBySourceId,
+            cancellationToken
+        );
+        var requiresClaudeContext = RequiresClaudeContext(usage, snapshots, allowHistoricalFlatClaim);
 
         // The active snapshot comes first, but a refresh that retires this model must not make
         // the event unpriceable: fall through to older retained snapshots until one produces a
         // quote.
         foreach (var snapshot in snapshots)
         {
-            var quote = calculator.CalculateWithEvidence(usage, snapshot.NormalizedCatalog);
+            var quote =
+                calculator is AnthropicPriceCalculator anthropic && allowHistoricalFlatClaim
+                    ? anthropic.CalculateWithEvidence(usage, snapshot.NormalizedCatalog, allowHistoricalFlatClaim: true)
+                    : calculator.CalculateWithEvidence(usage, snapshot.NormalizedCatalog);
             if (
                 quote is not null
                 && (!requiresClaudeContext || quote.Dimensions.Context is "prompt_le_100000" or "prompt_gt_100000")
@@ -111,7 +119,42 @@ public sealed class UsagePriceResolver
         return null;
     }
 
-    private static bool RequiresClaudeContext(UsageEvent usage, IReadOnlyList<PricingSnapshot> snapshots)
+    private async Task<bool> AllowsHistoricalClaudeFlatQuoteAsync(
+        UsageEvent usage,
+        Dictionary<string, List<PricingSnapshot>>? snapshotsBySourceId,
+        CancellationToken cancellationToken
+    )
+    {
+        if (usage.Provider != Provider.Anthropic || usage.CostBasis != CostBasis.ListPriceEstimate)
+        {
+            return false;
+        }
+        using var evidence = ProviderPricingJson.Evidence(usage.RawPayload);
+        if (PricingEvidence.ClaudePromptContext(usage, evidence.RootElement) is null)
+        {
+            return false;
+        }
+        // Date coverage may exclude the active catalog from the candidate list. Only that
+        // active catalog, never an arbitrary retained snapshot, may establish the later band.
+        var active =
+            snapshotsBySourceId is not null
+            && snapshotsBySourceId.TryGetValue(PricingSourceIds.Claude, out var installed)
+                ? installed.FirstOrDefault(snapshot => snapshot.IsActive)
+                : await _store.GetActiveAsync(PricingSourceIds.Claude, cancellationToken);
+        return active is { Provider: Provider.Anthropic, IsActive: true, SourceId: PricingSourceIds.Claude }
+            && PricingEvidence.AllowsHistoricalClaudeFlatQuote(
+                usage,
+                evidence.RootElement,
+                PricingCatalogJson.Deserialize<AnthropicPriceCatalog>(active.NormalizedCatalog),
+                usage.OccurredAt.InUtc().Date
+            );
+    }
+
+    private static bool RequiresClaudeContext(
+        UsageEvent usage,
+        IReadOnlyList<PricingSnapshot> snapshots,
+        bool allowHistoricalFlatClaim
+    )
     {
         if (usage.Provider != Provider.Anthropic || usage.Model is null)
         {
@@ -127,7 +170,13 @@ public sealed class UsagePriceResolver
             var catalog = PricingCatalogJson.Deserialize<AnthropicPriceCatalog>(snapshot.NormalizedCatalog);
             if (
                 catalog.RequiresPromptContext(usage.Model, date)
-                || PricingEvidence.RequiresProspectiveClaudePromptContext(usage, evidence.RootElement, catalog, date)
+                || !allowHistoricalFlatClaim
+                    && PricingEvidence.RequiresProspectiveClaudePromptContext(
+                        usage,
+                        evidence.RootElement,
+                        catalog,
+                        date
+                    )
             )
             {
                 return true;
