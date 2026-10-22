@@ -27,10 +27,16 @@ internal sealed class SourceCheckEvaluation
                 : compatible;
         var unsupported = Coverage(input, code, expected, findings, gaps);
         var expectedMap = Groups(expected);
-        var actualMap = code == CheckCode.DailyAttribution ? Groups(compatible) : Events(input, code, findings, gaps);
+        var unplacedEventScopes = new HashSet<EventComparisonScope>();
+        var actualMap =
+            code == CheckCode.DailyAttribution
+                ? Groups(compatible)
+                : Events(input, code, findings, gaps, unplacedEventScopes);
         var keys = expectedMap.Keys.Union(actualMap.Keys).OrderBy(k => k.Id, StringComparer.Ordinal).ToArray();
         var compared = 0L;
-        foreach (var key in keys)
+        // Missing pricing dimensions can place an omitted posting in any pricing group
+        // with these remaining dimensions. Neither partial totals nor group absence prove a defect.
+        foreach (var key in keys.Where(key => !unplacedEventScopes.Contains(EventComparisonScope.From(key))))
         {
             var reference = expectedMap.GetValueOrDefault(key);
             var actual = actualMap.GetValueOrDefault(key);
@@ -219,7 +225,8 @@ internal sealed class SourceCheckEvaluation
         AuditInput input,
         CheckCode code,
         List<AuditFinding> findings,
-        List<CoverageGap> gaps
+        List<CoverageGap> gaps,
+        HashSet<EventComparisonScope> unplacedEventScopes
     )
     {
         var events = input
@@ -228,9 +235,12 @@ internal sealed class SourceCheckEvaluation
                 && SourceAuditSupport.InScope(DateOnly.FromDateTime(e.OccurredAt.UtcDateTime), input.Scope)
             )
             .ToArray();
-        foreach (var source in events.Where(e => e.PricingApplication is null).Select(e => e.SourceId).Distinct())
+        foreach (
+            var scope in events.Where(e => e.PricingApplication is null).Select(EventComparisonScope.From).Distinct()
+        )
         {
-            AddGap(source, "missing_pricing_dimensions", code, findings, gaps);
+            unplacedEventScopes.Add(scope);
+            AddGap(scope.SourceId, "missing_pricing_dimensions", code, findings, gaps, scope.Id);
         }
         return events
             .Where(e => e.PricingApplication is not null)
@@ -316,6 +326,29 @@ internal sealed class SourceCheckEvaluation
     }
 
     private sealed record ComparisonGroup(UsageCounters Tokens, IReadOnlyList<string> Evidence);
+
+    private sealed record EventComparisonScope(
+        string SourceId,
+        DateOnly Date,
+        string Provider,
+        string? Model,
+        ObservationProvenance Provenance
+    )
+    {
+        internal string Id => SourceAuditSupport.Identity(SourceId, Date, Provider, Model, Provenance);
+
+        internal static EventComparisonScope From(ComparisonKey key) =>
+            new(key.SourceId, key.Date, key.Provider, key.Model, key.Provenance);
+
+        internal static EventComparisonScope From(FrozenEvent row) =>
+            new(
+                row.SourceId,
+                DateOnly.FromDateTime(row.OccurredAt.UtcDateTime),
+                row.Provider,
+                row.Model,
+                row.Provenance
+            );
+    }
 
     private sealed record ComparisonKey(
         string SourceId,
