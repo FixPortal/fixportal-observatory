@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { counter } from './lossless-json.mjs';
 
 export const EXTRACTOR_VERSION = '1.1.0';
+export const SOURCE_VERSIONS = Object.freeze({ claude: '2', codex: '1' });
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
 function quote(value) {
@@ -54,7 +55,7 @@ export function pricing(usage = {}, metadata = {}) {
 
 export function recordBase(tool, context, sequence, native, state = {}) {
   const id = (domain, value) => value == null ? null : context.id(domain, value);
-  return { machineId: context.machineId, sourceId: context.sourceId, sourceFormat: `${tool}-jsonl`, sourceVersion: '1', tool, kind: 'sessionMetadata', generation: context.generation, fileId: context.fileId, sessionId: id('session', native.sessionId ?? state.sessionId), messageId: null, agentId: id('agent', native.agentId ?? state.agentId), parentId: id('session', native.parentSessionId ?? state.parentSessionId), sequence: BigInt(sequence), timestamp: utcTimestamp(native.timestamp), model: identifier(state.model, true), provider: identifier(state.provider), counters: null, cost: null, currency: null, pricing: pricing({}, state), closure: { state: 'unknown', timestamp: null, sequence: null } };
+  return { machineId: context.machineId, sourceId: context.sourceId, sourceFormat: `${tool}-jsonl`, sourceVersion: SOURCE_VERSIONS[tool], tool, kind: 'sessionMetadata', generation: context.generation, fileId: context.fileId, sessionId: id('session', native.sessionId ?? state.sessionId), messageId: null, agentId: id('agent', native.agentId ?? state.agentId), parentId: id('session', native.parentSessionId ?? state.parentSessionId), sequence: BigInt(sequence), timestamp: utcTimestamp(native.timestamp), model: identifier(state.model, true), provider: identifier(state.provider), counters: null, cost: null, currency: null, pricing: pricing({}, state), closure: { state: 'unknown', timestamp: null, sequence: null } };
 }
 
 export function diagnosticCounts(codes) {

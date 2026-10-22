@@ -448,6 +448,127 @@ public sealed class PricingApplicationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ClaudeActivationAdmitsClaimedHistoricalFlatQuoteThroughRepricingTransaction()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var flat = ClaudeContextFixture.Entry(null) with { EffectiveFrom = new(2026, 9, 1) };
+        var retained = new PricingSnapshot
+        {
+            Provider = Provider.Anthropic,
+            SourceId = PricingSourceIds.Claude,
+            RetrievedAt = Instant.FromUtc(2026, 9, 1, 12, 0),
+            IsActive = true,
+            ContentHash = new string('a', 64),
+            NormalizedCatalog = PricingCatalogJson.Serialize(
+                ClaudeContextFixture.Catalog(flat) with
+                {
+                    RetrievedAt = Instant.FromUtc(2026, 9, 1, 12, 0),
+                }
+            ),
+        };
+        _db.PricingSnapshots.Add(retained);
+        await _db.SaveChangesAsync(ct);
+        var store = new PricingSnapshotStore(_db);
+        var resolver = new UsagePriceResolver(
+            store,
+            [new AnthropicPriceCalculator()],
+            NullLogger<UsagePriceResolver>.Instance
+        );
+        var repository = new UsageRepository(_db, store, resolver);
+        var usage = ClaudeContextFixture.Event(ClaudeContextFixture.Raw(ClaudeContextFixture.Upper));
+        usage.CostBasis = CostBasis.ListPriceEstimate;
+        usage.OccurredAt = Instant.FromUtc(2026, 9, 20, 0, 0);
+        usage.OutputTokens = 1_000_000;
+        usage.CacheReadTokens = 1_000_000;
+        usage.CacheWriteTokens = 2_000_000;
+        usage.CacheWrite1hTokens = 1_000_000;
+        usage.ThoughtTokens = 123;
+        (await resolver.ResolveWithEvidenceAsync(usage, ct)).Should().BeNull();
+        await repository.RecordEstimatedEventAsync(usage, ct);
+        var before = await _db.UsageEvents.AsNoTracking().SingleAsync(ct);
+        before.CostUsd.Should().BeNull();
+        before.CacheSavingsUsd.Should().BeNull();
+        var oldAggregate = await _db.DailyAggregates.AsNoTracking().SingleAsync(ct);
+        oldAggregate.UnknownCostCount.Should().Be(1);
+        oldAggregate.UnknownCacheSavingsCount.Should().Be(1);
+        var oldApplications = await _db.PricingApplications.AsNoTracking().OrderBy(row => row.Revision).ToListAsync(ct);
+        oldApplications.Should().OnlyContain(row => row.Kind != "catalog");
+
+        var catalog = ClaudeContextFixture.Catalog();
+        var normalized = PricingCatalogJson.Serialize(catalog);
+        var candidate = new PricingSnapshotCandidate(
+            Provider.Anthropic,
+            PricingSourceIds.Claude,
+            catalog.RetrievedAt,
+            catalog.SourceUrl,
+            PricingSnapshotCandidate.ComputeContentHash("synthetic-historical-activation", normalized),
+            "synthetic-historical-activation",
+            normalized
+        );
+        var repricing = new PricingRepricingService(_db, repository, resolver, store);
+        (
+            await store.ActivateAsync(
+                candidate,
+                ct,
+                (_, token) => repricing.RepriceProviderAsync(Provider.Anthropic, token)
+            )
+        )
+            .Should()
+            .Be(PricingActivationResult.Activated);
+        var after = await _db.UsageEvents.AsNoTracking().SingleAsync(ct);
+        after
+            .Should()
+            .BeEquivalentTo(
+                before,
+                options =>
+                    options
+                        .Excluding(row => row.CostUsd)
+                        .Excluding(row => row.CacheSavingsUsd)
+                        .Excluding(row => row.CurrentPricingRevision)
+            );
+        after.RawPayload.Should().Be(before.RawPayload);
+        PricingEvidence.SourceDimensions(after).Context.Should().Be(ClaudeContextFixture.Upper);
+        after.CostUsd.Should().Be(23.25m);
+        after.CacheSavingsUsd.Should().Be(-2.25m);
+        after.CurrentPricingRevision.Should().BeGreaterThan(before.CurrentPricingRevision);
+        var history = await _db.PricingApplications.AsNoTracking().OrderBy(row => row.Revision).ToListAsync(ct);
+        history.Should().HaveCount(oldApplications.Count + 1);
+        history.Take(oldApplications.Count).Should().BeEquivalentTo(oldApplications);
+        var application = history[^1];
+        application.SnapshotId.Should().Be(retained.Id);
+        application.SnapshotHash.Should().Be(retained.ContentHash);
+        application.RateKey.Should().Be(PricingEvidence.RateKey(flat));
+        application.PricingDate.Should().Be(new DateOnly(2026, 9, 20));
+        application.RuleVersion.Should().Be("1");
+        application.CostUsd.Should().Be(23.25m);
+        application.CacheSavingsUsd.Should().Be(-2.25m);
+        AiObservatory
+            .Audit.Serialization.AuditCanonicalJson.Deserialize<AiObservatory.Audit.Contracts.PricingDimensions>(
+                application.Dimensions
+            )
+            .Context.Should()
+            .BeNull();
+        var aggregate = await _db.DailyAggregates.AsNoTracking().SingleAsync(ct);
+        aggregate
+            .Should()
+            .BeEquivalentTo(
+                oldAggregate,
+                options =>
+                    options
+                        .Excluding(row => row.CostUsd)
+                        .Excluding(row => row.CacheSavingsUsd)
+                        .Excluding(row => row.UnknownCostCount)
+                        .Excluding(row => row.UnknownCacheSavingsCount)
+            );
+        aggregate.CostUsd.Should().Be(23.25m);
+        aggregate.CacheSavingsUsd.Should().Be(-2.25m);
+        aggregate.UnknownCostCount.Should().Be(0);
+        aggregate.UnknownCacheSavingsCount.Should().Be(0);
+        aggregate.RequestCount.Should().Be(1);
+        (await store.GetActiveAsync(PricingSourceIds.Claude, ct))!.ContentHash.Should().Be(candidate.ContentHash);
+    }
+
+    [Fact]
     public async Task MissingClaudeBandRetainsKnownCostWithoutNewSuccessfulApplication()
     {
         var ct = TestContext.Current.CancellationToken;

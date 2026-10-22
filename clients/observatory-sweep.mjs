@@ -1342,18 +1342,19 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   for (const { tool, model, count } of unplaced) {
     console.error(`UNPLACED ${tool} model=${model} sessions=${count}`)
   }
+  // Incomplete sources can be removed before submission planning. Report them once
+  // before any POST, including incompleteness restored from the parse cache.
+  const incompleteSourceIds = new Set(
+    [...incompleteSources].map(tool => localSourceId(tool, machine)).concat([...snapshots.incompleteSourceIds]),
+  )
+  for (const sourceId of incompleteSourceIds) {
+    console.error(`Scan incomplete for ${sourceId} (possible causes: unreadable file, malformed JSONL, or invalid or overflowed counters); its corrections and tombstones are withheld this run.`)
+  }
   // An incomplete scan may be missing the very records that were unplaced; a clean report then
   // would clear a real warning, so the previous report stands until a complete scan.
   if (!DRY_RUN && incompleteSources.size === 0) { await postSweepStatus(url, apiKey, machine, unplaced) }
   const submissions = planSnapshotSubmissions(snapshots, inventory)
   await saveState(statePath, state)
-  // A source with any unreadable-and-uncached file this run scanned incompletely:
-  // its aggregates can only shrink real totals and its vanished keys may merely be
-  // missing from the scan, so both its corrections and its tombstones are withheld
-  // until a complete scan succeeds.
-  const incompleteSourceIds = new Set(
-    [...incompleteSources].map(tool => localSourceId(tool, machine)).concat([...snapshots.incompleteSourceIds]),
-  )
 
   let posted = 0
   const activeSucceeded = new Map()
@@ -1364,13 +1365,8 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   for (const tool of emptySources) {
     activeSucceeded.set(localSourceId(tool, machine), true)
   }
-  const incompleteNoted = new Set()
   for (const submission of submissions.filter(item => item.active)) {
     if (incompleteSourceIds.has(submission.snapshot.sourceId)) {
-      if (!incompleteNoted.has(submission.snapshot.sourceId)) {
-        console.error(`Scan incomplete for ${submission.snapshot.sourceId}; its corrections and tombstones are withheld this run.`)
-        incompleteNoted.add(submission.snapshot.sourceId)
-      }
       continue
     }
     const succeeded = await postEvent(

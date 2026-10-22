@@ -301,6 +301,68 @@ test('Claude prompt invalid scan cannot post active corrections, old-key tombsto
   }
 })
 
+for (const failure of ['malformed JSONL', 'invalid counters', 'overflowed counters', 'unreadable file']) {
+  test(`main warns once before posting for incomplete Claude ${failure}, including cache hits`, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'observatory-claude-warning-'))
+    const path = join(root, 'claude.jsonl')
+    const kimiPath = join(root, 'wire.jsonl')
+    const statePath = join(root, 'state.json')
+    const keys = ['OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES', 'OBSERVATORY_MACHINE', 'CLAUDE_HOME', 'KIMI_HOME']
+    const before = Object.fromEntries(keys.map(key => [key, process.env[key]]))
+    const originalFetch = globalThis.fetch
+    const originalError = console.error
+    const activity = []
+    Object.assign(process.env, {
+      OBSERVATORY_URL: 'http://127.0.0.1:1', OBSERVATORY_API_KEY: 'synthetic-key',
+      OBSERVATORY_STATE: statePath, OBSERVATORY_LOCAL_SOURCES: 'claude,kimi',
+      OBSERVATORY_MACHINE: TEST_MACHINE, CLAUDE_HOME: join(root, 'claude'), KIMI_HOME: join(root, 'kimi'),
+    })
+    console.error = message => activity.push({ warning: String(message) })
+    globalThis.fetch = async (url, options = {}) => {
+      if (options.method === 'POST') {
+        activity.push({ url, body: JSON.parse(options.body) })
+        return new Response('{}')
+      }
+      const sourceId = new URL(url).searchParams.get('sourceId')
+      return new Response(JSON.stringify(sourceId === 'claude-local@test-machine'
+        ? [{ sourceId, runtime: 'claude', eventKey: 'prior-flat' }] : []))
+    }
+    try {
+      const valid = claudePromptRow(COMPLETE_CLAUDE_PROMPT)
+      if (failure !== 'unreadable file') {
+        const content = failure === 'malformed JSONL' ? `${valid}\n{"message":`
+          : failure === 'invalid counters' ? claudePromptRow({ ...COMPLETE_CLAUDE_PROMPT, input_tokens: -1 })
+            : [claudePromptRow({ ...COMPLETE_CLAUDE_PROMPT, input_tokens: Number.MAX_SAFE_INTEGER }, { id: 'max' }),
+              claudePromptRow({ ...COMPLETE_CLAUDE_PROMPT, input_tokens: 100001 }, { id: 'extra' })].join('\n')
+        await writeFile(path, content)
+      }
+      await writeFile(kimiPath, JSON.stringify({ type: 'usage.record', time: 1787572800000, model: 'kimi-code/kimi-for-coding', usage: { inputOther: 10, output: 2, inputCacheRead: 20, inputCacheCreation: 3 } }))
+      const discover = async dir => [{ path: dir.startsWith(process.env.CLAUDE_HOME) ? path : kimiPath, mtimeMs: 1 }]
+      for (let run = 0; run < 2; run++) {
+        activity.length = 0
+        await sweep.main({ discover })
+        const warnings = activity.filter(item => item.warning?.startsWith('Scan incomplete'))
+        assert.equal(warnings.length, 1, 'exactly one warning for the withheld source each run')
+        assert.match(warnings[0].warning, /claude-local@test-machine/)
+        assert.match(warnings[0].warning, /possible causes: unreadable file, malformed JSONL, or invalid or overflowed counters/)
+        assert.match(warnings[0].warning, /corrections and tombstones are withheld/)
+        assert.equal(warnings[0].warning.includes(root), false, 'native paths are absent')
+        const events = activity.filter(item => item.url && new URL(item.url).pathname === '/api/events')
+        assert.ok(events.some(item => item.body.sourceId === 'kimi-local@test-machine'), 'the other source proceeds')
+        assert.equal(events.some(item => item.body.sourceId === 'claude-local@test-machine'), false, 'both active corrections and old-key tombstones stay withheld')
+        assert.ok(activity.indexOf(warnings[0]) < activity.findIndex(item => item.url), 'warning precedes every POST')
+      }
+    } finally {
+      globalThis.fetch = originalFetch
+      console.error = originalError
+      for (const key of keys) {
+        if (before[key] === undefined) { delete process.env[key] } else { process.env[key] = before[key] }
+      }
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+}
+
 test('Claude prompt truncated JSON retains valid records but cannot plan destructive corrections', () => {
   const records = parseClaude(`${claudePromptRow(COMPLETE_CLAUDE_PROMPT)}\n{"type":"assistant",`)
   assert.equal(records.length, 1)
@@ -1264,7 +1326,7 @@ test("Claude band reconciliation converges after every persisted posting boundar
                 "cacheWrite1hTokens",
                 "thoughtTokens",
             ].map((counter) =>
-                rows.reduce((sum, row) => sum + (row[counter] ?? 0), 0),
+                rows.reduce((sum, row) => sum + row[counter], 0),
             ),
             rows.reduce(
                 (sum, row) =>

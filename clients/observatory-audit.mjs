@@ -5,7 +5,7 @@ import { discoverSources, readStable } from './audit/discovery.mjs';
 import { loadIdentity, identityContext } from './audit/identity.mjs';
 import { extractClaudeEvidence } from './audit/claude-evidence.mjs';
 import { extractCodexEvidence } from './audit/codex-evidence.mjs';
-import { canonical, utcTimestamp, identifier, diagnosticCounts, sha256, EXTRACTOR_VERSION } from './audit/protocol.mjs';
+import { canonical, utcTimestamp, identifier, diagnosticCounts, sha256, EXTRACTOR_VERSION, SOURCE_VERSIONS } from './audit/protocol.mjs';
 
 const GUID = /^(?!00000000-0000-0000-0000-000000000000)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const CHECKS = new Set(['sourceAccounting', 'dailyAttribution', 'eventAggregation', 'pricingArithmetic', 'presentationTotals', 'billingReconciliation']);
@@ -93,7 +93,7 @@ export async function captureEvidence(request, configuration, dependencies = {})
   if (!records.some(record => record.counters && record.timestamp.slice(0, 10) >= scope.from && record.timestamp.slice(0, 10) <= scope.to)) codes.push('no_usage_records');
   const dates = records.map(record => record.timestamp.slice(0, 10)).sort();
   const scanEndedAt = now();
-  const manifest = { schemaVersion: 1, captureId: request.captureId, requestId: request.requestId, machineId: request.machineId, generation: identity.generation, extractorVersion: EXTRACTOR_VERSION, scanStartedAt, scanEndedAt, scope, sourceFormats: sources.map(source => ({ sourceId: source.sourceId, format: `${source.tool}-jsonl`, version: source.tool === 'claude' ? '2' : '1' })).sort((a, b) => a.sourceId < b.sourceId ? -1 : a.sourceId > b.sourceId ? 1 : 0), discoveredFiles: BigInt(discovery.files.length + discovery.skippedFiles), readFiles: BigInt(readFiles), skippedFiles: BigInt(skippedFiles), changedFiles: BigInt(changedFiles), recordCount: BigInt(records.length), observedFrom: dates[0] ?? null, observedTo: dates.at(-1) ?? null, diagnostics: diagnosticCounts(codes), chunkHashes: chunks.map(chunk => chunk.sha256), sealedAt: now() };
+  const manifest = { schemaVersion: 1, captureId: request.captureId, requestId: request.requestId, machineId: request.machineId, generation: identity.generation, extractorVersion: EXTRACTOR_VERSION, scanStartedAt, scanEndedAt, scope, sourceFormats: sources.map(source => ({ sourceId: source.sourceId, format: `${source.tool}-jsonl`, version: SOURCE_VERSIONS[source.tool] })).sort((a, b) => a.sourceId < b.sourceId ? -1 : a.sourceId > b.sourceId ? 1 : 0), discoveredFiles: BigInt(discovery.files.length + discovery.skippedFiles), readFiles: BigInt(readFiles), skippedFiles: BigInt(skippedFiles), changedFiles: BigInt(changedFiles), recordCount: BigInt(records.length), observedFrom: dates[0] ?? null, observedTo: dates.at(-1) ?? null, diagnostics: diagnosticCounts(codes), chunkHashes: chunks.map(chunk => chunk.sha256), sealedAt: now() };
   return { manifest, records, chunks, complete: codes.length === 0, local: { rawHashes } };
 }
 

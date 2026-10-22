@@ -644,4 +644,4 @@ Actual native migration qualification remains **Incomplete**; interruption,
 temporary overlap and residual-zero-row behavior are established by the
 synthetic controls above. No historical band is inferred from totals or money.
 No production activation, collector rollout or historical rewrite is authorized
-by this owned-copy evidence. Current-head full Data-module CI remains pending.
+by this owned-copy evidence. Full Data-module CI must pass on the final source head at the unchanged five-minute cap before integration.

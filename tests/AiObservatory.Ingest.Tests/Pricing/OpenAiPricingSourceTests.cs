@@ -84,7 +84,7 @@ public sealed class OpenAiPricingSourceTests
         {
             "duplicate-standard" => document.Replace(
                 "### Fast pricing data",
-                "### Standard pricing data",
+                "### Standard pricing data\n\n### Fast pricing data",
                 StringComparison.Ordinal
             ),
             "duplicate-model" => document.Replace("| gpt-5.6-sol |", "| gpt-5.4 |", StringComparison.Ordinal),
@@ -96,7 +96,10 @@ public sealed class OpenAiPricingSourceTests
             "invalid-duration-price" => document.Replace("$91.00", "$-91.00", StringComparison.Ordinal),
             "missing-flagship" => document.Replace("Flagship models", "Models", StringComparison.Ordinal),
             "ambiguous-boundary" => document + "\nCyber models\n",
-            "misplaced-flex" => document.Replace("#### Flex", "#### Batch", StringComparison.Ordinal),
+            "misplaced-flex" => document
+                .Replace("#### Batch", "#### Temporary", StringComparison.Ordinal)
+                .Replace("#### Flex", "#### Batch", StringComparison.Ordinal)
+                .Replace("#### Temporary", "#### Flex", StringComparison.Ordinal),
             "conflicting-unit" => document.Replace(
                 "Prices per 1M tokens.",
                 "Prices per 1K tokens.",
@@ -105,7 +108,15 @@ public sealed class OpenAiPricingSourceTests
             _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
         };
         var act = () => OpenAiPricingSource.Parse(document, RetrievedAt);
-        act.Should().Throw<InvalidDataException>();
+        var rejection = act.Should().Throw<InvalidDataException>();
+        if (mutation == "duplicate-standard")
+        {
+            rejection.WithMessage("OpenAI pricing requires exactly one '### Standard pricing data' heading.");
+        }
+        else if (mutation == "misplaced-flex")
+        {
+            rejection.WithMessage("OpenAI batch and Flex pricing hierarchy changed.");
+        }
     }
 
     private static string CurrentFixture()

@@ -133,6 +133,38 @@ public sealed class AnthropicPriceCalculatorTests
 
     [Theory]
     [InlineData("claude-haiku-5-5", true)]
+    [InlineData("claude-haiku-5-5-20261022", true)]
+    [InlineData("haiku-qualified", true)]
+    [InlineData("claude-haiku-5-5-20260230", false)]
+    [InlineData("claude-haiku-5-50", false)]
+    public void HistoricalClaimUsesOwnCatalogFlatEraWithoutFabricatingBandProvenance(string model, bool priced)
+    {
+        var flat = ClaudeContextFixture.Entry(null) with
+        {
+            EffectiveFrom = new(2026, 9, 1),
+            Aliases = ["haiku-qualified"],
+        };
+        var catalog = ClaudeContextFixture.Catalog(
+            flat,
+            ClaudeContextFixture.Entry(ClaudeContextFixture.Lower),
+            ClaudeContextFixture.Entry(ClaudeContextFixture.Upper)
+        );
+        var usage = ClaudeContextFixture.Event(ClaudeContextFixture.Raw(ClaudeContextFixture.Upper));
+        usage.Model = model;
+        usage.CostBasis = CostBasis.ListPriceEstimate;
+        usage.OccurredAt = Instant.FromUtc(2026, 9, 20, 0, 0);
+        var quote = new AnthropicPriceCalculator().CalculateWithEvidence(usage, PricingCatalogJson.Serialize(catalog));
+        (quote is not null).Should().Be(priced);
+        if (priced)
+        {
+            quote!.RateKey.Should().Be(PricingEvidence.RateKey(flat));
+            quote.Dimensions.Context.Should().BeNull();
+            quote.Quote.CostUsd.Should().Be(2m);
+        }
+    }
+
+    [Theory]
+    [InlineData("claude-haiku-5-5", true)]
     [InlineData("CLAUDE-HAIKU-5-5", true)]
     [InlineData("claude-haiku-5-5-20261022", true)]
     [InlineData("haiku-qualified", true)]
