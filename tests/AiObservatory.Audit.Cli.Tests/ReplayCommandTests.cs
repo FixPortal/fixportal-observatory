@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Cryptography;
 using AiObservatory.Audit.Bundles;
 using AiObservatory.Audit.Contracts;
@@ -67,13 +68,15 @@ public sealed class ReplayCommandTests
     [InlineData(true, 2)]
     public async Task Replay_SupportedAggregateScope_ReturnsVerdictExitCode(bool mismatch, int expectedExit)
     {
+        const long expectedInputTokens = 9_007_199_254_740_993;
+        const long actualInputTokens = 9_007_199_254_740_992;
         using var directory = new TestDirectory();
         var bundle = await Golden();
         var input = bundle.Input with
         {
             Scope = bundle.Input.Scope with { RequestedChecks = [CheckCode.EventAggregation], ExcludedChecks = [] },
             Aggregates = mismatch
-                ? [bundle.Input.Aggregates[0] with { InputTokens = 9007199254740992 }]
+                ? [bundle.Input.Aggregates[0] with { InputTokens = actualInputTokens }]
                 : bundle.Input.Aggregates,
         };
         var path = await Write(directory, bundle with { Input = input, Result = new AuditVerifier().Verify(input) });
@@ -88,7 +91,12 @@ public sealed class ReplayCommandTests
         {
             (await File.ReadAllTextAsync(Path.Combine(output, "report.txt"), TestContext.Current.CancellationToken))
                 .Should()
-                .Contain("inputTokens: expected=9007199254740993 actual=9007199254740992 delta=-1");
+                .Contain(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"inputTokens: expected={expectedInputTokens} actual={actualInputTokens} delta=-1"
+                    )
+                );
         }
     }
 
