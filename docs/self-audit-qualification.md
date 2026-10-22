@@ -573,3 +573,75 @@ result plus a linked new evaluation identity. This boundary provides no producti
 activation, historical unknown-band recovery or migration/repricing qualification.
 Later composed qualification must cover those separately. Historical commands and
 1.0.0 qualification results above remain descriptions of their original evidence.
+
+### Claude reconciliation and application qualification
+
+Synthetic migration tests replace an old mixed daily key with lower, upper and
+unknown keys while retaining an unchanged flat key. Retry after every posting
+boundary, using only persisted server inventory, converges to exact token and
+fixture-money totals and stable keys. Invalid, overflowing and incomplete source
+discovery retain the existing correction fences. These are synthetic controls;
+they do not establish complete historical source coverage.
+
+Replacement is active-first and is not atomic. The interruption fixture reaches
+340,047 input tokens before the old mixed key is zeroed, then converges to 170,029.
+The temporary excess is exactly the old key's contribution, including its output,
+cache and thought counters. Four active keys leave five retained usage postings
+after correction: one old zero row remains. `RequestCount` counts those postings,
+not native or provider requests. A rollout that requires atomic totals or removal
+of that residual posting needs a separate operational decision.
+
+Real store activation and repricing tests cover both context bands for Notional
+and ListPriceEstimate amounts, exact cache-duration arithmetic, immutable prior
+applications, selected snapshot/entry/context and aggregate reconciliation.
+Repeated identical activation adds no application. Existing real-service controls
+preserve missing-context known amounts without new successful quote provenance,
+keep unknown amounts unknown, exclude billed/provider-estimated amounts, and
+reject a quote after a RawPayload-only source correction. Retained known money
+does not establish a historical prompt band.
+
+Local composed verification passed the Release solution build with zero warnings,
+1,999 tests across the five non-Data backend modules, 17 focused Data application
+tests, all 552 frontend tests, 217 Node tests and replay smoke. The Node command
+excludes the exact public-restore contract test that unconditionally launches
+restore/build; it is not counted passed. The frontend retains 120 advisory lint
+warnings and the existing chunk-size warning. The new interruption fixture was
+then strengthened with nonzero one-hour cache tokens and its focused test passed.
+Current-head Ubuntu CI at the unchanged five-minute cap remains required for full
+Data-module authority; earlier Windows nonpasses are not reclassified by these
+focused results.
+
+An owned copy restored from the original immutable installation dump completed
+candidate activation through the real store and typed repricing callback. The
+saved terminal probe verified zero remaining sessions. Of 407 Anthropic rows,
+378 received exact-zero rule applications and 24 received catalog quote
+applications: 402 applications in total, with five rows remaining unknown.
+Eleven cost rows and eleven savings rows changed. Thirteen catalog quotes kept
+their amounts while gaining successful application provenance; unchanged amounts
+alone would not prove successful pricing. This copy contained no retained-catalog
+quote or retained known-but-unsupported case, and no successful lower- or
+upper-band catalog quote. Those cases are covered by the separate real-service
+regression tests above, including genuine upper-band fixtures.
+
+All 1,557 usage rows retained their six token counters and non-pricing fields.
+The 963 aggregate rows retained their token and posting counters, and their exact
+cost, savings and unknown-count deltas matched the usage changes. All 402 new
+application revisions matched their amounts, dimensions, pricing date and rule;
+the 24 catalog applications also matched their selected snapshot, hash and rate
+key. Existing catalog evidence was preserved, and
+billing, spend and all 32 source-state rows were unchanged. Initialization
+preserved the original-table integrity digests. The selected runtime bindings
+were checked; the prior exact PowerShell Newtonsoft exception remains a stated
+qualification limit, so this is not a hermetic production-runtime certification.
+
+The approved frozen Claude cohort has 16 hash-verified files and yields one
+snapshot for its selected UTC day. It links uniquely to one original source/day
+posting with identical token totals and the same key. Its provisional plan has
+one active replay and no zero correction, and was not posted. It supplies no
+versioned lower/upper prompt-context evidence. This establishes a bounded linkage
+control, not complete historical coverage or an observed mixed-key migration.
+Actual native migration qualification remains **Incomplete**; interruption,
+temporary overlap and residual-zero-row behavior are established by the
+synthetic controls above. No historical band is inferred from totals or money.
+No production activation, collector rollout or historical rewrite is authorized
+by this owned-copy evidence. Current-head full Data-module CI remains pending.

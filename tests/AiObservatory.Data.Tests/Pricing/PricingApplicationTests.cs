@@ -340,6 +340,113 @@ public sealed class PricingApplicationTests : IAsyncLifetime
         stored.CostUsd.Should().Be(application.CostUsd);
     }
 
+    [Theory]
+    [InlineData(ClaudeContextFixture.Lower, CostBasis.Notional, 23.25, -2.25)]
+    [InlineData(ClaudeContextFixture.Upper, CostBasis.Notional, 61.5, -22.5)]
+    [InlineData(ClaudeContextFixture.Lower, CostBasis.ListPriceEstimate, 23.25, -2.25)]
+    [InlineData(ClaudeContextFixture.Upper, CostBasis.ListPriceEstimate, 61.5, -22.5)]
+    public async Task ClaudeActivationRepricesCompleteBandAndAggregateOnceWithoutChangingSourceFacts(
+        string context,
+        CostBasis basis,
+        decimal expectedCost,
+        decimal expectedSavings
+    )
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var store = new PricingSnapshotStore(_db);
+        var resolver = new UsagePriceResolver(
+            store,
+            [new AnthropicPriceCalculator()],
+            NullLogger<UsagePriceResolver>.Instance
+        );
+        var repository = new UsageRepository(_db, store, resolver);
+        var usage = ClaudeContextFixture.Event(ClaudeContextFixture.Raw(context));
+        usage.CostBasis = basis;
+        usage.OutputTokens = 1_000_000;
+        usage.CacheReadTokens = 1_000_000;
+        usage.CacheWriteTokens = 2_000_000;
+        usage.CacheWrite1hTokens = 1_000_000;
+        usage.ThoughtTokens = 123;
+        usage.CostUsd = 9m;
+        usage.CacheSavingsUsd = 1m;
+        await repository.RecordEventAsync(usage, ct);
+        var before = await _db.UsageEvents.AsNoTracking().SingleAsync(ct);
+        var oldApplications = await _db.PricingApplications.AsNoTracking().ToListAsync(ct);
+        var catalog = ClaudeContextFixture.Catalog();
+        var normalized = PricingCatalogJson.Serialize(catalog);
+        var candidate = new PricingSnapshotCandidate(
+            Provider.Anthropic,
+            PricingSourceIds.Claude,
+            catalog.RetrievedAt,
+            catalog.SourceUrl,
+            PricingSnapshotCandidate.ComputeContentHash("synthetic-complete-bands", normalized),
+            "synthetic-complete-bands",
+            normalized
+        );
+        var repricing = new PricingRepricingService(_db, repository, resolver, store);
+        (
+            await store.ActivateAsync(
+                candidate,
+                ct,
+                (_, token) => repricing.RepriceProviderAsync(Provider.Anthropic, token)
+            )
+        )
+            .Should()
+            .Be(PricingActivationResult.Activated);
+
+        var after = await _db.UsageEvents.AsNoTracking().SingleAsync(ct);
+        after
+            .Should()
+            .BeEquivalentTo(
+                before,
+                options =>
+                    options
+                        .Excluding(row => row.CostUsd)
+                        .Excluding(row => row.CacheSavingsUsd)
+                        .Excluding(row => row.CurrentPricingRevision)
+            );
+        after.CostUsd.Should().Be(expectedCost);
+        after.CacheSavingsUsd.Should().Be(expectedSavings);
+        after.CurrentPricingRevision.Should().BeGreaterThan(before.CurrentPricingRevision);
+        var history = await _db.PricingApplications.AsNoTracking().OrderBy(row => row.Revision).ToListAsync(ct);
+        history.Should().HaveCount(oldApplications.Count + 1);
+        history.Take(oldApplications.Count).Should().BeEquivalentTo(oldApplications);
+        var application = history[^1];
+        application.SnapshotHash.Should().Be(candidate.ContentHash);
+        application.SnapshotId.Should().Be((await store.GetActiveAsync(PricingSourceIds.Claude, ct))!.Id);
+        application.RateKey.Should().Be(PricingEvidence.RateKey(ClaudeContextFixture.Entry(context)));
+        using var dimensions = System.Text.Json.JsonDocument.Parse(application.Dimensions);
+        dimensions.RootElement.GetProperty("context").GetString().Should().Be(context);
+        application.RuleVersion.Should().Be("1");
+        application.CostUsd.Should().Be(expectedCost);
+        application.CacheSavingsUsd.Should().Be(expectedSavings);
+        var aggregate = await _db.DailyAggregates.AsNoTracking().SingleAsync(ct);
+        aggregate.InputTokens.Should().Be(1_000_000);
+        aggregate.OutputTokens.Should().Be(1_000_000);
+        aggregate.CacheReadTokens.Should().Be(1_000_000);
+        aggregate.CacheWriteTokens.Should().Be(2_000_000);
+        aggregate.CacheWrite1hTokens.Should().Be(1_000_000);
+        aggregate.CostUsd.Should().Be(expectedCost);
+        aggregate.CacheSavingsUsd.Should().Be(expectedSavings);
+        aggregate.UnknownCostCount.Should().Be(0);
+        aggregate.UnknownCacheSavingsCount.Should().Be(0);
+        aggregate.RequestCount.Should().Be(1);
+
+        (
+            await store.ActivateAsync(
+                candidate,
+                ct,
+                (_, token) => repricing.RepriceProviderAsync(Provider.Anthropic, token)
+            )
+        )
+            .Should()
+            .Be(PricingActivationResult.Unchanged);
+        (await _db.PricingApplications.AsNoTracking().OrderBy(row => row.Revision).ToListAsync(ct))
+            .Should()
+            .BeEquivalentTo(history);
+        (await _db.DailyAggregates.AsNoTracking().SingleAsync(ct)).Should().BeEquivalentTo(aggregate);
+    }
+
     [Fact]
     public async Task MissingClaudeBandRetainsKnownCostWithoutNewSuccessfulApplication()
     {
