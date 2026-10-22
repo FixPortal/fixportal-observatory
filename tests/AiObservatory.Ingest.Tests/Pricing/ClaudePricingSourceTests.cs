@@ -384,6 +384,38 @@ public sealed class ClaudePricingSourceTests
         act.Should().Throw<InvalidDataException>();
     }
 
+    [Theory]
+    [InlineData(" (for input lengths up to 200,000 tokens)")]
+    [InlineData(" (over 200,000 tokens)")]
+    [InlineData(" (for requests below 100k)")]
+    public void ParserRejectsUnknownPricingQualifiersWithoutPrompt(string qualifier)
+    {
+        var document = Fixture().Replace("Claude Sonnet 5", "Claude Sonnet 5" + qualifier, StringComparison.Ordinal);
+        var act = () => ClaudePricingSource.Parse(document, RetrievedAt);
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [Theory]
+    [InlineData(" ([limited availability](https://anthropic.com/glasswing))")]
+    [InlineData(" ([limited availability](https://support.claude.com/en/articles/14604842))")]
+    [InlineData(
+        " ([retired, except on Bedrock and Google Cloud](https://platform.claude.com/docs/en/about-claude/model-deprecations))"
+    )]
+    [InlineData(
+        " ([retired, except on Google Cloud](https://platform.claude.com/docs/en/about-claude/model-deprecations))"
+    )]
+    public void ParserPreservesKnownNonPricingAnnotations(string qualifier)
+    {
+        var document = Fixture().Replace("Claude Sonnet 5", "Claude Sonnet 5" + qualifier, StringComparison.Ordinal);
+        var catalog = ClaudePricingSource.Parse(document, RetrievedAt);
+        var sonnet = catalog.Resolve("claude-sonnet-5", ObservedOn);
+        sonnet!.Input.Should().Be(2m);
+        sonnet.Output.Should().Be(10m);
+        sonnet.BatchInput.Should().Be(1m);
+        sonnet.BatchOutput.Should().Be(5m);
+        sonnet.Context.Should().BeNull();
+    }
+
     private static string Mutate(string document, string mutation)
     {
         const string opusRow = "| Claude Opus 5 | $5 / MTok | $6.25 / MTok | $10 / MTok | $0.50 / MTok | $25 / MTok |";

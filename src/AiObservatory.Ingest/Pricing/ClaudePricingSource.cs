@@ -305,9 +305,9 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
             " (for prompts over 100,000 tokens)" => "prompt_gt_100000",
             _ => null,
         };
-        if (context is null && value.Contains("prompt", StringComparison.OrdinalIgnoreCase))
+        if (context is null && !IsPresentationQualifier(qualifier))
         {
-            throw new InvalidDataException("Claude pricing contains an unsupported prompt qualifier.");
+            throw new InvalidDataException("Claude pricing contains an unsupported model qualifier.");
         }
         var model = NormalizeModel(value);
         if (context is not null && model != "claude-haiku-5-5")
@@ -316,6 +316,16 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
         }
         return (model, context);
     }
+
+    // These are observed availability/retirement annotations, not price conditions.
+    // Unknown qualifiers must be reviewed rather than erased by model normalization.
+    private static bool IsPresentationQualifier(string? qualifier) =>
+        qualifier
+            is null
+                or " ([limited availability](https://anthropic.com/glasswing))"
+                or " ([limited availability](https://support.claude.com/en/articles/14604842))"
+                or " ([retired, except on Bedrock and Google Cloud](https://platform.claude.com/docs/en/about-claude/model-deprecations))"
+                or " ([retired, except on Google Cloud](https://platform.claude.com/docs/en/about-claude/model-deprecations))";
 
     private static string NormalizeModel(string value)
     {
