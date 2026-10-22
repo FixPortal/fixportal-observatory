@@ -30,6 +30,51 @@ public sealed class BundleTests
         zip.ToArray().Should().Equal(again.ToArray());
     }
 
+    [Fact]
+    public async Task Roundtrip_PreservesOptionalQualificationAndFinancialFacts()
+    {
+        var bundle = Fixture();
+        var input = bundle.Input with
+        {
+            PartialEvidenceAcknowledged = true,
+            SourceQualifications = [new("claude-local", "partial_capture_acknowledged", false)],
+            FinancialObservations = [],
+        };
+        bundle = bundle with { Input = input, Result = new AuditVerifier().Verify(input) };
+        using var zip = await Write(bundle);
+        var read = await AuditBundleReader.ReadBundleAsync(zip, new(), TestContext.Current.CancellationToken);
+        AuditCanonicalJson.Serialize(read.Input).Should().Equal(AuditCanonicalJson.Serialize(input));
+    }
+
+    [Fact]
+    public async Task Roundtrip_LargeFinancialFactsDoNotConsumeTheMetadataBudget()
+    {
+        var bundle = Fixture();
+        var facts = Enumerable
+            .Range(1, 5000)
+            .Select(i => new FrozenFinancialObservation(
+                new Guid(i, 0, 0, new byte[8]),
+                "billing",
+                "provider",
+                "observation",
+                new(2026, 10, 20),
+                null,
+                new(SourceKind.ProviderApi, UsageScope.Api, AccountingBasis.Billed),
+                "USD",
+                1m,
+                0m,
+                1m,
+                new(2026, 10, 22, 12, 0, 0, TimeSpan.Zero)
+            ))
+            .ToArray();
+        var input = bundle.Input with { FinancialObservations = facts };
+        bundle = bundle with { Input = input, Result = new AuditVerifier().Verify(input) };
+        using var zip = await Write(bundle);
+        var read = await AuditBundleReader.ReadBundleAsync(zip, new(), TestContext.Current.CancellationToken);
+        read.Input.FinancialObservations.Should().HaveCount(5000);
+        AuditCanonicalJson.Serialize(read.Input).Should().Equal(AuditCanonicalJson.Serialize(input));
+    }
+
     /// <summary>ZIP directory order cannot change replay computation.</summary>
     [Fact]
     public async Task Read_ReorderedEntries_PreservesResult()

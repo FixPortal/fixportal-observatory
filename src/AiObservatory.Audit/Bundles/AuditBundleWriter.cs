@@ -5,6 +5,8 @@ namespace AiObservatory.Audit.Bundles;
 
 public static class AuditBundleWriter
 {
+    public static void Validate(AuditBundle bundle) => _ = BundleCodec.ValidateEvidence(bundle, new BundleLimits());
+
     public static async Task WriteAsync(Stream destination, AuditBundle bundle, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -22,6 +24,10 @@ public static class AuditBundleWriter
                     input.Tolerances,
                     input.PresentationProbe
                 )
+                {
+                    SourceQualifications = input.SourceQualifications,
+                    PartialEvidenceAcknowledged = input.PartialEvidenceAcknowledged,
+                }
             ),
             ["result.json"] = AuditCanonicalJson.Serialize(bundle.Result),
             ["snapshot/events.ndjson"] = BundleCodec.Ndjson(input.Events),
@@ -31,6 +37,10 @@ public static class AuditBundleWriter
             ["snapshot/fx.ndjson"] = BundleCodec.Ndjson(input.FxRates),
             ["pricing/catalogs.json"] = AuditCanonicalJson.Serialize(input.PricingCatalogs),
         };
+        if (input.FinancialObservations != null)
+        {
+            entries.Add(BundleCodec.FinancialPath, BundleCodec.Ndjson(input.FinancialObservations));
+        }
         foreach (var capture in bundle.Captures)
         {
             entries.Add(

@@ -137,10 +137,9 @@ public static class AuditRunEndpoints
                         is CheckCode.SourceAccounting
                             or CheckCode.DailyAttribution
                             or CheckCode.EventAggregation
-                            or CheckCode.PresentationTotals,
-                    reasonCode = c is CheckCode.PricingArithmetic or CheckCode.BillingReconciliation
-                        ? "check_not_implemented"
-                        : null,
+                            or CheckCode.PresentationTotals
+                            or CheckCode.PricingArithmetic,
+                    reasonCode = c is CheckCode.BillingReconciliation ? "billing_feed_unqualified" : null,
                 }),
         };
 

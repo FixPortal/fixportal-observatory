@@ -64,6 +64,7 @@ builder.Services.AddScoped(services => new AiObservatory.Data.Audit.AuditStore(
 builder.Services.AddScoped<AuditCredentialService>();
 builder.Services.AddScoped<AuditCaptureService>();
 builder.Services.AddScoped<AuditRunService>();
+builder.Services.AddScoped<AuditReportService>();
 builder.Services.AddScoped<AuditReadinessService>();
 builder.Services.AddScoped<AuditWorkerService>();
 builder.Services.AddSingleton<IAuditRunVerifier, AuditRunVerifier>();
@@ -210,6 +211,9 @@ if (app.Services.GetRequiredService<IOptions<AuditOptions>>().Value.Enabled)
     app.MapAuditMachineEndpoints();
     app.MapAuditCaptureEndpoints();
     app.MapAuditRunEndpoints();
+    app.MapAuditExportEndpoints();
+    app.MapAuditEvidenceEndpoints();
+    app.MapAuditPresentationProbeEndpoints();
 }
 var ide = app.MapGroup("/api/ide/v1").AddEndpointFilter<IdeApiKeyEndpointFilter>().RequireRateLimiting("api");
 ide.MapIdeEndpoints();
