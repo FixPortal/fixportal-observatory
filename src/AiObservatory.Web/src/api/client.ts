@@ -32,7 +32,7 @@ async function authHeaders(): Promise<Record<string, string>> {
   return {}
 }
 
-async function request(path: string, init: RequestInit = {}): Promise<Response> {
+export async function requestApi(path: string, init: RequestInit = {}): Promise<Response> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: { ...(init.headers as Record<string, string>), ...(await authHeaders()) },
@@ -41,6 +41,8 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
     throw new ApiError(res.status, await readErrorMessage(res, path, init.method ?? 'GET'))
   return res
 }
+
+const request = requestApi
 
 // Minimal APIs' Results.BadRequest(object?)/Results.Conflict(object?) JSON-encode whatever
 // they're given -- a `string` argument (e.g. Results.Conflict($"Category key already exists:

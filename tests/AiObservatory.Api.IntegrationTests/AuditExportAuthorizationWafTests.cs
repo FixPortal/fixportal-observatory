@@ -212,6 +212,26 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
         (await viewer.GetAsync($"/api/audits/runs/{id}/report", Ct)).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [Fact]
+    public async Task CompletedRun_CoverageCountsAreInvariantDecimalStrings()
+    {
+        var id = await Seed();
+        using var viewer = _factory.CreateReadOnlyClient();
+        var run = await viewer.GetFromJsonAsync<JsonElement>($"/api/audits/runs/{id}", Ct);
+        var coverage = run.GetProperty("coverage");
+        coverage.GetProperty("comparedGroups").ValueKind.Should().Be(JsonValueKind.String);
+        coverage.GetProperty("totalGroups").ValueKind.Should().Be(JsonValueKind.String);
+        long.TryParse(
+                coverage.GetProperty("totalGroups").GetString(),
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var total
+            )
+            .Should()
+            .BeTrue();
+        total.Should().BeGreaterThan(0);
+    }
+
     private async Task<Guid> Seed()
     {
         using var scope = _factory.Services.CreateScope();

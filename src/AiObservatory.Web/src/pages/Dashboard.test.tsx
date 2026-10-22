@@ -16,6 +16,8 @@ const authMock = vi.hoisted(() => ({
   TokenAcquisitionTimeoutError: class extends Error {},
   signIn: vi.fn(),
 }))
+const audit = vi.hoisted(() => ({ data: { enabled: false } }))
+vi.mock('../api/auditQueries', () => ({ useAuditCapabilities: () => audit }))
 
 vi.mock('../api/queries', () => ({ useDashboardStatus: () => dashboardStatus }))
 vi.mock('../theme/useTheme', () => ({ useTheme: () => ({ mode: 'dark', setMode: vi.fn() }) }))
@@ -48,6 +50,7 @@ vi.mock('../components/SpendChart', () => ({ SpendChart: () => null }))
 vi.mock('../components/ProviderSplit', () => ({ ProviderSplit: () => null }))
 
 beforeEach(() => {
+  audit.data.enabled = false
   dashboardStatus.isError = false
   dashboardStatus.isLoading = false
   dashboardStatus.isRetrying = false
@@ -55,6 +58,20 @@ beforeEach(() => {
   dashboardStatus.error = null
   dashboardStatus.retry.mockClear()
   authMock.signIn.mockClear()
+})
+
+test('self-audit tab is absent when disabled and joins the existing keyboard tab navigation when enabled', async () => {
+  const view = render(<Dashboard />)
+  expect(screen.queryByRole('tab', { name: 'Self-audit' })).not.toBeInTheDocument()
+  audit.data.enabled = true
+  view.rerender(<Dashboard />)
+  const tab = screen.getByRole('tab', { name: 'Self-audit' })
+  expect(tab).toHaveAttribute('tabindex', '-1')
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('tab', { name: 'Docs' }))
+  await user.keyboard('{ArrowLeft}')
+  expect(tab).toHaveFocus()
+  expect(tab).toHaveAttribute('aria-selected', 'true')
 })
 
 test('offers sign-in recovery when token acquisition stalls', () => {

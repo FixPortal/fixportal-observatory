@@ -244,8 +244,8 @@ public static class AuditRunEndpoints
                 ? null
                 : new
                 {
-                    result.Coverage.ComparedGroups,
-                    result.Coverage.TotalGroups,
+                    comparedGroups = result.Coverage.ComparedGroups.ToString(CultureInfo.InvariantCulture),
+                    totalGroups = result.Coverage.TotalGroups.ToString(CultureInfo.InvariantCulture),
                     diagnosticCodes = result.Coverage.Gaps.Select(g => g.DiagnosticCode).Distinct(),
                 },
             result?.VerifierVersion,
