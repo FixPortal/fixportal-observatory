@@ -6,6 +6,12 @@ namespace AiObservatory.Data.Audit;
 
 public sealed partial class AuditStore
 {
+    // Shared by every scoped store/host in this process, not by validator or DI scope.
+    // One admitted candidate holds at most MaxCaptureBytes (at most 512 MiB);
+    // parser/copy working memory is additional. Other processes have their own admission bound
+    // and still arbitrate publication through the database evidence fence.
+    private static readonly SemaphoreSlim SealAdmission = new(1, 1);
+
     public async Task<Guid> SealCaptureAsync(
         CaptureLease lease,
         byte[] manifest,
@@ -15,6 +21,26 @@ public sealed partial class AuditStore
     {
         ValidateKey(idempotencyKey);
         Require(manifest.Length <= 1024 * 1024, "manifest_size_limit", 413);
+        // Always acquire admission before the evidence lock and before copying/loading bytes.
+        // Waiting callers hold neither a transaction nor a detached full capture candidate.
+        await SealAdmission.WaitAsync(ct);
+        try
+        {
+            return await SealAdmittedCaptureAsync(lease, manifest, idempotencyKey, ct);
+        }
+        finally
+        {
+            SealAdmission.Release();
+        }
+    }
+
+    private async Task<Guid> SealAdmittedCaptureAsync(
+        CaptureLease lease,
+        byte[] manifest,
+        string idempotencyKey,
+        CancellationToken ct
+    )
+    {
         var original = manifest.ToArray();
         var parsed = AuditCanonicalJson.Deserialize<CaptureManifest>(original);
         Require(original.AsSpan().SequenceEqual(AuditCanonicalJson.Serialize(parsed)), "noncanonical_manifest", 400);
