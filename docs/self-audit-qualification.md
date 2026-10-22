@@ -2,8 +2,9 @@
 
 Qualification remains partial. Review batch 64 corrects the reviewed accounting,
 coverage, capture-lifetime and report defects. Its focused regressions and fresh
-native replay pass. The full Windows gate still times out, and acceptance 7
-remains blocked on a transactional snapshot of the actual installation database.
+native replay and a full Windows run with serial module scheduling pass.
+Earlier parallel Windows runs remain **NONPASS**. Acceptance 7 remains blocked
+on a transactional snapshot of the actual installation database.
 No production data, network rule, deployment or feature setting was changed.
 
 ## Current qualification after follow-up review
@@ -69,8 +70,8 @@ All 271 Audit unit tests, 35 focused seal cases, six assembly-cleanup fault case
 and three template-lifetime cases passed serial Release runs. The solution built
 with zero warnings/errors, and changed C# formatting passed. The prior exact
 `8e375533` Linux CI result of 2,302 passed / one skipped is historical; it does
-not establish CI success for this new code. The full Windows **NONPASS** below
-is unchanged; no full retry or timeout increase was made.
+not establish CI success for this new code. The later full serial Windows
+qualification is recorded below; the historical parallel **NONPASS** is retained.
 
 Capture admission remains one candidate per server process before byte
 allocation. Full byte transfer and validation run outside the evidence lock;
@@ -83,6 +84,52 @@ snapshot and GitGuardian disposition await explicit authorization, and an actual
 Gitar verdict has not been established. Default detailed paging, unsupported
 formats, real Entra, macOS execution and browser file-saving limits remain as
 documented below. The feature remains default-disabled.
+
+## Full Windows qualification with serial modules
+
+A single full Windows Release run at source/documentation HEAD
+`fe4a47134361417c4a92815d27f89d53c1c481b3` used the existing test binaries from
+code `499d668d87fc2740f9d852ad60cae87b625d9795`. The intervening commit changed
+only this qualification document. All six modules completed with **2,322 passed,
+zero failed and one existing explicit skip, from 2,323 total tests**. Actual
+process exit was **0**; console totals and all six TRX reports agree.
+
+The run used the existing owned PostgreSQL server, Release `--no-build`, and
+`--max-parallel-test-modules 1`. Every module retained its **five-minute cap**;
+TRX intervals confirm that modules did not overlap. Wall time was **507.231
+seconds (8m 27.231s)**; the test runner reported 506.394 seconds.
+
+| Module | Passed | Existing skipped | Module duration |
+|---|---:|---:|---|
+| API unit | 618 | 0 | 5.744s |
+| Data | 426 | 1 | 4m 50.558s |
+| Audit | 271 | 0 | 7.568s |
+| Ingest | 568 | 0 | 46.764s |
+| Audit CLI | 8 | 0 | 3.992s |
+| API Integration | 431 | 0 | 2m 27.421s |
+
+The skipped pricing qualification case,
+`QualificationRepricesEveryEligibleEventAndItsAggregate`, already has
+`Fact(Explicit = true)` and is excluded by the runner's default explicit-test
+policy. No additional filter, skip, retry or timeout increase was introduced.
+The exact workload was:
+
+```sh
+dotnet test --solution AiObservatory.slnx --configuration Release --no-build --max-parallel-test-modules 1 --report-xunit-trx --results-directory <private-results> --timeout 5m
+```
+
+Source, staged/unstaged content and all six Release assembly hashes were
+unchanged. CLI help inspection had refreshed ignored Debug outputs while
+collecting extension help; the measured run used the preserved Release binaries.
+No API, browser, native replay or hashing workload overlapped the suite.
+
+This qualifies the sequential Windows lane. The historical parallel **NONPASS**
+below remains intact, including its reporting discrepancy. That baseline used
+different code, and only one serial run was measured: no performance delta,
+repeatability guarantee or sole-cause attribution to scheduling or disk I/O is
+established. Actual-installation acceptance 7 remains **PARTIAL/BLOCKED**.
+Fresh CodeRabbit and Gitar verdicts remain unverified, security disposition
+approval remains pending, and this test result does not establish merge readiness.
 
 ## Historical first review batch 64 qualification
 
