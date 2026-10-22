@@ -416,6 +416,30 @@ public sealed class ClaudePricingSourceTests
         sonnet.Context.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("\t")]
+    [InlineData("\u00a0")]
+    [InlineData("  ")]
+    [InlineData(" \t")]
+    [InlineData("\t ")]
+    public void ParserRejectsMalformedQualifierBoundaries(string boundary)
+    {
+        var document = ReadFixture("claude-context-pricing.md")
+            .Replace(" (for prompts ", boundary + "(for prompts ", StringComparison.Ordinal);
+        var act = () => ClaudePricingSource.Parse(document, RetrievedAt);
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [Fact]
+    public void ParserRejectsPromptConditionTextOutsideARecognizedQualifier()
+    {
+        var document = ReadFixture("claude-context-pricing.md")
+            .Replace(" (for prompts ", " for prompts ", StringComparison.Ordinal);
+        var act = () => ClaudePricingSource.Parse(document, RetrievedAt);
+        act.Should().Throw<InvalidDataException>();
+    }
+
     private static string Mutate(string document, string mutation)
     {
         const string opusRow = "| Claude Opus 5 | $5 / MTok | $6.25 / MTok | $10 / MTok | $0.50 / MTok | $25 / MTok |";
