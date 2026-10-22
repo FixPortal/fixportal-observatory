@@ -872,6 +872,81 @@ public sealed class UsagePriceResolverTests : IAsyncLifetime
     }
 
     [Theory]
+    [InlineData("claude-haiku-5-5", false, false)]
+    [InlineData("claude-haiku-5-5", true, false)]
+    [InlineData("claude-haiku-5-5-20261022", false, false)]
+    [InlineData("claude-haiku-5-5", false, true)]
+    [InlineData("claude-haiku-5-5", true, true)]
+    [InlineData("claude-haiku-5-5-20261022", true, true)]
+    public async Task HistoricalAdmissionCannotPriceRetainedWrongCanonicalFamily(
+        string model,
+        bool cached,
+        bool correctFallback
+    )
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (retained, _) = await InstallClaudeHistory();
+        var flat = ClaudeContextFixture.Entry(null) with { EffectiveFrom = new(2026, 9, 1) };
+        var wrong = flat with { ModelPrefix = "claude-haiku-5", Aliases = ["claude-haiku-5-5"], Input = 99m };
+        await _db
+            .PricingSnapshots.Where(row => row.Id == retained.Id)
+            .ExecuteUpdateAsync(
+                update =>
+                    update.SetProperty(
+                        row => row.NormalizedCatalog,
+                        PricingCatalogJson.Serialize(ClaudeContextFixture.Catalog(wrong))
+                    ),
+                ct
+            );
+        var correct = new PricingSnapshot
+        {
+            Provider = Provider.Anthropic,
+            SourceId = PricingSourceIds.Claude,
+            RetrievedAt = Instant.FromUtc(2026, 8, 31, 12, 0),
+            IsActive = false,
+            ContentHash = new string('c', 64),
+            NormalizedCatalog = PricingCatalogJson.Serialize(ClaudeContextFixture.Catalog(flat)),
+        };
+        if (correctFallback)
+        {
+            _db.PricingSnapshots.Add(correct);
+            await _db.SaveChangesAsync(ct);
+        }
+        var usage = ClaudeContextFixture.Event(ClaudeContextFixture.Raw(ClaudeContextFixture.Upper));
+        usage.Model = model;
+        usage.CostBasis = CostBasis.ListPriceEstimate;
+        usage.OccurredAt = Instant.FromUtc(2026, 9, 20, 0, 0);
+        var resolver = Resolver();
+        var quote = cached
+            ? await (Task<ResolvedPriceApplication?>)
+                typeof(UsagePriceResolver)
+                    .GetMethod(
+                        nameof(UsagePriceResolver.ResolveWithEvidenceAsync),
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
+                        [
+                            typeof(UsageEvent),
+                            typeof(Dictionary<string, List<PricingSnapshot>>),
+                            typeof(CancellationToken),
+                        ]
+                    )!
+                    .Invoke(resolver, [usage, new Dictionary<string, List<PricingSnapshot>>(), ct])!
+            : await resolver.ResolveWithEvidenceAsync(usage, ct);
+        if (!correctFallback)
+        {
+            quote.Should().BeNull();
+            return;
+        }
+        quote.Should().NotBeNull();
+        quote.SnapshotId.Should().Be(correct.Id);
+        quote.SnapshotHash.Should().Be(correct.ContentHash);
+        quote.RateKey.Should().Be(PricingEvidence.RateKey(flat));
+        quote.RateKey.Should().NotBe(PricingEvidence.RateKey(wrong));
+        quote.Quote.CostUsd.Should().Be(2m);
+        quote.Dimensions.Context.Should().BeNull();
+        quote.PricingDate.Should().Be(new DateOnly(2026, 9, 20));
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task RetainedOrUndeclaredBandHistoryCannotAdmitHistoricalClaim(bool undeclared)

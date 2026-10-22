@@ -120,11 +120,21 @@ public sealed class AnthropicPriceCalculator : IProviderPriceCalculator
     {
         var context = PricingEvidence.ClaudePromptContext(usage, evidence);
         var entry = catalog.Resolve(usage.Model!, date, context);
+        if (entry is null || entry.Context is not null)
+        {
+            return entry;
+        }
+        var historicalFlatClaim =
+            allowHistoricalFlatClaim || PricingEvidence.AllowsHistoricalClaudeFlatQuote(usage, evidence, catalog, date);
+        // Active Haiku5.5 history cannot authorize a different retained family merely
+        // because that family's explicit alias also matches the requested model name.
+        if (historicalFlatClaim && !entry.ModelPrefix.Equals("claude-haiku-5-5", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
         return
-            entry?.Context is null
-            && PricingEvidence.RequiresProspectiveClaudePromptContext(usage, evidence, catalog, date)
-            && !allowHistoricalFlatClaim
-            && !PricingEvidence.AllowsHistoricalClaudeFlatQuote(usage, evidence, catalog, date)
+            PricingEvidence.RequiresProspectiveClaudePromptContext(usage, evidence, catalog, date)
+            && !historicalFlatClaim
             ? null
             : entry;
     }

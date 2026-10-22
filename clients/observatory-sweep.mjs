@@ -31,7 +31,7 @@ const LOCAL_SOURCE_IDS = {
 // every file. Never bump alone: after the wipe an unreadable file has no cached
 // records, so scanRecords flags its source incomplete and main withholds that
 // source's corrections and tombstones until a complete scan succeeds.
-const PARSE_CACHE_VERSION = 7
+const PARSE_CACHE_VERSION = 8
 // Gemini Developer API standard-tier pricing changes above this documented prompt-token threshold.
 const GEMINI_LONG_CONTEXT_THRESHOLD = 200_000
 // The Grok CLI records each turn's cost as an integer tick count rather than a decimal. The
@@ -249,6 +249,9 @@ function claudeInvalidCounters(usage, facts) {
   const subsets = ['creation5m', 'creation1h'].filter(key => Object.hasOwn(facts, key)).map(key => facts[key])
   const split = checkedTokenSum(subsets)
   if (split === null) { return true }
+  // An explicit total is authoritative only when its observed subsets agree.
+  // Missing categories remain unknown; contradictory same-row meters are unsafe to post.
+  if (Object.hasOwn(facts, 'creation') && claudeCreationTokens(facts) === null) { return true }
   // Check even a partial observation's known sum without inventing its missing categories.
   return checkedTokenSum([
     ...['input', 'read'].filter(key => Object.hasOwn(facts, key)).map(key => facts[key]),
@@ -320,9 +323,10 @@ export function parseClaude(content) {
     try { row = JSON.parse(line) } catch { incomplete = true; continue }
     if (!row || typeof row !== 'object') { continue }
     const message = row.type === 'assistant' ? row.message : null
-    const usage = message?.usage
+    if (!message || typeof message !== 'object' || !Object.hasOwn(message, 'usage')) { continue }
+    const usage = message.usage
     const occurredAtUtc = isoTimestamp(row.timestamp)
-    if (!usage || typeof usage !== 'object' || Array.isArray(usage) || !occurredAtUtc) { continue }
+    if (!usage || typeof usage !== 'object' || Array.isArray(usage) || !occurredAtUtc) { incomplete = true; continue }
 
     const promptFacts = claudePromptFacts(usage)
     const promptObservation = claudePromptObservation(usage)
@@ -1348,7 +1352,7 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     [...incompleteSources].map(tool => localSourceId(tool, machine)).concat([...snapshots.incompleteSourceIds]),
   )
   for (const sourceId of incompleteSourceIds) {
-    console.error(`Scan incomplete for ${sourceId} (possible causes: unreadable file, malformed JSONL, or invalid or overflowed counters); its corrections and tombstones are withheld this run.`)
+    console.error(`Scan incomplete for ${sourceId} (possible causes: unreadable file, malformed JSONL, malformed assistant usage or timestamp, or invalid or overflowed counters); its corrections and tombstones are withheld this run.`)
   }
   // An incomplete scan may be missing the very records that were unplaced; a clean report then
   // would clear a real warning, so the previous report stands until a complete scan.
