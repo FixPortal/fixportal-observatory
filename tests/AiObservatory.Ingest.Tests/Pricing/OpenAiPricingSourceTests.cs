@@ -21,7 +21,12 @@ public sealed class OpenAiPricingSourceTests
     [InlineData("flex", "long", 2.50, 0.25, 11.25)]
     [InlineData("fast", "short", 5.00, 0.50, 30.00)]
     public void CurrentDocumentPreservesSupportedRatesWithoutInventingWriteDuration(
-        string processing, string context, double input, double cached, double output)
+        string processing,
+        string context,
+        double input,
+        double cached,
+        double output
+    )
     {
         var catalog = OpenAiPricingSource.Parse(CurrentFixture(), RetrievedAt);
         var entry = catalog.Resolve("gpt-5.4", processing, context, "global", ObservedOn)!;
@@ -77,14 +82,26 @@ public sealed class OpenAiPricingSourceTests
         var document = CurrentFixture();
         document = mutation switch
         {
-            "duplicate-standard" => document.Replace("### Fast pricing data", "### Standard pricing data", StringComparison.Ordinal),
+            "duplicate-standard" => document.Replace(
+                "### Fast pricing data",
+                "### Standard pricing data",
+                StringComparison.Ordinal
+            ),
             "duplicate-model" => document.Replace("| gpt-5.6-sol |", "| gpt-5.4 |", StringComparison.Ordinal),
-            "unknown-column" => document.Replace("Short context 30m write", "Short context mystery write", StringComparison.Ordinal),
+            "unknown-column" => document.Replace(
+                "Short context 30m write",
+                "Short context mystery write",
+                StringComparison.Ordinal
+            ),
             "invalid-duration-price" => document.Replace("$91.00", "$-91.00", StringComparison.Ordinal),
             "missing-flagship" => document.Replace("Flagship models", "Models", StringComparison.Ordinal),
             "ambiguous-boundary" => document + "\nCyber models\n",
             "misplaced-flex" => document.Replace("#### Flex", "#### Batch", StringComparison.Ordinal),
-            "conflicting-unit" => document.Replace("Prices per 1M tokens.", "Prices per 1K tokens.", StringComparison.Ordinal),
+            "conflicting-unit" => document.Replace(
+                "Prices per 1M tokens.",
+                "Prices per 1K tokens.",
+                StringComparison.Ordinal
+            ),
             _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
         };
         var act = () => OpenAiPricingSource.Parse(document, RetrievedAt);
@@ -94,30 +111,32 @@ public sealed class OpenAiPricingSourceTests
     private static string CurrentFixture()
     {
         // Invented prices and minimal structure; no vendor page is copied into the fixture.
-        var lines = Fixture().Split('\n').Select(line =>
-        {
-            if (!line.TrimStart().StartsWith('|'))
+        var lines = Fixture()
+            .Split('\n')
+            .Select(line =>
             {
-                return line;
-            }
-            var cells = line.Trim().Split('|')[1..^1].Select(cell => cell.Trim()).ToArray();
-            if (cells[0] == "Model")
-            {
-                return "| Model | Short context input | Short context output | Short context cached input | Short context 30m write | Short context 12h write | Long context input | Long context output | Long context cached input | Long context 30m write | Long context 12h write |";
-            }
-            if (cells[0].StartsWith("---", StringComparison.Ordinal))
-            {
-                return "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |";
-            }
-            var shortWrite = cells[1] == "-" ? "-" : "$91.00";
-            var shortLongWrite = cells[1] == "-" ? "-" : "$92.00";
-            var longWrite = cells[5] == "-" ? "-" : "$93.00";
-            var longLongWrite = cells[5] == "-" ? "-" : "$94.00";
-            return $"| {cells[0]} | {cells[1]} | {cells[4]} | {cells[2]} | {shortWrite} | {shortLongWrite} | {cells[5]} | {cells[8]} | {cells[6]} | {longWrite} | {longLongWrite} |";
-        });
+                if (!line.TrimStart().StartsWith('|'))
+                {
+                    return line;
+                }
+                var cells = line.Trim().Split('|')[1..^1].Select(cell => cell.Trim()).ToArray();
+                if (cells[0] == "Model")
+                {
+                    return "| Model | Short context input | Short context output | Short context cached input | Short context 30m write | Short context 12h write | Long context input | Long context output | Long context cached input | Long context 30m write | Long context 12h write |";
+                }
+                if (cells[0].StartsWith("---", StringComparison.Ordinal))
+                {
+                    return "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |";
+                }
+                var shortWrite = cells[1] == "-" ? "-" : "$91.00";
+                var shortLongWrite = cells[1] == "-" ? "-" : "$92.00";
+                var longWrite = cells[5] == "-" ? "-" : "$93.00";
+                var longLongWrite = cells[5] == "-" ? "-" : "$94.00";
+                return $"| {cells[0]} | {cells[1]} | {cells[4]} | {cells[2]} | {shortWrite} | {shortLongWrite} | {cells[5]} | {cells[8]} | {cells[6]} | {longWrite} | {longLongWrite} |";
+            });
         return string.Join('\n', lines)
-            .Replace("### Batch pricing data", "### Batch pricing data\n\n#### Batch", StringComparison.Ordinal)
-            .Replace("### Flex pricing data", "#### Flex", StringComparison.Ordinal)
+                .Replace("### Batch pricing data", "### Batch pricing data\n\n#### Batch", StringComparison.Ordinal)
+                .Replace("### Flex pricing data", "#### Flex", StringComparison.Ordinal)
             + "\nCyber models\n\nPrices per 1M tokens.\n\n### Standard pricing data\n\n| Model | Other product rate |\n| --- | --- |\n| gpt-5.4 | $999.00 |\n";
     }
 

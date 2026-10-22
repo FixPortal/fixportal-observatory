@@ -197,8 +197,10 @@ public sealed class AuditPricingProjectorTests
             }
         );
         frozen.Rates.Should().OnlyContain(r => r.CatalogEntryKey == applied.RateKey);
-        frozen.Rates.Count(r => r.Meter == AiObservatory.Audit.Contracts.PriceMeter.CacheWrite5m)
-            .Should().Be(hasGenericWriteRate ? 1 : 0);
+        frozen
+            .Rates.Count(r => r.Meter == AiObservatory.Audit.Contracts.PriceMeter.CacheWrite5m)
+            .Should()
+            .Be(hasGenericWriteRate ? 1 : 0);
     }
 
     [Theory]
