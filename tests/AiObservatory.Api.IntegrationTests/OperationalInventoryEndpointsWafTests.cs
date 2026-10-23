@@ -43,6 +43,7 @@ public sealed class OperationalInventoryEndpointsWafTests
             await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)
         );
         json.RootElement.GetProperty("schemaVersion").GetInt32().Should().Be(1);
+        json.RootElement.GetProperty("observedAtUtc").ValueKind.Should().Be(JsonValueKind.String);
         json.RootElement.GetProperty("policy").GetProperty("storedRowPresent").GetBoolean().Should().BeFalse();
         json.RootElement.GetProperty("runs").GetProperty("total").GetInt64().Should().Be(0);
         var options = factory.Services.GetRequiredService<IOptions<AuditOptions>>().Value;
