@@ -20,8 +20,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using NodaTime.Testing;
 using NodaTime;
+using NodaTime.Testing;
 using Npgsql;
 
 namespace AiObservatory.Api.IntegrationTests;
@@ -35,7 +35,12 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
     [InlineData("post", 503, "ambiguous", 1)]
     [InlineData("transient", 200, "admitted", 1)]
     [InlineData("terminal", 200, "admitted", 1)]
-    public async Task PostCommitAndPostAdmissionExceptionsRemainAmbiguousWithReachableControl(string mode, int status, string outcome, int verifiers)
+    public async Task PostCommitAndPostAdmissionExceptionsRemainAmbiguousWithReachableControl(
+        string mode,
+        int status,
+        string outcome,
+        int verifiers
+    )
     {
         await using var factory = Factory(true);
         var id = Guid.NewGuid();
@@ -60,10 +65,16 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
         using var json = JsonDocument.Parse(bytes);
         json.RootElement.GetProperty("status").GetString().Should().Be(outcome);
         witness.Faults.Should().Be(mode is "none" or "transient" or "terminal" ? 0 : 1);
-        var row = (await services.ServiceProvider.GetRequiredService<AuditStore>().GetRunAsync(id, TestContext.Current.CancellationToken))!;
+        var row = (
+            await services
+                .ServiceProvider.GetRequiredService<AuditStore>()
+                .GetRunAsync(id, TestContext.Current.CancellationToken)
+        )!;
         if (mode is "before" or "after")
         {
-            entry.AdvisoryLocks.Should().Be(1, "only admission may enter; a later read-only metadata transaction is not core entry");
+            entry
+                .AdvisoryLocks.Should()
+                .Be(1, "only admission may enter; a later read-only metadata transaction is not core entry");
             witness.Transactions.Should().Be(1);
             row.Attempts.Should().Be(mode == "before" ? 0 : 1);
             json.RootElement.GetProperty("current").ValueKind.Should().Be(JsonValueKind.Null);
@@ -76,7 +87,15 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
         {
             entry.AdvisoryLocks.Should().BeGreaterThan(1, "the positive control must reach the actual leased core");
             row.Attempts.Should().Be(1);
-            row.State.Should().Be(mode switch { "none" => "completed", "terminal" => "failed", _ => "executing" });
+            row.State.Should()
+                .Be(
+                    mode switch
+                    {
+                        "none" => "completed",
+                        "terminal" => "failed",
+                        _ => "executing",
+                    }
+                );
             if (mode == "none")
             {
                 json.RootElement.GetProperty("current").GetProperty("state").GetString().Should().Be("completed");
@@ -92,7 +111,12 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
         }
     }
 
-    private static void RequireAdmissionWitness(string mode, PostCommitWitness witness, PostCoreEntry entry, int verifiers)
+    private static void RequireAdmissionWitness(
+        string mode,
+        PostCommitWitness witness,
+        PostCoreEntry entry,
+        int verifiers
+    )
     {
         witness.VerifierCalls.Should().Be(verifiers);
         if (mode is "before" or "after")
@@ -132,18 +156,33 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
             time.Due.Should().Be(TimeSpan.FromMinutes(4));
             switch (cause)
             {
-                case "budget": time.Fire(); break;
-                case "caller": await probe.Abort.CancelAsync(); break;
-                case "host": host.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication(); break;
-                case "cancel-run": await services.ServiceProvider.GetRequiredService<AuditStore>().CancelRunAsync(id, TestContext.Current.CancellationToken); break;
-                case "lease-expiry": ((FakeClock)factory.ClockOverride!).Advance(Duration.FromMinutes(6)); break;
-                default: throw new InvalidOperationException("unknown_test_case");
+                case "budget":
+                    time.Fire();
+                    break;
+                case "caller":
+                    await probe.Abort.CancelAsync();
+                    break;
+                case "host":
+                    host.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
+                    break;
+                case "cancel-run":
+                    await services
+                        .ServiceProvider.GetRequiredService<AuditStore>()
+                        .CancelRunAsync(id, TestContext.Current.CancellationToken);
+                    break;
+                case "lease-expiry":
+                    ((FakeClock)factory.ClockOverride!).Advance(Duration.FromMinutes(6));
+                    break;
+                default:
+                    throw new InvalidOperationException("unknown_test_case");
             }
             if (cause is "budget" or "caller" or "host")
             {
                 await witness.Cancelled.Task.WaitAsync(TestContext.Current.CancellationToken);
             }
-            probe.Finished.Task.IsCompleted.Should().BeFalse("the server still owns the held verifier and renewal finally");
+            probe
+                .Finished.Task.IsCompleted.Should()
+                .BeFalse("the server still owns the held verifier and renewal finally");
         }
         finally
         {
@@ -156,13 +195,23 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
             if (cause == "host" && completed.StatusCode == HttpStatusCode.InternalServerError)
             {
                 // WAF can dispose its provider before ContentHttpResult resolves its logger.
-                body.Should().Contain("ObjectDisposedException").And.Contain("IServiceProvider").And.Contain("ContentHttpResult.ExecuteAsync");
+                body.Should()
+                    .Contain("ObjectDisposedException")
+                    .And.Contain("IServiceProvider")
+                    .And.Contain("ContentHttpResult.ExecuteAsync");
             }
             else
             {
-                completed.StatusCode.Should().Be(cause is "cancel-run" or "lease-expiry" ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable);
+                completed
+                    .StatusCode.Should()
+                    .Be(
+                        cause is "cancel-run" or "lease-expiry" ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable
+                    );
                 using var json = JsonDocument.Parse(body);
-                json.RootElement.GetProperty("status").GetString().Should().Be(cause is "cancel-run" or "lease-expiry" ? "admitted" : "ambiguous");
+                json.RootElement.GetProperty("status")
+                    .GetString()
+                    .Should()
+                    .Be(cause is "cancel-run" or "lease-expiry" ? "admitted" : "ambiguous");
             }
         }
         catch (OperationCanceledException) when (cause is "caller" or "host")
@@ -170,7 +219,11 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
             // A disconnected client need not receive bytes, but the server work is awaited.
         }
         await probe.Finished.Task.WaitAsync(TestContext.Current.CancellationToken);
-        var run = (await services.ServiceProvider.GetRequiredService<AuditStore>().GetRunAsync(id, TestContext.Current.CancellationToken))!;
+        var run = (
+            await services
+                .ServiceProvider.GetRequiredService<AuditStore>()
+                .GetRunAsync(id, TestContext.Current.CancellationToken)
+        )!;
         run.Attempts.Should().Be(1);
         run.Result.Should().BeNull("neither canceled work nor a lost owner may publish after release");
         run.State.Should().Be(cause == "cancel-run" ? "cancelled" : "executing");
@@ -214,16 +267,30 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
         var store = services.ServiceProvider.GetRequiredService<AuditStore>();
         if (busy)
         {
-            await store.CreateRunAsync(scope, [], "post-live-unrelated", false, Now, TestContext.Current.CancellationToken);
-            (await store.TryLeaseRunAsync(Guid.NewGuid(), Now, TestContext.Current.CancellationToken)).Should().NotBeNull();
+            await store.CreateRunAsync(
+                scope,
+                [],
+                "post-live-unrelated",
+                false,
+                Now,
+                TestContext.Current.CancellationToken
+            );
+            (await store.TryLeaseRunAsync(Guid.NewGuid(), Now, TestContext.Current.CancellationToken))
+                .Should()
+                .NotBeNull();
         }
         await SeedSelected(factory, id, scope, collecting: !busy);
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AuditRetentionSettings\"", TestContext.Current.CancellationToken);
+        await db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"AuditRetentionSettings\"",
+            TestContext.Current.CancellationToken
+        );
         var before = await Facts(db, TestContext.Current.CancellationToken);
         using var client = factory.CreateAdminClient();
         using var response = await SendPost(client, factory, scope);
         response.StatusCode.Should().Be(busy ? HttpStatusCode.Conflict : HttpStatusCode.Accepted);
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        using var json = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)
+        );
         json.RootElement.GetProperty("status").GetString().Should().Be(busy ? "busy" : "pending");
         (await Facts(db, TestContext.Current.CancellationToken)).Should().Be(before);
     }
@@ -244,7 +311,10 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
         {
             using var client = host.CreateClient();
             witness.Arm();
-            var responses = await Task.WhenAll(SendPost(client, factory, scope, "one"), SendPost(client, factory, scope, "two"));
+            var responses = await Task.WhenAll(
+                SendPost(client, factory, scope, "one"),
+                SendPost(client, factory, scope, "two")
+            );
             try
             {
                 responses.Count(r => r.StatusCode == HttpStatusCode.OK).Should().Be(1);
@@ -273,56 +343,98 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
     {
         Bind(factory, id, scope);
         factory.ConfigurationOverrides[AuditSelectedInvocationOptions.SectionName + ":Enabled"] = "true";
-        factory.ConfigurationOverrides[AuditSelectedInvocationOptions.SectionName + ":ExpiresAtUtc"] = "2030-01-02T03:04:00Z";
+        factory.ConfigurationOverrides[AuditSelectedInvocationOptions.SectionName + ":ExpiresAtUtc"] =
+            "2030-01-02T03:04:00Z";
     }
 
-    private static async Task SeedSelected(AiObservatoryApiFactory factory, Guid id, AuditScope scope, bool collecting = false)
+    private static async Task SeedSelected(
+        AiObservatoryApiFactory factory,
+        Guid id,
+        AuditScope scope,
+        bool collecting = false
+    )
     {
         await using var services = factory.Services.CreateAsyncScope();
         var db = services.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
         var ct = TestContext.Current.CancellationToken;
         if (collecting)
         {
-            await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO \"AuditMachines\" (\"Id\",\"CreatedAt\") VALUES ({scope.Sources[0].MachineId},{Now})", ct);
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"INSERT INTO \"AuditMachines\" (\"Id\",\"CreatedAt\") VALUES ({scope.Sources[0].MachineId},{Now})",
+                ct
+            );
         }
-        var created = await services.ServiceProvider.GetRequiredService<AuditStore>().CreateRunAsync(scope, [], "selected-post-waf", collecting, Now, ct);
-        await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"AuditRuns\" SET \"Id\"={id} WHERE \"Id\"={created}", ct);
+        var created = await services
+            .ServiceProvider.GetRequiredService<AuditStore>()
+            .CreateRunAsync(scope, [], "selected-post-waf", collecting, Now, ct);
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE \"AuditRuns\" SET \"Id\"={id} WHERE \"Id\"={created}",
+            ct
+        );
     }
 
-    private static WebApplicationFactory<Program> Instrument(AiObservatoryApiFactory owner, AiObservatoryDbContext ownedDb, PostCommitWitness witness,
-        PostCoreEntry entry, PostRequestProbe? probe = null, TimeProvider? time = null) =>
-        owner.WithWebHostBuilder(builder => builder.ConfigureLogging(logging => logging.ClearProviders()).ConfigureTestServices(services =>
-        {
-            var fixture = new NpgsqlConnectionStringBuilder(Environment.GetEnvironmentVariable("TEST_DB_CONNECTION"));
-            var owned = new NpgsqlConnectionStringBuilder(ownedDb.Database.GetConnectionString());
-            owned.Host.Should().Be(fixture.Host);
-            owned.Port.Should().Be(fixture.Port);
-            owned.Database.Should().StartWith("aiobs_test_api_");
-            Guid.TryParseExact(owned.Database["aiobs_test_api_".Length..], "N", out _).Should().BeTrue();
-            fixture.Database = owned.Database;
-            var options = new DbContextOptionsBuilder<AiObservatoryDbContext>()
-                .UseNpgsql(fixture.ConnectionString, o => o.UseNodaTime()).AddInterceptors(witness, entry).Options;
-            services.RemoveAll<DbContextOptions<AiObservatoryDbContext>>();
-            services.AddSingleton(options);
-            services.RemoveAll<IAuditRunVerifier>();
-            services.AddSingleton<IAuditRunVerifier>(witness);
-            services.AddSingleton<IStartupFilter>(new PostIdentityStartup(probe));
-            if (time != null)
-            {
-                services.RemoveAll<TimeProvider>();
-                services.AddSingleton(time);
-            }
-        }));
+    private static WebApplicationFactory<Program> Instrument(
+        AiObservatoryApiFactory owner,
+        AiObservatoryDbContext ownedDb,
+        PostCommitWitness witness,
+        PostCoreEntry entry,
+        PostRequestProbe? probe = null,
+        TimeProvider? time = null
+    ) =>
+        owner.WithWebHostBuilder(builder =>
+            builder
+                .ConfigureLogging(logging => logging.ClearProviders())
+                .ConfigureTestServices(services =>
+                {
+                    var fixture = new NpgsqlConnectionStringBuilder(
+                        Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
+                    );
+                    var owned = new NpgsqlConnectionStringBuilder(ownedDb.Database.GetConnectionString());
+                    owned.Host.Should().Be(fixture.Host);
+                    owned.Port.Should().Be(fixture.Port);
+                    owned.Database.Should().StartWith("aiobs_test_api_");
+                    Guid.TryParseExact(owned.Database["aiobs_test_api_".Length..], "N", out _).Should().BeTrue();
+                    fixture.Database = owned.Database;
+                    var options = new DbContextOptionsBuilder<AiObservatoryDbContext>()
+                        .UseNpgsql(fixture.ConnectionString, o => o.UseNodaTime())
+                        .AddInterceptors(witness, entry)
+                        .Options;
+                    services.RemoveAll<DbContextOptions<AiObservatoryDbContext>>();
+                    services.AddSingleton(options);
+                    services.RemoveAll<IAuditRunVerifier>();
+                    services.AddSingleton<IAuditRunVerifier>(witness);
+                    services.AddSingleton<IStartupFilter>(new PostIdentityStartup(probe));
+                    if (time != null)
+                    {
+                        services.RemoveAll<TimeProvider>();
+                        services.AddSingleton(time);
+                    }
+                })
+        );
 
-    private static async Task<HttpResponseMessage> SendPost(HttpClient client, AiObservatoryApiFactory factory, AuditScope scope, string? subject = null)
+    private static async Task<HttpResponseMessage> SendPost(
+        HttpClient client,
+        AiObservatoryApiFactory factory,
+        AuditScope scope,
+        string? subject = null
+    )
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, AuditSelectedInvocationEndpoints.InvocationRoute)
         {
-            Content = new StringContent("{\"schemaVersion\":1,\"expectedRevision\":"
-                + factory.ConfigurationOverrides[AuditSelectedInvocationOptions.SectionName + ":ExpectedRevision"] + ",\"fullScopeDigest\":\""
-                + AuditCanonicalJson.ContentHash(AuditCanonicalJson.Serialize(scope)) + "\"}", Encoding.UTF8, "application/json"),
+            Content = new StringContent(
+                "{\"schemaVersion\":1,\"expectedRevision\":"
+                    + factory.ConfigurationOverrides[AuditSelectedInvocationOptions.SectionName + ":ExpectedRevision"]
+                    + ",\"fullScopeDigest\":\""
+                    + AuditCanonicalJson.ContentHash(AuditCanonicalJson.Serialize(scope))
+                    + "\"}",
+                Encoding.UTF8,
+                "application/json"
+            ),
         };
-        request.Headers.Add("Idempotency-Key", factory.ConfigurationOverrides[AuditSelectedInvocationOptions.SectionName + ":InvocationId"]);
+        request.Headers.Add(
+            "Idempotency-Key",
+            factory.ConfigurationOverrides[AuditSelectedInvocationOptions.SectionName + ":InvocationId"]
+        );
         if (subject != null)
         {
             request.Headers.Add("X-Post-Test-Subject", subject);
@@ -332,35 +444,44 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
 
     private sealed class PostIdentityStartup(PostRequestProbe? probe) : IStartupFilter
     {
-        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
-        {
-            app.Use(async (context, invokeNext) =>
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
+            app =>
             {
-                if (probe != null)
-                {
-                    context.RequestAborted = probe.Abort.Token;
-                }
-                if (context.Request.Headers.TryGetValue("X-Post-Test-Subject", out var subject))
-                {
-                    context.User = new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, subject.ToString())], "synthetic-entra"));
-                }
-                try
-                {
-                    await invokeNext(context);
-                }
-                finally
-                {
-                    probe?.Finished.TrySetResult();
-                }
-            });
-            next(app);
-        };
+                app.Use(
+                    async (context, invokeNext) =>
+                    {
+                        if (probe != null)
+                        {
+                            context.RequestAborted = probe.Abort.Token;
+                        }
+                        if (context.Request.Headers.TryGetValue("X-Post-Test-Subject", out var subject))
+                        {
+                            context.User = new(
+                                new ClaimsIdentity(
+                                    [new Claim(ClaimTypes.NameIdentifier, subject.ToString())],
+                                    "synthetic-entra"
+                                )
+                            );
+                        }
+                        try
+                        {
+                            await invokeNext(context);
+                        }
+                        finally
+                        {
+                            probe?.Finished.TrySetResult();
+                        }
+                    }
+                );
+                next(app);
+            };
     }
 
     private sealed class PostRequestProbe : IDisposable
     {
         public CancellationTokenSource Abort { get; } = new();
         public TaskCompletionSource Finished { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public void Dispose() => Abort.Dispose();
     }
 
@@ -369,6 +490,7 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
         private readonly List<BudgetTimer> _timers = [];
         public int Created => _timers.Count;
         public TimeSpan Due { get; private set; }
+
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
         {
             Due = dueTime;
@@ -376,6 +498,7 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
             _timers.Add(timer);
             return timer;
         }
+
         public void Fire()
         {
             foreach (var timer in _timers.ToArray())
@@ -383,13 +506,28 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
                 timer.Fire();
             }
         }
+
         private sealed class BudgetTimer(TimerCallback callback, object? state) : ITimer
         {
             private bool _disposed;
+
             public bool Change(TimeSpan dueTime, TimeSpan period) => true;
-            public void Fire() { if (!_disposed) { callback(state); } }
+
+            public void Fire()
+            {
+                if (!_disposed)
+                {
+                    callback(state);
+                }
+            }
+
             public void Dispose() => _disposed = true;
-            public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
         }
     }
 
@@ -397,8 +535,13 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
     {
         private int _locks;
         public int AdvisoryLocks => Volatile.Read(ref _locks);
-        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command, CommandEventData eventData,
-            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default
+        )
         {
             if (witness.Armed && command.CommandText.Contains("pg_advisory_xact_lock", StringComparison.Ordinal))
             {
@@ -421,10 +564,21 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public void Arm() { _remaining = mode == "none" ? 0 : 1; Armed = true; }
+
+        public void Arm()
+        {
+            _remaining = mode == "none" ? 0 : 1;
+            Armed = true;
+        }
+
         private bool TakeFault() => Armed && Interlocked.Exchange(ref _remaining, 0) == 1;
-        public override ValueTask<DbTransaction> TransactionStartedAsync(DbConnection connection, TransactionEndEventData eventData,
-            DbTransaction result, CancellationToken cancellationToken = default)
+
+        public override ValueTask<DbTransaction> TransactionStartedAsync(
+            DbConnection connection,
+            TransactionEndEventData eventData,
+            DbTransaction result,
+            CancellationToken cancellationToken = default
+        )
         {
             if (Armed)
             {
@@ -432,8 +586,13 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
             }
             return ValueTask.FromResult(result);
         }
-        public override ValueTask<InterceptionResult> TransactionCommittingAsync(DbTransaction transaction, TransactionEventData eventData,
-            InterceptionResult result, CancellationToken cancellationToken = default)
+
+        public override ValueTask<InterceptionResult> TransactionCommittingAsync(
+            DbTransaction transaction,
+            TransactionEventData eventData,
+            InterceptionResult result,
+            CancellationToken cancellationToken = default
+        )
         {
             if ((mode == "before" || mode == "post" && VerifierCalls > 0) && TakeFault())
             {
@@ -442,7 +601,12 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
             }
             return ValueTask.FromResult(result);
         }
-        public override Task TransactionCommittedAsync(DbTransaction transaction, TransactionEndEventData eventData, CancellationToken cancellationToken = default)
+
+        public override Task TransactionCommittedAsync(
+            DbTransaction transaction,
+            TransactionEndEventData eventData,
+            CancellationToken cancellationToken = default
+        )
         {
             if (mode == "after" && TakeFault())
             {
@@ -451,6 +615,7 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
             }
             return Task.CompletedTask;
         }
+
         public async Task<AuditResult> VerifyAsync(AuditInput input, CancellationToken ct)
         {
             Interlocked.Increment(ref _verifiers);

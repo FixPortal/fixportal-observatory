@@ -59,8 +59,11 @@ public sealed class AuditSelectedInvocationOptionsTests
     {
         var config = Values();
         config[AuditSelectedInvocationOptions.SectionName + ":" + field] = value;
-        var options = new ConfigurationBuilder().AddInMemoryCollection(config).Build()
-            .GetSection(AuditSelectedInvocationOptions.SectionName).Get<AuditSelectedInvocationOptions>()!;
+        var options = new ConfigurationBuilder()
+            .AddInMemoryCollection(config)
+            .Build()
+            .GetSection(AuditSelectedInvocationOptions.SectionName)
+            .Get<AuditSelectedInvocationOptions>()!;
         var validation = new AuditSelectedInvocationOptionsValidator().Validate(null, options);
         validation.Failed.Should().BeTrue();
         validation.Failures.Should().ContainSingle().Which.Should().Be(field);
@@ -78,8 +81,11 @@ public sealed class AuditSelectedInvocationOptionsTests
     {
         var values = Values();
         values.Remove(AuditSelectedInvocationOptions.SectionName + ":" + field);
-        var options = new ConfigurationBuilder().AddInMemoryCollection(values).Build()
-            .GetSection(AuditSelectedInvocationOptions.SectionName).Get<AuditSelectedInvocationOptions>()!;
+        var options = new ConfigurationBuilder()
+            .AddInMemoryCollection(values)
+            .Build()
+            .GetSection(AuditSelectedInvocationOptions.SectionName)
+            .Get<AuditSelectedInvocationOptions>()!;
         new AuditSelectedInvocationOptionsValidator().Validate(null, options).Failed.Should().BeTrue();
     }
 
@@ -100,14 +106,15 @@ public sealed class AuditSelectedInvocationOptionsTests
         options.ToAuthority()!.ExpiresAt.Should().Be(Instant.FromUtc(2020, 1, 2, 3, 4));
     }
 
-    private static AuditSelectedInvocationOptions Valid() => new()
-    {
-        RunId = "4a0a3de8-572d-40b6-8d42-4b074b3ce080",
-        InvocationId = "bf326bf0-0762-4372-b9f6-5b8de7e223d9",
-        FullScopeDigest = new string('a', 64),
-        ExpectedRevision = long.MaxValue.ToString(System.Globalization.CultureInfo.InvariantCulture),
-        ExpiresAtUtc = "2020-01-02T03:04:00Z",
-    };
+    private static AuditSelectedInvocationOptions Valid() =>
+        new()
+        {
+            RunId = "4a0a3de8-572d-40b6-8d42-4b074b3ce080",
+            InvocationId = "bf326bf0-0762-4372-b9f6-5b8de7e223d9",
+            FullScopeDigest = new string('a', 64),
+            ExpectedRevision = long.MaxValue.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ExpiresAtUtc = "2020-01-02T03:04:00Z",
+        };
 
     private static Dictionary<string, string?> Values()
     {
@@ -122,6 +129,7 @@ public sealed class AuditSelectedInvocationOptionsTests
             [prefix + "ExpiresAtUtc"] = options.ExpiresAtUtc,
         };
     }
+
     [Fact]
     public void PartialBindingIsRejectedEvenWhenDisabled()
     {

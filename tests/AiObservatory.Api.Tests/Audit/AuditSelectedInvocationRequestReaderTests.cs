@@ -14,7 +14,9 @@ public sealed class AuditSelectedInvocationRequestReaderTests
     {
         var escaped = string.Concat(Enumerable.Repeat("\\u0061", 64));
         await Refused(Request(Body().Replace(Authority.Binding.ScopeDigest, escaped, StringComparison.Ordinal)));
-        await Refused(Request(Body().Replace(Authority.Binding.ScopeDigest, new string('A', 64), StringComparison.Ordinal)));
+        await Refused(
+            Request(Body().Replace(Authority.Binding.ScopeDigest, new string('A', 64), StringComparison.Ordinal))
+        );
     }
 
     [Theory]
@@ -24,18 +26,34 @@ public sealed class AuditSelectedInvocationRequestReaderTests
     {
         var request = Request(Body());
         request.ContentType = type;
-        (await AuditSelectedInvocationRequestReader.ReadAsync(request, Authority, TestContext.Current.CancellationToken))
-            .ExpectedRevision.Should().Be(Authority.Binding.ExpectedRevision);
+        (
+            await AuditSelectedInvocationRequestReader.ReadAsync(
+                request,
+                Authority,
+                TestContext.Current.CancellationToken
+            )
+        )
+            .ExpectedRevision.Should()
+            .Be(Authority.Binding.ExpectedRevision);
     }
+
     [Theory]
     [InlineData(0)]
     [InlineData(9223372036854775807)]
     public async Task ExactCanonicalTupleAcceptsWhitespaceAndPropertyOrder(long revision)
     {
         var authority = Authority with { Binding = Authority.Binding with { ExpectedRevision = revision } };
-        var body = " { \"fullScopeDigest\":\"" + authority.Binding.ScopeDigest + "\", \"expectedRevision\":"
-            + revision.ToString(System.Globalization.CultureInfo.InvariantCulture) + ", \"schemaVersion\":1 } ";
-        var result = await AuditSelectedInvocationRequestReader.ReadAsync(Request(body), authority, TestContext.Current.CancellationToken);
+        var body =
+            " { \"fullScopeDigest\":\""
+            + authority.Binding.ScopeDigest
+            + "\", \"expectedRevision\":"
+            + revision.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + ", \"schemaVersion\":1 } ";
+        var result = await AuditSelectedInvocationRequestReader.ReadAsync(
+            Request(body),
+            authority,
+            TestContext.Current.CancellationToken
+        );
         result.Should().Be(new SelectedInvocationRequest(1, revision, authority.Binding.ScopeDigest));
     }
 
@@ -50,7 +68,11 @@ public sealed class AuditSelectedInvocationRequestReaderTests
     [InlineData("true")]
     public async Task NoncanonicalRevisionLexemesAreRejected(string lexeme)
     {
-        await Refused(Request(Body().Replace("\"expectedRevision\":7", "\"expectedRevision\":" + lexeme, StringComparison.Ordinal)));
+        await Refused(
+            Request(
+                Body().Replace("\"expectedRevision\":7", "\"expectedRevision\":" + lexeme, StringComparison.Ordinal)
+            )
+        );
     }
 
     [Theory]
@@ -59,8 +81,12 @@ public sealed class AuditSelectedInvocationRequestReaderTests
     [InlineData("null")]
     [InlineData("{\"schemaVersion\":1,\"schemaVersion\":1,\"expectedRevision\":7,\"fullScopeDigest\":\"DIGEST\"}")]
     [InlineData("{\"schemaVersion\":1,\"expectedRevision\":7,\"expectedRevision\":8,\"fullScopeDigest\":\"DIGEST\"}")]
-    [InlineData("{\"schemaVersion\":1,\"expectedRevision\":7,\"fullScopeDigest\":\"DIGEST\",\"fullScopeDigest\":\"DIGEST\"}")]
-    [InlineData("{\"schemaVersion\":1,\"expectedRevision\":7,\"fullScopeDigest\":\"DIGEST\",\"PRIVATE_UNKNOWN_SENTINEL\":1}")]
+    [InlineData(
+        "{\"schemaVersion\":1,\"expectedRevision\":7,\"fullScopeDigest\":\"DIGEST\",\"fullScopeDigest\":\"DIGEST\"}"
+    )]
+    [InlineData(
+        "{\"schemaVersion\":1,\"expectedRevision\":7,\"fullScopeDigest\":\"DIGEST\",\"PRIVATE_UNKNOWN_SENTINEL\":1}"
+    )]
     [InlineData("{\"SchemaVersion\":1,\"expectedRevision\":7,\"fullScopeDigest\":\"DIGEST\"}")]
     [InlineData("{\"schemaVersion\":1.0,\"expectedRevision\":7,\"fullScopeDigest\":\"DIGEST\"}")]
     [InlineData("{\"schemaVersion\":2,\"expectedRevision\":7,\"fullScopeDigest\":\"DIGEST\"}")]
@@ -77,7 +103,11 @@ public sealed class AuditSelectedInvocationRequestReaderTests
     [Fact]
     public async Task DifferentCanonicalDigestConflicts()
     {
-        await Refused(Request(Body().Replace(new string('a', 64), new string('b', 64), StringComparison.Ordinal)), 409, "selected_binding_conflict");
+        await Refused(
+            Request(Body().Replace(new string('a', 64), new string('b', 64), StringComparison.Ordinal)),
+            409,
+            "selected_binding_conflict"
+        );
     }
 
     [Theory]
@@ -190,7 +220,11 @@ public sealed class AuditSelectedInvocationRequestReaderTests
     private sealed class CountingBody(byte[] bytes) : MemoryStream(bytes)
     {
         public int BytesRead { get; private set; }
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
         {
             var count = await base.ReadAsync(buffer[..Math.Min(buffer.Length, 13)], cancellationToken);
             BytesRead += count;
@@ -202,32 +236,45 @@ public sealed class AuditSelectedInvocationRequestReaderTests
     {
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource<int> _body = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
         {
             Started.TrySetResult();
             return await _body.Task.WaitAsync(cancellationToken);
         }
     }
 
-    private static string Body() => "{\"schemaVersion\":1,\"expectedRevision\":7,\"fullScopeDigest\":\"" + Authority.Binding.ScopeDigest + "\"}";
+    private static string Body() =>
+        "{\"schemaVersion\":1,\"expectedRevision\":7,\"fullScopeDigest\":\"" + Authority.Binding.ScopeDigest + "\"}";
 
     private static async Task Refused(HttpRequest request, int status = 400, string code = "selected_request_invalid")
     {
-        var action = () => AuditSelectedInvocationRequestReader.ReadAsync(request, Authority, TestContext.Current.CancellationToken);
+        var action = () =>
+            AuditSelectedInvocationRequestReader.ReadAsync(request, Authority, TestContext.Current.CancellationToken);
         var failure = (await action.Should().ThrowAsync<AuditStoreException>()).Which;
         failure.StatusCode.Should().Be(status);
         failure.Code.Should().Be(code);
         failure.Message.Should().Be(code);
     }
-    private static readonly SelectedInvocationAuthority Authority = new(false,
+
+    private static readonly SelectedInvocationAuthority Authority = new(
+        false,
         new(Guid.Parse("4a0a3de8-572d-40b6-8d42-4b074b3ce080"), new string('a', 64), 7),
-        Guid.Parse("bf326bf0-0762-4372-b9f6-5b8de7e223d9"), Instant.FromUtc(2026, 10, 23, 12, 0));
+        Guid.Parse("bf326bf0-0762-4372-b9f6-5b8de7e223d9"),
+        Instant.FromUtc(2026, 10, 23, 12, 0)
+    );
 
     [Fact]
     public async Task BodyCannotRefreshConfiguredRevision()
     {
-        var request = Request("{\"schemaVersion\":1,\"expectedRevision\":8,\"fullScopeDigest\":\"" + Authority.Binding.ScopeDigest + "\"}");
-        var action = () => AuditSelectedInvocationRequestReader.ReadAsync(request, Authority, TestContext.Current.CancellationToken);
+        var request = Request(
+            "{\"schemaVersion\":1,\"expectedRevision\":8,\"fullScopeDigest\":\"" + Authority.Binding.ScopeDigest + "\"}"
+        );
+        var action = () =>
+            AuditSelectedInvocationRequestReader.ReadAsync(request, Authority, TestContext.Current.CancellationToken);
         (await action.Should().ThrowAsync<AuditStoreException>()).Which.Code.Should().Be("selected_binding_conflict");
     }
 

@@ -1,5 +1,5 @@
-using System.Net;
 using System.Collections.Concurrent;
+using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
 using AiObservatory.Api.Audit;
@@ -12,9 +12,9 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NodaTime;
 using NodaTime.Testing;
 
@@ -30,18 +30,32 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         using var client = app.GetTestClient();
         using var response = await Send(client, Admin);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
-        json.RootElement.GetProperty("evidenceExpiresAt").GetDateTimeOffset().Should().Be(new DateTimeOffset(2026, 10, 23, 12, 0, 0, TimeSpan.Zero));
+        using var json = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)
+        );
+        json.RootElement.GetProperty("evidenceExpiresAt")
+            .GetDateTimeOffset()
+            .Should()
+            .Be(new DateTimeOffset(2026, 10, 23, 12, 0, 0, TimeSpan.Zero));
         json.RootElement.GetProperty("summaryExpiresAt").GetDateTimeOffset().Offset.Should().Be(TimeSpan.Zero);
-        json.RootElement.GetProperty("requests")[0].GetProperty("deadline").GetDateTimeOffset().Offset.Should().Be(TimeSpan.Zero);
+        json.RootElement.GetProperty("requests")[0]
+            .GetProperty("deadline")
+            .GetDateTimeOffset()
+            .Offset.Should()
+            .Be(TimeSpan.Zero);
     }
+
     [Theory]
     [InlineData("missing", 404, "selected_binding_not_found")]
     [InlineData("conflict", 409, "selected_binding_conflict")]
     [InlineData("exception", 503, "selected_metadata_unavailable")]
     [InlineData("oversized", 503, "selected_metadata_unavailable")]
     [InlineData("wrong-run", 503, "selected_metadata_unavailable")]
-    public async Task ReadFailuresAndOversizedSerializationUseOnlyFixedPrivateErrors(string outcome, int status, string code)
+    public async Task ReadFailuresAndOversizedSerializationUseOnlyFixedPrivateErrors(
+        string outcome,
+        int status,
+        string code
+    )
     {
         var reader = new CountingReader { Outcome = outcome };
         await using var app = await Host(reader);
@@ -49,7 +63,9 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         using var response = await Send(client, Admin);
         ((int)response.StatusCode).Should().Be(status);
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
-        (await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).Should().Be("{\"code\":\"" + code + "\"}");
+        (await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
+            .Should()
+            .Be("{\"code\":\"" + code + "\"}");
     }
 
     [Fact]
@@ -62,7 +78,9 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         using var client = app.GetTestClient();
         using var success = await Send(client, credential);
         success.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await success.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).Should().Contain("PRIVATE_RESPONSE_SENTINEL");
+        (await success.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
+            .Should()
+            .Contain("PRIVATE_RESPONSE_SENTINEL");
         reader.Outcome = "exception";
         using var failed = await Send(client, credential, "person");
         failed.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -73,51 +91,122 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         bodyRequest.Headers.Add("X-Observatory-Key", credential);
         using var bodyResponse = await client.SendAsync(bodyRequest, TestContext.Current.CancellationToken);
         bodyResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        using var queryRequest = new HttpRequestMessage(HttpMethod.Get, AuditSelectedInvocationEndpoints.BindingRoute + "?PRIVATE_QUERY_SENTINEL=value");
+        using var queryRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            AuditSelectedInvocationEndpoints.BindingRoute + "?PRIVATE_QUERY_SENTINEL=value"
+        );
         queryRequest.Headers.Add("X-Observatory-Key", credential);
         using var queryResponse = await client.SendAsync(queryRequest, TestContext.Current.CancellationToken);
         queryResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await queryResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).Should().NotContain("PRIVATE_QUERY_SENTINEL");
+        (await queryResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
+            .Should()
+            .NotContain("PRIVATE_QUERY_SENTINEL");
         var logs = string.Join(Environment.NewLine, capture.Entries.Select(e => e.Message + e.Exception));
-        logs.Should().NotContain(credential).And.NotContain("PRIVATE_BODY_SENTINEL").And.NotContain("PRIVATE_EXCEPTION_SENTINEL")
+        logs.Should()
+            .NotContain(credential)
+            .And.NotContain("PRIVATE_BODY_SENTINEL")
+            .And.NotContain("PRIVATE_EXCEPTION_SENTINEL")
             .And.NotContain("PRIVATE_RESPONSE_SENTINEL");
-        capture.Entries.Should().Contain(e => e.Category == "AuditSelectedInvocation" && e.Message == "Selected invocation metadata unavailable");
-        var query = capture.Entries.Where(e => e.Message.Contains("PRIVATE_QUERY_SENTINEL", StringComparison.Ordinal)).ToArray();
+        capture
+            .Entries.Should()
+            .Contain(e =>
+                e.Category == "AuditSelectedInvocation" && e.Message == "Selected invocation metadata unavailable"
+            );
+        var query = capture
+            .Entries.Where(e => e.Message.Contains("PRIVATE_QUERY_SENTINEL", StringComparison.Ordinal))
+            .ToArray();
         query.Should().NotBeEmpty("this synthetic host deliberately enables Information hosting diagnostics");
-        query.Should().OnlyContain(e => e.Category == "Microsoft.AspNetCore.Hosting.Diagnostics" && e.Level == LogLevel.Information);
-        query.Should().Contain(e => e.EventId.Id == 1 && e.Template ==
-            "Request starting {Protocol} {Method} {Scheme}://{Host}{PathBase}{Path}{QueryString} - {ContentType} {ContentLength}");
+        query
+            .Should()
+            .OnlyContain(e =>
+                e.Category == "Microsoft.AspNetCore.Hosting.Diagnostics" && e.Level == LogLevel.Information
+            );
+        query
+            .Should()
+            .Contain(e =>
+                e.EventId.Id == 1
+                && e.Template
+                    == "Request starting {Protocol} {Method} {Scheme}://{Host}{PathBase}{Path}{QueryString} - {ContentType} {ContentLength}"
+            );
         foreach (var entry in query)
         {
-            TestContext.Current.TestOutputHelper?.WriteLine($"{entry.Category} {entry.EventId} {entry.Level} {entry.Template}");
+            TestContext.Current.TestOutputHelper?.WriteLine(
+                $"{entry.Category} {entry.EventId} {entry.Level} {entry.Template}"
+            );
         }
     }
 
-    private sealed record LogEntry(string Category, EventId EventId, LogLevel Level, string Message, string? Exception, string? Template);
+    private sealed record LogEntry(
+        string Category,
+        EventId EventId,
+        LogLevel Level,
+        string Message,
+        string? Exception,
+        string? Template
+    );
+
     private sealed class LogCapture : ILoggerProvider
     {
         public ConcurrentQueue<LogEntry> Entries { get; } = new();
+
         public ILogger CreateLogger(string categoryName) => new CaptureLogger(categoryName, Entries);
+
         public void Dispose() { }
+
         private sealed class CaptureLogger(string category, ConcurrentQueue<LogEntry> entries) : ILogger
         {
-            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
             public bool IsEnabled(LogLevel logLevel) => true;
-            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-                entries.Enqueue(new(category, eventId, logLevel, formatter(state, exception), exception?.ToString(),
-                    (state as IEnumerable<KeyValuePair<string, object?>>)?.FirstOrDefault(p => p.Key == "{OriginalFormat}").Value?.ToString()));
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            ) =>
+                entries.Enqueue(
+                    new(
+                        category,
+                        eventId,
+                        logLevel,
+                        formatter(state, exception),
+                        exception?.ToString(),
+                        (state as IEnumerable<KeyValuePair<string, object?>>)
+                            ?.FirstOrDefault(p => p.Key == "{OriginalFormat}")
+                            .Value?.ToString()
+                    )
+                );
         }
     }
+
     [Theory]
     [InlineData(false, true, false, false, 404)]
     [InlineData(true, false, false, false, 404)]
     [InlineData(true, true, false, false, 200)]
     [InlineData(true, true, true, false, 200)]
     [InlineData(true, true, false, true, 200)]
-    public async Task RetainedBindingGetIsIndependentOfActionAndWorker(bool audit, bool bound, bool action, bool worker, int status)
+    public async Task RetainedBindingGetIsIndependentOfActionAndWorker(
+        bool audit,
+        bool bound,
+        bool action,
+        bool worker,
+        int status
+    )
     {
         var reader = new CountingReader();
-        await using var app = await Host(reader, new() { AuditEnabled = audit, Bound = bound, ActionEnabled = action, WorkerEnabled = worker });
+        await using var app = await Host(
+            reader,
+            new()
+            {
+                AuditEnabled = audit,
+                Bound = bound,
+                ActionEnabled = action,
+                WorkerEnabled = worker,
+            }
+        );
         using var client = app.GetTestClient();
         using var response = await Send(client, Admin);
         ((int)response.StatusCode).Should().Be(status);
@@ -135,10 +224,25 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
     [InlineData("Production", null, "person", Admin, Viewer, 200)]
     [InlineData("Development", "wrong", null, Admin, Viewer, 401)]
     [InlineData("Development", Admin + "," + Viewer, "person", Admin, Viewer, 401)]
-    public async Task StrictAuthorityMatrix(string environment, string? key, string? subject, string? admin, string? viewer, int status)
+    public async Task StrictAuthorityMatrix(
+        string environment,
+        string? key,
+        string? subject,
+        string? admin,
+        string? viewer,
+        int status
+    )
     {
         var reader = new CountingReader();
-        await using var app = await Host(reader, new() { Environment = environment, AdminKey = admin, ViewerKey = viewer });
+        await using var app = await Host(
+            reader,
+            new()
+            {
+                Environment = environment,
+                AdminKey = admin,
+                ViewerKey = viewer,
+            }
+        );
         using var client = app.GetTestClient();
         using var response = await Send(client, key, subject);
         ((int)response.StatusCode).Should().Be(status);
@@ -193,10 +297,15 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         var reader = new CountingReader();
         await using var app = await Host(reader);
         using var client = app.GetTestClient();
-        using var request = new HttpRequestMessage(new HttpMethod(method), AuditSelectedInvocationEndpoints.Prefix + suffix);
+        using var request = new HttpRequestMessage(
+            new HttpMethod(method),
+            AuditSelectedInvocationEndpoints.Prefix + suffix
+        );
         using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
         ((int)response.StatusCode).Should().Be(status);
-        response.Headers.CacheControl.Should().NotBeNull("unmapped and method-rejected responses still belong to the private prefix");
+        response
+            .Headers.CacheControl.Should()
+            .NotBeNull("unmapped and method-rejected responses still belong to the private prefix");
         response.Headers.CacheControl.NoStore.Should().BeTrue();
         reader.Resolutions.Should().Be(0);
     }
@@ -214,7 +323,9 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         using var client = app.GetTestClient();
         using var response = await Send(client, Admin);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        using var json = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)
+        );
         json.RootElement.GetProperty("runId").GetGuid().Should().Be(RunId);
         json.RootElement.GetProperty("invocationId").GetGuid().Should().Be(InvocationId);
         json.RootElement.GetProperty("expectedRevision").GetInt64().Should().Be(7);
@@ -250,6 +361,7 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         second.StatusCode.Should().Be(HttpStatusCode.OK);
         reader.Resolutions.Should().Be(2);
     }
+
     private const string Admin = "selected-admin";
     private const string Viewer = "selected-viewer";
     private static readonly Guid RunId = Guid.Parse("4a0a3de8-572d-40b6-8d42-4b074b3ce080");
@@ -296,20 +408,30 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
     private static async Task<WebApplication> Host(CountingReader reader, HostSettings? settings = null)
     {
         settings ??= new();
-        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = settings.Environment });
+        var builder = WebApplication.CreateBuilder(
+            new WebApplicationOptions { EnvironmentName = settings.Environment }
+        );
         builder.WebHost.UseTestServer();
         if (settings.Logs != null)
         {
             builder.Logging.AddProvider(settings.Logs);
             builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Information);
         }
-        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        builder.Configuration.AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["OBSERVATORY_API_KEY"] = settings.AdminKey,
+                ["OBSERVATORY_READONLY_API_KEY"] = settings.ViewerKey,
+                ["RateLimiting:ApiPermitLimit"] = settings.IpLimit.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture
+                ),
+            }
+        );
+        builder.Services.Configure<AuditOptions>(o =>
         {
-            ["OBSERVATORY_API_KEY"] = settings.AdminKey,
-            ["OBSERVATORY_READONLY_API_KEY"] = settings.ViewerKey,
-            ["RateLimiting:ApiPermitLimit"] = settings.IpLimit.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            o.Enabled = settings.AuditEnabled;
+            o.WorkerEnabled = settings.WorkerEnabled;
         });
-        builder.Services.Configure<AuditOptions>(o => { o.Enabled = settings.AuditEnabled; o.WorkerEnabled = settings.WorkerEnabled; });
         builder.Services.Configure<AuditSelectedInvocationOptions>(o =>
         {
             if (!settings.Bound)
@@ -317,54 +439,78 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
                 return;
             }
             o.Enabled = settings.ActionEnabled;
-            o.RunId = RunId.ToString("D"); o.InvocationId = InvocationId.ToString("D");
-            o.FullScopeDigest = Digest; o.ExpectedRevision = "7"; o.ExpiresAtUtc = settings.ExpiresAtUtc;
+            o.RunId = RunId.ToString("D");
+            o.InvocationId = InvocationId.ToString("D");
+            o.FullScopeDigest = Digest;
+            o.ExpectedRevision = "7";
+            o.ExpiresAtUtc = settings.ExpiresAtUtc;
         });
-        builder.Services.AddScoped<IAuditSelectedInvocationMetadataReader>(_ => { reader.Resolutions++; return reader; });
+        builder.Services.AddScoped<IAuditSelectedInvocationMetadataReader>(_ =>
+        {
+            reader.Resolutions++;
+            return reader;
+        });
         builder.Services.AddSingleton<IClock>(new FakeClock(Instant.FromUtc(2026, 10, 23, 12, 0)));
         builder.Services.AddSingleton<AuditSelectedInvocationLimiter>();
         builder.Services.AddSingleton(settings.Time ?? TimeProvider.System);
         if (settings.Invocation != null)
         {
-            builder.Services.AddScoped<IAuditSelectedInvocationService>(_ => { settings.Invocation.Resolutions++; return settings.Invocation; });
+            builder.Services.AddScoped<IAuditSelectedInvocationService>(_ =>
+            {
+                settings.Invocation.Resolutions++;
+                return settings.Invocation;
+            });
         }
         builder.Services.AddRateLimiter(o => Program.ConfigureApiRateLimiter(o, builder.Configuration));
         var app = builder.Build();
         app.UseAuditSelectedInvocationPrivacy();
         app.UseRateLimiter();
-        app.Use(async (context, next) =>
-        {
-            if (settings.RequestAbort is { } abort)
+        app.Use(
+            async (context, next) =>
             {
-                context.RequestAborted = abort;
+                if (settings.RequestAbort is { } abort)
+                {
+                    context.RequestAborted = abort;
+                }
+                if (settings.Body != null)
+                {
+                    context.Request.Body = settings.Body;
+                }
+                switch (settings.Input)
+                {
+                    case "query":
+                        context.Request.QueryString = new("?PRIVATE_QUERY_SENTINEL=value");
+                        break;
+                    case "body":
+                        context.Request.ContentLength = 1;
+                        break;
+                    case "transfer":
+                        context.Request.Headers.TransferEncoding = "chunked";
+                        break;
+                    case "headerless-body":
+                        context.Features.Set<IHttpRequestBodyDetectionFeature>(new BodyFeature());
+                        break;
+                    default:
+                        break;
+                }
+                if (context.Request.Headers.TryGetValue("X-Test-Authenticated-Subject", out var subject))
+                {
+                    context.User = new(
+                        new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, subject.ToString())], "test")
+                    );
+                }
+                try
+                {
+                    await next(context);
+                }
+                finally
+                {
+                    settings.OwnershipSignal?.TrySetResult("handler_finished");
+                    settings.HandlerOwnership?.TrySetResult(settings.Invocation?.Release.Task.IsCompleted != false);
+                    settings.HandlerFinished?.TrySetResult();
+                }
             }
-            if (settings.Body != null)
-            {
-                context.Request.Body = settings.Body;
-            }
-            switch (settings.Input)
-            {
-                case "query": context.Request.QueryString = new("?PRIVATE_QUERY_SENTINEL=value"); break;
-                case "body": context.Request.ContentLength = 1; break;
-                case "transfer": context.Request.Headers.TransferEncoding = "chunked"; break;
-                case "headerless-body": context.Features.Set<IHttpRequestBodyDetectionFeature>(new BodyFeature()); break;
-                default: break;
-            }
-            if (context.Request.Headers.TryGetValue("X-Test-Authenticated-Subject", out var subject))
-            {
-                context.User = new(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, subject.ToString())], "test"));
-            }
-            try
-            {
-                await next(context);
-            }
-            finally
-            {
-                settings.OwnershipSignal?.TrySetResult("handler_finished");
-                settings.HandlerOwnership?.TrySetResult(settings.Invocation?.Release.Task.IsCompleted != false);
-                settings.HandlerFinished?.TrySetResult();
-            }
-        });
+        );
         app.MapAuditSelectedInvocationEndpoints();
         await app.StartAsync(TestContext.Current.CancellationToken);
         return app;
@@ -394,6 +540,7 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         public int Resolutions { get; set; }
         public int Calls { get; private set; }
         public string? Outcome { get; set; }
+
         public Task<SelectedRunMetadata?> ReadAsync(SelectedRunBinding binding, CancellationToken ct)
         {
             Calls++;
@@ -414,16 +561,46 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
             {
                 var now = Instant.FromUtc(2026, 10, 23, 12, 0);
                 var requestId = Guid.NewGuid();
-                return Task.FromResult<SelectedRunMetadata?>(new(RunId, Digest, 9, "collecting", "collecting", 0,
-                    [requestId], [new(requestId, Guid.NewGuid(), new string('b', 64), now, "pending")], [], now, now, null, false));
+                return Task.FromResult<SelectedRunMetadata?>(
+                    new(
+                        RunId,
+                        Digest,
+                        9,
+                        "collecting",
+                        "collecting",
+                        0,
+                        [requestId],
+                        [new(requestId, Guid.NewGuid(), new string('b', 64), now, "pending")],
+                        [],
+                        now,
+                        now,
+                        null,
+                        false
+                    )
+                );
             }
-            return Task.FromResult<SelectedRunMetadata?>(new(Outcome == "wrong-run" ? Guid.NewGuid() : RunId, Digest, 9, "completed", "completed", 1,
-                [], [], [], null, null, Outcome switch
-                {
-                    "oversized" => new string('x', 32 * 1024),
-                    "response" => "PRIVATE_RESPONSE_SENTINEL",
-                    _ => null,
-                }, false));
+            return Task.FromResult<SelectedRunMetadata?>(
+                new(
+                    Outcome == "wrong-run" ? Guid.NewGuid() : RunId,
+                    Digest,
+                    9,
+                    "completed",
+                    "completed",
+                    1,
+                    [],
+                    [],
+                    [],
+                    null,
+                    null,
+                    Outcome switch
+                    {
+                        "oversized" => new string('x', 32 * 1024),
+                        "response" => "PRIVATE_RESPONSE_SENTINEL",
+                        _ => null,
+                    },
+                    false
+                )
+            );
         }
     }
 }

@@ -8,8 +8,8 @@ using AiObservatory.Data.Audit;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NodaTime;
 using NodaTime.Testing;
 using AuditOptions = AiObservatory.Api.Audit.AuditOptions;
@@ -34,7 +34,10 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
         }
         await factory.InitializeAsync();
         using var client = factory.CreateAdminClient();
-        using var response = await client.GetAsync(AuditSelectedInvocationEndpoints.BindingRoute, TestContext.Current.CancellationToken);
+        using var response = await client.GetAsync(
+            AuditSelectedInvocationEndpoints.BindingRoute,
+            TestContext.Current.CancellationToken
+        );
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
     }
@@ -52,7 +55,10 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
         var store = services.ServiceProvider.GetRequiredService<AuditStore>();
         var db = services.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
         var created = await store.CreateRunAsync(scope, [], "selected-metadata-waf", false, Now, ct);
-        await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"AuditRuns\" SET \"Id\"={configuredId},\"Revision\"=9,\"Attempts\"=1,\"State\"='failed',\"Stage\"='failed' WHERE \"Id\"={created}", ct);
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE \"AuditRuns\" SET \"Id\"={configuredId},\"Revision\"=9,\"Attempts\"=1,\"State\"='failed',\"Stage\"='failed' WHERE \"Id\"={created}",
+            ct
+        );
         await store.CreateRunAsync(scope, [], "selected-unrelated-waf", false, Now, ct);
         var before = await Facts(db, ct);
         var configured = factory.Services.GetRequiredService<IOptions<AuditSelectedInvocationOptions>>().Value;
@@ -69,21 +75,43 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
         var root = json.RootElement;
         root.GetProperty("schemaVersion").GetInt32().Should().Be(1);
         root.GetProperty("runId").GetGuid().Should().Be(configuredId);
-        root.GetProperty("fullScopeDigest").GetString().Should().Be(AuditCanonicalJson.ContentHash(AuditCanonicalJson.Serialize(scope)));
+        root.GetProperty("fullScopeDigest")
+            .GetString()
+            .Should()
+            .Be(AuditCanonicalJson.ContentHash(AuditCanonicalJson.Serialize(scope)));
         root.GetProperty("expectedRevision").GetInt64().Should().Be(0);
         root.GetProperty("currentRevision").GetInt64().Should().Be(9);
         root.GetProperty("state").GetString().Should().Be("failed");
         root.GetProperty("resultAvailable").GetBoolean().Should().BeFalse();
         root.GetProperty("captureRequestIds").GetArrayLength().Should().Be(0);
         root.GetProperty("captureIds").GetArrayLength().Should().Be(0);
-        root.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
-            "schemaVersion", "runId", "invocationId", "fullScopeDigest", "expectedRevision", "currentRevision",
-            "state", "stage", "attempts", "captureRequestIds", "requests", "captureIds", "evidenceExpiresAt",
-            "summaryExpiresAt", "diagnosticCode", "resultAvailable");
+        root.EnumerateObject()
+            .Select(p => p.Name)
+            .Should()
+            .BeEquivalentTo(
+                "schemaVersion",
+                "runId",
+                "invocationId",
+                "fullScopeDigest",
+                "expectedRevision",
+                "currentRevision",
+                "state",
+                "stage",
+                "attempts",
+                "captureRequestIds",
+                "requests",
+                "captureIds",
+                "evidenceExpiresAt",
+                "summaryExpiresAt",
+                "diagnosticCode",
+                "resultAvailable"
+            );
         (await Facts(db, ct)).Should().Be(before);
         var options = factory.Services.GetRequiredService<IOptions<AuditOptions>>().Value;
         options.WorkerEnabled.Should().BeFalse();
-        factory.Services.GetRequiredService<IOptions<LoggerFilterOptions>>().Value.Rules.Should()
+        factory
+            .Services.GetRequiredService<IOptions<LoggerFilterOptions>>()
+            .Value.Rules.Should()
             .Contain(rule => rule.CategoryName == "Microsoft.AspNetCore" && rule.LogLevel == LogLevel.Warning);
         using var viewer = factory.CreateReadOnlyClient();
         using var denied = await viewer.GetAsync(AuditSelectedInvocationEndpoints.BindingRoute, ct);
@@ -128,28 +156,42 @@ public sealed partial class AuditSelectedInvocationEndpointsWafTests
         return factory;
     }
 
-    private static AuditScope Scope() => new(new(2026, 10, 1), new(2026, 10, 7),
-        [new(Guid.NewGuid(), "claude-local")], [CheckCode.SourceAccounting], [], true);
+    private static AuditScope Scope() =>
+        new(
+            new(2026, 10, 1),
+            new(2026, 10, 7),
+            [new(Guid.NewGuid(), "claude-local")],
+            [CheckCode.SourceAccounting],
+            [],
+            true
+        );
 
     private static void Bind(AiObservatoryApiFactory factory, Guid runId, AuditScope scope)
     {
         var prefix = AuditSelectedInvocationOptions.SectionName + ":";
         factory.ConfigurationOverrides[prefix + "RunId"] = runId.ToString("D");
         factory.ConfigurationOverrides[prefix + "InvocationId"] = Guid.NewGuid().ToString("D");
-        factory.ConfigurationOverrides[prefix + "FullScopeDigest"] = AuditCanonicalJson.ContentHash(AuditCanonicalJson.Serialize(scope));
+        factory.ConfigurationOverrides[prefix + "FullScopeDigest"] = AuditCanonicalJson.ContentHash(
+            AuditCanonicalJson.Serialize(scope)
+        );
         factory.ConfigurationOverrides[prefix + "ExpectedRevision"] = "0";
         factory.ConfigurationOverrides[prefix + "ExpiresAtUtc"] = "2020-01-02T03:04:00Z";
         factory.ConfigurationOverrides[prefix + "Enabled"] = "false";
     }
 
-    private static Task<string> Facts(AiObservatoryDbContext db, CancellationToken ct) => db.Database.SqlQueryRaw<string>("""
-        SELECT jsonb_build_object(
-          'runs',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r."Id") FROM "AuditRuns" r),
-          'requests',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r."Id") FROM "AuditCaptureRequests" r),
-          'links',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r."RunId",r."CaptureId") FROM "AuditRunCaptures" r),
-          'captures',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r."Id") FROM "AuditEvidenceCaptures" r),
-          'snapshots',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r."Id") FROM "AuditServerSnapshots" r),
-          'policy',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r."InstanceId") FROM "AuditRetentionSettings" r)
-        )::text AS "Value"
-        """).SingleAsync(ct);
+    private static Task<string> Facts(AiObservatoryDbContext db, CancellationToken ct) =>
+        db
+            .Database.SqlQueryRaw<string>(
+                """
+                SELECT jsonb_build_object(
+                  'runs',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r."Id") FROM "AuditRuns" r),
+                  'requests',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r."Id") FROM "AuditCaptureRequests" r),
+                  'links',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r."RunId",r."CaptureId") FROM "AuditRunCaptures" r),
+                  'captures',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r."Id") FROM "AuditEvidenceCaptures" r),
+                  'snapshots',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r."Id") FROM "AuditServerSnapshots" r),
+                  'policy',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r."InstanceId") FROM "AuditRetentionSettings" r)
+                )::text AS "Value"
+                """
+            )
+            .SingleAsync(ct);
 }
