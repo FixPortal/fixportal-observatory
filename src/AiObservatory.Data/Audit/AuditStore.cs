@@ -20,6 +20,9 @@ public sealed partial class AuditStore
     private readonly string _instanceId;
     private readonly AuditCaptureValidator _captureValidator;
 
+    /// <summary>The immutable instance bound to this store and its lease operations.</summary>
+    public string InstanceId => _instanceId;
+
     public AuditStore(
         AiObservatoryDbContext db,
         IClock clock,
