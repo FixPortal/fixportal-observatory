@@ -59,8 +59,19 @@ builder.Services.AddSingleton<IValidateOptions<AuditOptions>, AuditOptionsValida
 builder.Services.AddScoped(services => new AiObservatory.Data.Audit.AuditStore(
     services.GetRequiredService<AiObservatoryDbContext>(),
     services.GetRequiredService<IClock>(),
-    services.GetRequiredService<IOptions<AuditOptions>>().Value
+    services.GetRequiredService<IOptions<AuditOptions>>().Value,
+    instanceId: Program.AuditInstanceId
 ));
+builder.Services.Configure<OperationalInventoryOptions>(
+    builder.Configuration.GetSection(OperationalInventoryOptions.SectionName)
+);
+builder.Services.AddScoped<AiObservatory.Data.Audit.IAuditOperationalInventoryReader>(
+    services => new AiObservatory.Data.Audit.AuditOperationalInventoryReader(
+        services.GetRequiredService<AiObservatoryDbContext>(),
+        Program.AuditInstanceId
+    )
+);
+builder.Services.AddSingleton<OperationalInventoryLimiter>();
 builder.Services.AddScoped<AuditCredentialService>();
 builder.Services.AddScoped<AuditCaptureService>();
 builder.Services.AddScoped<AuditRunService>();
@@ -193,6 +204,7 @@ using (var scope = app.Services.CreateScope())
 
 app.UseForwardedHeaders();
 app.UseCors();
+app.UseOperationalInventoryPrivacy();
 app.UseRateLimiter();
 
 if (demoMode)
@@ -208,6 +220,7 @@ if (authEnabled)
 }
 
 var api = app.MapGroup("/api").AddEndpointFilter<ApiKeyEndpointFilter>().RequireRateLimiting("api");
+app.MapOperationalInventoryEndpoint();
 if (app.Services.GetRequiredService<IOptions<AuditOptions>>().Value.Enabled)
 {
     app.MapAuditMachineEndpoints();
@@ -286,6 +299,8 @@ await app.RunAsync();
 // ReSharper disable once ClassNeverInstantiated.Global
 public partial class Program
 {
+    internal const string AuditInstanceId = "default";
+
     protected Program() { }
 
     internal static void ValidateApiKeys(WebApplicationBuilder builder)
