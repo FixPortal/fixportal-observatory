@@ -53,7 +53,12 @@ public static partial class AuditSelectedInvocationEndpoints
         catch (AuditStoreException ex)
         {
             // This catch is structurally before execution-service resolution/core entry.
-            return PostResult(http, authority, new("conflict", ex.Code), ex.StatusCode);
+            return PostResult(
+                http,
+                authority,
+                new(ex.StatusCode == 409 ? "conflict" : "rejected", ex.Code),
+                ex.StatusCode
+            );
         }
         catch (Exception)
         {

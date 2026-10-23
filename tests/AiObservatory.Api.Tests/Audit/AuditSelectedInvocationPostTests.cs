@@ -223,18 +223,42 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         invocation.Calls.Should().Be(0);
     }
 
-    [Fact]
-    public async Task PostStaleBodyFailsBeforeExecutionResolution()
+    [Theory]
+    [InlineData("malformed", 400, "selected_request_invalid", "rejected")]
+    [InlineData("oversized", 413, "selected_body_limit", "rejected")]
+    [InlineData("content-type", 415, "selected_content_type", "rejected")]
+    [InlineData("stale", 409, "selected_binding_conflict", "conflict")]
+    public async Task PostParserFailuresPreserveHttpCodeAndStatusWithoutExecution(
+        string input,
+        int httpStatus,
+        string code,
+        string status
+    )
     {
         var invocation = new CountingInvocation();
         await using var app = await Host(new(), Active(invocation));
         using var client = app.GetTestClient();
+        var body = input switch
+        {
+            "malformed" => "{}",
+            "oversized" => new string(' ', 1025),
+            "stale" => "{\"schemaVersion\":1,\"expectedRevision\":8,\"fullScopeDigest\":\"" + Digest + "\"}",
+            _ => null,
+        };
         using var response = await Post(
             client,
-            "{\"schemaVersion\":1,\"expectedRevision\":8,\"fullScopeDigest\":\"" + Digest + "\"}"
+            body,
+            contentType: input == "content-type" ? "text/plain" : "application/json"
         );
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        ((int)response.StatusCode).Should().Be(httpStatus);
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        using var json = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)
+        );
+        json.RootElement.GetProperty("status").GetString().Should().Be(status);
+        json.RootElement.GetProperty("code").GetString().Should().Be(code);
         invocation.Resolutions.Should().Be(0);
+        invocation.Calls.Should().Be(0);
     }
 
     [Fact]
@@ -307,14 +331,19 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
             Invocation = invocation,
         };
 
-    private static async Task<HttpResponseMessage> Post(HttpClient client, string? body = null, string? subject = null)
+    private static async Task<HttpResponseMessage> Post(
+        HttpClient client,
+        string? body = null,
+        string? subject = null,
+        string contentType = "application/json"
+    )
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, AuditSelectedInvocationEndpoints.Prefix + "/invoke")
         {
             Content = new StringContent(
                 body ?? "{\"schemaVersion\":1,\"expectedRevision\":7,\"fullScopeDigest\":\"" + Digest + "\"}",
                 Encoding.UTF8,
-                "application/json"
+                contentType
             ),
         };
         request.Headers.Add("X-Observatory-Key", Admin);
