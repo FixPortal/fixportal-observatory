@@ -49,6 +49,19 @@ Each capture is bounded to 512 MiB and one million usage records, with 8 MiB chu
 
 ## Retention, exports and private backups
 
+Administrators can separately enable `OperationalInventory__Enabled` (default `false`) for
+`GET /api/admin/operational-inventory`, including while audit is disabled. This endpoint
+returns only fixed aggregate metadata in a read-only database transaction: stored retention
+policy presence, run and export reservations for the application instance, and database-wide
+capture, credential and machine counts. It accepts no query parameters or request body.
+Viewer credentials are rejected, including alongside an Entra session; anonymous access is
+never enabled by Development mode. Responses use `no-store`, a 32 KiB limit, the existing IP
+limit and a separate one-request-per-minute authenticated identity or admin-key-class limit.
+Database errors and timeouts report unavailable, rather than zero counts. Counts describe
+one transaction snapshot; they do not establish complete history, active credential use,
+evidence deletion or future inactivity. Enabling or deploying this endpoint is a separate
+operator action. Normal application startup still runs migrations and legacy settings seeding.
+
 Evidence defaults to **90 days** from sealing; report summaries default to **365 days** from completion. `GET /api/audits/retention` and `PATCH /api/audits/retention` require admin authority. A patch such as `{ "evidenceDays": 90, "summaryDays": 365 }` affects future deadlines only. An explicit `null` deliberately selects indefinite retention. Existing deadlines remain fixed.
 
 Deleting or expiring evidence removes replay availability; a retained summary can remain readable. Capture deletion requires `GET /api/audits/captures/{id}/deletion-impact`, followed by `DELETE /api/audits/captures/{id}` with the returned impact digest in `If-Match`; stale impact returns 412. Deletion and cancellation invalidate racing publication/export work. Expired or deleted bundles return 410.
