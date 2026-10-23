@@ -203,7 +203,7 @@ public sealed partial class AuditStore
                 Require(bytes <= _options.MaxSnapshotBytes, "bundle_size_limit", 413);
                 Require(
                     await active.SumAsync(l => l.ReservedBytes, ct) + bytes
-                        <= (long)MaxConcurrentExports * _options.MaxSnapshotBytes,
+                        <= MaxConcurrentExports * _options.MaxSnapshotBytes,
                     "export_capacity",
                     429
                 );

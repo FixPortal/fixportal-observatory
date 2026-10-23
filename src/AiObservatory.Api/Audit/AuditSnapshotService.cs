@@ -115,7 +115,7 @@ public sealed class AuditSnapshotService
             var row in _db
                 .BillingObservations.AsNoTracking()
                 .Where(b => b.OccurredOn >= from && b.OccurredOn <= to)
-                .Select(b => new AiObservatory.Data.Entities.BillingObservation
+                .Select(b => new Data.Entities.BillingObservation
                 {
                     Id = b.Id,
                     SourceId = b.SourceId,
@@ -147,7 +147,7 @@ public sealed class AuditSnapshotService
         await foreach (
             var row in _db
                 .PricingSnapshots.AsNoTracking()
-                .Select(p => new AiObservatory.Data.Entities.PricingSnapshot
+                .Select(p => new Data.Entities.PricingSnapshot
                 {
                     Id = p.Id,
                     Provider = p.Provider,
@@ -198,7 +198,7 @@ public sealed class AuditSnapshotService
             var row in _db
                 .SpendEntries.AsNoTracking()
                 .Where(s => s.OccurredOn >= from && s.OccurredOn <= to)
-                .Select(s => new AiObservatory.Data.Entities.SpendEntry
+                .Select(s => new Data.Entities.SpendEntry
                 {
                     Id = s.Id,
                     SourceId = s.SourceId,

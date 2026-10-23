@@ -304,13 +304,13 @@ public sealed class AnthropicAdminClientTests : IDisposable
         long input,
         long output,
         long cacheRead,
-        long cache5m,
-        long cache1h
+        long cache5M,
+        long cache1H
     )
     {
         var sut = CreateSut(
             new QueueHandler(_ =>
-                Ok(MessagesPage(From, "claude-sonnet-5", false, null, input, output, cacheRead, cache5m, cache1h))
+                Ok(MessagesPage(From, "claude-sonnet-5", false, null, input, output, cacheRead, cache5M, cache1H))
             )
         );
 
@@ -489,8 +489,8 @@ public sealed class AnthropicAdminClientTests : IDisposable
         long input = 1500,
         long output = 500,
         long cacheRead = 200,
-        long cache5m = 500,
-        long cache1h = 1000
+        long cache5M = 500,
+        long cache1H = 1000
     ) =>
         JsonSerializer.Serialize(
             new
@@ -514,8 +514,8 @@ public sealed class AnthropicAdminClientTests : IDisposable
                                 cache_read_input_tokens = cacheRead,
                                 cache_creation = new
                                 {
-                                    ephemeral_5m_input_tokens = cache5m,
-                                    ephemeral_1h_input_tokens = cache1h,
+                                    ephemeral_5m_input_tokens = cache5M,
+                                    ephemeral_1h_input_tokens = cache1H,
                                 },
                                 context_window = "0-200k",
                                 server_tool_use = new { web_search_requests = 1 },

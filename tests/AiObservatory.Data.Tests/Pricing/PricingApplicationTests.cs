@@ -269,8 +269,8 @@ public sealed class PricingApplicationTests : IAsyncLifetime
     )]
     public async Task AnthropicNotionalCacheWrites_PersistInputsAndApplicationForIndependentDurationChoice(
         string raw,
-        long? observed5m,
-        long? observed1h,
+        long? observed5M,
+        long? observed1H,
         bool exact
     )
     {
@@ -331,7 +331,7 @@ public sealed class PricingApplicationTests : IAsyncLifetime
         PricingEvidence
             .ObserveCacheDurations(stored)
             .Should()
-            .Be(new AiObservatory.Audit.Contracts.CacheDurationObservation(observed5m, observed1h));
+            .Be(new AiObservatory.Audit.Contracts.CacheDurationObservation(observed5M, observed1H));
         stored.CacheWrite1hTokens.Should().Be(100);
         application.RevisionDigest.Should().Be(PricingEvidence.RevisionDigest(stored));
         application.SnapshotId.Should().Be(snapshot.Id);

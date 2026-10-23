@@ -22,7 +22,7 @@ public class SpendFeedStatusWafTests(AiObservatoryApiFactory factory) : IClassFi
             skipped = skipped.Select(s => new { expenseId = s.Id, reason = s.Reason }).ToArray(),
         };
 
-    private async Task<List<AiObservatory.Data.Entities.SourceSyncState>> RowsAsync()
+    private async Task<List<Data.Entities.SourceSyncState>> RowsAsync()
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();

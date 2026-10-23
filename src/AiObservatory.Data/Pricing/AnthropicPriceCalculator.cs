@@ -59,37 +59,37 @@ public sealed class AnthropicPriceCalculator : IProviderPriceCalculator
         }
 
         var cacheWrite = usage.CacheWriteTokens ?? 0;
-        var cacheWrite1h = usage.CacheWrite1hTokens ?? 0;
-        var cacheWrite5m = cacheWrite - cacheWrite1h;
-        if (cacheWrite > 0 && !HasExactCacheDurations(evidence.RootElement, cacheWrite5m, cacheWrite1h))
+        var cacheWrite1H = usage.CacheWrite1hTokens ?? 0;
+        var cacheWrite5M = cacheWrite - cacheWrite1H;
+        if (cacheWrite > 0 && !HasExactCacheDurations(evidence.RootElement, cacheWrite5M, cacheWrite1H))
         {
             if (!isNotional)
             {
                 return null;
             }
-            cacheWrite5m = cacheWrite;
-            cacheWrite1h = 0;
+            cacheWrite5M = cacheWrite;
+            cacheWrite1H = 0;
         }
 
         var cacheRead = usage.CacheReadTokens ?? 0;
         var pricingModifier = inputRate.Value / entry.Input;
         var cacheReadRate = entry.CacheRead * pricingModifier;
-        var cacheWrite5mRate = entry.CacheWrite5m * pricingModifier;
-        var cacheWrite1hRate = entry.CacheWrite1h * pricingModifier;
+        var cacheWrite5MRate = entry.CacheWrite5m * pricingModifier;
+        var cacheWrite1HRate = entry.CacheWrite1h * pricingModifier;
         var cost =
             (
                 PerMillion(usage.InputTokens, inputRate.Value)
                 + PerMillion(usage.OutputTokens, outputRate.Value)
                 + PerMillion(cacheRead, cacheReadRate)
-                + PerMillion(cacheWrite5m, cacheWrite5mRate)
-                + PerMillion(cacheWrite1h, cacheWrite1hRate)
+                + PerMillion(cacheWrite5M, cacheWrite5MRate)
+                + PerMillion(cacheWrite1H, cacheWrite1HRate)
             ) * multiplier.Value;
         var cacheSavings =
             (
                 PerMillion(cacheRead + cacheWrite, inputRate.Value)
                 - PerMillion(cacheRead, cacheReadRate)
-                - PerMillion(cacheWrite5m, cacheWrite5mRate)
-                - PerMillion(cacheWrite1h, cacheWrite1hRate)
+                - PerMillion(cacheWrite5M, cacheWrite5MRate)
+                - PerMillion(cacheWrite1H, cacheWrite1HRate)
             ) * multiplier.Value;
         return PricingEvidence.Result(
             new UsagePriceQuote(cost, cacheSavings),
@@ -180,16 +180,16 @@ public sealed class AnthropicPriceCalculator : IProviderPriceCalculator
             ? "standard"
             : value.ToLowerInvariant();
 
-    private static bool HasExactCacheDurations(JsonElement evidence, long expected5m, long expected1h) =>
-        ProviderPricingJson.TryNestedInt64(evidence, "cache_creation", "ephemeral_5m_input_tokens", out var observed5m)
+    private static bool HasExactCacheDurations(JsonElement evidence, long expected5M, long expected1H) =>
+        ProviderPricingJson.TryNestedInt64(evidence, "cache_creation", "ephemeral_5m_input_tokens", out var observed5M)
         && ProviderPricingJson.TryNestedInt64(
             evidence,
             "cache_creation",
             "ephemeral_1h_input_tokens",
-            out var observed1h
+            out var observed1H
         )
-        && observed5m == expected5m
-        && observed1h == expected1h;
+        && observed5M == expected5M
+        && observed1H == expected1H;
 
     private static decimal PerMillion(long tokens, decimal rate) => tokens / 1_000_000m * rate;
 }

@@ -119,7 +119,7 @@ public sealed class CopilotReportClientTests : IDisposable
         var content = InvalidWrapper(invalid);
         var sut = CreateSut(
             new QueueHandler(_ => Json(Descriptor(["https://reports.example/report.ndjson"]))),
-            new QueueHandler(_ => HeaderIsolatedNdjson(_, content))
+            new QueueHandler(request => HeaderIsolatedNdjson(request, content))
         );
 
         var act = () => sut.GetLatestOrganizationReportAsync(TestContext.Current.CancellationToken);

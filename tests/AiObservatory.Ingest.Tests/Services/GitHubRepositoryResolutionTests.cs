@@ -41,9 +41,8 @@ public class GitHubRepositoryResolutionTests
     public async Task With_no_allowlist_every_discovered_repository_is_polled()
     {
         var client = QuietClient();
-        client
-            .ListOrganizationRepositoriesAsync("FixPortal", Arg.Any<CancellationToken>())
-            .Returns<IReadOnlyList<string>>(["FixPortal/one", "FixPortal/two"]);
+        IReadOnlyList<string> repositories = ["FixPortal/one", "FixPortal/two"];
+        client.ListOrganizationRepositoriesAsync("FixPortal", Arg.Any<CancellationToken>()).Returns(repositories);
         var sut = Service(client, Options(allowlist: [], org: "FixPortal"));
 
         await sut.IngestAsync(PollDate, PollDate, TestContext.Current.CancellationToken);
@@ -77,9 +76,8 @@ public class GitHubRepositoryResolutionTests
     public async Task An_organisation_with_no_repositories_reports_unavailable()
     {
         var client = QuietClient();
-        client
-            .ListOrganizationRepositoriesAsync("FixPortal", Arg.Any<CancellationToken>())
-            .Returns<IReadOnlyList<string>>([]);
+        IReadOnlyList<string> repositories = [];
+        client.ListOrganizationRepositoriesAsync("FixPortal", Arg.Any<CancellationToken>()).Returns(repositories);
         var sut = Service(client, Options(allowlist: [], org: "FixPortal"));
 
         var act = async () => await sut.IngestAsync(PollDate, PollDate, TestContext.Current.CancellationToken);

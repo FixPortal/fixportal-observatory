@@ -45,7 +45,7 @@ public sealed class GooglePricingSource : IPricingSource, IDisposable
         IOptions<IngestOptions> options,
         HttpMessageHandler handler
     )
-        : this(clock, logger, options, VerifiedMappings, handler, null) { }
+        : this(clock, logger, options, VerifiedMappings, handler) { }
 
     internal GooglePricingSource(
         IClock clock,

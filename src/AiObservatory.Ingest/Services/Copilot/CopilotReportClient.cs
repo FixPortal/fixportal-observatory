@@ -426,7 +426,6 @@ public sealed class CopilotReportClient(HttpClient descriptorHttp, HttpClient do
         public override async ValueTask DisposeAsync()
         {
             await inner.DisposeAsync();
-            GC.SuppressFinalize(this);
         }
     }
 }

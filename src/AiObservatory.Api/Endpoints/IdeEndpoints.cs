@@ -31,9 +31,9 @@ public static class IdeEndpoints
         if (
             context
                 .Request.GetTypedHeaders()
-                .IfNoneMatch?.Any(candidate =>
+                .IfNoneMatch.Any(candidate =>
                     candidate.Equals(EntityTagHeaderValue.Any) || candidate.Compare(etag, false)
-                ) == true
+                )
         )
         {
             return Results.StatusCode(StatusCodes.Status304NotModified);

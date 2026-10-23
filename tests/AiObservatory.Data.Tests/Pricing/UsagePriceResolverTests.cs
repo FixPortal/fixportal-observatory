@@ -139,7 +139,7 @@ public sealed class UsagePriceResolverTests : IAsyncLifetime
             output: 1_000_000,
             cacheRead: 1_000_000,
             cacheWrite: 2_000_000,
-            cacheWrite1h: 1_000_000
+            cacheWrite1H: 1_000_000
         );
 
         var quote = new AnthropicPriceCalculator().Calculate(usage, Json(AnthropicCatalog()));
@@ -1202,7 +1202,7 @@ public sealed class UsagePriceResolverTests : IAsyncLifetime
         long output = 1_000_000,
         long cacheRead = 0,
         long cacheWrite = 0,
-        long? cacheWrite1h = 0,
+        long? cacheWrite1H = 0,
         long thought = 0,
         LocalDate? occurredOn = null,
         CostBasis costBasis = CostBasis.ListPriceEstimate
@@ -1216,7 +1216,7 @@ public sealed class UsagePriceResolverTests : IAsyncLifetime
             OutputTokens = output,
             CacheReadTokens = cacheRead,
             CacheWriteTokens = cacheWrite,
-            CacheWrite1hTokens = cacheWrite1h,
+            CacheWrite1hTokens = cacheWrite1H,
             ThoughtTokens = thought,
             RawPayload = raw,
             CostBasis = costBasis,

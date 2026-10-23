@@ -25,7 +25,7 @@ namespace AiObservatory.Api.IntegrationTests;
 /// <remarks>
 /// Defaults to Development with a valid admin key, so most endpoint tests never need to
 /// think about the startup guards. Set <see cref="Environment"/> / <see cref="ApiKeyOverride"/>
-/// / <see cref="DbConnectionOverride"/> and read <see cref="Services"/> (or call
+/// / <see cref="SetDbConnection"/> and read <see cref="Services"/> (or call
 /// <see cref="WebApplicationFactory{TEntryPoint}.CreateClient()"/>) to exercise
 /// Production-only / misconfigured-startup behaviour — do that on a throwaway instance,
 /// not the shared collection fixture.
@@ -135,11 +135,8 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
     {
         if (UseMigratedTemplate && !_dbConnectionOverrideSet && !_databasePrepared)
         {
-            AiObservatory
-                .Testing.PostgresTestAssemblyFixture.CloneMigratedDatabaseAsync(
-                    _connectionString,
-                    CancellationToken.None
-                )
+            Testing
+                .PostgresTestAssemblyFixture.CloneMigratedDatabaseAsync(_connectionString, CancellationToken.None)
                 .GetAwaiter()
                 .GetResult();
             _databasePrepared = true;

@@ -6,7 +6,6 @@ using AiObservatory.Data.Entities;
 using AiObservatory.Data.Pricing;
 using AiObservatory.Data.Pricing.Catalogs;
 using AiObservatory.Ingest.Pricing;
-using AiObservatory.Ingest.Sources;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NodaTime;

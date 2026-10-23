@@ -92,11 +92,11 @@ public interface IUsageRepository
     /// Joins the current database transaction when activation is in progress.
     /// </summary>
     /// <param name="priced">
-    /// The event as it was read when <paramref name="quote"/> was calculated. The write is skipped
-    /// if the locked row's pricing inputs or cost figures have since moved, so a quote is never
+    /// The event as it was read when <paramref name="application"/> was calculated. The write is skipped
+    /// if the locked row's pricing inputs or cost figures have since moved, so a price is never
     /// applied to an event it was not calculated from.
     /// </param>
-    /// <param name="quote">The price calculated from <paramref name="priced"/>.</param>
+    /// <param name="application">The resolved price application calculated from <paramref name="priced"/>, or null.</param>
     /// <param name="ct">Cancellation token.</param>
     Task UpdateEventPricingWithEvidenceAsync(
         UsageEvent priced,
@@ -163,12 +163,17 @@ public interface IUsageRepository
     /// The rebase happens even when the corrected figure equals the stored one — the operator
     /// has taken authority over the figure either way.
     /// </summary>
+    /// <param name="provider">The provider that owns the event.</param>
+    /// <param name="sourceId">The source id of the event.</param>
+    /// <param name="eventKey">The event key, prefixed or unprefixed.</param>
+    /// <param name="newCostUsd">The corrected cost in USD.</param>
     /// <param name="newCacheSavingsUsd">
     /// The cache-savings figure to store alongside the corrected cost, or null to keep the
     /// event's current value. Pass an explicit figure (0 when the correction has no savings to
     /// report) so the aggregate's unknown-savings count clears: the rebase removes the row from
     /// the repricer's scan, so a null left behind is never repaired.
     /// </param>
+    /// <param name="ct">Cancellation token.</param>
     Task<PatchEventCostResult?> PatchEventCostAsync(
         Provider provider,
         string sourceId,

@@ -128,7 +128,8 @@ public class InsightGeneratorConcurrencyTests : IAsyncLifetime
             await deadline.CancelAsync();
             using var cleanup = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
             cleanup.CancelAfter(TimeSpan.FromSeconds(30));
-            foreach (var pending in new[] { winnerTask, loserTask }.OfType<Task<InsightGenerationResult>>())
+            Task<InsightGenerationResult>?[] drained = [winnerTask, loserTask];
+            foreach (var pending in drained.OfType<Task<InsightGenerationResult>>())
             {
                 try
                 {

@@ -158,8 +158,8 @@ public static class AuditSnapshotProjector
         );
 
     public static ObservationProvenance Provenance(
-        AiObservatory.Data.Entities.SourceKind kind,
-        AiObservatory.Data.Entities.UsageScope scope,
+        Data.Entities.SourceKind kind,
+        Data.Entities.UsageScope scope,
         CostBasis basis
     ) =>
         new(

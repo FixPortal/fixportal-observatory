@@ -470,7 +470,7 @@ public class UsageRepository(
         var outputDelta = checked(evt.OutputTokens * sign);
         var cacheReadDelta = checked((evt.CacheReadTokens ?? 0L) * sign);
         var cacheWriteDelta = checked((evt.CacheWriteTokens ?? 0L) * sign);
-        var cacheWrite1hDelta = checked((evt.CacheWrite1hTokens ?? 0L) * sign);
+        var cacheWrite1HDelta = checked((evt.CacheWrite1hTokens ?? 0L) * sign);
         var costDelta = (evt.CostUsd ?? 0m) * sign;
         // CostBasis.None means "no price applies" (docs/truth-and-pricing.md), i.e. a known zero,
         // not missing pricing data; only genuinely undescribed nulls count as unknown.
@@ -482,7 +482,7 @@ public class UsageRepository(
         var insertOutput = Math.Max(0, outputDelta);
         var insertCacheRead = Math.Max(0, cacheReadDelta);
         var insertCacheWrite = Math.Max(0, cacheWriteDelta);
-        var insertCacheWrite1h = Math.Max(0, cacheWrite1hDelta);
+        var insertCacheWrite1H = Math.Max(0, cacheWrite1HDelta);
         var insertCost = Math.Max(0, costDelta);
         var insertUnknownCost = Math.Max(0, unknownCostDelta);
         var insertCacheSavings = sign > 0 ? cacheSavingsDelta : 0m;
@@ -492,13 +492,13 @@ public class UsageRepository(
         await ctx.Database.ExecuteSqlInterpolatedAsync(
             $"""
             INSERT INTO "DailyAggregates" ("Date", "Provider", "Model", "SourceId", "SourceKind", "UsageScope", "CostBasis", "InputTokens", "OutputTokens", "CacheReadTokens", "CacheWriteTokens", "CacheWrite1hTokens", "CostUsd", "UnknownCostCount", "CacheSavingsUsd", "UnknownCacheSavingsCount", "RequestCount")
-            VALUES ({date}, {provider}, {model}, {evt.SourceId}, {sourceKind}, {usageScope}, {costBasis}, {insertInput}, {insertOutput}, {insertCacheRead}, {insertCacheWrite}, {insertCacheWrite1h}, {insertCost}, {insertUnknownCost}, {insertCacheSavings}, {insertUnknownCacheSavings}, {insertRequest})
+            VALUES ({date}, {provider}, {model}, {evt.SourceId}, {sourceKind}, {usageScope}, {costBasis}, {insertInput}, {insertOutput}, {insertCacheRead}, {insertCacheWrite}, {insertCacheWrite1H}, {insertCost}, {insertUnknownCost}, {insertCacheSavings}, {insertUnknownCacheSavings}, {insertRequest})
             ON CONFLICT ("Date", "Provider", "Model", "SourceId", "SourceKind", "UsageScope", "CostBasis") DO UPDATE SET
                 "InputTokens" = "DailyAggregates"."InputTokens" + {inputDelta},
                 "OutputTokens" = "DailyAggregates"."OutputTokens" + {outputDelta},
                 "CacheReadTokens" = "DailyAggregates"."CacheReadTokens" + {cacheReadDelta},
                 "CacheWriteTokens" = "DailyAggregates"."CacheWriteTokens" + {cacheWriteDelta},
-                "CacheWrite1hTokens" = "DailyAggregates"."CacheWrite1hTokens" + {cacheWrite1hDelta},
+                "CacheWrite1hTokens" = "DailyAggregates"."CacheWrite1hTokens" + {cacheWrite1HDelta},
                 "CostUsd" = "DailyAggregates"."CostUsd" + {costDelta},
                 "UnknownCostCount" = "DailyAggregates"."UnknownCostCount" + {unknownCostDelta},
                 "CacheSavingsUsd" = "DailyAggregates"."CacheSavingsUsd" + {cacheSavingsDelta},
@@ -557,7 +557,7 @@ public class UsageRepository(
         var insertOutput = Math.Max(0, evt.OutputTokens);
         var insertCacheRead = Math.Max(0, evt.CacheReadTokens ?? 0L);
         var insertCacheWrite = Math.Max(0, evt.CacheWriteTokens ?? 0L);
-        var insertCacheWrite1h = Math.Max(0, evt.CacheWrite1hTokens ?? 0L);
+        var insertCacheWrite1H = Math.Max(0, evt.CacheWrite1hTokens ?? 0L);
         var insertCost = Math.Max(0, evt.CostUsd ?? 0m);
         var insertUnknownCost = evt.CostUsd is null ? 1 : 0;
         var insertCacheSavings = evt.CacheSavingsUsd ?? 0m;
@@ -566,7 +566,7 @@ public class UsageRepository(
         await ctx.Database.ExecuteSqlInterpolatedAsync(
             $"""
             INSERT INTO "DailyAggregates" ("Date", "Provider", "Model", "SourceId", "SourceKind", "UsageScope", "CostBasis", "InputTokens", "OutputTokens", "CacheReadTokens", "CacheWriteTokens", "CacheWrite1hTokens", "CostUsd", "UnknownCostCount", "CacheSavingsUsd", "UnknownCacheSavingsCount", "RequestCount")
-            VALUES ({date}, {provider}, {model}, {evt.SourceId}, {sourceKind}, {usageScope}, {costBasis}, {insertInput}, {insertOutput}, {insertCacheRead}, {insertCacheWrite}, {insertCacheWrite1h}, {insertCost}, {insertUnknownCost}, {insertCacheSavings}, {insertUnknownCacheSavings}, 1)
+            VALUES ({date}, {provider}, {model}, {evt.SourceId}, {sourceKind}, {usageScope}, {costBasis}, {insertInput}, {insertOutput}, {insertCacheRead}, {insertCacheWrite}, {insertCacheWrite1H}, {insertCost}, {insertUnknownCost}, {insertCacheSavings}, {insertUnknownCacheSavings}, 1)
             ON CONFLICT ("Date", "Provider", "Model", "SourceId", "SourceKind", "UsageScope", "CostBasis") DO UPDATE SET
                 "CostUsd" = "DailyAggregates"."CostUsd" + {costDelta},
                 "UnknownCostCount" = "DailyAggregates"."UnknownCostCount" + {unknownCostDelta},

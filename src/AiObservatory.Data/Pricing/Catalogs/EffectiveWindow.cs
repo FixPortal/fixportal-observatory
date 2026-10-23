@@ -20,13 +20,14 @@ internal static class EffectiveWindow
         Func<T, bool> isProviderDeclared
     )
     {
-        var applicable = matches.Where(entry => effectiveFrom(entry) <= usageDate).ToList();
+        var candidates = matches.ToList();
+        var applicable = candidates.Where(entry => effectiveFrom(entry) <= usageDate).ToList();
         if (applicable.Count > 0)
         {
             return applicable;
         }
 
-        var assumed = matches.Where(entry => !isProviderDeclared(entry)).ToList();
+        var assumed = candidates.Where(entry => !isProviderDeclared(entry)).ToList();
         if (assumed.Count == 0)
         {
             return [];

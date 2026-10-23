@@ -428,7 +428,7 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
     {
         var id = await Seed();
         using var scope = _factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AiObservatory.Data.AiObservatoryDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<Data.AiObservatoryDbContext>();
         await Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlInterpolatedAsync(
             db.Database,
             $"UPDATE \"AuditServerSnapshots\" SET \"Sha256\"={new string('b', 64)} WHERE \"RunId\"={id}",
@@ -506,7 +506,7 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
                 .BeFalse("the active writer has observed cancellation but not released its read lease");
             (await admin.GetAsync($"/api/audits/runs/{id}/bundle", Ct)).StatusCode.Should().Be(HttpStatusCode.Gone);
             using var checkScope = _factory.Services.CreateScope();
-            var db = checkScope.ServiceProvider.GetRequiredService<AiObservatory.Data.AiObservatoryDbContext>();
+            var db = checkScope.ServiceProvider.GetRequiredService<Data.AiObservatoryDbContext>();
             (
                 await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
                     Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.SqlQueryRaw<int>(
@@ -549,7 +549,7 @@ public sealed class AuditExportAuthorizationWafTests : IAsyncLifetime
         await result.ExecuteAsync(
             new Microsoft.AspNetCore.Http.DefaultHttpContext { RequestServices = scope.ServiceProvider }
         );
-        var db = scope.ServiceProvider.GetRequiredService<AiObservatory.Data.AiObservatoryDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<Data.AiObservatoryDbContext>();
         (
             await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
                 Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.SqlQueryRaw<int>(

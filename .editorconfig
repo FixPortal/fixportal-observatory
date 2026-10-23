@@ -54,3 +54,35 @@ dotnet_diagnostic.S1313.severity = none
 # Local-only credential used by EF design-time tooling; never loaded at runtime.
 [src/AiObservatory.Data/AiObservatoryDbContextFactory.cs]
 dotnet_diagnostic.S2068.severity = none
+
+#### ReSharper InspectCode (CI gate) ####
+# The CI gate counts every ReSharper finding at WARNING or above. Everything below is a
+# path-scoped exception with its reason; anything else is fixed in code.
+
+# Records and DTOs are written and read reflectively (System.Text.Json, EF Core, Npgsql
+# parameter binding), so ReSharper cannot see the positional-property reads.
+# Nullable annotations on deserialized request, catalog and bundle models do not bind the wire
+# input: a missing field still arrives as null, so these guards are trust-boundary validation.
+[{src,tests}/**.cs]
+resharper_not_accessed_positional_property_global_highlighting = none
+resharper_not_accessed_positional_property_local_highlighting = none
+resharper_condition_is_always_true_or_false_according_to_nullable_api_contract_highlighting = none
+resharper_conditional_access_qualifier_is_non_nullable_according_to_api_contract_highlighting = none
+resharper_null_coalescing_condition_is_always_not_null_according_to_api_contract_highlighting = none
+
+# Test lambdas capture fixtures that are disposed only after the awaited work has finished,
+# fixture setup is explicit, and spelled-out default arguments document the scenario.
+[tests/**.cs]
+resharper_access_to_disposed_closure_highlighting = none
+resharper_access_to_modified_closure_highlighting = none
+resharper_using_statement_resource_initialization_highlighting = none
+resharper_redundant_argument_default_value_highlighting = none
+
+# JSON-contract getters and init accessors are used by System.Text.Json only.
+[src/AiObservatory.Audit/Contracts/{AuditOptions,SourceUsageRecord}.cs]
+resharper_unused_auto_property_accessor_global_highlighting = none
+
+# These member names mirror the vendor wire fields (cache 5m / 1h) and the persisted JSON and
+# column names; renaming them would change a serialized contract.
+[{src/AiObservatory.Audit/Contracts/{SourceCounters,FrozenAggregate,FrozenEvent,FrozenPricing},src/AiObservatory.Ingest/Services/Anthropic/AnthropicUsageRecord,src/AiObservatory.Data/Pricing/Catalogs/AnthropicPriceCatalog,tests/AiObservatory.Data.Tests/Repositories/UsageMigrationTests}.cs]
+resharper_inconsistent_naming_highlighting = none

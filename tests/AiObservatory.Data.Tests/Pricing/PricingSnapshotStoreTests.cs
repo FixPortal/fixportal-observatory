@@ -1,6 +1,5 @@
 using System.Data.Common;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using AiObservatory.Data.Entities;
 using AiObservatory.Data.Pricing;
 using AiObservatory.Data.Pricing.Catalogs;
@@ -618,8 +617,8 @@ public sealed class PricingSnapshotStoreTests : IAsyncLifetime
     {
         var date = new LocalDate(2026, 8, 24);
         var source = "https://example.com/pricing";
-        var catalogs = new Action[]
-        {
+        Action[] catalogs =
+        [
             new OpenAiPriceCatalog("USD", source, RetrievedAt, [OpenAiEntry(date, 1m)]).Validate,
             new AnthropicPriceCatalog(
                 "USD",
@@ -634,7 +633,7 @@ public sealed class PricingSnapshotStoreTests : IAsyncLifetime
                 [new("kimi", ["kimi"], date, false, 0.1m, 1m, 2m, false, 0.6m)]
             ).Validate,
             new GooglePriceCatalog("USD", source, RetrievedAt, [GoogleEntry(date)]).Validate,
-        };
+        ];
 
         catalogs.Should().AllSatisfy(validate => validate.Should().NotThrow());
     }

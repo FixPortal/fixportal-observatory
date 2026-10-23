@@ -111,7 +111,7 @@ public class UsageRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task RecordEvent_with_same_eventKey_records_and_aggregates_once()
     {
-        static UsageEvent NewEvent() =>
+        static UsageEvent CreateEvent() =>
             new()
             {
                 Provider = Provider.Copilot,
@@ -124,8 +124,8 @@ public class UsageRepositoryTests : IAsyncLifetime
                 EventKey = "copilot:session-abc:gpt-5.4",
             };
 
-        var first = await _repo.RecordEventAsync(NewEvent(), TestContext.Current.CancellationToken);
-        var second = await _repo.RecordEventAsync(NewEvent(), TestContext.Current.CancellationToken);
+        var first = await _repo.RecordEventAsync(CreateEvent(), TestContext.Current.CancellationToken);
+        var second = await _repo.RecordEventAsync(CreateEvent(), TestContext.Current.CancellationToken);
 
         first.Disposition.Should().Be(RecordEventDisposition.Created);
         second.Disposition.Should().Be(RecordEventDisposition.Unchanged);
@@ -479,7 +479,7 @@ public class UsageRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task RecordEvent_with_same_eventKey_and_different_sourceIds_records_both()
     {
-        static UsageEvent NewEvent(string sourceId) =>
+        static UsageEvent CreateEvent(string sourceId) =>
             new()
             {
                 Provider = Provider.Copilot,
@@ -497,11 +497,11 @@ public class UsageRepositoryTests : IAsyncLifetime
             };
 
         var first = await _repo.RecordEventAsync(
-            NewEvent(UsageSourceIds.CopilotLocal),
+            CreateEvent(UsageSourceIds.CopilotLocal),
             TestContext.Current.CancellationToken
         );
         var second = await _repo.RecordEventAsync(
-            NewEvent(UsageSourceIds.GitHubBillingApi),
+            CreateEvent(UsageSourceIds.GitHubBillingApi),
             TestContext.Current.CancellationToken
         );
 
@@ -514,7 +514,7 @@ public class UsageRepositoryTests : IAsyncLifetime
     [Fact]
     public async Task RecordEvent_without_eventKey_records_every_submission()
     {
-        static UsageEvent NewEvent() =>
+        static UsageEvent CreateEvent() =>
             new()
             {
                 Provider = Provider.Anthropic,
@@ -526,8 +526,8 @@ public class UsageRepositoryTests : IAsyncLifetime
                 CostUsd = 0.01m,
             };
 
-        var first = await _repo.RecordEventAsync(NewEvent(), TestContext.Current.CancellationToken);
-        var second = await _repo.RecordEventAsync(NewEvent(), TestContext.Current.CancellationToken);
+        var first = await _repo.RecordEventAsync(CreateEvent(), TestContext.Current.CancellationToken);
+        var second = await _repo.RecordEventAsync(CreateEvent(), TestContext.Current.CancellationToken);
 
         first.Disposition.Should().Be(RecordEventDisposition.Created);
         second.Disposition.Should().Be(RecordEventDisposition.Created);
@@ -548,7 +548,7 @@ public class UsageRepositoryTests : IAsyncLifetime
         var firstRepository = new UsageRepository(firstContext);
         var secondRepository = new UsageRepository(secondContext);
 
-        static UsageEvent NewEvent() =>
+        static UsageEvent CreateEvent() =>
             new()
             {
                 Provider = Provider.OpenAI,
@@ -570,8 +570,8 @@ public class UsageRepositoryTests : IAsyncLifetime
             await command.ExecuteNonQueryAsync(ct);
         }
 
-        var first = firstRepository.RecordEventAsync(NewEvent(), ct);
-        var second = secondRepository.RecordEventAsync(NewEvent(), ct);
+        var first = firstRepository.RecordEventAsync(CreateEvent(), ct);
+        var second = secondRepository.RecordEventAsync(CreateEvent(), ct);
         await WaitForBlockedWritesAsync(gateConnection, "DailyAggregates", ct);
         await gateTransaction.CommitAsync(ct);
 

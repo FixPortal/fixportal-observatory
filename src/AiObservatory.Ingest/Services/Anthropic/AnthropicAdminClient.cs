@@ -178,14 +178,14 @@ public sealed class AnthropicAdminClient(HttpClient http) : IAnthropicAdminClien
                 var output = RequireNonNegativeInt64(result, "output_tokens");
                 var cacheRead = RequireNonNegativeInt64(result, "cache_read_input_tokens");
                 var cache = RequirePropertyObject(result, "cache_creation");
-                var cache5m = RequireNonNegativeInt64(cache, "ephemeral_5m_input_tokens");
-                var cache1h = RequireNonNegativeInt64(cache, "ephemeral_1h_input_tokens");
+                var cache5M = RequireNonNegativeInt64(cache, "ephemeral_5m_input_tokens");
+                var cache1H = RequireNonNegativeInt64(cache, "ephemeral_1h_input_tokens");
                 if (result.TryGetProperty("server_tool_use", out var tools) && tools.ValueKind != JsonValueKind.Null)
                 {
                     tools = RequireObject(tools, "server_tool_use");
                     _ = RequireNonNegativeInt64(tools, "web_search_requests");
                 }
-                _ = checked(cache5m + cache1h);
+                _ = checked(cache5M + cache1H);
                 records.Add(
                     new AnthropicUsageRecord(
                         bucketStart,
@@ -197,8 +197,8 @@ public sealed class AnthropicAdminClient(HttpClient http) : IAnthropicAdminClien
                         input,
                         output,
                         cacheRead,
-                        cache5m,
-                        cache1h,
+                        cache5M,
+                        cache1H,
                         RawEvidence(bucket, result)
                     )
                 );

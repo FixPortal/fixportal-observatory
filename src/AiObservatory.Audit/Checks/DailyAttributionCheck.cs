@@ -4,7 +4,7 @@ namespace AiObservatory.Audit.Checks;
 
 public sealed class DailyAttributionCheck
 {
-    private readonly SourceCheckEvaluation evaluation = new();
+    private readonly SourceCheckEvaluation _evaluation = new();
 
-    public CheckOutcome Evaluate(AuditInput input) => evaluation.Evaluate(input, CheckCode.DailyAttribution);
+    public CheckOutcome Evaluate(AuditInput input) => _evaluation.Evaluate(input, CheckCode.DailyAttribution);
 }

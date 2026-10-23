@@ -84,7 +84,7 @@ public static class SuggestionsEndpoints
     {
         // Optional in the signature so that a missing value is a 400 from here, after authorisation:
         // a required parameter that fails to bind answers 400 before the key filter can answer 401.
-        if (days is not int count || count < 1 || count > 90)
+        if (days is not { } count || count < 1 || count > 90)
         {
             return Results.BadRequest("days must be between 1 and 90");
         }

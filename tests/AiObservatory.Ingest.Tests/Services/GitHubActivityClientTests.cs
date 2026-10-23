@@ -944,7 +944,7 @@ public sealed class GitHubActivityClientTests : IDisposable
         // walk: five windows (5 x 10 page requests) and no sixth, with the fifth window's
         // oldest run as the resume cursor.
         var requestCount = 0;
-        var handler = new StubHandler(req =>
+        var handler = new StubHandler(_ =>
         {
             var request = requestCount++;
             var window = request / 10; // WorkflowRunsPaginationCap is 10 pages of 100

@@ -37,7 +37,7 @@ public sealed partial class AuditWorkerTests : IAsyncLifetime
         {
             Database = $"aiobs_test_worker_{Guid.NewGuid():N}",
         }.ConnectionString;
-        await AiObservatory.Testing.PostgresTestAssemblyFixture.CloneMigratedDatabaseAsync(conn, Ct);
+        await Testing.PostgresTestAssemblyFixture.CloneMigratedDatabaseAsync(conn, Ct);
         _options = new DbContextOptionsBuilder<AiObservatoryDbContext>().UseNpgsql(conn, o => o.UseNodaTime()).Options;
         _db = new(_options);
         await _db.Database.MigrateAsync(Ct);
@@ -241,15 +241,15 @@ public sealed partial class AuditWorkerTests : IAsyncLifetime
         await new AuditSnapshotService(_db, _store, lease).CreateAsync(id, Ct);
         var pinned = (await _store.ReadSnapshotAsync(id, Ct))!;
         _db.UsageEvents.Add(
-            new AiObservatory.Data.Entities.UsageEvent
+            new Data.Entities.UsageEvent
             {
-                Provider = AiObservatory.Data.Entities.Provider.OpenAI,
+                Provider = Data.Entities.Provider.OpenAI,
                 Model = "synthetic",
                 EventKey = "after-freeze",
                 SourceId = "claude-local",
-                SourceKind = AiObservatory.Data.Entities.SourceKind.LocalTelemetry,
-                UsageScope = AiObservatory.Data.Entities.UsageScope.Api,
-                CostBasis = AiObservatory.Data.Entities.CostBasis.ListPriceEstimate,
+                SourceKind = Data.Entities.SourceKind.LocalTelemetry,
+                UsageScope = Data.Entities.UsageScope.Api,
+                CostBasis = Data.Entities.CostBasis.ListPriceEstimate,
                 InputTokens = 987,
                 OccurredAt = Instant.FromUtc(2026, 10, 3, 12, 0),
                 ObservedAt = Now,
@@ -421,15 +421,15 @@ public sealed partial class AuditWorkerTests : IAsyncLifetime
         await Worker.ExecuteOneAsync(Guid.NewGuid(), Ct);
         var pinned = (await _store.ReadSnapshotAsync(id, Ct))!;
         _db.UsageEvents.Add(
-            new AiObservatory.Data.Entities.UsageEvent
+            new Data.Entities.UsageEvent
             {
-                Provider = AiObservatory.Data.Entities.Provider.OpenAI,
+                Provider = Data.Entities.Provider.OpenAI,
                 Model = "changed-live",
                 EventKey = "replay-live",
                 SourceId = "claude-local",
-                SourceKind = AiObservatory.Data.Entities.SourceKind.LocalTelemetry,
-                UsageScope = AiObservatory.Data.Entities.UsageScope.Api,
-                CostBasis = AiObservatory.Data.Entities.CostBasis.ListPriceEstimate,
+                SourceKind = Data.Entities.SourceKind.LocalTelemetry,
+                UsageScope = Data.Entities.UsageScope.Api,
+                CostBasis = Data.Entities.CostBasis.ListPriceEstimate,
                 InputTokens = 500,
                 OccurredAt = Instant.FromUtc(2026, 10, 3, 12, 0),
                 ObservedAt = Now,
@@ -437,9 +437,9 @@ public sealed partial class AuditWorkerTests : IAsyncLifetime
             }
         );
         _db.PricingSnapshots.Add(
-            new AiObservatory.Data.Entities.PricingSnapshot
+            new Data.Entities.PricingSnapshot
             {
-                Provider = AiObservatory.Data.Entities.Provider.OpenAI,
+                Provider = Data.Entities.Provider.OpenAI,
                 SourceId = "claude-local",
                 RetrievedAt = Now,
                 SourceUrl = "https://example.invalid/synthetic",
@@ -518,7 +518,7 @@ public sealed partial class AuditWorkerTests : IAsyncLifetime
     public async Task Readiness_FailedOfflineRefreshAndStalePricingAreVisibleWithoutCaptureRequests()
     {
         _db.SourceSyncStates.Add(
-            new AiObservatory.Data.Entities.SourceSyncState
+            new Data.Entities.SourceSyncState
             {
                 SourceId = "claude-local",
                 IsConfigured = true,
@@ -658,13 +658,13 @@ public sealed partial class AuditWorkerTests : IAsyncLifetime
         foreach (
             var row in new[]
             {
-                (AiObservatory.Data.Entities.Provider.Anthropic, "anthropic-pricing", Now),
-                (AiObservatory.Data.Entities.Provider.OpenAI, "openai-pricing", Now.Minus(Duration.FromDays(3))),
+                (Data.Entities.Provider.Anthropic, "anthropic-pricing", Now),
+                (Data.Entities.Provider.OpenAI, "openai-pricing", Now.Minus(Duration.FromDays(3))),
             }
         )
         {
             _db.PricingSnapshots.Add(
-                new AiObservatory.Data.Entities.PricingSnapshot
+                new Data.Entities.PricingSnapshot
                 {
                     Provider = row.Item1,
                     SourceId = row.Item2,

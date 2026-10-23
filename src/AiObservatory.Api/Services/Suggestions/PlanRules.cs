@@ -79,12 +79,14 @@ public sealed class PlanCostsMoreThanUseRule : PlanRuleBase
                 continue;
             }
 
-            var notional = inputs.Aggregates.Where(a =>
-                a.Provider == plans.Key
-                && a.CostBasis == CostBasis.Notional
-                && a.Date >= inputs.PlanWindow.From
-                && a.Date <= inputs.PlanWindow.To
-            );
+            var notional = inputs
+                .Aggregates.Where(a =>
+                    a.Provider == plans.Key
+                    && a.CostBasis == CostBasis.Notional
+                    && a.Date >= inputs.PlanWindow.From
+                    && a.Date <= inputs.PlanWindow.To
+                )
+                .ToList();
             var knownRequests = notional.Sum(a => Math.Max(0, a.RequestCount - a.UnknownCostCount));
             if (knownRequests < options.PlanMinKnownCostRequests)
             {

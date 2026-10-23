@@ -5,7 +5,6 @@ using AiObservatory.Data.Entities;
 using AiObservatory.Data.Pricing;
 using AiObservatory.Data.Pricing.Catalogs;
 using AiObservatory.Ingest.Pricing;
-using AiObservatory.Ingest.Sources;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -431,7 +430,7 @@ public sealed class GooglePricingSourceTests
         new((_, call) => call <= pages.Length ? pages[call - 1] : throw new InvalidOperationException());
 
     private static HttpResponseMessage Json(string content) =>
-        new(HttpStatusCode.OK) { Content = new StringContent(content, System.Text.Encoding.UTF8, "application/json") };
+        new(HttpStatusCode.OK) { Content = new StringContent(content, Encoding.UTF8, "application/json") };
 
     private static string Mutate(string json, string mutation) =>
         mutation switch

@@ -6,7 +6,7 @@ namespace AiObservatory.Audit.Checks;
 
 internal sealed class SourceCheckEvaluation
 {
-    private readonly ISourceAuditAdapter[] adapters = [new ClaudeAuditAdapter(), new CodexAuditAdapter()];
+    private readonly ISourceAuditAdapter[] _adapters = [new ClaudeAuditAdapter(), new CodexAuditAdapter()];
 
     internal CheckOutcome Evaluate(AuditInput input, CheckCode code)
     {
@@ -17,7 +17,7 @@ internal sealed class SourceCheckEvaluation
         input = AuditCanonicalJson.Deserialize<AuditInput>(AuditCanonicalJson.Serialize(input));
         var findings = new List<AuditFinding>();
         var gaps = new List<CoverageGap>();
-        var reconstructions = adapters.Select(adapter => adapter.Reconstruct(input.Records, input.Scope)).ToArray();
+        var reconstructions = _adapters.Select(adapter => adapter.Reconstruct(input.Records, input.Scope)).ToArray();
         findings.AddRange(
             reconstructions
                 .SelectMany(r => r.Findings)

@@ -159,8 +159,8 @@ public sealed class AuditPricingProjectorTests
     [InlineData("contradictory", 100L, 0L)]
     public void AnthropicNotionalNonzeroOneHourWrites_FreezeDerivableDurationChoice(
         string observation,
-        long? expected5m,
-        long? expected1h
+        long? expected5M,
+        long? expected1H
     )
     {
         var now = Instant.FromUtc(2026, 10, 22, 12, 0);
@@ -213,7 +213,7 @@ public sealed class AuditPricingProjectorTests
         frozen.Tokens.CacheWrite1hTokens.Should().Be(100);
         frozen
             .CacheDurations.Should()
-            .Be(new AiObservatory.Audit.Contracts.CacheDurationObservation(expected5m, expected1h));
+            .Be(new AiObservatory.Audit.Contracts.CacheDurationObservation(expected5M, expected1H));
         var exact = frozen.CacheDurations.FiveMinuteTokens == 0 && frozen.CacheDurations.OneHourTokens == 100;
         frozen.CostUsd.Should().Be(exact ? 0.0004m : 0.00025m);
     }
