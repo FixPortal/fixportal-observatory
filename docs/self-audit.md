@@ -47,6 +47,8 @@ Viewer keys can read readiness, run summaries, sanitized findings and the readab
 
 Each capture is bounded to 512 MiB and one million usage records, with 8 MiB chunks. A complete frozen snapshot is bounded to 512 MiB. One run executes per instance; capture requests expire after 24 hours. Counts retain exact integer precision.
 
+The internal bounded selected-run path requires a fresh run with complete capture readiness. It refuses a run with stored `PartialEvidenceAcknowledged=true` using `selected_partial_not_supported`, without linking captures or consuming an attempt. This includes a run queued by ordinary `Proceed`, even if a shared unfinished request later seals and a fresh revision binding is supplied. Scope `AllowPartial=true` remains eligible when no partial acknowledgement was recorded. Selected execution provides no partial fallback or HTTP invocation surface; ordinary `Proceed` and worker behavior remain unchanged.
+
 ## Retention, exports and private backups
 
 Administrators can separately enable `OperationalInventory__Enabled` (default `false`) for

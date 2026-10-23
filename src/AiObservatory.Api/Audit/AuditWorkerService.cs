@@ -21,6 +21,8 @@ public sealed class AuditWorkerService(
 {
     private readonly IAuditRunVerifier _verifier = verifier ?? new AuditRunVerifier();
 
+    internal string InstanceId => store.InstanceId;
+
     public async Task<bool> ExecuteOneAsync(Guid workerId, CancellationToken ct)
     {
         if (!options.Value.Enabled)
