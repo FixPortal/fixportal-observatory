@@ -1,4 +1,3 @@
-using AiObservatory.Api;
 using AiObservatory.Api.Audit;
 using AwesomeAssertions;
 using NodaTime;

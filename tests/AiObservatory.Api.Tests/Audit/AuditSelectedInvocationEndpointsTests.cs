@@ -6,13 +6,10 @@ using AiObservatory.Api.Audit;
 using AiObservatory.Data.Audit;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NodaTime;
@@ -489,8 +486,6 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
                         break;
                     case "headerless-body":
                         context.Features.Set<IHttpRequestBodyDetectionFeature>(new BodyFeature());
-                        break;
-                    default:
                         break;
                 }
                 if (context.Request.Headers.TryGetValue("X-Test-Authenticated-Subject", out var subject))
