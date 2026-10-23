@@ -5,7 +5,6 @@ using AiObservatory.Data.Pricing;
 using AiObservatory.Data.Pricing.Catalogs;
 using AiObservatory.Data.Repositories;
 using AiObservatory.Ingest.Services.OpenAi;
-using AiObservatory.Ingest.Sources;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;

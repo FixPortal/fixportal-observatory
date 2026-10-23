@@ -136,7 +136,7 @@ public sealed class ReplayCommandTests
     public async Task Replay_PriorVersion_RequiresFlagAndPreservesOriginalResult()
     {
         using var directory = new TestDirectory();
-        var bundle = await Golden();
+        AuditBundle bundle;
         var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "golden-v1.zip");
         await using (var source = File.OpenRead(path))
         {

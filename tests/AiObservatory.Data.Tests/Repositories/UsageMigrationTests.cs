@@ -93,7 +93,7 @@ public class UsageMigrationTests : IAsyncLifetime
         long output,
         long cacheRead,
         long cacheWrite,
-        long cacheWrite1h,
+        long cacheWrite1H,
         decimal cost,
         int unknownCost,
         decimal savings,
@@ -112,7 +112,7 @@ public class UsageMigrationTests : IAsyncLifetime
             OutputTokens = output,
             CacheReadTokens = cacheRead,
             CacheWriteTokens = cacheWrite,
-            CacheWrite1hTokens = cacheWrite1h,
+            CacheWrite1hTokens = cacheWrite1H,
             CostUsd = cost,
             UnknownCostCount = unknownCost,
             CacheSavingsUsd = savings,
@@ -156,7 +156,7 @@ public class UsageMigrationTests : IAsyncLifetime
         long output,
         long cacheRead,
         long cacheWrite,
-        long cacheWrite1h,
+        long cacheWrite1H,
         decimal cost,
         int unknownCost,
         decimal savings,
@@ -170,7 +170,7 @@ public class UsageMigrationTests : IAsyncLifetime
             VALUES ({DateOnly.Parse(
                 date,
                 System.Globalization.CultureInfo.InvariantCulture
-            )}, 'OpenAI', {model}, 'src-a', 'Legacy', 'Unknown', 'Billed', {input}, {output}, {cacheRead}, {cacheWrite}, {cacheWrite1h}, {cost}, {unknownCost}, {savings}, {unknownSavings}, {requests})
+            )}, 'OpenAI', {model}, 'src-a', 'Legacy', 'Unknown', 'Billed', {input}, {output}, {cacheRead}, {cacheWrite}, {cacheWrite1H}, {cost}, {unknownCost}, {savings}, {unknownSavings}, {requests})
             """,
             ct
         );

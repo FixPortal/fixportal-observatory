@@ -249,7 +249,6 @@ public class PromptBuilder
             CostBasis.ListPriceEstimate => "[LIST-PRICE ESTIMATE]",
             CostBasis.Notional => "[NOTIONAL]",
             CostBasis.None => "[NO COST]",
-            CostBasis.Unknown => "[UNCLASSIFIED]",
             _ => "[UNCLASSIFIED]",
         };
 }

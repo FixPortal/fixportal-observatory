@@ -702,7 +702,7 @@ public sealed partial class AuditStore
 
     public Task<RetainedSnapshot?> ReadSnapshotAsync(Guid runId, CancellationToken ct)
     {
-        return Transaction<RetainedSnapshot?>(
+        return Transaction(
             async () =>
             {
                 var now = _clock.GetCurrentInstant();

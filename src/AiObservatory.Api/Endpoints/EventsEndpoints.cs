@@ -315,7 +315,7 @@ public static class EventsEndpoints
 
         // CacheWrite1hTokens is a subset of CacheWriteTokens. This is enforced again by
         // the database constraint and lets pricing derive the five-minute remainder.
-        if (req.CacheWrite1hTokens is { } cacheWrite1h && cacheWrite1h > (req.CacheWriteTokens ?? 0))
+        if (req.CacheWrite1hTokens is { } cacheWrite1H && cacheWrite1H > (req.CacheWriteTokens ?? 0))
         {
             return "CacheWrite1hTokens must not exceed CacheWriteTokens";
         }

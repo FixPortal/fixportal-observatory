@@ -41,8 +41,8 @@ public sealed class AnthropicUsageSource(
         foreach (var group in groups)
         {
             var rows = group.ToArray();
-            var cache5m = rows.Sum(row => row.CacheWrite5mTokens);
-            var cache1h = rows.Sum(row => row.CacheWrite1hTokens);
+            var cache5M = rows.Sum(row => row.CacheWrite5mTokens);
+            var cache1H = rows.Sum(row => row.CacheWrite1hTokens);
             await repository.RecordEstimatedEventAsync(
                 new UsageEvent
                 {
@@ -53,8 +53,8 @@ public sealed class AnthropicUsageSource(
                     InputTokens = rows.Sum(row => row.InputTokens),
                     OutputTokens = rows.Sum(row => row.OutputTokens),
                     CacheReadTokens = rows.Sum(row => row.CacheReadTokens),
-                    CacheWriteTokens = checked(cache5m + cache1h),
-                    CacheWrite1hTokens = cache1h,
+                    CacheWriteTokens = checked(cache5M + cache1H),
+                    CacheWrite1hTokens = cache1H,
                     CostUsd = null,
                     EventKey = EventKey(
                         group.Key.BucketStart,
@@ -72,8 +72,8 @@ public sealed class AnthropicUsageSource(
                             speed = group.Key.Speed,
                             cache_creation = new
                             {
-                                ephemeral_5m_input_tokens = cache5m,
-                                ephemeral_1h_input_tokens = cache1h,
+                                ephemeral_5m_input_tokens = cache5M,
+                                ephemeral_1h_input_tokens = cache1H,
                             },
                             provider_records = rows.Select(row => JsonSerializer.Deserialize<JsonElement>(row.RawJson)),
                         }

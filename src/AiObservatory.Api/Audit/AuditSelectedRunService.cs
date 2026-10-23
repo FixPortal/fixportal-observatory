@@ -5,6 +5,7 @@ using NodaTime;
 namespace AiObservatory.Api.Audit;
 
 /// <summary>One explicit selected admission and awaited attempt, without queue polling or retry.</summary>
+// ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local -- the options gate is the purpose of this guard.
 public sealed class AuditSelectedRunService(AuditStore store, AuditWorkerService worker, IOptions<AuditOptions> options)
 {
     // "attempt_finished" says the owned pipeline returned. It does not certify a

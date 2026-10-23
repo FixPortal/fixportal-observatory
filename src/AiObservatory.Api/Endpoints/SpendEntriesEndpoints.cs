@@ -397,19 +397,19 @@ public static class SpendEntriesEndpoints
             .Join(
                 db.SpendVendors.AsNoTracking(),
                 entry => entry.VendorId,
-                vendor => vendor.Id,
-                (entry, vendor) => new { Entry = entry, Vendor = vendor }
+                spendVendor => spendVendor.Id,
+                (entry, spendVendor) => new { Entry = entry, Vendor = spendVendor }
             )
             .Join(
                 db.SpendCategories.AsNoTracking(),
                 row => row.Entry.CategoryId,
-                category => category.Id,
-                (row, category) =>
+                spendCategory => spendCategory.Id,
+                (row, spendCategory) =>
                     new
                     {
                         row.Entry,
                         row.Vendor,
-                        Category = category,
+                        Category = spendCategory,
                     }
             )
             .GroupBy(row => new

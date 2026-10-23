@@ -24,12 +24,12 @@ public sealed record GoogleBillingRecord(
 /// Null means the companion count query failed and the number is unavailable this cycle — the
 /// main export still ran; only the stale-correction detection is degraded.
 /// </param>
+/// <param name="OutOfRangeCountFailure">
+/// The exception the companion count query failed with, when it failed — carried so the
+/// "count unavailable" warning can name the cause instead of just the degradation.
+/// </param>
 public sealed record GoogleBillingExportResult(
     IReadOnlyList<GoogleBillingRecord> Records,
     long? OutOfRangeAffectedKeyCount,
-    /// <summary>
-    /// The exception the companion count query failed with, when it failed — carried so the
-    /// "count unavailable" warning can name the cause instead of just the degradation.
-    /// </summary>
     Exception? OutOfRangeCountFailure = null
 );

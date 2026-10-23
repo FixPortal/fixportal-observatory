@@ -40,7 +40,7 @@ public sealed class AuditSnapshotServiceTests : IAsyncLifetime
         {
             Database = $"aiobs_test_snapshot_{Guid.NewGuid():N}",
         }.ConnectionString;
-        await AiObservatory.Testing.PostgresTestAssemblyFixture.CloneMigratedDatabaseAsync(connection, Ct);
+        await Testing.PostgresTestAssemblyFixture.CloneMigratedDatabaseAsync(connection, Ct);
         _options = new DbContextOptionsBuilder<AiObservatoryDbContext>()
             .UseNpgsql(connection, o => o.UseNodaTime())
             .Options;
@@ -455,15 +455,15 @@ public sealed class AuditSnapshotServiceTests : IAsyncLifetime
             var writes = frozen.Tokens.CacheWriteTokens!.Value;
             var oneHour = frozen.Tokens.CacheWrite1hTokens!.Value;
             var exact = observation.FiveMinuteTokens == writes - oneHour && observation.OneHourTokens == oneHour;
-            var effective1h = exact ? oneHour : 0;
-            var effective5m = writes - effective1h;
+            var effective1H = exact ? oneHour : 0;
+            var effective5M = writes - effective1H;
             var rates = input
                 .PricingCatalogs.Single()
                 .Rates.Where(r => r.CatalogEntryKey == frozen.PricingApplication!.RuleId)
                 .ToArray();
             var reference =
-                effective5m / 1_000_000m * rates.Single(r => r.Meter == PriceMeter.CacheWrite5m).UnitPrice
-                + effective1h / 1_000_000m * rates.Single(r => r.Meter == PriceMeter.CacheWrite1h).UnitPrice;
+                effective5M / 1_000_000m * rates.Single(r => r.Meter == PriceMeter.CacheWrite5m).UnitPrice
+                + effective1H / 1_000_000m * rates.Single(r => r.Meter == PriceMeter.CacheWrite1h).UnitPrice;
             frozen.CostUsd.Should().Be(reference);
         }
         retained.InputContentDigest.Should().Be(AuditComputationInput.ContentDigest(input));

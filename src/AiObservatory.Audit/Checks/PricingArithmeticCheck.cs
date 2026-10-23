@@ -223,7 +223,7 @@ public sealed class PricingArithmeticCheck
         return false;
     }
 
-    private static IReadOnlyList<(PriceMeter Meter, long Tokens)>? Terms(FrozenEvent e, Action<string> Gap)
+    private static IReadOnlyList<(PriceMeter Meter, long Tokens)>? Terms(FrozenEvent e, Action<string> gap)
     {
         IReadOnlyList<(PriceMeter Meter, long Tokens)>? terms;
         if (e.Provider.Equals("OpenAi", StringComparison.OrdinalIgnoreCase))
@@ -235,7 +235,7 @@ public sealed class PricingArithmeticCheck
             terms = ClaudeAuditPricing.Terms(e, out var diagnostic);
             if (diagnostic != null)
             {
-                Gap(diagnostic);
+                gap(diagnostic);
             }
         }
         return terms;

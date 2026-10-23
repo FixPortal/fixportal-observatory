@@ -25,7 +25,7 @@ public class SweepStatusWafTests(AiObservatoryApiFactory factory) : IClassFixtur
             }),
         };
 
-    private async Task<List<AiObservatory.Data.Entities.SourceSyncState>> RowsAsync()
+    private async Task<List<Data.Entities.SourceSyncState>> RowsAsync()
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();

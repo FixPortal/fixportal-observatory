@@ -1,7 +1,6 @@
 using System.Text.Json;
 using AiObservatory.Ingest.Services;
 using AwesomeAssertions;
-using Xunit;
 
 namespace AiObservatory.Ingest.Tests.Services;
 

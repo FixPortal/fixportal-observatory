@@ -123,7 +123,7 @@ public sealed class AuditReadinessService(
         }
     }
 
-    private IEnumerable<string> StatusDiagnostics(AiObservatory.Data.Entities.SourceSyncState? status)
+    private IEnumerable<string> StatusDiagnostics(SourceSyncState? status)
     {
         var diagnostics = new List<string>();
         if (status?.IsAvailable == false)

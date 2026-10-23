@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net;
-using System.Net.Http.Json;
 using AiObservatory.Data.Repositories;
 using AiObservatory.Data.Security;
 using NodaTime;
@@ -11,7 +10,7 @@ namespace AiObservatory.Api.Services;
 /// Posts a Slack incoming-webhook message. Best-effort: a failure is logged and swallowed by
 /// the caller (<see cref="CompositeAlertNotifier"/>), never surfaced as a delivery failure
 /// that would cause <c>BudgetAlertService</c> to re-attempt the whole payload (which would
-/// re-send email too). Fenced by <see cref="BudgetAlertClaim.SlackSentAt"/> when the caller
+/// re-send email too). Fenced by <c>BudgetAlertClaim.SlackSentAt</c> when the caller
 /// supplies a claim id, so a claim gets one successful Slack delivery, not one per email retry
 /// cycle; a failed attempt is re-attempted on a later pass. A caller with no claim id fences
 /// itself (the source-health digest holds a per-day claim) and is posted unfenced here —

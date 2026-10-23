@@ -59,7 +59,7 @@ public class SuggestionsEndpointsWafTests(AiObservatoryApiFactory factory) : ICl
     public async Task The_fx_client_never_reaches_the_live_service()
     {
         using var scope = factory.Services.CreateScope();
-        var fx = scope.ServiceProvider.GetRequiredService<AiObservatory.Data.Spend.FxRateProvider>();
+        var fx = scope.ServiceProvider.GetRequiredService<Data.Spend.FxRateProvider>();
 
         var rate = await fx.TryGetUsdToGbpAsync(TestContext.Current.CancellationToken);
 

@@ -9,7 +9,6 @@ using AiObservatory.Api.Services.Intelligence;
 using AiObservatory.Api.Services.Suggestions;
 using AiObservatory.Data;
 using AiObservatory.Data.Entities;
-using AiObservatory.Data.Pricing;
 using AiObservatory.Data.Spend;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Cors.Infrastructure;

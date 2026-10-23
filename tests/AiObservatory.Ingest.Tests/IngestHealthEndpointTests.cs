@@ -1,5 +1,4 @@
 using System.Net;
-using AiObservatory.Ingest.Sources;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;

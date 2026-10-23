@@ -33,7 +33,7 @@ public sealed class AuditOperationalInventoryReaderTests : IAsyncLifetime
             .AddInterceptors(_commands)
             .Options;
         _db = new(_options);
-        await AiObservatory.Testing.PostgresTestAssemblyFixture.CloneMigratedDatabaseAsync(connection, Ct);
+        await Testing.PostgresTestAssemblyFixture.CloneMigratedDatabaseAsync(connection, Ct);
     }
 
     public async ValueTask DisposeAsync()

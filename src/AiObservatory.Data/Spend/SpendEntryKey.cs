@@ -11,6 +11,11 @@ namespace AiObservatory.Data.Spend;
 /// </summary>
 public static class SpendEntryKey
 {
+    /// <param name="occurredOn">The date the charge occurred.</param>
+    /// <param name="vendorKey">The vendor the charge belongs to.</param>
+    /// <param name="amount">The charge amount.</param>
+    /// <param name="currency">The charge currency code.</param>
+    /// <param name="description">The charge description, if any.</param>
     /// <param name="occurrence">
     /// Zero-based index among the rows of the SAME import that share every other input.
     /// Load-bearing: without it, two genuine identical charges on one day collide and the

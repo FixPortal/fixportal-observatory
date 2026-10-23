@@ -13,7 +13,7 @@ public sealed class UsagePriceResolver
     private const int MaximumLoggedModelLength = 160;
     private static readonly object WarningGate = new();
     private static readonly HashSet<(Provider Provider, string ModelFingerprint, string Missing)> Warnings = [];
-    private static bool WarningCapLogged;
+    private static bool _warningCapLogged;
     private readonly PricingSnapshotStore _store;
     private readonly IReadOnlyDictionary<Provider, IProviderPriceCalculator> _calculators;
     private readonly ILogger<UsagePriceResolver> _logger;
@@ -235,12 +235,12 @@ public sealed class UsagePriceResolver
         {
             // At the cap new unpriceable models would stop being reported entirely; say so once
             // rather than going silently dark.
-            if (Warnings.Count < MaximumWarningKeys || WarningCapLogged)
+            if (Warnings.Count < MaximumWarningKeys || _warningCapLogged)
             {
                 return false;
             }
 
-            WarningCapLogged = true;
+            _warningCapLogged = true;
             return true;
         }
     }

@@ -96,13 +96,12 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
     [Fact]
     public async Task LoadsBundlesBeforeFetchingRemoteSources()
     {
-        IPricingSource? source = null;
-        source = Substitute.For<IPricingSource>();
+        var source = Substitute.For<IPricingSource>();
         source.SourceId.Returns(PricingSourceIds.OpenAi);
         await using var harness = await CreateHarnessAsync([source], [Definition(PricingSourceIds.OpenAi)]);
         source
             .FetchAsync(Arg.Any<CancellationToken>())
-            .Returns(async call =>
+            .Returns(async _ =>
             {
                 (await harness.LoadActiveAsync(PricingSourceIds.OpenAi)).Should().NotBeNull();
                 return await Task.FromResult<PricingSnapshotCandidate?>(null);

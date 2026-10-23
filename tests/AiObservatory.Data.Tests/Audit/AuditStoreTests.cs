@@ -38,7 +38,7 @@ public sealed partial class AuditStoreTests : IAsyncLifetime
             .UseNpgsql(connection, o => o.UseNodaTime())
             .Options;
         _db = new(_options);
-        await AiObservatory.Testing.PostgresTestAssemblyFixture.CloneMigratedDatabaseAsync(connection, Ct);
+        await Testing.PostgresTestAssemblyFixture.CloneMigratedDatabaseAsync(connection, Ct);
         _store = new(_db, _clock);
     }
 
@@ -371,7 +371,7 @@ public sealed partial class AuditStoreTests : IAsyncLifetime
         historicalAfter.Should().Be(before);
         var after = await _db.UsageEvents.AsNoTracking().SingleAsync(Ct);
         after.InputTokens.Should().Be(9007199254740993);
-        after.SourceKind.Should().Be(AiObservatory.Data.Entities.SourceKind.Legacy);
+        after.SourceKind.Should().Be(Entities.SourceKind.Legacy);
         after.CostBasis.Should().Be(CostBasis.Unknown);
         (await _store.RegisterMachineAsync(new byte[32], Ct)).MachineId.Should().NotBeEmpty();
     }
@@ -1111,7 +1111,7 @@ public sealed partial class AuditStoreTests : IAsyncLifetime
     [Fact]
     public void Review64_OrdinarySetupUsesMigratedTemplate()
     {
-        AiObservatory.Testing.PostgresTestAssemblyFixture.TemplateMigrationPasses.Should().Be(1);
+        Testing.PostgresTestAssemblyFixture.TemplateMigrationPasses.Should().Be(1);
     }
 
     private async Task<string[]> OrdinaryRows()

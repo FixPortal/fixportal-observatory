@@ -173,7 +173,7 @@ public sealed class GoogleBillingExportClient(
     internal static string ValidateExportTable(string table)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(table);
-        var parts = table.Split('.', StringSplitOptions.None);
+        var parts = table.Split('.');
         if (parts.Length != 3 || parts.Any(part => !IsSafeIdentifier(part)))
         {
             throw new ArgumentException(

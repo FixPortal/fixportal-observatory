@@ -154,8 +154,8 @@ public sealed class AnthropicUsageSourceTests
         long input,
         long output,
         long cacheRead,
-        long cache5m,
-        long cache1h,
+        long cache5M,
+        long cache1H,
         int evidence
     ) =>
         new(
@@ -168,8 +168,8 @@ public sealed class AnthropicUsageSourceTests
             input,
             output,
             cacheRead,
-            cache5m,
-            cache1h,
+            cache5M,
+            cache1H,
             $$"""{"row":{{evidence}}}"""
         );
 }
