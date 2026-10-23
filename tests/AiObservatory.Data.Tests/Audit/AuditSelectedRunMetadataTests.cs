@@ -9,7 +9,6 @@ using AiObservatory.Data.Entities;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using NodaTime;
 
 namespace AiObservatory.Data.Tests.Audit;
 

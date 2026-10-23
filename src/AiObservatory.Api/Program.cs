@@ -66,7 +66,7 @@ builder.Services.AddSingleton<
 >();
 builder.Services.AddSingleton<AuditSelectedInvocationLimiter>();
 builder.Services.AddScoped<IAuditSelectedInvocationMetadataReader, AuditSelectedInvocationMetadataReader>();
-builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.AddScoped<AuditSelectedRunService>();
 builder.Services.AddScoped<IAuditSelectedInvocationService, AuditSelectedInvocationService>();
 builder.Services.AddScoped(services => new AiObservatory.Data.Audit.AuditStore(
