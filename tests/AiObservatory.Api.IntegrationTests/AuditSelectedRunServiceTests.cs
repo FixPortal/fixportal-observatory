@@ -16,6 +16,123 @@ namespace AiObservatory.Api.IntegrationTests;
 public sealed partial class AuditWorkerTests
 {
     [Fact]
+    public async Task SelectedExecution_MismatchedInstanceRefusesBeforeAdmissionOrCoreEntry()
+    {
+        var seed = new AuditStore(_db, _clock, _audit, "Selected-A");
+        var scope = Scope(Guid.NewGuid());
+        var id = await seed.CreateRunAsync(scope, [], "selected-instance-mismatch", false, Now, Ct);
+        var before = (await seed.GetRunAsync(id, Ct))!;
+        var binding = new SelectedRunBinding(id, AuditCanonicalJson.ContentHash(before.Scope), before.Revision);
+        var facts = await UnrelatedFacts(Guid.Empty);
+        var witness = new SelectedExecutionWitness();
+        var options = new DbContextOptionsBuilder<AiObservatoryDbContext>(_options).AddInterceptors(witness).Options;
+        await using var admissionDb = new AiObservatoryDbContext(options);
+        await using var workerDb = new AiObservatoryDbContext(options);
+        var admissionStore = new AuditStore(admissionDb, _clock, _audit, "Selected-A");
+        var workerStore = new AuditStore(workerDb, _clock, _audit, "selected-a");
+        var worker = new AuditWorkerService(workerDb, workerStore, _clock, Options.Create(_audit), options, witness);
+        var service = new AuditSelectedRunService(admissionStore, worker, Options.Create(_audit));
+        Task Execute() => service.ExecuteAsync(binding, Guid.NewGuid(), Now + Duration.FromHours(1), Ct);
+
+        var failure = await Record.ExceptionAsync(Execute);
+
+        var after = (await seed.GetRunAsync(id, Ct))!;
+        after.Attempts.Should().Be(0, "a composition mismatch must not consume fresh selected authority");
+        after.Should().BeEquivalentTo(before);
+        (await UnrelatedFacts(Guid.Empty)).Should().Be(facts);
+        witness.TransactionsStarted.Should().Be(0);
+        witness.VerifierCalls.Should().Be(0);
+        failure.Should().BeOfType<AuditStoreException>().Which.Code.Should().Be("selected_instance_conflict");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SelectedExecution_AcknowledgedPartialProceedRefusesFreshBindingWithoutWrites(bool shared)
+    {
+        var ready = await _store.RegisterMachineAsync(new byte[32], Ct);
+        var unfinished = await _store.RegisterMachineAsync(new byte[32], Ct);
+        var scope = Scope(ready.MachineId) with
+        {
+            Sources = [new(ready.MachineId, "claude-local"), new(unfinished.MachineId, "codex-local")],
+        };
+        var id = await Runs.CreateAsync(new(scope, [], true), "selected-acknowledged-partial", Ct);
+        var originalRevision = (await _store.GetRunAsync(id, Ct))!.Revision;
+        await Seal((await _store.TryClaimCaptureAsync(ready.MachineId, ready.CredentialId, Now, Ct))!);
+        var unfinishedLease = (
+            await _store.TryClaimCaptureAsync(unfinished.MachineId, unfinished.CredentialId, Now, Ct)
+        )!;
+        if (shared)
+        {
+            var otherScope = scope with { Sources = [new(unfinished.MachineId, "codex-local")] };
+            var other = await Runs.CreateAsync(new(otherScope, [], false), "selected-partial-shared-other", Ct);
+            await _db.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE \"AuditRuns\" SET \"State\"='collecting', \"CaptureRequestIds\"={new[] { unfinishedLease.RequestId }} WHERE \"Id\"={other}",
+                Ct
+            );
+        }
+        await _store.ProceedRunAsync(id, Ct);
+        if (shared)
+        {
+            await Seal(unfinishedLease);
+        }
+        (
+            await _db
+                .Database.SqlQuery<bool>(
+                    $"SELECT \"PartialEvidenceAcknowledged\" AS \"Value\" FROM \"AuditRuns\" WHERE \"Id\"={id}"
+                )
+                .SingleAsync(Ct)
+        )
+            .Should()
+            .BeTrue();
+        (
+            await _db
+                .Database.SqlQuery<string>(
+                    $"SELECT \"State\" AS \"Value\" FROM \"AuditCaptureRequests\" WHERE \"Id\"={unfinishedLease.RequestId}"
+                )
+                .SingleAsync(Ct)
+        )
+            .Should()
+            .Be(shared ? "sealed" : "expired");
+        var binding = await SelectedBinding(id);
+        binding.ExpectedRevision.Should().BeGreaterThan(originalRevision);
+        var before = (await _store.GetRunAsync(id, Ct))!;
+        var facts = await UnrelatedFacts(Guid.Empty);
+        Task Execute() => Selected.ExecuteAsync(binding, Guid.NewGuid(), Now + Duration.FromHours(1), Ct);
+
+        var failure = await Record.ExceptionAsync(Execute);
+
+        var after = (await _store.GetRunAsync(id, Ct))!;
+        after.Attempts.Should().Be(0, "acknowledgement remains excluded even after a retained shared request seals");
+        after.Should().BeEquivalentTo(before);
+        (await UnrelatedFacts(Guid.Empty)).Should().Be(facts);
+        failure.Should().BeOfType<AuditStoreException>().Which.Code.Should().Be("selected_partial_not_supported");
+    }
+
+    [Fact]
+    public async Task SelectedExecution_AllowPartialScopeWithoutAcknowledgementRemainsEligible()
+    {
+        var machine = await _store.RegisterMachineAsync(new byte[32], Ct);
+        var scope = Scope(machine.MachineId);
+        scope.AllowPartial.Should().BeTrue();
+        var id = await Runs.CreateAsync(new(scope, [], true), "selected-unacknowledged-control", Ct);
+        await Seal((await _store.TryClaimCaptureAsync(machine.MachineId, machine.CredentialId, Now, Ct))!);
+        (
+            await _db
+                .Database.SqlQuery<bool>(
+                    $"SELECT \"PartialEvidenceAcknowledged\" AS \"Value\" FROM \"AuditRuns\" WHERE \"Id\"={id}"
+                )
+                .SingleAsync(Ct)
+        )
+            .Should()
+            .BeFalse();
+        (await Selected.ExecuteAsync(await SelectedBinding(id), Guid.NewGuid(), Now + Duration.FromHours(1), Ct))
+            .Should()
+            .Be("attempt_finished");
+        (await _store.GetRunAsync(id, Ct))!.State.Should().Be("completed");
+    }
+
+    [Fact]
     public async Task SelectedExecution_CustomInstanceRenewalPreservesOwnedAttempt()
     {
         _audit.RunLeaseRenewalInterval = TimeSpan.FromMilliseconds(25);
@@ -27,7 +144,8 @@ public sealed partial class AuditWorkerTests
             .AddInterceptors(signal)
             .Options;
         var gate = new SelectedVerifierGate();
-        var worker = new AuditWorkerService(_db, store, _clock, Options.Create(_audit), renewalOptions, gate);
+        var workerStore = new AuditStore(_db, _clock, _audit, "selected-custom");
+        var worker = new AuditWorkerService(_db, workerStore, _clock, Options.Create(_audit), renewalOptions, gate);
         var service = new AuditSelectedRunService(store, worker, Options.Create(_audit));
         var binding = new SelectedRunBinding(
             id,

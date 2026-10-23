@@ -48,6 +48,7 @@ public sealed partial class AuditStore
                 var run = await _db.Set<AuditRun>()
                     .SingleOrDefaultAsync(r => r.Id == binding.RunId && r.InstanceId == _instanceId, ct);
                 Require(run != null, "selected_binding_conflict", 409);
+                Require(!run.PartialEvidenceAcknowledged, "selected_partial_not_supported", 409);
                 RequireSelectedState(run, binding, now);
                 var scope = AuditCanonicalJson.Deserialize<AuditScope>(run.Scope);
                 Require(

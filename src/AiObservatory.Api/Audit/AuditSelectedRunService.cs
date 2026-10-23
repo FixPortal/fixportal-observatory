@@ -20,6 +20,10 @@ public sealed class AuditSelectedRunService(AuditStore store, AuditWorkerService
         {
             throw new AuditStoreException("selected_execution_disabled", 409);
         }
+        if (!string.Equals(store.InstanceId, worker.InstanceId, StringComparison.Ordinal))
+        {
+            throw new AuditStoreException("selected_instance_conflict", 409);
+        }
         var admission = await store.TryAdmitSelectedRunAsync(binding, workerId, admissionExpiresAt, ct);
         if (admission.Lease == null)
         {
