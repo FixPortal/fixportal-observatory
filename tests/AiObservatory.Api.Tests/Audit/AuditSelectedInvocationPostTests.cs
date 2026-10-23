@@ -4,8 +4,8 @@ using System.Text.Json;
 using AiObservatory.Api.Audit;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace AiObservatory.Api.Tests.Audit;
 
@@ -24,14 +24,17 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         var ownership = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var signal = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         invocation.OwnershipSignal = signal;
-        await using var app = await Host(new(), Active(invocation) with
-        {
-            Time = time,
-            RequestAbort = abort.Token,
-            HandlerFinished = finished,
-            HandlerOwnership = ownership,
-            OwnershipSignal = signal,
-        });
+        await using var app = await Host(
+            new(),
+            Active(invocation) with
+            {
+                Time = time,
+                RequestAbort = abort.Token,
+                HandlerFinished = finished,
+                HandlerOwnership = ownership,
+                OwnershipSignal = signal,
+            }
+        );
         using var client = app.GetTestClient();
         var response = Post(client);
         try
@@ -51,8 +54,12 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
             {
                 app.Services.GetRequiredService<IHostApplicationLifetime>().StopApplication();
             }
-            (await signal.Task.WaitAsync(TestContext.Current.CancellationToken)).Should().Be("cancellation",
-                "premature server completion is itself a positive ownership violation, even if it disposed the cancellation budget");
+            (await signal.Task.WaitAsync(TestContext.Current.CancellationToken))
+                .Should()
+                .Be(
+                    "cancellation",
+                    "premature server completion is itself a positive ownership violation, even if it disposed the cancellation budget"
+                );
             await invocation.Cancelled.Task.WaitAsync(TestContext.Current.CancellationToken);
             finished.Task.IsCompleted.Should().BeFalse("the request must not detach the owned invocation");
         }
@@ -87,8 +94,20 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         var invocation = new CountingInvocation { Hold = true };
         var time = new PostTime();
         var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var body = new HeldPostBody(Encoding.UTF8.GetBytes("{\"schemaVersion\":1,\"expectedRevision\":7,\"fullScopeDigest\":\"" + Digest + "\"}"));
-        await using var app = await Host(new(), Active(invocation) with { Time = time, Body = body, HandlerFinished = finished });
+        var body = new HeldPostBody(
+            Encoding.UTF8.GetBytes(
+                "{\"schemaVersion\":1,\"expectedRevision\":7,\"fullScopeDigest\":\"" + Digest + "\"}"
+            )
+        );
+        await using var app = await Host(
+            new(),
+            Active(invocation) with
+            {
+                Time = time,
+                Body = body,
+                HandlerFinished = finished,
+            }
+        );
         using var client = app.GetTestClient();
         var response = Post(client);
         try
@@ -117,7 +136,11 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
     {
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
         {
             Entered.TrySetResult();
             await Release.Task.WaitAsync(cancellationToken);
@@ -131,12 +154,14 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         private TimeSpan _elapsed;
         public int Created => _timers.Count;
         public TimeSpan InitialDue => _timers[0].Due;
+
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
         {
             var timer = new PostTimer(callback, state, _elapsed + dueTime);
             _timers.Add(timer);
             return timer;
         }
+
         public void Advance(TimeSpan amount)
         {
             _elapsed += amount;
@@ -145,11 +170,14 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
                 timer.Fire(_elapsed);
             }
         }
+
         private sealed class PostTimer(TimerCallback callback, object? state, TimeSpan due) : ITimer
         {
             private bool _disposed;
             public TimeSpan Due { get; } = due;
+
             public bool Change(TimeSpan dueTime, TimeSpan period) => true;
+
             public void Fire(TimeSpan elapsed)
             {
                 if (!_disposed && elapsed >= Due)
@@ -158,10 +186,17 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
                     callback(state);
                 }
             }
+
             public void Dispose() => _disposed = true;
-            public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
         }
     }
+
     [Theory]
     [InlineData("off", 503)]
     [InlineData("worker", 409)]
@@ -194,7 +229,10 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         var invocation = new CountingInvocation();
         await using var app = await Host(new(), Active(invocation));
         using var client = app.GetTestClient();
-        using var response = await Post(client, "{\"schemaVersion\":1,\"expectedRevision\":8,\"fullScopeDigest\":\"" + Digest + "\"}");
+        using var response = await Post(
+            client,
+            "{\"schemaVersion\":1,\"expectedRevision\":8,\"fullScopeDigest\":\"" + Digest + "\"}"
+        );
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         invocation.Resolutions.Should().Be(0);
     }
@@ -230,6 +268,7 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         json.RootElement.GetProperty("current").ValueKind.Should().Be(JsonValueKind.Null);
         invocation.Calls.Should().Be(1);
     }
+
     [Fact]
     public async Task PostReturnsCompactPendingOnlyAfterExactBodyBinding()
     {
@@ -241,24 +280,42 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
         invocation.Calls.Should().Be(1);
         invocation.Resolutions.Should().Be(1);
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        using var json = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)
+        );
         json.RootElement.GetProperty("status").GetString().Should().Be("pending");
-        json.RootElement.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
-            "schemaVersion", "status", "code", "runId", "invocationId", "fullScopeDigest", "expectedRevision", "current");
+        json.RootElement.EnumerateObject()
+            .Select(p => p.Name)
+            .Should()
+            .BeEquivalentTo(
+                "schemaVersion",
+                "status",
+                "code",
+                "runId",
+                "invocationId",
+                "fullScopeDigest",
+                "expectedRevision",
+                "current"
+            );
     }
 
-    private static HostSettings Active(CountingInvocation invocation) => new()
-    {
-        ActionEnabled = true,
-        ExpiresAtUtc = "2030-01-02T03:04:00Z",
-        Invocation = invocation,
-    };
+    private static HostSettings Active(CountingInvocation invocation) =>
+        new()
+        {
+            ActionEnabled = true,
+            ExpiresAtUtc = "2030-01-02T03:04:00Z",
+            Invocation = invocation,
+        };
 
     private static async Task<HttpResponseMessage> Post(HttpClient client, string? body = null, string? subject = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, AuditSelectedInvocationEndpoints.Prefix + "/invoke")
         {
-            Content = new StringContent(body ?? "{\"schemaVersion\":1,\"expectedRevision\":7,\"fullScopeDigest\":\"" + Digest + "\"}", Encoding.UTF8, "application/json"),
+            Content = new StringContent(
+                body ?? "{\"schemaVersion\":1,\"expectedRevision\":7,\"fullScopeDigest\":\"" + Digest + "\"}",
+                Encoding.UTF8,
+                "application/json"
+            ),
         };
         request.Headers.Add("X-Observatory-Key", Admin);
         request.Headers.Add("Idempotency-Key", InvocationId.ToString("D"));
@@ -280,7 +337,12 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public async Task<SelectedInvocationOutcome> InvokeAsync(SelectedInvocationAuthority authority, SelectedInvocationRequest request, CancellationToken ct)
+
+        public async Task<SelectedInvocationOutcome> InvokeAsync(
+            SelectedInvocationAuthority authority,
+            SelectedInvocationRequest request,
+            CancellationToken ct
+        )
         {
             Calls++;
             authority.Binding.RunId.Should().Be(RunId);
@@ -302,8 +364,11 @@ public sealed partial class AuditSelectedInvocationEndpointsTests
             }
             if (Oversized)
             {
-                return new("admitted", "selected_admitted",
-                    new(9, "executing", "verifying", 1, new string('x', 8192), false, null, null));
+                return new(
+                    "admitted",
+                    "selected_admitted",
+                    new(9, "executing", "verifying", 1, new string('x', 8192), false, null, null)
+                );
             }
             return new("pending", "selected_pending");
         }

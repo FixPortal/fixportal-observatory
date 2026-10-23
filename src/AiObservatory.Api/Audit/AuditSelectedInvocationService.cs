@@ -2,17 +2,30 @@ namespace AiObservatory.Api.Audit;
 
 public interface IAuditSelectedInvocationService
 {
-    Task<SelectedInvocationOutcome> InvokeAsync(SelectedInvocationAuthority authority, SelectedInvocationRequest request, CancellationToken ct);
+    Task<SelectedInvocationOutcome> InvokeAsync(
+        SelectedInvocationAuthority authority,
+        SelectedInvocationRequest request,
+        CancellationToken ct
+    );
 }
 
 /// <summary>One awaited core call; exceptions cannot establish which admission phase committed.</summary>
-public sealed class AuditSelectedInvocationService(AuditSelectedRunService core, IAuditSelectedInvocationMetadataReader metadata)
-    : IAuditSelectedInvocationService
+public sealed class AuditSelectedInvocationService(
+    AuditSelectedRunService core,
+    IAuditSelectedInvocationMetadataReader metadata
+) : IAuditSelectedInvocationService
 {
-    public async Task<SelectedInvocationOutcome> InvokeAsync(SelectedInvocationAuthority authority, SelectedInvocationRequest request, CancellationToken ct)
+    public async Task<SelectedInvocationOutcome> InvokeAsync(
+        SelectedInvocationAuthority authority,
+        SelectedInvocationRequest request,
+        CancellationToken ct
+    )
     {
-        if (request.SchemaVersion != 1 || request.ExpectedRevision != authority.Binding.ExpectedRevision
-            || request.FullScopeDigest != authority.Binding.ScopeDigest)
+        if (
+            request.SchemaVersion != 1
+            || request.ExpectedRevision != authority.Binding.ExpectedRevision
+            || request.FullScopeDigest != authority.Binding.ScopeDigest
+        )
         {
             return new("conflict", "selected_binding_conflict");
         }
@@ -34,13 +47,27 @@ public sealed class AuditSelectedInvocationService(AuditSelectedRunService core,
             }
             var current = await metadata.ReadAsync(authority.Binding, ct);
             ct.ThrowIfCancellationRequested();
-            if (current == null || current.RunId != authority.Binding.RunId || current.FullScopeDigest != authority.Binding.ScopeDigest)
+            if (
+                current == null
+                || current.RunId != authority.Binding.RunId
+                || current.FullScopeDigest != authority.Binding.ScopeDigest
+            )
             {
                 return Ambiguous();
             }
-            var state = new SelectedCompactRunState(current.CurrentRevision, current.State, current.Stage, current.Attempts,
-                current.DiagnosticCode, current.ResultAvailable, current.EvidenceExpiresAt?.ToDateTimeOffset(), current.SummaryExpiresAt?.ToDateTimeOffset());
-            return current.State == "completed" ? new("completed", "selected_completed", state) : new("admitted", "selected_admitted", state);
+            var state = new SelectedCompactRunState(
+                current.CurrentRevision,
+                current.State,
+                current.Stage,
+                current.Attempts,
+                current.DiagnosticCode,
+                current.ResultAvailable,
+                current.EvidenceExpiresAt?.ToDateTimeOffset(),
+                current.SummaryExpiresAt?.ToDateTimeOffset()
+            );
+            return current.State == "completed"
+                ? new("completed", "selected_completed", state)
+                : new("admitted", "selected_admitted", state);
         }
         catch (Exception)
         {

@@ -1,6 +1,6 @@
-using Microsoft.Extensions.Options;
 using System.Globalization;
 using AiObservatory.Data.Audit;
+using Microsoft.Extensions.Options;
 using NodaTime;
 using NodaTime.Text;
 
@@ -15,6 +15,7 @@ public sealed class AuditSelectedInvocationOptions
     public string? ExpectedRevision { get; set; }
     public string? InvocationId { get; set; }
     public string? ExpiresAtUtc { get; set; }
+
     public SelectedInvocationAuthority? ToAuthority()
     {
         var snapshot = new AuditSelectedInvocationOptions
@@ -29,21 +30,35 @@ public sealed class AuditSelectedInvocationOptions
         var validation = new AuditSelectedInvocationOptionsValidator().Validate(null, snapshot);
         if (validation.Failed)
         {
-            throw new OptionsValidationException(SectionName, typeof(AuditSelectedInvocationOptions), validation.Failures);
+            throw new OptionsValidationException(
+                SectionName,
+                typeof(AuditSelectedInvocationOptions),
+                validation.Failures
+            );
         }
         if (snapshot.IsUnbound)
         {
             return null;
         }
         AuditSelectedInvocationOptionsValidator.TryExpiry(snapshot.ExpiresAtUtc, out var expiry);
-        return new(snapshot.Enabled,
-            new SelectedRunBinding(Guid.Parse(snapshot.RunId!), snapshot.FullScopeDigest!,
-                long.Parse(snapshot.ExpectedRevision!, NumberStyles.None, CultureInfo.InvariantCulture)),
-            Guid.Parse(snapshot.InvocationId!), expiry);
+        return new(
+            snapshot.Enabled,
+            new SelectedRunBinding(
+                Guid.Parse(snapshot.RunId!),
+                snapshot.FullScopeDigest!,
+                long.Parse(snapshot.ExpectedRevision!, NumberStyles.None, CultureInfo.InvariantCulture)
+            ),
+            Guid.Parse(snapshot.InvocationId!),
+            expiry
+        );
     }
 
-    internal bool IsUnbound => RunId == null && FullScopeDigest == null && ExpectedRevision == null
-        && InvocationId == null && ExpiresAtUtc == null;
+    internal bool IsUnbound =>
+        RunId == null
+        && FullScopeDigest == null
+        && ExpectedRevision == null
+        && InvocationId == null
+        && ExpiresAtUtc == null;
 }
 
 public sealed class AuditSelectedInvocationOptionsValidator : IValidateOptions<AuditSelectedInvocationOptions>
@@ -63,12 +78,17 @@ public sealed class AuditSelectedInvocationOptionsValidator : IValidateOptions<A
         {
             errors.Add(nameof(options.InvocationId));
         }
-        if (options.FullScopeDigest is not { Length: 64 }
-            || !options.FullScopeDigest.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f'))
+        if (
+            options.FullScopeDigest is not { Length: 64 }
+            || !options.FullScopeDigest.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f')
+        )
         {
             errors.Add(nameof(options.FullScopeDigest));
         }
-        if (!long.TryParse(options.ExpectedRevision, NumberStyles.None, CultureInfo.InvariantCulture, out var revision) || revision < 0)
+        if (
+            !long.TryParse(options.ExpectedRevision, NumberStyles.None, CultureInfo.InvariantCulture, out var revision)
+            || revision < 0
+        )
         {
             errors.Add(nameof(options.ExpectedRevision));
         }
@@ -82,8 +102,11 @@ public sealed class AuditSelectedInvocationOptionsValidator : IValidateOptions<A
     internal static bool TryExpiry(string? text, out Instant expiry)
     {
         expiry = default;
-        if (text == null || !OffsetDateTimePattern.ExtendedIso.Parse(text).TryGetValue(default, out var parsed)
-            || parsed.Offset != Offset.Zero)
+        if (
+            text == null
+            || !OffsetDateTimePattern.ExtendedIso.Parse(text).TryGetValue(default, out var parsed)
+            || parsed.Offset != Offset.Zero
+        )
         {
             return false;
         }

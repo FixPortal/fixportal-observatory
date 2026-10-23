@@ -22,9 +22,15 @@ public static partial class AuditSelectedInvocationEndpoints
     private static async Task<IResult> InvokeAsync(HttpContext http, SelectedInvocationAuthority authority)
     {
         // One timer starts before any body read and is never reset after parsing.
-        using var budget = new CancellationTokenSource(TimeSpan.FromMinutes(4), http.RequestServices.GetRequiredService<TimeProvider>());
-        using var attempt = CancellationTokenSource.CreateLinkedTokenSource(budget.Token, http.RequestAborted,
-            http.RequestServices.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping);
+        using var budget = new CancellationTokenSource(
+            TimeSpan.FromMinutes(4),
+            http.RequestServices.GetRequiredService<TimeProvider>()
+        );
+        using var attempt = CancellationTokenSource.CreateLinkedTokenSource(
+            budget.Token,
+            http.RequestAborted,
+            http.RequestServices.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping
+        );
         SelectedInvocationRequest request;
         try
         {
@@ -67,25 +73,50 @@ public static partial class AuditSelectedInvocationEndpoints
         }
     }
 
-    private static IResult PostResult(HttpContext http, SelectedInvocationAuthority authority, SelectedInvocationOutcome outcome, int? statusCode = null)
+    private static IResult PostResult(
+        HttpContext http,
+        SelectedInvocationAuthority authority,
+        SelectedInvocationOutcome outcome,
+        int? statusCode = null
+    )
     {
-        var status = statusCode ?? outcome.Status switch
-        {
-            "completed" or "admitted" => 200,
-            "pending" => 202,
-            "busy" or "conflict" => 409,
-            _ => 503,
-        };
-        var options = http.RequestServices.GetRequiredService<IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions>>().Value.SerializerOptions;
+        var status =
+            statusCode
+            ?? outcome.Status switch
+            {
+                "completed" or "admitted" => 200,
+                "pending" => 202,
+                "busy" or "conflict" => 409,
+                _ => 503,
+            };
+        var options = http
+            .RequestServices.GetRequiredService<IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions>>()
+            .Value.SerializerOptions;
         var bytes = JsonSerializer.SerializeToUtf8Bytes(PostResponse(authority, outcome), options);
-        return bytes.Length <= 8192 ? Results.Content(Encoding.UTF8.GetString(bytes), "application/json", statusCode: status) : AmbiguousPost(authority);
+        return bytes.Length <= 8192
+            ? Results.Content(Encoding.UTF8.GetString(bytes), "application/json", statusCode: status)
+            : AmbiguousPost(authority);
     }
 
-    private static SelectedInvocationPostResponse PostResponse(SelectedInvocationAuthority authority, SelectedInvocationOutcome outcome) =>
-        new(1, outcome.Status, outcome.Code, authority.Binding.RunId, authority.InvocationId, authority.Binding.ScopeDigest,
-            authority.Binding.ExpectedRevision, outcome.Current);
+    private static SelectedInvocationPostResponse PostResponse(
+        SelectedInvocationAuthority authority,
+        SelectedInvocationOutcome outcome
+    ) =>
+        new(
+            1,
+            outcome.Status,
+            outcome.Code,
+            authority.Binding.RunId,
+            authority.InvocationId,
+            authority.Binding.ScopeDigest,
+            authority.Binding.ExpectedRevision,
+            outcome.Current
+        );
 
     private static IResult AmbiguousPost(SelectedInvocationAuthority authority) =>
-        Results.Content(JsonSerializer.Serialize(PostResponse(authority, new("ambiguous", "selected_ambiguous")), FixedPostJson),
-            "application/json", statusCode: 503);
+        Results.Content(
+            JsonSerializer.Serialize(PostResponse(authority, new("ambiguous", "selected_ambiguous")), FixedPostJson),
+            "application/json",
+            statusCode: 503
+        );
 }

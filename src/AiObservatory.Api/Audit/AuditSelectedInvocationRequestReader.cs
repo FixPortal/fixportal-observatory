@@ -8,7 +8,11 @@ namespace AiObservatory.Api.Audit;
 
 public static class AuditSelectedInvocationRequestReader
 {
-    public static async Task<SelectedInvocationRequest> ReadAsync(HttpRequest request, SelectedInvocationAuthority authority, CancellationToken ct)
+    public static async Task<SelectedInvocationRequest> ReadAsync(
+        HttpRequest request,
+        SelectedInvocationAuthority authority,
+        CancellationToken ct
+    )
     {
         ArgumentNullException.ThrowIfNull(request);
         ct.ThrowIfCancellationRequested();
@@ -41,9 +45,12 @@ public static class AuditSelectedInvocationRequestReader
         {
             throw InvalidRequest();
         }
-        if (!MediaTypeHeaderValue.TryParse(request.ContentType, out var contentType)
+        if (
+            !MediaTypeHeaderValue.TryParse(request.ContentType, out var contentType)
             || !string.Equals(contentType.MediaType.Value, "application/json", StringComparison.OrdinalIgnoreCase)
-            || contentType.Charset.HasValue && !string.Equals(contentType.Charset.Value.Trim('"'), "utf-8", StringComparison.OrdinalIgnoreCase))
+            || contentType.Charset.HasValue
+                && !string.Equals(contentType.Charset.Value.Trim('"'), "utf-8", StringComparison.OrdinalIgnoreCase)
+        )
         {
             throw new AuditStoreException("selected_content_type", 415);
         }
@@ -72,8 +79,11 @@ public static class AuditSelectedInvocationRequestReader
     private static SelectedInvocationRequest Parse(JsonElement root, SelectedInvocationAuthority authority)
     {
         RequireShape(root);
-        if (!CanonicalInteger(root.GetProperty("schemaVersion"), out var schema) || schema != 1
-            || !CanonicalInteger(root.GetProperty("expectedRevision"), out var revision))
+        if (
+            !CanonicalInteger(root.GetProperty("schemaVersion"), out var schema)
+            || schema != 1
+            || !CanonicalInteger(root.GetProperty("expectedRevision"), out var revision)
+        )
         {
             throw InvalidRequest();
         }
@@ -83,8 +93,11 @@ public static class AuditSelectedInvocationRequestReader
             throw InvalidRequest();
         }
         var digest = digestValue.GetString();
-        if (digest is not { Length: 64 } || !digest.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f')
-            || digestValue.GetRawText() != "\"" + digest + "\"")
+        if (
+            digest is not { Length: 64 }
+            || !digest.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f')
+            || digestValue.GetRawText() != "\"" + digest + "\""
+        )
         {
             throw InvalidRequest();
         }
@@ -102,8 +115,11 @@ public static class AuditSelectedInvocationRequestReader
             throw InvalidRequest();
         }
         var properties = root.EnumerateObject().ToArray();
-        if (properties.Length != 3 || properties.Select(p => p.Name).Distinct(StringComparer.Ordinal).Count() != 3
-            || properties.Any(p => p.Name is not ("schemaVersion" or "expectedRevision" or "fullScopeDigest")))
+        if (
+            properties.Length != 3
+            || properties.Select(p => p.Name).Distinct(StringComparer.Ordinal).Count() != 3
+            || properties.Any(p => p.Name is not ("schemaVersion" or "expectedRevision" or "fullScopeDigest"))
+        )
         {
             throw InvalidRequest();
         }

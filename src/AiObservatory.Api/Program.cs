@@ -15,8 +15,8 @@ using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Microsoft.Identity.Web;
 using NodaTime;
 using NodaTime.Serialization.SystemTextJson;
@@ -56,9 +56,14 @@ builder
     .Bind(builder.Configuration.GetSection(AuditOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<AuditOptions>, AuditOptionsValidator>();
-builder.Services.AddOptions<AuditSelectedInvocationOptions>()
-    .Bind(builder.Configuration.GetSection(AuditSelectedInvocationOptions.SectionName)).ValidateOnStart();
-builder.Services.AddSingleton<IValidateOptions<AuditSelectedInvocationOptions>, AuditSelectedInvocationOptionsValidator>();
+builder
+    .Services.AddOptions<AuditSelectedInvocationOptions>()
+    .Bind(builder.Configuration.GetSection(AuditSelectedInvocationOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<
+    IValidateOptions<AuditSelectedInvocationOptions>,
+    AuditSelectedInvocationOptionsValidator
+>();
 builder.Services.AddSingleton<AuditSelectedInvocationLimiter>();
 builder.Services.AddScoped<IAuditSelectedInvocationMetadataReader, AuditSelectedInvocationMetadataReader>();
 builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);

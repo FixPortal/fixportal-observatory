@@ -13,7 +13,12 @@ public sealed class AuditSelectedInvocationLimiter(IClock clock)
         lock (_gate)
         {
             var now = clock.GetCurrentInstant();
-            foreach (var expired in _admitted.Where(pair => pair.Value + Duration.FromMinutes(1) <= now).Select(pair => pair.Key).ToArray())
+            foreach (
+                var expired in _admitted
+                    .Where(pair => pair.Value + Duration.FromMinutes(1) <= now)
+                    .Select(pair => pair.Key)
+                    .ToArray()
+            )
             {
                 _admitted.Remove(expired);
             }
@@ -30,7 +35,8 @@ public sealed class AuditSelectedInvocationLimiter(IClock clock)
 public sealed class AuditSelectedInvocationLimitFilter(AuditSelectedInvocationLimiter limiter) : IEndpointFilter
 {
     public ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next) =>
-        context.HttpContext.Items[OperationalInventoryAdminFilter.AuthorityItem] is string authority && limiter.TryAcquire(authority)
+        context.HttpContext.Items[OperationalInventoryAdminFilter.AuthorityItem] is string authority
+        && limiter.TryAcquire(authority)
             ? next(context)
             : ValueTask.FromResult<object?>(Results.StatusCode(StatusCodes.Status429TooManyRequests));
 }
