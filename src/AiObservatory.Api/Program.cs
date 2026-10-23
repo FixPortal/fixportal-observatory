@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Identity.Web;
 using NodaTime;
 using NodaTime.Serialization.SystemTextJson;
@@ -55,6 +56,14 @@ builder
     .Bind(builder.Configuration.GetSection(AuditOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<AuditOptions>, AuditOptionsValidator>();
+builder.Services.AddOptions<AuditSelectedInvocationOptions>()
+    .Bind(builder.Configuration.GetSection(AuditSelectedInvocationOptions.SectionName)).ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<AuditSelectedInvocationOptions>, AuditSelectedInvocationOptionsValidator>();
+builder.Services.AddSingleton<AuditSelectedInvocationLimiter>();
+builder.Services.AddScoped<IAuditSelectedInvocationMetadataReader, AuditSelectedInvocationMetadataReader>();
+builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+builder.Services.AddScoped<AuditSelectedRunService>();
+builder.Services.AddScoped<IAuditSelectedInvocationService, AuditSelectedInvocationService>();
 builder.Services.AddScoped(services => new AiObservatory.Data.Audit.AuditStore(
     services.GetRequiredService<AiObservatoryDbContext>(),
     services.GetRequiredService<IClock>(),
@@ -202,6 +211,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.UseForwardedHeaders();
+app.UseAuditSelectedInvocationPrivacy();
 app.UseCors();
 app.UseOperationalInventoryPrivacy();
 app.UseRateLimiter();
@@ -220,6 +230,7 @@ if (authEnabled)
 
 var api = app.MapGroup("/api").AddEndpointFilter<ApiKeyEndpointFilter>().RequireRateLimiting("api");
 app.MapOperationalInventoryEndpoint();
+app.MapAuditSelectedInvocationEndpoints();
 if (app.Services.GetRequiredService<IOptions<AuditOptions>>().Value.Enabled)
 {
     app.MapAuditMachineEndpoints();
