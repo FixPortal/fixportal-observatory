@@ -17,7 +17,7 @@ using AuditOptions = AiObservatory.Api.Audit.AuditOptions;
 namespace AiObservatory.Api.IntegrationTests;
 
 [Trait("Category", "Integration")]
-public sealed class AuditWorkerTests : IAsyncLifetime
+public sealed partial class AuditWorkerTests : IAsyncLifetime
 {
     private static readonly Instant Now = Instant.FromUtc(2026, 10, 22, 12, 0);
     private readonly FakeClock _clock = new(Now);
@@ -56,6 +56,40 @@ public sealed class AuditWorkerTests : IAsyncLifetime
 
     private AuditRunService Runs => new(_store, _clock);
     private AuditWorkerService Worker => new(_db, _store, _clock, Options.Create(_audit), _options);
+
+    [Fact]
+    public async Task SelectedExecution_DoesNotRefreshUnrelatedCollectingRun()
+    {
+        var machine = await _store.RegisterMachineAsync(new byte[32], Ct);
+        var unrelated = await Runs.CreateAsync(new(Scope(machine.MachineId), [], true), "selected-witness-other", Ct);
+        var selected = await Runs.CreateAsync(new(Scope(Guid.NewGuid()), [], false), "selected-witness-target", Ct);
+        var before = (await _store.GetRunAsync(unrelated, Ct))!;
+
+        var selectedRun = (await _store.GetRunAsync(selected, Ct))!;
+        var service = new AuditSelectedRunService(_store, Worker, Options.Create(_audit));
+        (
+            await service.ExecuteAsync(
+                new(selected, AuditCanonicalJson.ContentHash(selectedRun.Scope), selectedRun.Revision),
+                Guid.NewGuid(),
+                Now + Duration.FromHours(1),
+                Ct
+            )
+        )
+            .Should()
+            .Be("attempt_finished");
+
+        var after = (await _store.GetRunAsync(unrelated, Ct))!;
+        after.State.Should().Be(before.State);
+        after.Stage.Should().Be(before.Stage);
+        after.Revision.Should().Be(before.Revision);
+        after
+            .DiagnosticCode.Should()
+            .Be(
+                before.DiagnosticCode,
+                "executing one selected run must not write capture_waiting to another collecting run"
+            );
+        (await _store.GetRunAsync(selected, Ct))!.State.Should().Be("completed");
+    }
 
     [Fact]
     public async Task Worker_NoCaptureStillFreezesAndCannotMatch()

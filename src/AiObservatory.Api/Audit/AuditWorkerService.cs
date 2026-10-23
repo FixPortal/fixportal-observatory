@@ -33,17 +33,23 @@ public sealed class AuditWorkerService(
         {
             return false;
         }
+        await ExecuteLeasedAsync(lease, ct);
+        return true;
+    }
+
+    internal async Task ExecuteLeasedAsync(RunLease lease, CancellationToken ct)
+    {
         using var owned = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var renewal = Renew(lease, owned);
         try
         {
             if (!await store.SetRunStageAsync(lease, "collectingEvidence", owned.Token))
             {
-                return true;
+                return;
             }
             if (!await store.SetRunStageAsync(lease, "snapshotting", owned.Token))
             {
-                return true;
+                return;
             }
             await new AuditSnapshotService(db, store, lease, options.Value.MaxSnapshotBytes).CreateAsync(
                 lease.RunId,
@@ -54,7 +60,7 @@ public sealed class AuditWorkerService(
                 ?? throw new AuditStoreException("snapshot_unavailable", 410);
             if (!await store.SetRunStageAsync(lease, "verifying", owned.Token))
             {
-                return true;
+                return;
             }
             var input = AuditCanonicalJson.Deserialize<AuditInput>(snapshot.Bytes);
             var result = await _verifier.VerifyAsync(input, owned.Token);
@@ -81,7 +87,6 @@ public sealed class AuditWorkerService(
             await owned.CancelAsync();
             await renewal;
         }
-        return true;
     }
 
     private async Task Renew(RunLease lease, CancellationTokenSource owned)
@@ -92,7 +97,7 @@ public sealed class AuditWorkerService(
             while (await timer.WaitForNextTickAsync(owned.Token))
             {
                 await using var renewalDb = new AiObservatoryDbContext(dbOptions);
-                var renewalStore = new AuditStore(renewalDb, clock, options.Value);
+                var renewalStore = new AuditStore(renewalDb, clock, options.Value, store.InstanceId);
                 if (!await renewalStore.RenewRunLeaseAsync(lease, clock.GetCurrentInstant(), owned.Token))
                 {
                     await owned.CancelAsync();
