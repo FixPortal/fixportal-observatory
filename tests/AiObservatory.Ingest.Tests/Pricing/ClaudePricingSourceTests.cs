@@ -417,6 +417,79 @@ public sealed class ClaudePricingSourceTests
     }
 
     [Theory]
+    [InlineData(
+        " ([retired, except on Bedrock and Claude Models on Google Cloud (Google managed)](https://platform.claude.com/docs/en/about-claude/model-deprecations))"
+    )]
+    [InlineData(
+        " ([retired, except on Claude Models on Google Cloud (Google managed)](https://platform.claude.com/docs/en/about-claude/model-deprecations))"
+    )]
+    public void ObservedGoogleManagedRetirementAnnotationsPreserveEveryLane(string qualifier)
+    {
+        var original = ReadFixture("claude-context-pricing.md");
+        var document = original.Replace("Claude Sonnet 5", "Claude Sonnet 5" + qualifier, StringComparison.Ordinal);
+        document.Should().NotBe(original);
+        var expected = ClaudePricingSource.Parse(original, RetrievedAt);
+        var actual = ClaudePricingSource.Parse(document, RetrievedAt);
+        PricingCatalogJson.Serialize(actual).Should().Be(PricingCatalogJson.Serialize(expected));
+        actual
+            .Entries.Where(entry => entry.ModelPrefix == "claude-haiku-5-5")
+            .Select(entry => entry.Context)
+            .Should()
+            .BeEquivalentTo("prompt_le_100000", "prompt_gt_100000");
+        actual
+            .Entries.Where(entry => entry.ModelPrefix == "claude-sonnet-5")
+            .Should()
+            .OnlyContain(entry => entry.Context == null);
+    }
+
+    [Theory]
+    [InlineData(
+        " ([Retired, except on Claude Models on Google Cloud (Google managed)](https://platform.claude.com/docs/en/about-claude/model-deprecations))"
+    )]
+    [InlineData(
+        " ([retired, except on Claude Models on Google Cloud (Google Managed)](https://platform.claude.com/docs/en/about-claude/model-deprecations))"
+    )]
+    [InlineData(
+        " ([retired, except on Claude Models on Google Cloud (Google managed)](https://example.invalid/model-deprecations))"
+    )]
+    [InlineData(
+        " ([retired, except on Claude Models on Google Cloud (Google managed)](http://platform.claude.com/docs/en/about-claude/model-deprecations))"
+    )]
+    [InlineData(
+        " ([retired, except on Claude Models on Google Cloud (Google managed); for prompts over 100,000 tokens](https://platform.claude.com/docs/en/about-claude/model-deprecations))"
+    )]
+    [InlineData(
+        " ([retired, except on Claude Models on Google Cloud (Google managed)](https://platform.claude.com/docs/en/about-claude/model-deprecations)) (for prompts over 100,000 tokens)"
+    )]
+    [InlineData(
+        " ([retired, except on Claude Models on Google Cloud (Google managed)](https://platform.claude.com/docs/en/about-claude/model-deprecations)) (for prompts over 200,000 tokens)"
+    )]
+    public void GoogleManagedPresentationAdmissionDoesNotEraseUnknownConditions(string qualifier)
+    {
+        var document = Fixture().Replace("Claude Sonnet 5", "Claude Sonnet 5" + qualifier, StringComparison.Ordinal);
+        var act = () => ClaudePricingSource.Parse(document, RetrievedAt);
+        act.Should()
+            .Throw<InvalidDataException>()
+            .WithMessage("Claude pricing contains an unsupported model qualifier.");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("\t")]
+    [InlineData("  ")]
+    public void GoogleManagedPresentationAnnotationsKeepExactBoundary(string boundary)
+    {
+        const string qualifier =
+            "([retired, except on Claude Models on Google Cloud (Google managed)](https://platform.claude.com/docs/en/about-claude/model-deprecations))";
+        var document = Fixture()
+            .Replace("Claude Sonnet 5", "Claude Sonnet 5" + boundary + qualifier, StringComparison.Ordinal);
+        var act = () => ClaudePricingSource.Parse(document, RetrievedAt);
+        act.Should()
+            .Throw<InvalidDataException>()
+            .WithMessage("Claude pricing contains a malformed model qualifier boundary.");
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("\t")]
     [InlineData("\u00a0")]

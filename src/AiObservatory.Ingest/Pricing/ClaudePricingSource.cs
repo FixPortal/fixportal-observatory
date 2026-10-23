@@ -335,7 +335,9 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
                 or " ([limited availability](https://anthropic.com/glasswing))"
                 or " ([limited availability](https://support.claude.com/en/articles/14604842))"
                 or " ([retired, except on Bedrock and Google Cloud](https://platform.claude.com/docs/en/about-claude/model-deprecations))"
-                or " ([retired, except on Google Cloud](https://platform.claude.com/docs/en/about-claude/model-deprecations))";
+                or " ([retired, except on Google Cloud](https://platform.claude.com/docs/en/about-claude/model-deprecations))"
+                or " ([retired, except on Bedrock and Claude Models on Google Cloud (Google managed)](https://platform.claude.com/docs/en/about-claude/model-deprecations))"
+                or " ([retired, except on Claude Models on Google Cloud (Google managed)](https://platform.claude.com/docs/en/about-claude/model-deprecations))";
 
     private static string NormalizeModel(string value)
     {
