@@ -46,20 +46,25 @@ internal sealed class AuditExportDiagnostics(ILogger logger)
         }
     }
 
-    internal void Materialized(AuditExportMaterialization materialized) =>
-        TryLog(() =>
-            logger.LogInformation(
-                "Audit export {ExportId} {Outcome}: snapshot_bytes={SnapshotBytes} result_bytes={ResultBytes} manifest_bytes={ManifestBytes} chunk_bytes={ChunkBytes} captures={CaptureCount} chunks={ChunkCount}",
-                _exportId,
-                "materialized",
-                materialized.Snapshot.Bytes.LongLength,
-                materialized.Result.LongLength,
-                materialized.Captures.Sum(c => c.Manifest.LongLength),
-                materialized.Captures.Sum(c => c.Chunks.Sum(b => b.LongLength)),
-                materialized.Captures.Count,
-                materialized.Captures.Sum(c => c.Chunks.Count)
-            )
-        );
+    internal void Materialized(AuditExportMaterialization materialized)
+    {
+        lock (_gate)
+        {
+            TryLog(() =>
+                logger.LogInformation(
+                    "Audit export {ExportId} {Outcome}: snapshot_bytes={SnapshotBytes} result_bytes={ResultBytes} manifest_bytes={ManifestBytes} chunk_bytes={ChunkBytes} captures={CaptureCount} chunks={ChunkCount}",
+                    _exportId,
+                    "materialized",
+                    materialized.Snapshot.Bytes.LongLength,
+                    materialized.Result.LongLength,
+                    materialized.Captures.Sum(c => c.Manifest.LongLength),
+                    materialized.Captures.Sum(c => c.Chunks.Sum(b => b.LongLength)),
+                    materialized.Captures.Count,
+                    materialized.Captures.Sum(c => c.Chunks.Count)
+                )
+            );
+        }
+    }
 
     private void Finish(string outcome)
     {
