@@ -31,7 +31,7 @@ const LOCAL_SOURCE_IDS = {
 // every file. Never bump alone: after the wipe an unreadable file has no cached
 // records, so scanRecords flags its source incomplete and main withholds that
 // source's corrections and tombstones until a complete scan succeeds.
-const PARSE_CACHE_VERSION = 9
+const PARSE_CACHE_VERSION = 10
 // Gemini Developer API standard-tier pricing changes above this documented prompt-token threshold.
 const GEMINI_LONG_CONTEXT_THRESHOLD = 200_000
 // The Grok CLI records each turn's cost as an integer tick count rather than a decimal. The
@@ -168,12 +168,8 @@ export async function observatoryFetch(url, apiKey, options = {}) {
 /**
  * Parse a Codex rollout into its last cumulative token_count.
  *
- * ponytail: a session that switches model mid-flight is attributed wholly to the
- * last turn_context model, and the whole cumulative total is bucketed on the day
- * of the final token_count — the cumulative total isn't broken down per model or
- * per day. Upgrade path: bucket token_count deltas by the preceding turn_context
- * and each row's timestamp if/when mixed-model or midnight-crossing Codex
- * sessions become common.
+ * Compatibility summary for callers needing final session totals. Production
+ * daily ingestion uses parseCodexRecords to retain UTC and model boundaries.
  */
 export function parseCodex(content) {
   let model = null
@@ -210,6 +206,62 @@ export function parseCodex(content) {
     reasoning,
     endedAt,
   }
+}
+
+/** Attribute cumulative increments to their observed UTC day and active model.
+ * A counter regression is ambiguous (reset, truncation or correction): withhold
+ * this source's replacements rather than guessing additional billable usage.
+ */
+export function parseCodexRecords(content) {
+  const records = []
+  let model = null
+  let modelProvider = null
+  let previous = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 }
+  for (const line of content.split('\n')) {
+    if (!line) { continue }
+    let row
+    try { row = JSON.parse(line) } catch { continue }
+    if (!row || typeof row !== 'object') { continue }
+    const payload = row.payload
+    if (row.type === 'session_meta' && typeof payload?.model_provider === 'string') { modelProvider = payload.model_provider }
+    if (row.type === 'turn_context' && payload?.model) { model = payload.model }
+    if (payload?.type !== 'token_count') { continue }
+    const usage = payload.info?.total_token_usage
+    const timestamp = claudeTimestamp(row.timestamp)
+    if (usage === undefined || usage === null) { continue }
+    const required = ['input_tokens', 'output_tokens']
+    const optional = ['cached_input_tokens', 'cache_write_input_tokens', 'reasoning_output_tokens']
+    if (typeof usage !== 'object' || Array.isArray(usage) || !timestamp || required.some(key => !safeTokenCount(usage[key])) ||
+        optional.some(key => Object.hasOwn(usage, key) && !safeTokenCount(usage[key]))) {
+      records.incomplete = true
+      return records
+    }
+    const current = {
+      input: token(usage.input_tokens), output: token(usage.output_tokens),
+      cacheRead: token(usage.cached_input_tokens), cacheWrite: token(usage.cache_write_input_tokens),
+      reasoning: token(usage.reasoning_output_tokens),
+    }
+    // Native nonzero cache writes lack an established overlap/pricing oracle.
+    // Do not guess whether these are already included in the input meter.
+    if (current.cacheWrite > 0) {
+      records.incomplete = true
+      return records
+    }
+    const delta = Object.fromEntries(Object.keys(current).map(key => [key, current[key] - previous[key]]))
+    if (Object.values(delta).some(value => value < 0) || delta.cacheRead > delta.input || delta.reasoning > delta.output) {
+      records.incomplete = true
+      return records
+    }
+    previous = current
+    if (Object.values(delta).every(value => value === 0)) { continue }
+    const occurredAtUtc = row.timestamp
+    records.push({
+      tool: 'codex', date: new Date(timestamp).toISOString().slice(0, 10), model, modelProvider, occurredAtUtc,
+      cum: { input: delta.input - delta.cacheRead, output: delta.output, cacheRead: delta.cacheRead, cacheWrite: delta.cacheWrite },
+      thoughtTokens: delta.reasoning,
+    })
+  }
+  return records
 }
 
 /**
@@ -1252,20 +1304,7 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
   if (enabled.has('codex')) {
     const root = join(cfg.codexHome, 'sessions')
     const files = await discover(root)
-    const result = await updateFileCache(files, state.files.codex, content => {
-      const parsed = parseCodex(content)
-      if (!parsed) { return [] }
-      const occurredAtUtc = parsed.endedAt
-      return [{
-        tool: 'codex',
-        date: occurredAtUtc.slice(0, 10),
-        model: parsed.model,
-        modelProvider: parsed.modelProvider,
-        occurredAtUtc,
-        cum: parsed.cum,
-        thoughtTokens: parsed.reasoning,
-      }]
-    })
+    const result = await updateFileCache(files, state.files.codex, parseCodexRecords)
     state.files.codex = result.cache
     await noteScan('codex', root, result)
     for (const record of result.records) { records.push(record) }
