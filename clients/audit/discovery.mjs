@@ -67,7 +67,8 @@ export async function discoverSources(sources, maxFiles = 10000, dependencies = 
         }
       } catch (error) {
         if (error.captureLimit) return { files, codes: [...codes, 'capture_limit'], skippedFiles };
-        if (budget) budget.check(true);
+        try { budget?.check(true); }
+        catch (limit) { if (!limit.captureLimit) throw limit; return { files, codes: [...codes, 'capture_limit'], skippedFiles }; }
         try { diagnostic(error.message === 'unsafe_source_path' ? error.message : 'source_discovery_failed'); skippedFiles++; }
         catch (limit) { if (!limit.captureLimit) throw limit; return { files, codes: [...codes, 'capture_limit'], skippedFiles }; }
       }
@@ -127,7 +128,8 @@ export async function readStable(file, maxBytes, dependencies = {}) {
       if (fingerprint(before) === fingerprint(after) && fingerprint(after) === fingerprint(named)) return { text, byteLength: rawBytes.length, rawHash: createHash('sha256').update(rawBytes).digest('hex') };
     } catch (error) {
       if (error.captureLimit) { budget?.stopNative(); return { code: 'capture_limit' }; }
-      budget?.check(true);
+      try { budget?.check(true); }
+      catch (limit) { if (!limit.captureLimit) throw limit; budget?.stopNative(); return { code: 'capture_limit' }; }
       const code = ['unsafe_source_path', 'source_file_limit', 'invalid_source_encoding'].includes(error.message) ? error.message : 'source_read_failed';
       return { code };
     } finally { await handle?.close(); }
