@@ -7,6 +7,25 @@ namespace AiObservatory.Api.Audit;
 
 public sealed class AuditReportService(AuditStore store, IServiceScopeFactory scopes, NodaTime.IClock clock)
 {
+    internal static async Task WriteRetainedBundleAsync(
+        Stream destination,
+        AuditExportMaterialization materialized,
+        CancellationToken ct
+    )
+    {
+        ct.ThrowIfCancellationRequested();
+        try
+        {
+            // The writer validates capture membership and recomputes the recorded result's binding.
+            // Do that expensive validation once, after checking the retained byte identities.
+            await AuditBundleWriter.WriteAsync(destination, ReadDetached(materialized), ct);
+        }
+        catch (AuditValidationException)
+        {
+            throw new AuditStoreException("retained_evidence_integrity", 409);
+        }
+    }
+
     public async Task WriteBundleAsync(Guid runId, Stream destination, CancellationToken ct)
     {
         await using var session = await OpenAsync(runId, ct);
@@ -16,7 +35,6 @@ public sealed class AuditReportService(AuditStore store, IServiceScopeFactory sc
 
     public static async Task<FileStream> PrepareBundleAsync(AuditExportSession session)
     {
-        var bundle = Validate(session.Materialized);
         session.Token.ThrowIfCancellationRequested();
         var file = AuditTemporaryBundleStream.Create();
         try
@@ -24,7 +42,7 @@ public sealed class AuditReportService(AuditStore store, IServiceScopeFactory sc
             session.OwnSpool(file);
             // ZipArchive entry disposal writes small synchronous trailers. A seekable private temporary
             // file preserves Task10's exact ZIP bytes and avoids synchronous HTTP I/O or an extra ZIP-sized RAM buffer.
-            await AuditBundleWriter.WriteAsync(file, bundle, session.Token);
+            await WriteRetainedBundleAsync(file, session.Materialized, session.Token);
             session.Token.ThrowIfCancellationRequested();
             file.Position = 0;
             return file;
@@ -79,6 +97,14 @@ public sealed class AuditReportService(AuditStore store, IServiceScopeFactory sc
 
     private static AuditBundle ValidateDetached(AuditExportMaterialization materialized)
     {
+        var bundle = ReadDetached(materialized);
+        Require(AuditComputationInput.ContentDigest(bundle.Input) == materialized.Snapshot.InputContentDigest);
+        AuditBundleWriter.Validate(bundle);
+        return bundle;
+    }
+
+    private static AuditBundle ReadDetached(AuditExportMaterialization materialized)
+    {
         var snapshot = materialized.Snapshot;
         Require(
             AuditCanonicalJson.ContentHash(snapshot.Bytes) == snapshot.Sha256
@@ -86,19 +112,14 @@ public sealed class AuditReportService(AuditStore store, IServiceScopeFactory sc
         );
         var input = AuditCanonicalJson.Deserialize<AuditInput>(snapshot.Bytes);
         var result = AuditCanonicalJson.Deserialize<AuditResult>(materialized.Result);
-        Require(
-            AuditComputationInput.ContentDigest(input) == snapshot.InputContentDigest
-                && result.InputContentDigest == snapshot.InputContentDigest
-        );
+        Require(result.InputContentDigest == snapshot.InputContentDigest);
         var captures = materialized
             .Captures.Select(c => new AuditCaptureEvidence(
                 AuditCanonicalJson.Deserialize<CaptureManifest>(c.Manifest),
                 c.Chunks.Select((bytes, index) => new AuditCaptureChunk(index, bytes)).ToArray()
             ))
             .ToArray();
-        var bundle = new AuditBundle(input, result, captures);
-        AuditBundleWriter.Validate(bundle);
-        return bundle;
+        return new(input, result, captures);
     }
 
     private static void Require(bool valid)
