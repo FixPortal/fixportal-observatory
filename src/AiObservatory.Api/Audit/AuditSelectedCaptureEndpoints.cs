@@ -31,6 +31,7 @@ public static class AuditSelectedCaptureEndpoints
         );
     }
 
+    // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local -- the options gate is the purpose of this guard.
     private static async Task<IResult> Capture(
         HttpContext http,
         AuditStore store,

@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using AiObservatory.Api.Audit;
 using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
 using AiObservatory.Data;
@@ -14,6 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NodaTime;
 using NodaTime.Testing;
+using ApiAuditOptions = AiObservatory.Api.Audit.AuditOptions;
 
 namespace AiObservatory.Api.IntegrationTests;
 
@@ -88,6 +90,55 @@ public sealed class AuditSelectedCaptureEndpointsWafTests
             requestScopeDigest = digest,
         };
         var before = await HttpFacts(db, ct);
+        await AssertTupleRefusalsAsync(client, body, db, before, ct);
+        await AssertMalformedClaimRefusalsAsync(client, body, db, before, ct);
+        await AssertAuthenticationAndEnvelopeRefusalsAsync(factory, client, body, machineId, ct);
+        var auditOptions = factory.Services.GetRequiredService<IOptions<ApiAuditOptions>>().Value;
+        // Hosted services already observed their startup-disabled setting. This changes only
+        // the synthetic endpoint option to exercise its independent off-worker admission gate.
+        auditOptions.WorkerEnabled = true;
+        try
+        {
+            using var workerOn = await client.PostAsJsonAsync(Prefix + "claim", body, ct);
+            workerOn.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+        finally
+        {
+            auditOptions.WorkerEnabled = false;
+        }
+        (await HttpFacts(db, ct)).Should().Be(before);
+        // Mutable options cannot retarget the startup-frozen authority.
+        factory.Services.GetRequiredService<IOptions<AuditSelectedInvocationOptions>>().Value.RunId = Guid.NewGuid()
+            .ToString("D");
+        using var claim = await client.PostAsJsonAsync(Prefix + "claim", body, ct);
+        claim.StatusCode.Should().Be(HttpStatusCode.OK);
+        claim.Headers.CacheControl!.NoStore.Should().BeTrue();
+        var lease = await claim.Content.ReadFromJsonAsync<JsonElement>(ct);
+        lease.GetProperty("runId").GetGuid().Should().Be(runId);
+        lease.GetProperty("requestId").GetGuid().Should().Be(requestId);
+        lease
+            .GetProperty("expiresAt")
+            .GetDateTimeOffset()
+            .Should()
+            .Be(Now.Plus(Duration.FromMinutes(3)).ToDateTimeOffset());
+        lease.GetProperty("serverObservedAt").GetDateTimeOffset().Should().Be(Now.ToDateTimeOffset());
+        client.DefaultRequestHeaders.Add("X-Observatory-Audit-Lease", lease.GetProperty("leaseToken").GetString());
+        using var renewal = await client.PostAsJsonAsync(Prefix + "renew", body, ct);
+        renewal.StatusCode.Should().Be(HttpStatusCode.OK);
+        var renewed = await renewal.Content.ReadFromJsonAsync<JsonElement>(ct);
+        renewed.GetProperty("leaseToken").GetGuid().Should().Be(lease.GetProperty("leaseToken").GetGuid());
+        (await store.GetRunAsync(runId, ct))!.Revision.Should().Be(0);
+        await AssertRenewalRefusalsAsync(client, body, db, store, clock, lease, credentialId, ct);
+    }
+
+    private static async Task AssertTupleRefusalsAsync(
+        HttpClient client,
+        object body,
+        AiObservatoryDbContext db,
+        string before,
+        CancellationToken ct
+    )
+    {
         foreach (
             var field in new[]
             {
@@ -111,6 +162,16 @@ public sealed class AuditSelectedCaptureEndpointsWafTests
             refusal.StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await HttpFacts(db, ct)).Should().Be(before);
         }
+    }
+
+    private static async Task AssertMalformedClaimRefusalsAsync(
+        HttpClient client,
+        object body,
+        AiObservatoryDbContext db,
+        string before,
+        CancellationToken ct
+    )
+    {
         var validJson = JsonSerializer.Serialize(body);
         foreach (
             var raw in new[]
@@ -122,14 +183,21 @@ public sealed class AuditSelectedCaptureEndpointsWafTests
             }
         )
         {
-            using var refusal = await client.PostAsync(
-                Prefix + "claim",
-                new StringContent(raw, Encoding.UTF8, "application/json"),
-                ct
-            );
+            using var content = new StringContent(raw, Encoding.UTF8, "application/json");
+            using var refusal = await client.PostAsync(Prefix + "claim", content, ct);
             refusal.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             (await HttpFacts(db, ct)).Should().Be(before);
         }
+    }
+
+    private static async Task AssertAuthenticationAndEnvelopeRefusalsAsync(
+        AiObservatoryApiFactory factory,
+        HttpClient client,
+        object body,
+        Guid machineId,
+        CancellationToken ct
+    )
+    {
         using (var query = await client.PostAsJsonAsync(Prefix + "claim?other=1", body, ct))
         {
             query.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -144,58 +212,28 @@ public sealed class AuditSelectedCaptureEndpointsWafTests
         {
             refused.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         }
-        using (
-            var oversized = await client.PostAsync(
-                Prefix + "claim",
-                new StringContent(new string(' ', 1025), Encoding.UTF8, "application/json"),
-                ct
-            )
-        )
+        using var oversizedContent = new StringContent(new string(' ', 1025), Encoding.UTF8, "application/json");
+        using (var oversized = await client.PostAsync(Prefix + "claim", oversizedContent, ct))
         {
             oversized.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
         }
         var uppercase = JsonSerializer.SerializeToNode(body)!.AsObject();
         uppercase["machineId"] = machineId.ToString("D").ToUpperInvariant();
-        using (var noncanonical = await client.PostAsJsonAsync(Prefix + "claim", uppercase, ct))
-        {
-            noncanonical.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        }
-        var auditOptions = factory.Services.GetRequiredService<IOptions<AiObservatory.Api.Audit.AuditOptions>>().Value;
-        // Hosted services already observed their startup-disabled setting. This changes only
-        // the synthetic endpoint option to exercise its independent off-worker admission gate.
-        auditOptions.WorkerEnabled = true;
-        try
-        {
-            using var workerOn = await client.PostAsJsonAsync(Prefix + "claim", body, ct);
-            workerOn.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        }
-        finally
-        {
-            auditOptions.WorkerEnabled = false;
-        }
-        (await HttpFacts(db, ct)).Should().Be(before);
-        // Mutable options cannot retarget the startup-frozen authority.
-        factory
-            .Services.GetRequiredService<IOptions<AiObservatory.Api.Audit.AuditSelectedInvocationOptions>>()
-            .Value.RunId = Guid.NewGuid().ToString("D");
-        using var claim = await client.PostAsJsonAsync(Prefix + "claim", body, ct);
-        claim.StatusCode.Should().Be(HttpStatusCode.OK);
-        claim.Headers.CacheControl!.NoStore.Should().BeTrue();
-        var lease = await claim.Content.ReadFromJsonAsync<JsonElement>(ct);
-        lease.GetProperty("runId").GetGuid().Should().Be(runId);
-        lease.GetProperty("requestId").GetGuid().Should().Be(requestId);
-        lease
-            .GetProperty("expiresAt")
-            .GetDateTimeOffset()
-            .Should()
-            .Be(Now.Plus(Duration.FromMinutes(3)).ToDateTimeOffset());
-        lease.GetProperty("serverObservedAt").GetDateTimeOffset().Should().Be(Now.ToDateTimeOffset());
-        client.DefaultRequestHeaders.Add("X-Observatory-Audit-Lease", lease.GetProperty("leaseToken").GetString());
-        using var renewal = await client.PostAsJsonAsync(Prefix + "renew", body, ct);
-        renewal.StatusCode.Should().Be(HttpStatusCode.OK);
-        var renewed = await renewal.Content.ReadFromJsonAsync<JsonElement>(ct);
-        renewed.GetProperty("leaseToken").GetGuid().Should().Be(lease.GetProperty("leaseToken").GetGuid());
-        (await store.GetRunAsync(runId, ct))!.Revision.Should().Be(0);
+        using var noncanonical = await client.PostAsJsonAsync(Prefix + "claim", uppercase, ct);
+        noncanonical.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    private static async Task AssertRenewalRefusalsAsync(
+        HttpClient client,
+        object body,
+        AiObservatoryDbContext db,
+        AuditStore store,
+        FakeClock clock,
+        JsonElement lease,
+        Guid credentialId,
+        CancellationToken ct
+    )
+    {
         var uploading = await HttpFacts(db, ct);
         client.DefaultRequestHeaders.Remove("X-Observatory-Audit-Lease");
         using (var missing = await client.PostAsJsonAsync(Prefix + "renew", body, ct))

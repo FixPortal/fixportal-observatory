@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm, readdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readdir, open } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { canonical, sha256 } from './audit/protocol.mjs';
@@ -126,6 +126,49 @@ test('selected native record cap seals truthful incomplete facts while lease and
   assert.equal(result.capture.manifest.discoveredFiles, 2n);
   assert.equal(result.capture.manifest.readFiles, 2n);
   assert.equal(f.calls.at(-1).url.endsWith('/seal'), true);
+});
+
+test('selected native read EIO entering seal reserve seals retained facts with a matching acknowledgement', async t => {
+  const f = await fixture(t);
+  const handle = await open(join(f.roots[0], 'session.jsonl'), 'r');
+  const prototype = Object.getPrototypeOf(handle), original = prototype.read;
+  await handle.close();
+  let reads = 0;
+  const completedReads = [];
+  t.mock.method(prototype, 'read', async function(...args) {
+    reads++;
+    if (reads === 3) {
+      // The first source completed its data and EOF requests. Fail the second
+      // inside readStable's try, then let its catch observe the real reserve.
+      f.advance(59000);
+      throw Object.assign(new Error('synthetic native read failure'), { code: 'EIO' });
+    }
+    assert.ok(reads < 3, 'no retry or later native read follows the limit');
+    const result = await original.apply(this, args);
+    completedReads.push(result.bytesRead);
+    return result;
+  });
+  const result = await selectedCapture(f.config, f.dependencies);
+  assert.equal(result.status, 'sealed');
+  assert.equal(result.capture.complete, false);
+  assert.equal(result.capture.records.length, 1);
+  assert.equal(result.capture.records[0].counters.input_tokens, 12n);
+  assert.equal(result.capture.manifest.discoveredFiles, 2n);
+  assert.equal(result.capture.manifest.readFiles, 1n);
+  assert.equal(result.capture.manifest.skippedFiles, 1n);
+  assert.deepEqual(result.capture.manifest.diagnostics, [{ code: 'capture_limit', count: 1n }]);
+  assert.equal(reads, 3);
+  assert.ok(completedReads[0] > 0, 'first source data was read before the native failure');
+  assert.equal(completedReads[1], 0, 'first source reached EOF before the second source failed');
+  assert.equal(completedReads.length, 2);
+  assert.equal(result.budget.nativeStopped, true);
+  const seals = f.calls.filter(call => call.url.endsWith('/seal'));
+  assert.equal(seals.length, 1);
+  const manifest = JSON.parse(seals[0].options.body).manifest;
+  assert.equal(manifest.captureId, result.capture.manifest.captureId);
+  assert.equal(manifest.recordCount, 1);
+  assert.deepEqual(manifest.diagnostics, [{ code: 'capture_limit', count: 1 }]);
+  assert.equal(f.calls.at(-1), seals[0]);
 });
 
 test('expired lease during owned native work stops unsealed without fresh claim', async t => {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm, unlink, symlink, stat, readdir, open } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, unlink, symlink, stat, readdir, open, opendir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync, execFileSync } from 'node:child_process';
@@ -16,6 +16,87 @@ import { discoverSources, readStable } from './audit/discovery.mjs';
 import { createBudget } from './audit/budget.mjs';
 
 const pilotCaps = (overrides = {}) => ({ maxDirectoryEntries: 100, maxDepth: 4, maxQueuedPaths: 30, maxFiles: 20, maxFileBytes: 100000, maxReadBytes: 500000, maxLines: 100, maxLineBytes: 10000, maxRecords: 50, maxDiagnostics: 20, maxEncodedBytes: 100000, maxChunkBytes: 10000, maxHttpAttempts: 20, maxUploadBytes: 500000, maxDurationMs: 60000, sealReserveAttempts: 1, sealReserveBytes: 10000, sealReserveMs: 1000, maxOwnedWriteBytes: 100000, maxOwnedEntries: 100, maxPathBytes: 4096, maxMetadataBytes: 10000, ...overrides });
+
+// These exercise native failures inside the real try block, followed by the
+// catch's budget check; throwing CaptureLimit directly misses that boundary.
+for (const boundary of ['seal reserve', 'native stopped']) {
+  test(`discovery native failure at ${boundary} returns admitted files and one terminal marker`, async t => {
+    const { root, config } = await workspace(t);
+    await writeFile(join(root, 'admitted.jsonl'), claude());
+    let now = 0, reads = 0;
+    const budget = createBudget(pilotCaps(), { now: () => now });
+    const directory = await opendir(root), prototype = Object.getPrototypeOf(directory), original = prototype.read;
+    await directory.close();
+    t.mock.method(prototype, 'read', async function(...args) {
+      reads++;
+      if (reads === 2) {
+        if (boundary === 'seal reserve') now = 59000; else budget.stopNative();
+        throw Object.assign(new Error('synthetic native directory failure'), { code: 'EIO' });
+      }
+      assert.ok(reads < 2, 'no directory IO follows the terminal failure');
+      return original.apply(this, args);
+    });
+    const result = await discoverSources(config.sources, 100, { budget });
+    assert.deepEqual(result.files.map(file => file.path), [join(root, 'admitted.jsonl')]);
+    assert.deepEqual(result.codes, ['capture_limit']);
+    assert.equal(result.skippedFiles, 0);
+    assert.equal(reads, 2);
+    assert.equal(budget.snapshot().directoryEntries, 2);
+    assert.equal(budget.snapshot().nativeStopped, true);
+  });
+
+  test(`read native failure at ${boundary} retains prior capture facts without more IO`, async t => {
+    const { root, config, request } = await workspace(t);
+    await writeFile(join(root, 'a.jsonl'), claude());
+    await writeFile(join(root, 'b.jsonl'), claude());
+    await writeFile(join(root, 'c.jsonl'), claude());
+    let now = 0, reads = 0;
+    const budget = createBudget(pilotCaps(), { now: () => now });
+    const handle = await open(join(root, 'a.jsonl'), 'r'), prototype = Object.getPrototypeOf(handle), original = prototype.read;
+    await handle.close();
+    t.mock.method(prototype, 'read', async function(...args) {
+      reads++;
+      if (reads === 3) {
+        if (boundary === 'seal reserve') now = 59000; else budget.stopNative();
+        throw Object.assign(new Error('synthetic native read failure'), { code: 'EIO' });
+      }
+      assert.ok(reads < 3, 'no read or retry follows the terminal failure');
+      return original.apply(this, args);
+    });
+    const result = await captureEvidence(request, config, { budget });
+    assert.equal(result.complete, false);
+    assert.equal(result.records.length, 1);
+    assert.equal(result.records[0].counters.input_tokens, 12n);
+    assert.equal(result.manifest.discoveredFiles, 3n);
+    assert.equal(result.manifest.readFiles, 1n);
+    assert.equal(result.manifest.skippedFiles, 1n);
+    assert.deepEqual(result.manifest.diagnostics, [{ code: 'capture_limit', count: 1n }]);
+    assert.equal(reads, 3);
+    assert.equal(budget.snapshot().nativeStopped, true);
+  });
+}
+
+for (const operation of ['discovery', 'read']) {
+  test(`${operation} native failure preserves a non-limit catch guard error unchanged`, async t => {
+    const { root, config } = await workspace(t), path = join(root, 'a.jsonl');
+    await writeFile(path, claude());
+    const guardFailure = new Error('selected_lease_expired');
+    let failed = false, calls = 0;
+    const budget = createBudget(pilotCaps(), { guard: () => { if (failed) throw guardFailure; } });
+    const resource = operation === 'discovery' ? await opendir(root) : await open(path, 'r');
+    const prototype = Object.getPrototypeOf(resource);
+    await resource.close();
+    t.mock.method(prototype, 'read', async function() {
+      calls++; failed = true;
+      throw Object.assign(new Error('synthetic native failure'), { code: 'EIO' });
+    });
+    await assert.rejects(operation === 'discovery'
+      ? discoverSources(config.sources, 100, { budget })
+      : readStable({ root, path }, 100000, { budget }), error => error === guardFailure);
+    assert.equal(calls, 1);
+    assert.equal(budget.snapshot().nativeStopped, false);
+  });
+}
 
 test('discovery debits before native directory entry work', async t => {
   const { config } = await workspace(t);
