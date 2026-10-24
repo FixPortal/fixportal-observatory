@@ -7,11 +7,21 @@ public static class AuditBundleWriter
 {
     public static void Validate(AuditBundle bundle) => _ = BundleCodec.ValidateEvidence(bundle, new BundleLimits());
 
-    public static async Task WriteAsync(Stream destination, AuditBundle bundle, CancellationToken ct)
+    public static Task WriteAsync(Stream destination, AuditBundle bundle, CancellationToken ct) =>
+        WriteAsync(destination, bundle, ct, null);
+
+    public static async Task WriteAsync(
+        Stream destination,
+        AuditBundle bundle,
+        CancellationToken ct,
+        Action<AuditBundleWriteStage>? observeStage
+    )
     {
         ct.ThrowIfCancellationRequested();
+        observeStage?.Invoke(AuditBundleWriteStage.Validation);
         var limits = new BundleLimits();
         var input = BundleCodec.ValidateEvidence(bundle, limits);
+        observeStage?.Invoke(AuditBundleWriteStage.EntrySerialization);
         var entries = new SortedDictionary<string, byte[]>(StringComparer.Ordinal)
         {
             ["options.json"] = AuditCanonicalJson.SerializeEnvelope(
@@ -75,6 +85,7 @@ public static class AuditBundleWriter
             entries.Count <= limits.MaxEntries && entries.Values.Sum(e => (long)e.Length) <= limits.MaxTotalBytes,
             "bundle_size_limit"
         );
+        observeStage?.Invoke(AuditBundleWriteStage.ZipWrite);
         using var archive = new ZipArchive(destination, ZipArchiveMode.Create, leaveOpen: true);
         foreach (var (path, bytes) in entries)
         {
@@ -85,4 +96,11 @@ public static class AuditBundleWriter
             await output.WriteAsync(bytes, ct);
         }
     }
+}
+
+public enum AuditBundleWriteStage
+{
+    Validation,
+    EntrySerialization,
+    ZipWrite,
 }

@@ -11,16 +11,19 @@ public sealed class AuditExportSession : IAsyncDisposable
     private readonly AuditExportLease _lease;
     private readonly CancellationTokenSource _owned;
     private readonly Task _monitor;
+    private readonly CancellationTokenRegistration _diagnosticCancellation;
     private FileStream? _spool;
     public AuditExportMaterialization Materialized { get; }
     public CancellationToken Token => _owned.Token;
+    internal AuditExportDiagnostics? Diagnostics { get; }
 
     private AuditExportSession(
         AuditStore store,
         IServiceScopeFactory scopes,
         AuditExportLease lease,
         AuditExportMaterialization materialized,
-        CancellationTokenSource owned
+        CancellationTokenSource owned,
+        AuditExportDiagnostics? diagnostics
     )
     {
         _store = store;
@@ -28,18 +31,40 @@ public sealed class AuditExportSession : IAsyncDisposable
         _lease = lease;
         Materialized = materialized;
         _owned = owned;
+        Diagnostics = diagnostics;
+        _diagnosticCancellation = owned.Token.Register(() => diagnostics?.CancellationRequested());
         _monitor = Monitor();
     }
 
-    public static async Task<AuditExportSession> OpenAsync(
+    public static Task<AuditExportSession> OpenAsync(
         AuditStore store,
         IServiceScopeFactory scopes,
         IClock clock,
         Guid runId,
         CancellationToken ct
+    ) => OpenAsync(store, scopes, clock, runId, ct, null);
+
+    internal static async Task<AuditExportSession> OpenAsync(
+        AuditStore store,
+        IServiceScopeFactory scopes,
+        IClock clock,
+        Guid runId,
+        CancellationToken ct,
+        AuditExportDiagnostics? diagnostics
     )
     {
-        var lease = await store.AcquireExportLeaseAsync(runId, ct);
+        diagnostics?.Start("lease_acquire");
+        AuditExportLease lease;
+        try
+        {
+            lease = await store.AcquireExportLeaseAsync(runId, ct);
+            diagnostics?.Complete();
+        }
+        catch (Exception error)
+        {
+            diagnostics?.Fail(error);
+            throw;
+        }
         var owned = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var remaining = lease.ExpiresAt - clock.GetCurrentInstant();
         if (remaining <= Duration.Zero)
@@ -51,11 +76,15 @@ public sealed class AuditExportSession : IAsyncDisposable
         owned.CancelAfter(remaining.ToTimeSpan());
         try
         {
+            diagnostics?.Start("materialize");
             var materialized = await store.MaterializeExportAsync(runId, owned.Token);
-            return new(store, scopes, lease, materialized, owned);
+            diagnostics?.Materialized(materialized);
+            diagnostics?.Complete();
+            return new(store, scopes, lease, materialized, owned, diagnostics);
         }
-        catch
+        catch (Exception error)
         {
+            diagnostics?.Fail(error);
             owned.Dispose();
             await store.ReleaseExportLeaseAsync(lease.Id, CancellationToken.None);
             throw;
@@ -101,6 +130,7 @@ public sealed class AuditExportSession : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        await _diagnosticCancellation.DisposeAsync();
         await _owned.CancelAsync();
         await _monitor;
         try
@@ -140,16 +170,25 @@ public sealed class AuditLeasedHttpResult(AuditExportSession session, IResult in
             using var abort = session.Token.Register(httpContext.Abort);
             try
             {
+                session.Diagnostics?.Start("http_body");
                 session.Token.ThrowIfCancellationRequested();
                 await inner.ExecuteAsync(httpContext);
+                session.Diagnostics?.Complete();
             }
-            catch (IOException)
+            catch (IOException error)
             {
+                session.Diagnostics?.Fail(error);
                 httpContext.Abort();
             }
-            catch (OperationCanceledException) when (session.Token.IsCancellationRequested)
+            catch (OperationCanceledException error) when (session.Token.IsCancellationRequested)
             {
+                session.Diagnostics?.Fail(error);
                 httpContext.Abort();
+            }
+            catch (Exception error)
+            {
+                session.Diagnostics?.Fail(error);
+                throw;
             }
         }
     }
