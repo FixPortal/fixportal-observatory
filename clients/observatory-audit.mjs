@@ -5,7 +5,7 @@ import { discoverSources, readStable } from './audit/discovery.mjs';
 import { loadIdentity, identityContext } from './audit/identity.mjs';
 import { extractClaudeEvidence } from './audit/claude-evidence.mjs';
 import { extractCodexEvidence } from './audit/codex-evidence.mjs';
-import { canonical, canonicalByteLength, utcTimestamp, identifier, diagnosticCounts, sha256, EXTRACTOR_VERSION, SOURCE_VERSIONS } from './audit/protocol.mjs';
+import { canonical, canonicalByteLength, utcTimestamp, identifier, countedDiagnostics, sha256, EXTRACTOR_VERSION, SOURCE_VERSIONS } from './audit/protocol.mjs';
 
 const GUID = /^(?!00000000-0000-0000-0000-000000000000)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const CHECKS = new Set(['sourceAccounting', 'dailyAttribution', 'eventAggregation', 'pricingArithmetic', 'presentationTotals', 'billingReconciliation']);
@@ -67,16 +67,17 @@ export async function captureEvidence(request, configuration, dependencies = {})
   const selected = new Set(scope.sources.map(source => source.sourceId));
   const sources = configuration.sources.filter(source => selected.has(source.sourceId));
   const discovery = await discoverSources(sources, Math.min(bounds.maxFiles, budget?.limit('maxFiles') ?? bounds.maxFiles), dependencies);
-  const codes = [...discovery.codes], records = [], rawHashes = [];
+  const codes = countedDiagnostics(), records = [], rawHashes = [];
+  for (const code of discovery.codes) codes.add(code);
   let readFiles = 0, changedFiles = 0, skippedFiles = discovery.skippedFiles, sourceBytes = 0, wireBytes = 0;
   for (const file of discovery.files) {
-    try { budget?.check(true); } catch (error) { if (!error.captureLimit) throw error; codes.push('capture_limit'); break; }
+    try { budget?.check(true); } catch (error) { if (!error.captureLimit) throw error; codes.add('capture_limit'); break; }
     const stable = await readStable(file, bounds.maxCaptureBytes - sourceBytes, dependencies);
     if (stable.code) {
       if (stable.code === 'source_changed') changedFiles++; else skippedFiles++;
       try { if (stable.code !== 'capture_limit') budget?.take('diagnostics', 1, true); }
-      catch (error) { if (!error.captureLimit) throw error; codes.push('capture_limit'); break; }
-      codes.push(stable.code);
+      catch (error) { if (!error.captureLimit) throw error; codes.add('capture_limit'); break; }
+      codes.add(stable.code);
       if (stable.code === 'capture_limit') break;
       continue;
     }
@@ -85,10 +86,10 @@ export async function captureEvidence(request, configuration, dependencies = {})
     context.fileId = context.id('file', resolve(file.path));
     const extracted = (file.tool === 'claude' ? extractClaudeEvidence : extractCodexEvidence)(stable.text, context, dependencies);
     readFiles++;
-    for (const diagnostic of extracted.diagnostics) for (let n = 0n; n < diagnostic.count; n++) codes.push(diagnostic.code);
+    for (const diagnostic of extracted.diagnostics) codes.add(diagnostic.code, diagnostic.count);
     for (const record of extracted.records) {
       const length = canonicalByteLength(record, { budget }) + 1;
-      if (records.length >= bounds.maxRecords || wireBytes + length > bounds.maxCaptureBytes || length > bounds.maxChunkBytes || length > 1024 * 1024) { codes.push('capture_limit'); skippedFiles++; break; }
+      if (records.length >= bounds.maxRecords || wireBytes + length > bounds.maxCaptureBytes || length > bounds.maxChunkBytes || length > 1024 * 1024) { codes.add('capture_limit'); skippedFiles++; break; }
       records.push(record); wireBytes += length;
     }
     if (configuration.includeRawHashes) rawHashes.push({ fileId: context.fileId, sha256: stable.rawHash });
@@ -104,9 +105,9 @@ export async function captureEvidence(request, configuration, dependencies = {})
   const flush = () => { if (lines.length) { const ndjson = Buffer.from(lines.join('')); chunks.push({ index: chunks.length, sha256: sha256(ndjson), ndjson }); lines = []; length = 0; } };
   for (const record of records) { budget?.check(); const line = canonical(record) + '\n', bytes = Buffer.byteLength(line); if (length + bytes > maxChunkBytes) flush(); lines.push(line); length += bytes; }
   flush();
-  if (!records.some(record => record.counters && record.timestamp.slice(0, 10) >= scope.from && record.timestamp.slice(0, 10) <= scope.to) && !codes.includes('capture_limit')) {
-    try { budget?.take('diagnostics'); codes.push('no_usage_records'); }
-    catch (error) { if (!error.captureLimit) throw error; codes.push('capture_limit'); }
+  if (!records.some(record => record.counters && record.timestamp.slice(0, 10) >= scope.from && record.timestamp.slice(0, 10) <= scope.to) && !codes.has('capture_limit')) {
+    try { budget?.take('diagnostics'); codes.add('no_usage_records'); }
+    catch (error) { if (!error.captureLimit) throw error; codes.add('capture_limit'); }
   }
   const dates = records.map(record => record.timestamp.slice(0, 10)).sort();
   const scanEndedAt = now();
@@ -116,8 +117,8 @@ export async function captureEvidence(request, configuration, dependencies = {})
     if (hashArrayBytes > budget.limit('maxMetadataBytes')) throw Object.assign(new Error('capture_limit'), { captureLimit: true });
     budget.room('encodedBytes', hashArrayBytes);
   }
-  const manifest = { schemaVersion: 1, captureId: request.captureId, requestId: request.requestId, machineId: request.machineId, generation: identity.generation, extractorVersion: EXTRACTOR_VERSION, scanStartedAt, scanEndedAt, scope, sourceFormats: sources.map(source => ({ sourceId: source.sourceId, format: `${source.tool}-jsonl`, version: SOURCE_VERSIONS[source.tool] })).sort((a, b) => a.sourceId < b.sourceId ? -1 : a.sourceId > b.sourceId ? 1 : 0), discoveredFiles: BigInt(discovery.files.length + discovery.skippedFiles), readFiles: BigInt(readFiles), skippedFiles: BigInt(skippedFiles), changedFiles: BigInt(changedFiles), recordCount: BigInt(records.length), observedFrom: dates[0] ?? null, observedTo: dates.at(-1) ?? null, diagnostics: diagnosticCounts(codes), chunkHashes: chunks.map(chunk => chunk.sha256), sealedAt: now() };
-  return { manifest, records, chunks, complete: codes.length === 0, local: { rawHashes } };
+  const manifest = { schemaVersion: 1, captureId: request.captureId, requestId: request.requestId, machineId: request.machineId, generation: identity.generation, extractorVersion: EXTRACTOR_VERSION, scanStartedAt, scanEndedAt, scope, sourceFormats: sources.map(source => ({ sourceId: source.sourceId, format: `${source.tool}-jsonl`, version: SOURCE_VERSIONS[source.tool] })).sort((a, b) => a.sourceId < b.sourceId ? -1 : a.sourceId > b.sourceId ? 1 : 0), discoveredFiles: BigInt(discovery.files.length + discovery.skippedFiles), readFiles: BigInt(readFiles), skippedFiles: BigInt(skippedFiles), changedFiles: BigInt(changedFiles), recordCount: BigInt(records.length), observedFrom: dates[0] ?? null, observedTo: dates.at(-1) ?? null, diagnostics: codes.toArray(), chunkHashes: chunks.map(chunk => chunk.sha256), sealedAt: now() };
+  return { manifest, records, chunks, complete: codes.size === 0, local: { rawHashes } };
 }
 
 export async function writeCapture(capture, outputDirectory, dependencies = {}) {

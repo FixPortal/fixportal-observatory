@@ -116,11 +116,76 @@ test('extractors enforce shared line admission before parse and record allocatio
   assert.ok(result.diagnostics.some(item => item.code === 'capture_limit'));
 });
 
-test('extraction diagnostic exhaustion returns bounded partial facts', () => {
+test('distinct extraction diagnostic groups exhaust the admission budget', () => {
   const budget = createBudget(pilotCaps({ maxDiagnostics: 1 }));
-  const result = extractClaudeEvidence(claude() + '\ninvalid\ninvalid\n' + claude(), context(), { budget });
+  const result = extractClaudeEvidence(claude() + '\ninvalid\n{"type":"unsupported"}\n' + claude(), context(), { budget });
   assert.equal(result.records.length, 1);
   assert.deepEqual(result.diagnostics, [{ code: 'capture_limit', count: 1n }, { code: 'malformed_json', count: 1n }]);
+});
+
+test('repeated unsupported rows retain counts and allow valid Claude and later Codex usage', async t => {
+  const { dir, root, config, request } = await workspace(t);
+  const codexRoot = join(dir, 'codex'); await mkdir(codexRoot);
+  config.sources.push({ sourceId: 'codex-local', tool: 'codex', roots: [codexRoot] });
+  request.scope.sources.push({ machineId, sourceId: 'codex-local' });
+  const noise = JSON.stringify({ type: 'new_unsupported_type', private_payload: secret });
+  await writeFile(join(root, 'a.jsonl'), Array(30).fill(noise).join('\n') + '\n' + claude());
+  await writeFile(join(codexRoot, 'a.jsonl'), codex());
+  const budget = createBudget(pilotCaps({ maxDiagnostics: 1 }));
+  const result = await captureEvidence(request, config, { budget });
+  assert.equal(result.complete, false, 'unknown rows still make the capture incomplete');
+  assert.equal(result.manifest.readFiles, 2n);
+  assert.deepEqual(result.manifest.diagnostics, [{ code: 'unsupported_source_format', count: 30n }]);
+  assert.equal(result.records.filter(r => r.sourceId === 'claude-local' && r.counters).length, 1);
+  assert.equal(result.records.filter(r => r.sourceId === 'codex-local' && r.counters).length, 2);
+  assert.equal(budget.snapshot().diagnostics, 1);
+  assert.equal(budget.snapshot().nativeStopped, false);
+  assert.doesNotMatch(result.chunks.map(chunk => chunk.ndjson.toString()).join(''), /PLANTED|private_payload|new_unsupported_type/);
+});
+
+test('diagnostic admission groups reset for each file', async t => {
+  const { root, config, request } = await workspace(t);
+  for (const name of ['a.jsonl', 'b.jsonl']) await writeFile(join(root, name), '{"type":"unsupported"}\n' + claude());
+  const budget = createBudget(pilotCaps({ maxDiagnostics: 1 }));
+  const result = await captureEvidence(request, config, { budget });
+  assert.equal(result.records.length, 1);
+  assert.deepEqual(result.manifest.diagnostics, [{ code: 'capture_limit', count: 1n }, { code: 'unsupported_source_format', count: 1n }]);
+  assert.equal(budget.snapshot().diagnostics, 1);
+  assert.equal(budget.snapshot().nativeStopped, true);
+});
+
+test('repeated diagnostics cannot bypass the shared line cap', () => {
+  const budget = createBudget(pilotCaps({ maxDiagnostics: 1, maxLines: 5 }));
+  const result = extractClaudeEvidence(Array(20).fill('{"type":"unsupported"}').join('\n'), context(), { budget });
+  assert.deepEqual(result.diagnostics, [{ code: 'capture_limit', count: 1n }, { code: 'unsupported_source_format', count: 5n }]);
+  assert.equal(budget.snapshot().lines, 5);
+});
+
+test('repeated diagnostic groups still check the monotonic time cap', () => {
+  let now = 0;
+  const budget = createBudget(pilotCaps({ maxDiagnostics: 1, maxDurationMs: 1000, sealReserveMs: 100 }), { now: () => now });
+  const result = protocol.extractLines('x\nx\nx', () => { now += 400; throw new Error('unsupported_source_format'); }, { budget });
+  assert.deepEqual(result.diagnostics, [{ code: 'capture_limit', count: 1n }, { code: 'unsupported_source_format', count: 2n }]);
+  assert.equal(budget.snapshot().nativeStopped, true);
+});
+
+test('counted diagnostics merge large occurrence counts without expanding them', () => {
+  const counts = protocol.countedDiagnostics();
+  counts.add('unsupported_source_format', 1000000000000n);
+  counts.add('unsupported_source_format', 7n);
+  assert.equal(counts.size, 1);
+  assert.deepEqual(counts.toArray(), [{ code: 'unsupported_source_format', count: 1000000000007n }]);
+});
+
+test('an already admitted group still observes expiry while terminal markers remain reportable', () => {
+  let now = 0;
+  const budget = createBudget(pilotCaps({ maxDurationMs: 1000, sealReserveMs: 100 }), { now: () => now });
+  const counts = protocol.countedDiagnostics(budget);
+  counts.add('malformed_json');
+  now = 1000;
+  assert.throws(() => counts.add('malformed_json'), /capture_limit/);
+  counts.add('capture_limit');
+  assert.deepEqual(counts.toArray(), [{ code: 'capture_limit', count: 1n }, { code: 'malformed_json', count: 1n }]);
 });
 
 test('huge line and record floods are bounded before parse and retain admitted facts', () => {

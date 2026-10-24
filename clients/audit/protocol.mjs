@@ -94,17 +94,34 @@ export function recordBase(tool, context, sequence, native, state = {}) {
   return { machineId: context.machineId, sourceId: context.sourceId, sourceFormat: `${tool}-jsonl`, sourceVersion: SOURCE_VERSIONS[tool], tool, kind: 'sessionMetadata', generation: context.generation, fileId: context.fileId, sessionId: id('session', native.sessionId ?? state.sessionId), messageId: null, agentId: id('agent', native.agentId ?? state.agentId), parentId: id('session', native.parentSessionId ?? state.parentSessionId), sequence: BigInt(sequence), timestamp: utcTimestamp(native.timestamp), model: identifier(state.model, true), provider: identifier(state.provider), counters: null, cost: null, currency: null, pricing: pricing({}, state), closure: { state: 'unknown', timestamp: null, sequence: null } };
 }
 
-export function diagnosticCounts(codes) {
+// Extraction admits one retained group per file/code, not one allocation per occurrence.
+// Terminal limit markers can still describe exhaustion after ordinary admission stops.
+export function countedDiagnostics(budget) {
   const counts = new Map();
-  for (const code of codes) counts.set(code, (counts.get(code) ?? 0n) + 1n);
-  return [...counts].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([code, count]) => ({ code, count }));
+  return {
+    add(code, count = 1n) {
+      if (typeof code !== 'string' || typeof count !== 'bigint' || count < 1n) throw new Error('invalid_diagnostic_count');
+      if (code !== 'capture_limit') budget?.check(true);
+      if (!counts.has(code) && code !== 'capture_limit') budget?.take('diagnostics', 1, true);
+      counts.set(code, (counts.get(code) ?? 0n) + count);
+    },
+    has(code) { return counts.has(code); },
+    get size() { return counts.size; },
+    toArray() { return [...counts].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([code, count]) => ({ code, count })); },
+  };
+}
+
+export function diagnosticCounts(codes) {
+  const counts = countedDiagnostics();
+  for (const code of codes) counts.add(code);
+  return counts.toArray();
 }
 
 export const SAFE_DIAGNOSTICS = new Set(['source_line_limit', 'source_depth_limit', 'malformed_json', 'duplicate_property', 'invalid_counter', 'counter_range', 'invalid_timestamp', 'timestamp_precision', 'invalid_source_identifier', 'unsupported_source_format', 'invalid_usage_shape', 'missing_session_identity', 'invalid_source_money']);
 
 export function extractLines(text, consume, dependencies = {}) {
   const budget = dependencies.budget;
-  const records = [], codes = [];
+  const records = [], codes = countedDiagnostics(budget);
   // Buffer bound is enforced by capture; direct extraction is bounded too.
   if (typeof text !== 'string' || Buffer.byteLength(text) > 512 * 1024 * 1024) return { records, diagnostics: [{ code: 'source_file_limit', count: 1n }] };
   if (budget) Object.defineProperty(records, 'push', { value(...items) {
@@ -121,7 +138,7 @@ export function extractLines(text, consume, dependencies = {}) {
   const stopped = error => {
     if (!error.captureLimit) throw error;
     budget?.stopNative();
-    codes.push('capture_limit');
+    codes.add('capture_limit');
   };
   let start = 0, sequence = 0;
   for (; start <= text.length;) {
@@ -141,14 +158,13 @@ export function extractLines(text, consume, dependencies = {}) {
       if (error.captureLimit) { stopped(error); break; }
       try {
         budget?.check(true);
-        budget?.take('diagnostics', 1, true);
-        codes.push(SAFE_DIAGNOSTICS.has(error.message) ? error.message : 'invalid_usage_shape');
+        codes.add(SAFE_DIAGNOSTICS.has(error.message) ? error.message : 'invalid_usage_shape');
       } catch (limit) { stopped(limit); break; }
     }
   }
-  if (!recognized && !codes.includes('capture_limit')) {
-    try { budget?.take('diagnostics', 1, true); codes.push('unsupported_source_format'); }
+  if (!recognized && !codes.has('capture_limit')) {
+    try { codes.add('unsupported_source_format'); }
     catch (error) { stopped(error); }
   }
-  return { records, diagnostics: diagnosticCounts(codes) };
+  return { records, diagnostics: codes.toArray() };
 }
