@@ -84,6 +84,14 @@ Run `node --test clients/observatory-audit.test.mjs clients/audit-poll.test.mjs`
 
 ## Context evidence versions and rollout
 
+### Recognized Claude administrative records
+
+Claude `ai-title`, `agent-name`, `mode`, `permission-mode`, `atis-latch`, `pr-link`, `last-prompt`, `file-history-delta`, `attachment`, `api-request`, `api-request-shape` and `api-request-blob` records are recognized without copying their contents. The producer stores session metadata, context, file backup metadata or request replay material in these records. Request blobs can contain earlier assistant messages; they are not additional usage observations. `last-prompt` does not establish session closure. Unrecognized kinds still produce diagnostics.
+
+This classification was checked against the embedded producer code in Claude Code 2.1.310, executable SHA-256 `f9a3920634ae3b961ee92c2eb58d0051f5f8852b120983d0a4f57b6a5efeba61`: metadata writers at byte offsets 253397026–253399269, request recorder at 253242925, replay writers at 253417594 and 253418058, history writer at 253437564, attachment constructor at 256571657 and rendering helper at 258153295. These are executable offsets, not transcript locations. Recognition changes no emitted usage fields, source versions or closure rules.
+
+Codex `token_usage_record` remains unsupported and diagnosed. It contains usage counters, and its relationship to `event_msg/token_count` needs qualified reconciliation before support can be claimed. Recognizing Claude metadata does not remove that coverage gap.
+
 New captures use extractor **1.1.0**, Claude `claude-jsonl` source version **2**, and Codex source version **1**. Manifests advertise those exact emitted versions. Wire schema remains **1**. The independent verifier is **1.1.0**, audit rule **2**. Catalog application rule **1** and the `exact-zero` rule **1** are separate identities and retain their arithmetic conventions.
 
 Claude source version 1 keeps its original reconstruction, including richer-copy selection and grouping. Version 2 independently derives `prompt_le_100000` or `prompt_gt_100000` from uncached input + cache-read input + total creation once, before grouping. Output follows its message's band. The bounded qualified model identities are case-insensitive `claude-haiku-5-5` and calendar-valid `yyyyMMdd` suffixes. Model capacity in `contextTokens` is retained as capacity. It never proves prompt size. Other models receive no derived Context.
