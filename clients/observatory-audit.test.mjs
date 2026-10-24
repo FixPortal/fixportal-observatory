@@ -505,6 +505,16 @@ test('Codex pending unique ledger vectors share the existing record memory ceili
   assert.equal(result.records.length, 1);
 });
 
+test('Codex matched ledger reservations are released before later output allocations', () => {
+  const turn = { type: 'turn_context', timestamp: '2026-10-18T23:59:00Z', payload: { model: 'model-x' } };
+  for (const [rows, limit] of [[[codexLedger(), codexLegacy()], 2], [[codexLedger(), codexLegacy(), turn], 3], [[codexLegacy(), codexLedger(), turn], 3]]) {
+    const budget = createBudget(pilotCaps({ maxRecords: limit }));
+    const result = extractCodexEvidence(codexText(codexSession(), ...rows), context(), { budget });
+    assert.deepEqual(result.diagnostics, []);
+    assert.equal(result.records.length, limit);
+  }
+});
+
 test('Codex pending ledgers also reserve room before later normalized metadata records', () => {
   const budget = createBudget(pilotCaps({ maxRecords: 3 }));
   const turn = { type: 'turn_context', timestamp: '2026-10-18T23:59:00Z', payload: { model: 'model-x' } };
