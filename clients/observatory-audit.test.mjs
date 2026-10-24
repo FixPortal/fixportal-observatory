@@ -384,7 +384,8 @@ const codexSession = (id = 'session-x') => ({ type: 'session_meta', timestamp: '
 const codexText = (...rows) => rows.map(JSON.stringify).join('\n');
 
 test('Codex ledgers corroborate complete same-session legacy totals in either order without new usage', () => {
-  for (const rows of [[codexLedger(), { type: 'response_item', payload: { private: secret } }, codexLegacy()], [codexLegacy(), codexLedger(), codexLedger()]]) {
+  const explicitZero = { ...completeCodexUsage(), cache_write_input_tokens: 0 };
+  for (const rows of [[codexLedger(), { type: 'response_item', payload: { private: secret } }, codexLegacy()], [codexLegacy(), codexLedger(), codexLedger()], [codexLedger(explicitZero), codexLegacy(explicitZero)]]) {
     const result = extractCodexEvidence(codexText(codexSession(), ...rows), context());
     assert.deepEqual(result.diagnostics, []);
     assert.deepEqual(result.records.map(record => record.kind), ['sessionMetadata', 'cumulativeUsage']);
