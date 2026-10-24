@@ -704,6 +704,44 @@ test('Codex model context without new usage cannot relabel previous usage', () =
   assert.deepEqual(records.map(r => [r.model, r.cum.input]), [['gpt-6-luna', 100]])
 })
 
+test('Codex usage without valid model context remains unplaced and makes the source incomplete', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'codex-unplaced-'))
+  const path = join(root, 'rollout.jsonl')
+  try {
+    for (const prefix of [[], ...[undefined, null, '', ' ', 42, {}].map(model => [
+      JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-6-luna' } }),
+      JSON.stringify({ type: 'turn_context', payload: { model } }),
+    ])]) {
+      await writeFile(path, [
+        ...prefix, codexUsageRow('2026-10-23T23:59:00Z', 100, 10),
+        JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-6-sol' } }),
+        codexUsageRow('2026-10-24T00:01:00Z', 150, 15),
+      ].join('\n'))
+      let state = {}
+      for (let iteration = 0; iteration < 2; iteration++) {
+        const result = await scanRecords({ codexHome: root }, state, new Set(['codex']), async () => [{ path, mtimeMs: 1 }])
+        assert.equal(result.incompleteSources.has('codex'), true)
+        assert.equal(result.records[0].model, null)
+        assert.deepEqual(result.records.map(r => r.cum.input), [100, 50])
+        state = JSON.parse(JSON.stringify(state))
+      }
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Codex invalid context after valid usage clears the model for subsequent increments', () => {
+  const records = sweep.parseCodexRecords([
+    JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-6-luna' } }),
+    codexUsageRow('2026-10-23T23:59:00Z', 100, 10),
+    JSON.stringify({ type: 'turn_context', payload: { model: null } }),
+    codexUsageRow('2026-10-24T00:01:00Z', 150, 15),
+  ].join('\n'))
+  assert.equal(records.incomplete, true)
+  assert.deepEqual(records.map(r => [r.model, r.cum.input]), [['gpt-6-luna', 100], [null, 50]])
+})
+
 test('Codex invalid cumulative subsets persist as an incomplete source through the parse cache', async () => {
   const root = await mkdtemp(join(tmpdir(), 'codex-incomplete-'))
   const path = join(root, 'rollout.jsonl')

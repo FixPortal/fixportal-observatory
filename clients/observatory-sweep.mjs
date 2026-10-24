@@ -224,7 +224,9 @@ export function parseCodexRecords(content) {
     if (!row || typeof row !== 'object') { continue }
     const payload = row.payload
     if (row.type === 'session_meta' && typeof payload?.model_provider === 'string') { modelProvider = payload.model_provider }
-    if (row.type === 'turn_context' && payload?.model) { model = payload.model }
+    if (row.type === 'turn_context') {
+      model = typeof payload?.model === 'string' && payload.model.trim() ? payload.model : null
+    }
     if (payload?.type !== 'token_count') { continue }
     const usage = payload.info?.total_token_usage
     const timestamp = claudeTimestamp(row.timestamp)
@@ -254,6 +256,9 @@ export function parseCodexRecords(content) {
     }
     previous = current
     if (Object.values(delta).every(value => value === 0)) { continue }
+    // A later context is not evidence for an earlier increment's model. Keep
+    // the unplaced observation for diagnostics, but withhold source replacement.
+    if (!model) { records.incomplete = true }
     const occurredAtUtc = row.timestamp
     records.push({
       tool: 'codex', date: new Date(timestamp).toISOString().slice(0, 10), model, modelProvider, occurredAtUtc,
