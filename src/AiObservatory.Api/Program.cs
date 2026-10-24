@@ -240,6 +240,7 @@ if (app.Services.GetRequiredService<IOptions<AuditOptions>>().Value.Enabled)
 {
     app.MapAuditMachineEndpoints();
     app.MapAuditCaptureEndpoints();
+    app.MapAuditSelectedCaptureEndpoints();
     app.MapAuditRunEndpoints();
     app.MapAuditExportEndpoints();
     app.MapAuditRetentionEndpoints();
