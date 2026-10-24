@@ -255,7 +255,7 @@ test('Claude prompt version-6 cache is reparsed even at the same mtime and lost 
     await writeFile(path, claudePromptRow(COMPLETE_CLAUDE_PROMPT))
     const state = oldState()
     const scan = await scanRecords({ claudeHome: root }, state, new Set(['claude']), async () => files)
-    assert.equal(state.parseCacheVersion, 9)
+    assert.equal(state.parseCacheVersion, 10)
     assert.equal(scan.records[0].inputTokens, 100000)
     assert.equal(JSON.parse(buildDailySnapshots(scan.records, TEST_MACHINE)[0].rawPayload).context, 'prompt_le_100000')
     const missing = await scanRecords({ claudeHome: root }, oldState(), new Set(['claude']), async () => [{ path: join(root, 'unavailable.jsonl'), mtimeMs: 123 }])
@@ -451,7 +451,7 @@ for (const [name, unsafe, invalidCounters] of CLAUDE_SAFETY_CASES) {
           assert.equal(warnings[0].warning.includes(root), false)
           assert.ok(activity.indexOf(warnings[0]) < activity.findIndex(item => item.url))
           const state = JSON.parse(await readFile(statePath, 'utf8'))
-          assert.equal(state.parseCacheVersion, 9)
+          assert.equal(state.parseCacheVersion, 10)
           assert.equal(state.files.claude[path].records[0].inputTokens, 100000, 'old version7/8 same-mtime false-1970 usage must be reparsed')
           assert.equal(state.files.claude[path].records[0].date, '2026-10-22')
           if (invalidCounters) { assert.ok(state.files.claude[path].records.some(row => row.claudeInvalidCounters)) }
@@ -636,6 +636,88 @@ test('observatoryFetch does not forward the API key across redirects', async () 
   } finally {
     await new Promise(resolve => redirector.close(resolve))
     await new Promise(resolve => target.close(resolve))
+  }
+})
+
+function codexUsageRow(timestamp, input, output, cached = 0, reasoning = 0, writes = 0) {
+  return JSON.stringify({ timestamp, type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: {
+    input_tokens: input, output_tokens: output, cached_input_tokens: cached,
+    reasoning_output_tokens: reasoning, cache_write_input_tokens: writes,
+  } } } })
+}
+
+test('Codex daily records retain midnight and model boundaries without duplicate cumulative usage', () => {
+  const content = [
+    JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-6-luna' } }),
+    codexUsageRow('2026-10-23T23:59:00Z', 100, 10, 20, 2),
+    JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-6-sol' } }),
+    codexUsageRow('2026-10-24T00:01:00Z', 150, 15, 30, 3),
+    codexUsageRow('2026-10-24T00:02:00Z', 150, 15, 30, 3),
+  ].join('\n')
+  const records = sweep.parseCodexRecords(content)
+  assert.deepEqual(records.map(r => [r.date, r.model, r.cum, r.thoughtTokens]), [
+    ['2026-10-23', 'gpt-6-luna', { input: 80, output: 10, cacheRead: 20, cacheWrite: 0 }, 2],
+    ['2026-10-24', 'gpt-6-sol', { input: 40, output: 5, cacheRead: 10, cacheWrite: 0 }, 1],
+  ])
+})
+
+test('Codex decreasing cumulative counters mark the scan incomplete rather than inventing usage', () => {
+  const records = sweep.parseCodexRecords([
+    codexUsageRow('2026-10-24T00:00:00Z', 100, 10),
+    codexUsageRow('2026-10-24T00:01:00Z', 20, 2),
+  ].join('\n'))
+  assert.equal(records.incomplete, true)
+})
+
+test('Codex invalid counter or timestamp evidence withholds attribution instead of shifting it to a later row', () => {
+  const valid = JSON.parse(codexUsageRow('2026-10-23T23:59:00Z', 100, 10))
+  for (const bad of [
+    { ...valid, timestamp: 'invalid' },
+    ...[true, 0, '2026-02-30T12:00:00Z'].map(timestamp => ({ ...valid, timestamp })),
+    ...[false, 0, '', []].map(total_token_usage => ({ ...valid, payload: {
+      ...valid.payload, info: { total_token_usage },
+    } })),
+    ...[null, '100', -1, Number.MAX_SAFE_INTEGER + 1].map(value => ({ ...valid, payload: {
+      ...valid.payload, info: { total_token_usage: { ...valid.payload.info.total_token_usage, input_tokens: value } },
+    } })),
+  ]) {
+    assert.equal(sweep.parseCodexRecords(`${JSON.stringify(bad)}\n${codexUsageRow('2026-10-24T00:01:00Z', 150, 15)}`).incomplete, true)
+  }
+})
+
+test('Codex daily records normalize offset timestamps to UTC', () => {
+  const records = sweep.parseCodexRecords(codexUsageRow('2026-10-24T00:30:00+01:00', 100, 10, 20, 2))
+  assert.equal(records[0].date, '2026-10-23')
+  assert.deepEqual(records[0].cum, { input: 80, output: 10, cacheRead: 20, cacheWrite: 0 })
+})
+
+test('Codex nonzero cache writes are incomplete until their billing overlap has an independent oracle', () => {
+  assert.equal(sweep.parseCodexRecords(codexUsageRow('2026-10-24T00:00:00Z', 100, 10, 20, 2, 5)).incomplete, true)
+})
+
+test('Codex model context without new usage cannot relabel previous usage', () => {
+  const records = sweep.parseCodexRecords([
+    JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-6-luna' } }),
+    codexUsageRow('2026-10-23T23:59:00Z', 100, 10),
+    JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-6-sol' } }),
+  ].join('\n'))
+  assert.deepEqual(records.map(r => [r.model, r.cum.input]), [['gpt-6-luna', 100]])
+})
+
+test('Codex invalid cumulative subsets persist as an incomplete source through the parse cache', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'codex-incomplete-'))
+  const path = join(root, 'rollout.jsonl')
+  try {
+    await writeFile(path, codexUsageRow('2026-10-24T00:00:00Z', 10, 1, 11))
+    let state = {}
+    for (let iteration = 0; iteration < 2; iteration++) {
+      const result = await scanRecords({ codexHome: root }, state, new Set(['codex']), async () => [{ path, mtimeMs: 1 }])
+      assert.equal(result.incompleteSources.has('codex'), true)
+      assert.equal(result.records.length, 0)
+      state = JSON.parse(JSON.stringify(state))
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
   }
 })
 
@@ -1142,8 +1224,9 @@ test('scanRecords rebuilds an unversioned matching-mtime cache instead of reusin
     const { records } = await scanRecords(cfg, state, new Set(['codex']))
 
     assert.deepEqual(records, [])
-    assert.equal(state.parseCacheVersion, 9)
-    assert.deepEqual(state.files.codex[path].records, [])
+    assert.equal(state.parseCacheVersion, 10)
+    assert.deepEqual(Array.from(state.files.codex[path].records), [])
+    assert.equal(state.files.codex[path].incomplete, true)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -1203,7 +1286,7 @@ test('scanRecords handles transcript histories larger than the engine argument l
   }
   const files = Array.from({ length: 200 }, (_, index) => ({ path: `claude-${index}.jsonl`, mtimeMs: 1 }))
   const state = {
-    parseCacheVersion: 9,
+    parseCacheVersion: 10,
     files: {
       claude: Object.fromEntries(files.map(file => [file.path, {
         mtimeMs: file.mtimeMs,
@@ -1886,9 +1969,10 @@ test('scanRecords reparses a version-2 cache instead of reusing its stale record
     const { records, incompleteSources } = await scanRecords(cfg, state, new Set(['codex']))
 
     assert.deepEqual(records, [])
-    assert.deepEqual([...incompleteSources], [])
-    assert.equal(state.parseCacheVersion, 9)
-    assert.deepEqual(state.files.codex[path].records, [])
+    assert.deepEqual([...incompleteSources], ['codex'])
+    assert.equal(state.parseCacheVersion, 10)
+    assert.deepEqual(Array.from(state.files.codex[path].records), [])
+    assert.equal(state.files.codex[path].incomplete, true)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
