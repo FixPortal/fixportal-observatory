@@ -28,8 +28,8 @@ export function extractCodexEvidence(text, identityContext, dependencies = {}) {
   let boundSession = false, boundContext = false;
   const corroborationKey = (timestamp, vector) => canonical([utcTimestamp(timestamp).slice(0, 10), identifier(state.model, true), identifier(state.provider), vector]);
   const legacyVectors = new Set(), ledgerVectors = new Map();
-  const boundedRecord = (sequence, native, facts) => {
-    dependencies.budget?.room('records', ledgerVectors.size + 1, true);
+  const boundedRecord = (sequence, native, facts, resolvingKey = null) => {
+    dependencies.budget?.room('records', ledgerVectors.size + 1 - (ledgerVectors.has(resolvingKey) ? 1 : 0), true);
     return recordBase('codex', identityContext, sequence, native, facts);
   };
   const finishSession = codes => {
@@ -68,6 +68,7 @@ export function extractCodexEvidence(text, identityContext, dependencies = {}) {
       const responseCounters = usage.split(',').map(BigInt), turnCounters = turn.split(',').map(BigInt);
       if (!vector.split(',').map(BigInt).every((total, index) => responseCounters[index] <= turnCounters[index] && turnCounters[index] <= total)) throw new Error('unsupported_source_format');
       const key = corroborationKey(native.timestamp, vector);
+      if (legacyVectors.has(key)) return true;
       if (!ledgerVectors.has(key)) {
         // Pending unique vectors share the existing record allocation ceiling.
         if (dependencies.budget) dependencies.budget.room('records', ledgerVectors.size + 1, true);
@@ -100,13 +101,14 @@ export function extractCodexEvidence(text, identityContext, dependencies = {}) {
     if (payload.info === null) return true;
     const info = payload.info;
     if (!info || typeof info !== 'object') throw new Error('invalid_usage_shape');
-    const record = boundedRecord(sequence, native, state);
+    const vector = corroborationVector(info.total_token_usage);
+    const key = vector !== null && boundContext && state.sessionId && (native.sessionId ?? state.sessionId) === state.sessionId ? corroborationKey(native.timestamp, vector) : null;
+    const record = boundedRecord(sequence, native, state, key);
     record.kind = 'cumulativeUsage';
     record.counters = { counterKind: 'codex', ...usageCounters(info.total_token_usage), last_token_usage: info.last_token_usage == null ? null : usageCounters(info.last_token_usage) };
     record.pricing = pricing(info, state);
     records.push(record);
-    const vector = corroborationVector(info.total_token_usage);
-    if (vector !== null && boundContext && state.sessionId && (native.sessionId ?? state.sessionId) === state.sessionId) legacyVectors.add(corroborationKey(record.timestamp, vector));
+    if (key !== null) { legacyVectors.add(key); ledgerVectors.delete(key); }
     return true;
   }, dependencies, finishSession);
 }
