@@ -8,10 +8,11 @@ function usageCounters(usage) {
   return result;
 }
 
-export function extractCodexEvidence(text, identityContext) {
+export function extractCodexEvidence(text, identityContext, dependencies = {}) {
+  identityContext = { ...identityContext, budget: dependencies.budget };
   let state = {};
   return extractLines(text, (line, sequence, records) => {
-    const native = parseLossless(line);
+    const native = parseLossless(line, dependencies);
     if (!native || typeof native !== 'object' || Array.isArray(native)) throw new Error('unsupported_source_format');
     const payload = native.payload;
     if (native.type === 'session_meta') {
@@ -48,5 +49,5 @@ export function extractCodexEvidence(text, identityContext) {
     record.counters = { counterKind: 'codex', ...usageCounters(info.total_token_usage), last_token_usage: info.last_token_usage == null ? null : usageCounters(info.last_token_usage) };
     record.pricing = pricing(info, state);
     records.push(record); return true;
-  });
+  }, dependencies);
 }

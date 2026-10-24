@@ -2,16 +2,18 @@
 export class NumberLexeme { constructor(text) { this.text = text; } }
 export const MAX_LINE_BYTES = 1024 * 1024;
 
-export function parseLossless(text) {
+export function parseLossless(text, dependencies = {}) {
   if (Number(process.versions.node.split('.')[0]) < 24 || typeof JSON.rawJSON !== 'function') throw new Error('unsupported_node_runtime');
   if (typeof text !== 'string' || Buffer.byteLength(text) > MAX_LINE_BYTES) throw new Error('source_line_limit');
   // This is only a structural ambiguity/depth preflight; JSON.parse remains the JSON parser.
   const stack = [];
   for (let i = 0; i < text.length; i++) {
+    if (i % 1024 === 0) dependencies.budget?.check(true);
     const c = text[i];
     if (c === '"') {
       const start = i++;
       for (; i < text.length; i++) {
+        if (i % 1024 === 0) dependencies.budget?.check(true);
         if (text[i] === '\\') i++;
         else if (text[i] === '"') break;
       }

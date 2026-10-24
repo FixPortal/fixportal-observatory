@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm, unlink, symlink, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, unlink, symlink, stat, readdir, open } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync, execFileSync } from 'node:child_process';
@@ -12,6 +12,183 @@ import { canonical, utcTimestamp, sha256 } from './audit/protocol.mjs';
 import * as protocol from './audit/protocol.mjs';
 import { pollOnce } from './audit/poll.mjs';
 import { captureEvidence, writeCapture } from './observatory-audit.mjs';
+import { discoverSources, readStable } from './audit/discovery.mjs';
+import { createBudget } from './audit/budget.mjs';
+
+const pilotCaps = (overrides = {}) => ({ maxDirectoryEntries: 100, maxDepth: 4, maxQueuedPaths: 30, maxFiles: 20, maxFileBytes: 100000, maxReadBytes: 500000, maxLines: 100, maxLineBytes: 10000, maxRecords: 50, maxDiagnostics: 20, maxEncodedBytes: 100000, maxChunkBytes: 10000, maxHttpAttempts: 20, maxUploadBytes: 500000, maxDurationMs: 60000, sealReserveAttempts: 1, sealReserveBytes: 10000, sealReserveMs: 1000, maxOwnedWriteBytes: 100000, maxOwnedEntries: 100, maxPathBytes: 4096, maxMetadataBytes: 10000, ...overrides });
+
+test('discovery debits before native directory entry work', async t => {
+  const { config } = await workspace(t);
+  await writeFile(join(config.sources[0].roots[0], 'one.jsonl'), claude());
+  await writeFile(join(config.sources[0].roots[0], 'two.jsonl'), claude());
+  const budget = createBudget(pilotCaps({ maxDirectoryEntries: 1 }));
+  const result = await discoverSources(config.sources, 100, { budget });
+  assert.equal(budget.snapshot().directoryEntries, 1);
+  assert.equal(result.files.length, 1);
+  assert.ok(result.codes.includes('capture_limit'));
+});
+
+test('extractors enforce shared line admission before parse and record allocation', () => {
+  const budget = createBudget(pilotCaps({ maxLines: 1 }));
+  const result = extractClaudeEvidence(claude() + '\n' + claude(), context(), { budget });
+  assert.equal(result.records.length, 1);
+  assert.ok(result.diagnostics.some(item => item.code === 'capture_limit'));
+});
+
+test('extraction diagnostic exhaustion returns bounded partial facts', () => {
+  const budget = createBudget(pilotCaps({ maxDiagnostics: 1 }));
+  const result = extractClaudeEvidence(claude() + '\ninvalid\ninvalid\n' + claude(), context(), { budget });
+  assert.equal(result.records.length, 1);
+  assert.deepEqual(result.diagnostics, [{ code: 'capture_limit', count: 1n }, { code: 'malformed_json', count: 1n }]);
+});
+
+test('huge line and record floods are bounded before parse and retain admitted facts', () => {
+  const lineBudget = createBudget(pilotCaps({ maxLineBytes: 50 }));
+  const oversized = extractClaudeEvidence(' '.repeat(100000), context(), { budget: lineBudget });
+  assert.deepEqual(oversized.diagnostics, [{ code: 'capture_limit', count: 1n }]);
+  assert.equal(lineBudget.snapshot().records, 0);
+  const recordBudget = createBudget(pilotCaps({ maxRecords: 2 }));
+  const records = extractClaudeEvidence(Array(1000).fill(claude()).join('\n'), context(), { budget: recordBudget });
+  assert.equal(records.records.length, 2);
+  assert.equal(recordBudget.snapshot().lines, 3);
+  assert.ok(records.diagnostics.some(item => item.code === 'capture_limit'));
+});
+
+test('changed file rereads and growth sentinels share physical requested-byte ceiling', async t => {
+  const { root } = await workspace(t), path = join(root, 'changing.jsonl');
+  await writeFile(path, 'abc');
+  const budget = createBudget(pilotCaps({ maxReadBytes: 11 }));
+  let reads = 0;
+  const owned = await open(path, 'r'), prototype = Object.getPrototypeOf(owned), original = prototype.read;
+  await owned.close();
+  t.mock.method(prototype, 'read', async function(...args) {
+    const result = await original.apply(this, args);
+    if (!result.bytesRead) { reads++; await writeFile(path, 'abc' + 'x'.repeat(reads)); }
+    return result;
+  });
+  const result = await readStable({ root, path }, 100000, { budget });
+  assert.equal(result.code, 'capture_limit');
+  assert.equal(reads, 2);
+  assert.equal(budget.snapshot().readBytes, 11, 'initial requests4+EOF1 and retry5+EOF1 remain charged');
+});
+
+test('stable native read charges the EOF request beyond file size plus sentinel', async t => {
+  const { root } = await workspace(t), path = join(root, 'stable.jsonl');
+  await writeFile(path, 'abc');
+  const budget = createBudget(pilotCaps({ maxReadBytes: 4 }));
+  const result = await readStable({ root, path }, 100000, { budget });
+  assert.equal(result.code, 'capture_limit', 'N+1 admitted bytes cannot pay the subsequent EOF request');
+  assert.equal(budget.snapshot().readBytes, 4);
+  const exact = createBudget(pilotCaps({ maxReadBytes: 5 }));
+  assert.equal((await readStable({ root, path }, 100000, { budget: exact })).text, 'abc');
+  assert.equal(exact.snapshot().readBytes, 5);
+});
+
+test('native short reads debit every requested remainder before each call without refunds', async t => {
+  const { root } = await workspace(t), path = join(root, 'short.jsonl');
+  await writeFile(path, 'abc');
+  const owned = await open(path, 'r'), prototype = Object.getPrototypeOf(owned), original = prototype.read;
+  await owned.close();
+  const requests = [];
+  t.mock.method(prototype, 'read', async function(buffer, offset, length, position) {
+    requests.push(length);
+    return original.call(this, buffer, offset, Math.min(1, length), position);
+  });
+  const budget = createBudget(pilotCaps({ maxReadBytes: 9 }));
+  const result = await readStable({ root, path }, 100000, { budget });
+  assert.equal(result.code, 'capture_limit');
+  assert.deepEqual(requests, [4, 3, 2], 'EOF call must be refused before invoking the handle');
+  assert.equal(budget.snapshot().readBytes, 9);
+  requests.length = 0;
+  const exact = createBudget(pilotCaps({ maxReadBytes: 10 }));
+  assert.equal((await readStable({ root, path }, 100000, { budget: exact })).text, 'abc');
+  assert.deepEqual(requests, [4, 3, 2, 1]);
+  assert.equal(exact.snapshot().readBytes, 10);
+});
+
+test('two source roots share directory queue file read and record budgets', async t => {
+  const { root, config, request, dir } = await workspace(t), second = join(dir, 'second');
+  await mkdir(second);
+  const text = claude();
+  await writeFile(join(root, 'a.jsonl'), text); await writeFile(join(second, 'b.jsonl'), text);
+  config.sources.push({ sourceId: 'claude-second', tool: 'claude', roots: [second] });
+  request.scope.sources.push({ machineId, sourceId: 'claude-second' });
+  const budget = createBudget(pilotCaps({ maxReadBytes: Buffer.byteLength(text) + 2 }));
+  const result = await captureEvidence(request, config, { budget });
+  assert.equal(result.manifest.readFiles, 1n);
+  assert.equal(result.manifest.discoveredFiles, 2n);
+  assert.equal(result.records.length, 1);
+  assert.equal(result.complete, false);
+  assert.ok(result.manifest.diagnostics.some(item => item.code === 'capture_limit'));
+});
+
+test('bounded enumeration stops before visiting a large owned directory tail', async t => {
+  const { config, root } = await workspace(t);
+  for (let index = 0; index < 200; index++) await writeFile(join(root, `fixture-${index}.jsonl`), '');
+  const budget = createBudget(pilotCaps({ maxDirectoryEntries: 3 }));
+  const result = await discoverSources(config.sources, 10000, { budget });
+  assert.equal(result.files.length, 3);
+  assert.equal(budget.snapshot().directoryEntries, 3);
+  assert.equal(result.skippedFiles, 0, 'unvisited files are never invented as skipped');
+  assert.deepEqual(result.codes, ['capture_limit']);
+});
+
+test('owned package byte boundary prevents the next file and exposes only prior actual output', async t => {
+  const { dir, root, config, request } = await workspace(t);
+  await writeFile(join(root, 'a.jsonl'), claude());
+  const capture = await captureEvidence(request, config), output = join(dir, 'bounded-output');
+  const budget = createBudget(pilotCaps({ maxOwnedWriteBytes: capture.chunks[0].ndjson.length }));
+  await assert.rejects(writeCapture(capture, output, { budget }), /capture_limit/);
+  assert.deepEqual(await readdir(output), ['chunks']);
+  assert.equal(budget.snapshot().ownedWriteBytes, capture.chunks[0].ndjson.length);
+});
+
+test('closed mandatory caps refuse omitted unknown raised and invalid reserve settings', () => {
+  for (const mutate of [c => { delete c.maxLines; }, c => { c.unknown = 1; }, c => { c.maxFiles = 10001; }, c => { c.maxRecords = 1000001; }, c => { c.maxChunkBytes = 8 * 1024 * 1024 + 1; }, c => { c.maxEncodedBytes = 512 * 1024 * 1024 + 1; }, c => { c.sealReserveMs = c.maxDurationMs; }, c => { c.maxReadBytes = 0; }, c => { c.maxOwnedEntries = -1; }]) {
+    const values = pilotCaps(); mutate(values); assert.throws(() => createBudget(values), /invalid_capture_caps/);
+  }
+});
+
+test('directory depth queued admissions and file caps stop actual owned traversal', async t => {
+  const { root, config } = await workspace(t);
+  const nested = join(root, 'nested'); await mkdir(nested); await writeFile(join(nested, 'a.jsonl'), claude());
+  for (const overrides of [{ maxDepth: 0 }, { maxQueuedPaths: 1 }]) {
+    const result = await discoverSources(config.sources, 10000, { budget: createBudget(pilotCaps(overrides)) });
+    assert.equal(result.files.length, 0); assert.ok(result.codes.includes('capture_limit'));
+  }
+  await writeFile(join(root, 'one.jsonl'), claude()); await writeFile(join(root, 'two.jsonl'), claude());
+  const result = await discoverSources(config.sources, 10000, { budget: createBudget(pilotCaps({ maxFiles: 1 })) });
+  assert.equal(result.files.length, 1); assert.ok(result.codes.includes('capture_limit'));
+});
+
+test('per-file read and encoded record bounds stop work at the corresponding boundary', async t => {
+  const { root } = await workspace(t), path = join(root, 'a.jsonl'); await writeFile(path, claude());
+  const budget = createBudget(pilotCaps({ maxFileBytes: 100, maxLineBytes: 100 }));
+  assert.equal((await readStable({ root, path }, 100000, { budget })).code, 'capture_limit');
+  assert.equal(budget.snapshot().readBytes, 0);
+  const encoded = createBudget(pilotCaps({ maxEncodedBytes: 100, maxChunkBytes: 100 }));
+  const result = extractClaudeEvidence(claude(), context(), { budget: encoded });
+  assert.equal(result.records.length, 0); assert.ok(result.diagnostics.some(item => item.code === 'capture_limit'));
+});
+
+test('owned metadata cap is checked before allocating its encoding or visiting later fields', async t => {
+  const { dir } = await workspace(t);
+  let visited = false;
+  const manifest = { a: 'x'.repeat(100), get z() { visited = true; throw new Error('encoded_before_admission'); } };
+  const output = join(dir, 'metadata-output'), budget = createBudget(pilotCaps({ maxOwnedWriteBytes: 10 }));
+  await assert.rejects(writeCapture({ chunks: [], manifest, local: {} }, output, { budget }), /capture_limit/);
+  assert.equal(visited, false);
+  assert.deepEqual(await readdir(output), ['chunks']);
+});
+
+test('nonallocating canonical sizing exactly matches escaped ASCII Unicode keys arrays and lossless numbers', () => {
+  const text = Array.from({ length: 256 }, (_, index) => String.fromCharCode(index)).join('') + '\u2028😀\ud800';
+  for (const value of [text, { [text]: [null, true, false, -0, 123, -7n, 9007199254740993n, { b: text, a: '"\\\n' }] }]) {
+    const size = Buffer.byteLength(canonical(value));
+    assert.equal(protocol.canonicalByteLength(value, { maximum: size }), size);
+    assert.throws(() => protocol.canonicalByteLength(value, { maximum: size - 1 }), /capture_limit/);
+  }
+});
 
 const machineId = '11111111-1111-1111-1111-111111111111';
 const secret = 'PLANTED private prompt sk-secret /home/private/history';
