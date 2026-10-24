@@ -432,11 +432,11 @@ test('Codex corroboration cannot cross files, rejected metadata, or incomplete l
 });
 
 test('Codex corroboration compares lossless integer vectors beyond floating point precision', () => {
-  const text = codexText(codexSession(), codexLedger(), codexLegacy()).replaceAll('"input_tokens":100', '"input_tokens":9007199254740993');
+  const text = codexText(codexSession(), codexLedger(), codexLegacy()).replaceAll('"input_tokens":100', '"input_tokens":9007199254740993').replaceAll('"total_tokens":130', '"total_tokens":9007199254741023');
   assert.deepEqual(extractCodexEvidence(text, context()).diagnostics, []);
-  const mismatch = text.replace('"input_tokens":9007199254740993', '"input_tokens":9007199254740992');
-  // Alter the ledger cumulative vector as well, leaving its response counter distinct.
-  const contradictory = mismatch.replace('"thread_token_usage":{"input_tokens":9007199254740993', '"thread_token_usage":{"input_tokens":9007199254740992');
+  const ledgerText = codexText(codexSession(), codexLedger()).replaceAll('"input_tokens":100', '"input_tokens":9007199254740993').replaceAll('"total_tokens":130', '"total_tokens":9007199254741023');
+  const legacyText = JSON.stringify(codexLegacy()).replaceAll('"input_tokens":100', '"input_tokens":9007199254740992').replaceAll('"total_tokens":130', '"total_tokens":9007199254741022');
+  const contradictory = ledgerText + '\n' + legacyText;
   assert.deepEqual(extractCodexEvidence(contradictory, context()).diagnostics, [{ code: 'unsupported_source_format', count: 1n }]);
 });
 
@@ -455,6 +455,44 @@ test('Codex world state is recognized without copying model-visible context', ()
   assert.deepEqual(result.diagnostics, []);
   assert.equal(result.records.length, 1);
   assert.ok(!canonical(result).includes(secret));
+});
+
+test('Codex ledger corroboration respects UTC usage day and validated model/provider context', () => {
+  const midnight = codexLedger(); midnight.timestamp = '2026-10-18T23:59:59Z';
+  const nextDay = codexLegacy(); nextDay.timestamp = '2026-10-19T00:00:01Z';
+  assert.deepEqual(extractCodexEvidence(codexText(codexSession(), midnight, nextDay), context()).diagnostics, [{ code: 'unsupported_source_format', count: 1n }]);
+  const offset = codexLedger(); offset.timestamp = '2026-10-19T01:59:00+02:00';
+  assert.deepEqual(extractCodexEvidence(codexText(codexSession(), offset, codexLegacy()), context()).diagnostics, []);
+  for (const replacement of [{ model: 'other-model' }, { model_provider: 'other-provider' }]) {
+    const result = extractCodexEvidence(codexText(codexSession(), codexLedger(), { type: 'turn_context', timestamp: '2026-10-18T23:59:00Z', payload: replacement }, codexLegacy()), context());
+    assert.deepEqual(result.diagnostics, [{ code: 'unsupported_source_format', count: 1n }]);
+  }
+});
+
+test('Codex ledger corroboration rejects inconsistent subsets totals and unknown token meters', () => {
+  const malformed = [{ cached_input_tokens: 101 }, { reasoning_output_tokens: 31 }, { total_tokens: 129 }, { future_meter: 1 }];
+  for (const lane of ['usage', 'turn_token_usage', 'thread_token_usage']) {
+    for (const fields of malformed) {
+      const ledger = codexLedger(); ledger.payload[lane] = { ...ledger.payload[lane], ...fields };
+      const result = extractCodexEvidence(codexText(codexSession(), ledger, codexLegacy()), context());
+      assert.deepEqual(result.diagnostics, [{ code: 'unsupported_source_format', count: 1n }]);
+    }
+  }
+});
+
+test('Codex pending unique ledger vectors share the existing record memory ceiling', () => {
+  const budget = createBudget(pilotCaps({ maxRecords: 3 }));
+  const result = extractCodexEvidence(codexText(codexSession(), codexLedger(completeCodexUsage(101)), codexLedger(completeCodexUsage(102)), codexLedger(completeCodexUsage(103)), codexLegacy()), context(), { budget });
+  assert.deepEqual(result.diagnostics, [{ code: 'capture_limit', count: 1n }]);
+  assert.equal(result.records.length, 1);
+});
+
+test('Codex pending ledgers also reserve room before later normalized metadata records', () => {
+  const budget = createBudget(pilotCaps({ maxRecords: 3 }));
+  const turn = { type: 'turn_context', timestamp: '2026-10-18T23:59:00Z', payload: { model: 'model-x' } };
+  const result = extractCodexEvidence(codexText(codexSession(), codexLedger(), turn, turn), context(), { budget });
+  assert.deepEqual(result.diagnostics, [{ code: 'capture_limit', count: 1n }]);
+  assert.equal(result.records.length, 2);
 });
 
 test('Claude copies retain native inclusive/subset counters and exact integer lexemes', () => {

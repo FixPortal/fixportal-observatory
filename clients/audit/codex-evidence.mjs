@@ -1,5 +1,6 @@
 import { parseLossless, counter } from './lossless-json.mjs';
-import { extractLines, recordBase, pricing, identifier } from './protocol.mjs';
+import { extractLines, recordBase, pricing, identifier, utcTimestamp, canonical } from './protocol.mjs';
+import { CaptureLimit } from './budget.mjs';
 
 // Only complete, representable cumulative vectors can corroborate a ledger.
 // The sixth producer counter is unsupported by this evidence version: never hide it.
@@ -7,7 +8,9 @@ function corroborationVector(usage) {
   try {
     const counters = usageCounters(usage);
     if (Object.values(counters).some(value => value === null)) return null;
+    if (Object.keys(usage).some(key => !Object.hasOwn(counters, key) && key !== 'cache_write_input_tokens')) return null;
     if (Object.hasOwn(usage, 'cache_write_input_tokens') && counter(usage.cache_write_input_tokens) !== 0n) return null;
+    if (counters.cached_input_tokens > counters.input_tokens || counters.reasoning_output_tokens > counters.output_tokens || counters.total_tokens !== counters.input_tokens + counters.output_tokens) return null;
     return Object.values(counters).join(',');
   } catch { return null; }
 }
@@ -22,7 +25,12 @@ function usageCounters(usage) {
 export function extractCodexEvidence(text, identityContext, dependencies = {}) {
   identityContext = { ...identityContext, budget: dependencies.budget };
   let state = {};
+  const corroborationKey = (timestamp, vector) => canonical([utcTimestamp(timestamp).slice(0, 10), identifier(state.model, true), identifier(state.provider), vector]);
   const legacyVectors = new Set(), ledgerVectors = new Map();
+  const boundedRecord = (sequence, native, facts) => {
+    dependencies.budget?.room('records', ledgerVectors.size + 1, true);
+    return recordBase('codex', identityContext, sequence, native, facts);
+  };
   const finishSession = codes => {
     for (const [vector, count] of ledgerVectors) {
       dependencies.budget?.check(true);
@@ -41,7 +49,7 @@ export function extractCodexEvidence(text, identityContext, dependencies = {}) {
       state = {};
       if (!payload || !payload.id) throw new Error('missing_session_identity');
       const next = { sessionId: payload.id, parentSessionId: payload.parent_session_id ?? payload.source?.subagent?.thread_spawn?.parent_thread_id, model: payload.model, provider: payload.model_provider };
-      const record = recordBase('codex', identityContext, sequence, native, next);
+      const record = boundedRecord(sequence, native, next);
       state = next; records.push(record); return true;
     }
     if (native.type === 'token_usage_record') {
@@ -54,7 +62,13 @@ export function extractCodexEvidence(text, identityContext, dependencies = {}) {
         usage === null || turn === null) throw new Error('unsupported_source_format');
       const responseCounters = usage.split(',').map(BigInt), turnCounters = turn.split(',').map(BigInt);
       if (!vector.split(',').map(BigInt).every((total, index) => responseCounters[index] <= turnCounters[index] && turnCounters[index] <= total)) throw new Error('unsupported_source_format');
-      ledgerVectors.set(vector, (ledgerVectors.get(vector) ?? 0n) + 1n);
+      const key = corroborationKey(native.timestamp, vector);
+      if (!ledgerVectors.has(key)) {
+        // Pending unique vectors share the existing record allocation ceiling.
+        if (dependencies.budget) dependencies.budget.room('records', ledgerVectors.size + 1, true);
+        else if (ledgerVectors.size >= 1000000) throw new CaptureLimit();
+      }
+      ledgerVectors.set(key, (ledgerVectors.get(key) ?? 0n) + 1n);
       return true;
     }
     if (native.type === 'turn_context') {
@@ -63,11 +77,11 @@ export function extractCodexEvidence(text, identityContext, dependencies = {}) {
       state = { sessionId: state.sessionId, parentSessionId: state.parentSessionId };
       if (!payload || typeof payload !== 'object') throw new Error('invalid_usage_shape');
       const next = { ...state, model: payload.model, provider: payload.model_provider ?? previousProvider, service_tier: payload.service_tier, speed: payload.speed, inference_geo: payload.inference_geo, region: payload.region, model_context_window: payload.model_context_window };
-      const record = recordBase('codex', identityContext, sequence, native, next);
+      const record = boundedRecord(sequence, native, next);
       state = next; records.push(record); return true;
     }
     if (native.type === 'session_end') {
-      const record = recordBase('codex', identityContext, sequence, native, state);
+      const record = boundedRecord(sequence, native, state);
       record.kind = 'sessionClosure'; record.closure = { state: 'explicitlyClosed', timestamp: record.timestamp, sequence: record.sequence };
       records.push(record); return true;
     }
@@ -78,13 +92,13 @@ export function extractCodexEvidence(text, identityContext, dependencies = {}) {
     if (payload.info === null) return true;
     const info = payload.info;
     if (!info || typeof info !== 'object') throw new Error('invalid_usage_shape');
-    const record = recordBase('codex', identityContext, sequence, native, state);
+    const record = boundedRecord(sequence, native, state);
     record.kind = 'cumulativeUsage';
     record.counters = { counterKind: 'codex', ...usageCounters(info.total_token_usage), last_token_usage: info.last_token_usage == null ? null : usageCounters(info.last_token_usage) };
     record.pricing = pricing(info, state);
     records.push(record);
     const vector = corroborationVector(info.total_token_usage);
-    if (vector !== null && state.sessionId) legacyVectors.add(vector);
+    if (vector !== null && state.sessionId) legacyVectors.add(corroborationKey(record.timestamp, vector));
     return true;
   }, dependencies, finishSession);
 }
