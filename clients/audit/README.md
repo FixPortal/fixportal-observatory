@@ -2,6 +2,60 @@
 
 Requires Node 24+. This separate companion captures allowlisted usage facts for offline audits and can poll the machine-scoped capture API. It imports no collector, normalization, or daily accounting code.
 
+## Bounded selected capture
+
+The explicit one-shot entry point is `node clients/observatory-audit.mjs selected-capture --config <private-config.json>`. It requires a separately authorized exact request, complete startup server binding and independently verified protected filesystem namespaces. The command itself neither grants native-root access nor verifies Windows namespace protection. The private pilot supervisor and API-flag helpers are separate preparation tools, not public capabilities of this command.
+
+The server must start with `Audit:Enabled=true`, `Audit:WorkerEnabled=false`, `AuditSelectedInvocation:Enabled=false` and a complete `AuditSelectedInvocation` authority: `RunId`, `InvocationId`, `FullScopeDigest`, `ExpectedRevision` and `ExpiresAtUtc`. The disabled selected-action flag disables audit execution; its immutable startup authority can still bind capture. This command performs capture only. Audit execution, snapshots, export/replay and UI presentation require separate scope and authorization.
+
+Configuration is a closed JSON object. Unknown or missing required properties are refused; duplicate JSON keys are refused. The CLI reads only the explicitly supplied file, with a fixed 1 MiB bootstrap ceiling and 4096-byte config-path ceiling before parsing. The configured `maxMetadataBytes` and `maxPathBytes` may tighten subsequent metadata/path handling.
+
+| Property | Required value |
+| --- | --- |
+| `origin` | HTTPS origin without path/query/fragment or embedded credentials. `allowLoopbackHttp: true` permits explicit loopback HTTP for synthetic development only. |
+| `key` | Issued machine capture credential; the ordinary admin/API key does not authorize capture routes. Keep the file private. |
+| `approval` | Closed object with `schemaVersion: 1`, `runId`, `expectedRevision`, `fullScopeDigest`, `requestId`, `machineId`, `requestScopeDigest`, `authorityExpiresAt`; optional `instanceId` pins the server instance. |
+| `requestScope` | Exact canonical version-one request subset: `from`, `to`, `sources`, `requestedChecks`, `excludedChecks`, `allowPartial`, `predecessorRunId`, `evaluationOfRunId`. Sources belong to the selected machine. Include null predecessor/evaluation IDs when absent. |
+| `identityDirectory` | Explicit absolute path to an already-private, empty directory in an independently verified protected namespace. Existing identity material is refused. |
+| `sources` | Exactly one `claude` and one `codex` entry, each with `sourceId`, `tool` and `roots`. Each `roots` array contains exactly one approved absolute root; source IDs match `requestScope`. Roots and identity directory must be distinct paths. |
+| `caps` | All fields below, with no defaults or additional fields. |
+| Optional | `allowLoopbackHttp` and `includeRawHashes` are booleans. Raw hashes remain local in memory; selected mode writes no retained package. |
+
+Approval GUIDs use lowercase canonical nonzero form; digests use 64 lowercase hex characters. `fullScopeDigest` identifies the complete run scope, including other machines when selected; `requestScopeDigest` identifies only this machine's canonical subset. They can differ. `expectedRevision` is a nonnegative safe integer. The authority expiry must be a valid future UTC timestamp. The exact response tuple, instance, token, subset and expiry are checked before identity creation or source discovery.
+
+Every cap is mandatory and uses a positive safe integer, except `maxDepth`, which permits zero:
+
+| Work | Cap fields |
+| --- | --- |
+| Discovery | `maxDirectoryEntries`, `maxDepth`, `maxQueuedPaths`, `maxFiles` |
+| Reads | `maxFileBytes`, `maxReadBytes`, `maxLines`, `maxLineBytes` |
+| Extraction/encoding | `maxRecords`, `maxDiagnostics`, `maxEncodedBytes`, `maxChunkBytes` |
+| Transport/time | `maxHttpAttempts`, `maxUploadBytes`, `maxDurationMs` |
+| Seal reserves | `sealReserveAttempts`, `sealReserveBytes`, `sealReserveMs` |
+| Owned writes/metadata | `maxOwnedWriteBytes`, `maxOwnedEntries`, `maxPathBytes`, `maxMetadataBytes` |
+
+Protocol ceilings remain 10,000 files, 1,000,000 records, 512 MiB per source file and encoded evidence, 1 MiB per line and metadata object, and 8 MiB per chunk. `maxDurationMs` is at most 2,147,483,647. `maxLineBytes` cannot exceed `maxFileBytes`; `maxChunkBytes` cannot exceed `maxEncodedBytes`. Each seal reserve must be smaller than its corresponding total cap. These ceilings are not pilot sizing advice: choose explicit approved caps from bounded source knowledge.
+
+One shared budget covers both roots, retries and renewals. Directory entries are charged before enumeration; queued-path admissions accumulate. `maxReadBytes` charges every requested native read length, including EOF, short-read remainders, growth sentinels and discarded changed-file attempts, without refunds. Records, ordinary diagnostics, encoded bytes, HTTP attempts and upload bytes are admitted before work/allocation. `maxDiagnostics` bounds ordinary diagnostic admissions; terminal `capture_limit` markers can still describe exhaustion after that cap. Those markers remain bounded by the stopped phases and metadata ceiling, rather than by the ordinary diagnostic counter. Owned-write counters charge attempted logical bytes and entries before identity writes; they are not physical disk quotas or an amplification guarantee. Native work withholds the seal time reserve; seal attempts/bytes remain part of the total transport budget.
+
+Lease time uses the server's postcommit observation minus the full measured monotonic round trip and a timestamp-rounding allowance. Local wall-clock changes cannot extend that lease or the fixed operation deadline. Renewals keep the same selected request/token and never reset the budget. Whole admitted sessions remain available for baseline reconstruction, including pre-window Codex observations.
+
+The command makes one selected claim, uses selected renewal, uploads to that request and requires exact chunk `204` acknowledgements plus a seal `200` containing the matching capture ID. It has no generic-claim fallback, retained-package recovery, automatic fresh claim, reclaim or rescan. Individual chunk/seal transport attempts may retry only within the same lease and shared caps. Claim and selected renewal each have one attempt. After a failed or uncertain outcome, stop for an explicit decision; do not automatically rerun the command.
+
+| Exit | Meaning |
+| --- | --- |
+| `0` / `capture_complete` | Matching seal acknowledgement received and local scan completed without diagnostics. This does not certify historical source closure or audit completeness. |
+| `3` / `capture_incomplete` | Matching seal acknowledgement received for observed incomplete facts. Counts/diagnostics describe admitted work; unvisited files are not invented. |
+| `4` / `audit_capture_failed` | FAILED/UNCERTAIN. A missing or invalid claim/seal reply does not prove rollback or an unsealed server state. No success acknowledgement is claimed. |
+
+On budget exhaustion, native work stops. Available incomplete facts can be sealed only while the exact lease, fixed deadline and counted seal reserves still permit it; otherwise the command stops without a known seal acknowledgement. Hard termination promises no seal. Optional `--supervised-stdin` treats one byte, EOF or pipe error as cooperative stop; it does not create a Windows Job or provide a hard process ceiling. SIGINT/SIGTERM request the same stop.
+
+Before any real use, independently establish protected root/ancestor namespaces and private configuration/identity destinations. Fresh selected mode creates only `identity.json`, uses evidence packages in memory and does not change existing ACLs. Its path checks/fingerprints do not constitute race-proof handle binding. The machine credential retains the existing generic claim/chunk/seal capabilities: the narrower selected client does not narrow that credential grant. Live consent must cover that residual authority and any separately owned process termination.
+
+The concrete handoff must identify the reviewed client/server release and the actual Node 24+ executable, plus any separately qualified supervisor. Keep historical qualification and captured evidence associated with their original release identities. Synthetic composition tests do not authorize native access or establish the identity of a later deployed process.
+
+## Local capture and generic polling
+
 Run `node clients/observatory-audit.mjs capture --request <local-request.json> --output <new-local-directory>`. Existing output directories are refused. Exit codes: 0 capture scan completed, 3 incomplete scan, 4 sanitized failure. A completed scan does not prove source closure or complete historical usage; the verifier evaluates those separately. Empty scans are incomplete.
 
 The local request file contains `{ "request": ..., "configuration": ... }`. `request` has `captureId`, `requestId`, `machineId` GUIDs and the version-one `scope` (`from`, `to`, selected `sources`, requested/excluded checks, `allowPartial`, optional predecessor/evaluation IDs). Only the selected machine's sources may be captured.
