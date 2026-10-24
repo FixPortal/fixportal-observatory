@@ -58,6 +58,7 @@ export function supervisedStop(stream, controller) {
 
 function preflight(configuration, wallNow) {
   keys(configuration, ['origin', 'key', 'approval', 'requestScope', 'identityDirectory', 'sources', 'caps'], ['allowLoopbackHttp', 'includeRawHashes']);
+  if (Object.hasOwn(configuration, 'allowLoopbackHttp') && typeof configuration.allowLoopbackHttp !== 'boolean') throw new Error('invalid_selected_capture');
   const caps = validateCaps(configuration.caps), approval = configuration.approval;
   keys(approval, [...tuple, 'authorityExpiresAt'], ['instanceId']);
   if (approval.schemaVersion !== 1 || !Number.isSafeInteger(approval.expectedRevision) || approval.expectedRevision < 0
