@@ -356,6 +356,27 @@ async function workspace(t) {
   return { dir, root, config, request };
 }
 
+test('Claude administrative and request-replay kinds neither duplicate usage nor imply closure', () => {
+  const kinds = ['ai-title', 'agent-name', 'mode', 'permission-mode', 'atis-latch', 'pr-link', 'last-prompt', 'file-history-delta', 'attachment', 'api-request', 'api-request-shape', 'api-request-blob'];
+  // Replay blobs can contain an old assistant message. Only the native assistant row is usage.
+  const lines = kinds.map(type => JSON.stringify({ type, sessionId: 'session-a', message: JSON.parse(claude()).message, content: secret, costUSD: '999' }));
+  const result = extractClaudeEvidence([...lines, claude()].join('\n'), context());
+  assert.deepEqual(result.diagnostics, []);
+  assert.equal(result.records.length, 1);
+  assert.equal(result.records[0].kind, 'messageUsage');
+  assert.equal(result.records[0].counters.input_tokens, 12n);
+  assert.equal(result.records[0].sequence, 13n);
+  assert.ok(!canonical(result).includes(secret));
+  const unknown = extractClaudeEvidence('{"type":"api-request-future"}', context());
+  assert.ok(unknown.diagnostics.some(item => item.code === 'unsupported_source_format'));
+});
+
+test('Codex usage-bearing rollout records remain diagnosed until reconciliation is qualified', () => {
+  const result = extractCodexEvidence(JSON.stringify({ type: 'token_usage_record', payload: { usage: { input_tokens: 12 }, thread_token_usage: { input_tokens: 12 } } }), context());
+  assert.equal(result.records.length, 0);
+  assert.ok(result.diagnostics.some(item => item.code === 'unsupported_source_format'));
+});
+
 test('Claude copies retain native inclusive/subset counters and exact integer lexemes', () => {
   const line = claude().replace('"input_tokens":12', '"input_tokens":9007199254740993');
   const result = extractClaudeEvidence(`${line}\n${line}\n`, context());

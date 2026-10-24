@@ -6,8 +6,12 @@ export function extractClaudeEvidence(text, identityContext, dependencies = {}) 
   return extractLines(text, (line, sequence, records) => {
     const native = parseLossless(line, dependencies);
     if (!native || typeof native !== 'object' || Array.isArray(native)) throw new Error('unsupported_source_format');
-    // Conversation-only records are recognized but never copied into evidence.
-    if (['user', 'system', 'progress', 'file-history-snapshot', 'queue-operation', 'summary'].includes(native.type)) return true;
+    // Administrative/context and request-replay records are never fresh usage.
+    // Replay blobs may embed old assistant messages; copying them would duplicate usage.
+    // last-prompt is a checkpoint, not evidence of session closure.
+    if (['user', 'system', 'progress', 'file-history-snapshot', 'queue-operation', 'summary',
+      'ai-title', 'agent-name', 'mode', 'permission-mode', 'atis-latch', 'pr-link',
+      'last-prompt', 'file-history-delta', 'attachment', 'api-request', 'api-request-shape', 'api-request-blob'].includes(native.type)) return true;
     if (native.type === 'session_end') {
       const record = recordBase('claude', identityContext, sequence, native);
       record.kind = 'sessionClosure'; record.closure = { state: 'explicitlyClosed', timestamp: record.timestamp, sequence: record.sequence };
