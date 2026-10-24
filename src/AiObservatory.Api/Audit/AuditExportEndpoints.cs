@@ -67,7 +67,7 @@ public static class AuditExportEndpoints
                 "/{id:guid}/bundle",
                 async (Guid id, AuditReportService service, CancellationToken ct) =>
                 {
-                    var session = await service.OpenAsync(id, ct);
+                    var session = await service.OpenBundleAsync(id, ct);
                     try
                     {
                         var zip = await AuditReportService.PrepareBundleAsync(session);

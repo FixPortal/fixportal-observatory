@@ -6,6 +6,7 @@ using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
 using AiObservatory.Data.Audit;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using NodaTime;
 
 namespace AiObservatory.Api.Tests.Audit;
@@ -13,6 +14,152 @@ namespace AiObservatory.Api.Tests.Audit;
 public sealed class AuditReportServiceTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    [Fact]
+    public async Task ExportDiagnostics_ReportsOrderedPhasesAndExactCountsWithoutChangingBytes()
+    {
+        var (retained, bundle) = Fixture();
+        var logs = new ExportLogs();
+        var diagnostics = new AuditExportDiagnostics(logs);
+        diagnostics.Start("materialize");
+        diagnostics.Materialized(retained);
+        diagnostics.Complete();
+        using var expected = new MemoryStream();
+        using var actual = new MemoryStream();
+        await AuditBundleWriter.WriteAsync(expected, bundle, Ct);
+        await AuditReportService.WriteRetainedBundleAsync(actual, retained, Ct, diagnostics);
+        actual.ToArray().Should().Equal(expected.ToArray());
+        logs.Rows.Where(r => (string)r["Outcome"]! == "started")
+            .Select(r => r["Phase"])
+            .Should()
+            .Equal("materialize", "detached_read", "validation", "entry_serialization", "zip_write");
+        var counts = logs.Rows.Single(r => r.ContainsKey("SnapshotBytes"));
+        counts["SnapshotBytes"].Should().Be(retained.Snapshot.Bytes.LongLength);
+        counts["ResultBytes"].Should().Be(retained.Result.LongLength);
+        counts["ManifestBytes"].Should().Be(retained.Captures.Sum(c => c.Manifest.LongLength));
+        counts["ChunkBytes"].Should().Be(0L);
+        counts["CaptureCount"].Should().Be(1);
+        counts["ChunkCount"].Should().Be(1);
+        logs.Rows.Where(r => r.ContainsKey("Phase"))
+            .Should()
+            .OnlyContain(r =>
+                (double)r["ElapsedMilliseconds"]! >= 0
+                && (long)r["ProcessAllocatedBytes"]! >= 0
+                && (long)r["ProcessWorkingSetBytes"]! > 0
+            );
+        logs.Text.Should()
+            .NotContain(retained.RunId.ToString())
+            .And.NotContain(retained.ResultHash)
+            .And.NotContain("synthetic")
+            .And.NotContain(retained.Snapshot.InputContentDigest);
+        var allowed = new[]
+        {
+            "ExportId",
+            "Outcome",
+            "Phase",
+            "ElapsedMilliseconds",
+            "PhaseElapsedMilliseconds",
+            "ProcessAllocatedBytes",
+            "ProcessWorkingSetBytes",
+            "SnapshotBytes",
+            "ResultBytes",
+            "ManifestBytes",
+            "ChunkBytes",
+            "CaptureCount",
+            "ChunkCount",
+            "{OriginalFormat}",
+        };
+        logs.Rows.SelectMany(r => r.Keys).Should().OnlyContain(key => allowed.Contains(key));
+    }
+
+    [Theory]
+    [InlineData("snapshot_hash", "detached_read")]
+    [InlineData("result_verdict", "validation")]
+    public async Task ExportDiagnostics_ReportsFailingPhaseWithoutEvidenceOrExceptionText(
+        string corruption,
+        string phase
+    )
+    {
+        var (retained, _) = Fixture();
+        var logs = new ExportLogs();
+        using var actual = new MemoryStream();
+        var action = () =>
+            AuditReportService.WriteRetainedBundleAsync(actual, Corrupt(retained, corruption), Ct, new(logs));
+        await action.Should().ThrowAsync<AuditStoreException>();
+        logs.Rows[^1]["Phase"].Should().Be(phase);
+        logs.Rows[^1]["Outcome"].Should().Be("failed");
+        logs.Text.Should().NotContain("retained_evidence_integrity");
+    }
+
+    [Fact]
+    public void ExportDiagnostics_CancellationReportsActivePhaseWithoutCompletingIt()
+    {
+        var logs = new ExportLogs();
+        var diagnostics = new AuditExportDiagnostics(logs);
+        diagnostics.Start("validation");
+        diagnostics.CancellationRequested();
+        diagnostics.Fail(new OperationCanceledException("secret/path/payload"));
+        diagnostics.Fail(new IOException("duplicate"));
+        logs.Rows.Select(r => r["Outcome"]).Should().Equal("started", "cancellation_requested", "cancelled");
+        logs.Text.Should().NotContain("secret").And.NotContain("duplicate");
+    }
+
+    [Fact]
+    public async Task ExportDiagnostics_LoggingFailureDoesNotChangeExport()
+    {
+        var (retained, bundle) = Fixture();
+        var diagnostics = new AuditExportDiagnostics(new ExportLogs { Throw = true });
+        diagnostics.Start("materialize");
+        diagnostics.Materialized(retained);
+        diagnostics.Complete();
+        using var expected = new MemoryStream();
+        using var actual = new MemoryStream();
+        await AuditBundleWriter.WriteAsync(expected, bundle, Ct);
+        await AuditReportService.WriteRetainedBundleAsync(actual, retained, Ct, diagnostics);
+        actual.ToArray().Should().Equal(expected.ToArray());
+    }
+
+    [Fact]
+    public async Task ExportDiagnostics_OutputFailureIsAttributedToZipWrite()
+    {
+        var (retained, _) = Fixture();
+        var logs = new ExportLogs();
+        using var output = new MemoryStream([], writable: false);
+        var action = () => AuditReportService.WriteRetainedBundleAsync(output, retained, Ct, new(logs));
+        await action.Should().ThrowAsync<ArgumentException>();
+        logs.Rows[^1]["Phase"].Should().Be("zip_write");
+        logs.Rows[^1]["Outcome"].Should().Be("failed");
+    }
+
+    private sealed class ExportLogs : ILogger
+    {
+        public List<Dictionary<string, object?>> Rows { get; } = [];
+        public string Text => string.Join("\n", Rows.SelectMany(r => r).Select(p => $"{p.Key}={p.Value}"));
+        public bool Throw { get; init; }
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (Throw)
+            {
+                throw new InvalidOperationException("logger unavailable");
+            }
+            exception.Should().BeNull();
+            Rows.Add(
+                ((IEnumerable<KeyValuePair<string, object?>>)(object)state!).ToDictionary(p => p.Key, p => p.Value)
+            );
+        }
+    }
 
     [Fact]
     public async Task RetainedExport_PreservesCanonicalBundleBytes()
