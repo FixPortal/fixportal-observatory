@@ -119,7 +119,7 @@ export function diagnosticCounts(codes) {
 
 export const SAFE_DIAGNOSTICS = new Set(['source_line_limit', 'source_depth_limit', 'malformed_json', 'duplicate_property', 'invalid_counter', 'counter_range', 'invalid_timestamp', 'timestamp_precision', 'invalid_source_identifier', 'unsupported_source_format', 'invalid_usage_shape', 'missing_session_identity', 'invalid_source_money']);
 
-export function extractLines(text, consume, dependencies = {}) {
+export function extractLines(text, consume, dependencies = {}, finish) {
   const budget = dependencies.budget;
   const records = [], codes = countedDiagnostics(budget);
   // Buffer bound is enforced by capture; direct extraction is bounded too.
@@ -153,7 +153,7 @@ export function extractLines(text, consume, dependencies = {}) {
       if (Buffer.byteLength(line) > maxLine) throw Object.assign(new Error(budget ? 'capture_limit' : 'source_line_limit'), { captureLimit: !!budget });
       if (!line.trim()) continue;
       budget?.room('records', 1, true);
-      recognized = consume(line, sequence, records) || recognized;
+      recognized = consume(line, sequence, records, codes) || recognized;
     } catch (error) {
       if (error.captureLimit) { stopped(error); break; }
       try {
@@ -161,6 +161,10 @@ export function extractLines(text, consume, dependencies = {}) {
         codes.add(SAFE_DIAGNOSTICS.has(error.message) ? error.message : 'invalid_usage_shape');
       } catch (limit) { stopped(limit); break; }
     }
+  }
+  if (!codes.has('capture_limit') && finish) {
+    try { budget?.check(true); finish(codes); }
+    catch (error) { stopped(error); }
   }
   if (!recognized && !codes.has('capture_limit')) {
     try { codes.add('unsupported_source_format'); }
