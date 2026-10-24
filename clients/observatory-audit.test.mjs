@@ -469,6 +469,24 @@ test('Codex ledger corroboration respects UTC usage day and validated model/prov
   }
 });
 
+test('Codex legacy top-level session overrides cannot corroborate another session ledger', () => {
+  const foreign = { ...codexLegacy(), sessionId: 'foreign-session' };
+  const result = extractCodexEvidence(codexText(codexSession(), codexLedger(), foreign), context());
+  assert.deepEqual(result.diagnostics, [{ code: 'unsupported_source_format', count: 1n }]);
+  assert.notEqual(result.records[0].sessionId, result.records[1].sessionId);
+  const same = { ...codexLegacy(), sessionId: 'session-x' };
+  assert.deepEqual(extractCodexEvidence(codexText(codexSession(), codexLedger(), same), context()).diagnostics, []);
+});
+
+test('Codex session and turn metadata overrides cannot establish a corroboration binding', () => {
+  const foreignSession = { ...codexSession(), sessionId: 'foreign-session' };
+  const foreignTurn = { type: 'turn_context', timestamp: '2026-10-18T23:59:00Z', sessionId: 'foreign-session', payload: { model: 'model-x' } };
+  for (const rows of [[foreignSession, codexLedger(), codexLegacy()], [codexSession(), foreignTurn, codexLedger(), codexLegacy()]]) {
+    const result = extractCodexEvidence(codexText(...rows), context());
+    assert.deepEqual(result.diagnostics, [{ code: 'unsupported_source_format', count: 1n }]);
+  }
+});
+
 test('Codex ledger corroboration rejects inconsistent subsets totals and unknown token meters', () => {
   const malformed = [{ cached_input_tokens: 101 }, { reasoning_output_tokens: 31 }, { total_tokens: 129 }, { future_meter: 1 }];
   for (const lane of ['usage', 'turn_token_usage', 'thread_token_usage']) {

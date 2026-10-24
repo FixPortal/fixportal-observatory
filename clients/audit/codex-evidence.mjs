@@ -25,6 +25,7 @@ function usageCounters(usage) {
 export function extractCodexEvidence(text, identityContext, dependencies = {}) {
   identityContext = { ...identityContext, budget: dependencies.budget };
   let state = {};
+  let boundSession = false, boundContext = false;
   const corroborationKey = (timestamp, vector) => canonical([utcTimestamp(timestamp).slice(0, 10), identifier(state.model, true), identifier(state.provider), vector]);
   const legacyVectors = new Set(), ledgerVectors = new Map();
   const boundedRecord = (sequence, native, facts) => {
@@ -47,17 +48,21 @@ export function extractCodexEvidence(text, identityContext, dependencies = {}) {
       finishSession(codes);
       // Even a rejected replacement declares a session boundary: old identities/context cannot survive it.
       state = {};
+      boundSession = false; boundContext = false;
       if (!payload || !payload.id) throw new Error('missing_session_identity');
       const next = { sessionId: payload.id, parentSessionId: payload.parent_session_id ?? payload.source?.subagent?.thread_spawn?.parent_thread_id, model: payload.model, provider: payload.model_provider };
       const record = boundedRecord(sequence, native, next);
-      state = next; records.push(record); return true;
+      state = next; records.push(record);
+      boundSession = (native.sessionId ?? state.sessionId) === state.sessionId;
+      boundContext = boundSession;
+      return true;
     }
     if (native.type === 'token_usage_record') {
       // Producer order permits this ledger to precede its token_count event.
       // Retain only a vector/count until this file/session epoch ends; emit no usage.
       const vector = corroborationVector(payload?.thread_token_usage);
       const usage = corroborationVector(payload?.usage), turn = corroborationVector(payload?.turn_token_usage);
-      if (!state.sessionId || payload?.thread_id !== state.sessionId || vector === null ||
+      if (!boundContext || !state.sessionId || payload?.thread_id !== state.sessionId || vector === null ||
         ['thread_id', 'turn_id', 'session_id', 'root_turn_id', 'response_id'].some(key => !identifier(payload?.[key])) ||
         usage === null || turn === null) throw new Error('unsupported_source_format');
       const responseCounters = usage.split(',').map(BigInt), turnCounters = turn.split(',').map(BigInt);
@@ -73,12 +78,15 @@ export function extractCodexEvidence(text, identityContext, dependencies = {}) {
     }
     if (native.type === 'turn_context') {
       const previousProvider = state.provider;
+      boundContext = false;
       // Session identities remain trustworthy, but a rejected turn makes its model/provider/pricing unknown.
       state = { sessionId: state.sessionId, parentSessionId: state.parentSessionId };
       if (!payload || typeof payload !== 'object') throw new Error('invalid_usage_shape');
       const next = { ...state, model: payload.model, provider: payload.model_provider ?? previousProvider, service_tier: payload.service_tier, speed: payload.speed, inference_geo: payload.inference_geo, region: payload.region, model_context_window: payload.model_context_window };
       const record = boundedRecord(sequence, native, next);
-      state = next; records.push(record); return true;
+      state = next; records.push(record);
+      boundContext = boundSession && (native.sessionId ?? state.sessionId) === state.sessionId;
+      return true;
     }
     if (native.type === 'session_end') {
       const record = boundedRecord(sequence, native, state);
@@ -98,7 +106,7 @@ export function extractCodexEvidence(text, identityContext, dependencies = {}) {
     record.pricing = pricing(info, state);
     records.push(record);
     const vector = corroborationVector(info.total_token_usage);
-    if (vector !== null && state.sessionId) legacyVectors.add(corroborationKey(record.timestamp, vector));
+    if (vector !== null && boundContext && state.sessionId && (native.sessionId ?? state.sessionId) === state.sessionId) legacyVectors.add(corroborationKey(record.timestamp, vector));
     return true;
   }, dependencies, finishSession);
 }
