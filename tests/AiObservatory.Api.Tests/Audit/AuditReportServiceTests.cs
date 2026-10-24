@@ -69,7 +69,7 @@ public sealed class AuditReportServiceTests
             "ChunkCount",
             "{OriginalFormat}",
         };
-        logs.Rows.SelectMany(r => r.Keys).Should().OnlyContain(key => allowed.Contains(key));
+        logs.Rows.SelectMany(r => r.Keys).Should().OnlyContain(key => Array.IndexOf(allowed, key) >= 0);
     }
 
     [Theory]
@@ -155,9 +155,7 @@ public sealed class AuditReportServiceTests
                 throw new InvalidOperationException("logger unavailable");
             }
             exception.Should().BeNull();
-            Rows.Add(
-                ((IEnumerable<KeyValuePair<string, object?>>)(object)state!).ToDictionary(p => p.Key, p => p.Value)
-            );
+            Rows.Add(((IEnumerable<KeyValuePair<string, object?>>)state!).ToDictionary(p => p.Key, p => p.Value));
         }
     }
 
