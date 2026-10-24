@@ -377,6 +377,85 @@ test('Codex usage-bearing rollout records remain diagnosed until reconciliation 
   assert.ok(result.diagnostics.some(item => item.code === 'unsupported_source_format'));
 });
 
+const completeCodexUsage = (input = 100) => ({ input_tokens: input, cached_input_tokens: 20, output_tokens: 30, reasoning_output_tokens: 10, total_tokens: input + 30 });
+const codexLedger = (usage = completeCodexUsage(), thread = 'session-x') => ({ type: 'token_usage_record', timestamp: '2026-10-18T23:59:00Z', payload: { thread_id: thread, turn_id: 'turn-x', session_id: 'process-x', root_turn_id: 'turn-x', response_id: 'response-x', usage, turn_token_usage: usage, thread_token_usage: usage } });
+const codexLegacy = (usage = completeCodexUsage()) => ({ type: 'event_msg', timestamp: '2026-10-18T23:59:00Z', payload: { type: 'token_count', info: { total_token_usage: usage, last_token_usage: usage } } });
+const codexSession = (id = 'session-x') => ({ type: 'session_meta', timestamp: '2026-10-18T23:00:00Z', payload: { id, model_provider: 'openai' } });
+const codexText = (...rows) => rows.map(JSON.stringify).join('\n');
+
+test('Codex ledgers corroborate complete same-session legacy totals in either order without new usage', () => {
+  for (const rows of [[codexLedger(), { type: 'response_item', payload: { private: secret } }, codexLegacy()], [codexLegacy(), codexLedger(), codexLedger()]]) {
+    const result = extractCodexEvidence(codexText(codexSession(), ...rows), context());
+    assert.deepEqual(result.diagnostics, []);
+    assert.deepEqual(result.records.map(record => record.kind), ['sessionMetadata', 'cumulativeUsage']);
+    assert.equal(result.records[1].counters.input_tokens, 100n);
+    assert.ok(!canonical(result).includes(secret));
+  }
+});
+
+test('Codex unmatched partial contradictory foreign-session and cache-write ledgers remain diagnosed', () => {
+  const partial = completeCodexUsage(); delete partial.total_tokens;
+  for (const ledger of [codexLedger(completeCodexUsage(101)), codexLedger(partial), codexLedger(completeCodexUsage(), 'other-session'), codexLedger({ ...completeCodexUsage(), cache_write_input_tokens: 1 }), codexLedger({ ...completeCodexUsage(), cache_write_input_tokens: null })]) {
+    const result = extractCodexEvidence(codexText(codexSession(), ledger, codexLegacy()), context());
+    assert.deepEqual(result.diagnostics, [{ code: 'unsupported_source_format', count: 1n }]);
+    assert.equal(result.records.filter(record => record.kind === 'cumulativeUsage').length, 1);
+  }
+  const result = extractCodexEvidence(codexText(codexSession(), codexLedger(), codexSession(), codexLegacy()), context());
+  assert.deepEqual(result.diagnostics, [{ code: 'unsupported_source_format', count: 1n }]);
+});
+
+test('Codex deferred unmatched ledger diagnostics retain occurrence counts and group admission', () => {
+  const budget = createBudget(pilotCaps({ maxDiagnostics: 1 }));
+  const result = extractCodexEvidence(codexText(codexSession(), ...Array.from({ length: 20 }, () => codexLedger())), context(), { budget });
+  assert.deepEqual(result.diagnostics, [{ code: 'unsupported_source_format', count: 20n }]);
+  assert.equal(budget.snapshot().diagnostics, 1);
+});
+
+test('Codex impossible response and turn totals cannot be corroborated by a matching thread total', () => {
+  for (const field of Object.keys(completeCodexUsage())) {
+    for (const lane of ['usage', 'turn_token_usage']) {
+      const ledger = codexLedger(); ledger.payload[lane] = { ...ledger.payload[lane], [field]: 1000 };
+      const result = extractCodexEvidence(codexText(codexSession(), ledger, codexLegacy()), context());
+      assert.deepEqual(result.diagnostics, [{ code: 'unsupported_source_format', count: 1n }]);
+    }
+  }
+});
+
+test('Codex corroboration cannot cross files, rejected metadata, or incomplete legacy vectors', () => {
+  const partial = completeCodexUsage(); delete partial.cached_input_tokens;
+  for (const rows of [[codexLedger()], [codexLedger(), { type: 'session_meta', payload: {} }, codexLegacy()], [codexLedger(), codexLegacy(partial)]]) {
+    const result = extractCodexEvidence(codexText(codexSession(), ...rows), context());
+    assert.ok(result.diagnostics.some(item => item.code === 'unsupported_source_format'));
+  }
+  assert.deepEqual(extractCodexEvidence(codexText(codexSession(), codexLegacy()), context('other-file')).diagnostics, []);
+});
+
+test('Codex corroboration compares lossless integer vectors beyond floating point precision', () => {
+  const text = codexText(codexSession(), codexLedger(), codexLegacy()).replaceAll('"input_tokens":100', '"input_tokens":9007199254740993');
+  assert.deepEqual(extractCodexEvidence(text, context()).diagnostics, []);
+  const mismatch = text.replace('"input_tokens":9007199254740993', '"input_tokens":9007199254740992');
+  // Alter the ledger cumulative vector as well, leaving its response counter distinct.
+  const contradictory = mismatch.replace('"thread_token_usage":{"input_tokens":9007199254740993', '"thread_token_usage":{"input_tokens":9007199254740992');
+  assert.deepEqual(extractCodexEvidence(contradictory, context()).diagnostics, [{ code: 'unsupported_source_format', count: 1n }]);
+});
+
+test('deferred extraction findings obey diagnostic and deadline budgets', () => {
+  const exhausted = createBudget(pilotCaps({ maxDiagnostics: 1 }));
+  const result = protocol.extractLines('valid', () => true, { budget: exhausted }, codes => { codes.add('malformed_json'); codes.add('unsupported_source_format'); });
+  assert.deepEqual(result.diagnostics, [{ code: 'capture_limit', count: 1n }, { code: 'malformed_json', count: 1n }]);
+  let now = 0;
+  const expired = createBudget(pilotCaps(), { now: () => now });
+  const timed = protocol.extractLines('valid', () => { now = 59000; return true; }, { budget: expired }, codes => codes.add('unsupported_source_format'));
+  assert.deepEqual(timed.diagnostics, [{ code: 'capture_limit', count: 1n }]);
+});
+
+test('Codex world state is recognized without copying model-visible context', () => {
+  const result = extractCodexEvidence(codexText(codexSession(), { type: 'world_state', payload: { full: true, state: { private: secret } } }), context());
+  assert.deepEqual(result.diagnostics, []);
+  assert.equal(result.records.length, 1);
+  assert.ok(!canonical(result).includes(secret));
+});
+
 test('Claude copies retain native inclusive/subset counters and exact integer lexemes', () => {
   const line = claude().replace('"input_tokens":12', '"input_tokens":9007199254740993');
   const result = extractClaudeEvidence(`${line}\n${line}\n`, context());
