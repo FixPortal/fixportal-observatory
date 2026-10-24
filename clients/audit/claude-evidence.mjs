@@ -1,9 +1,10 @@
 import { parseLossless, counter, decimal } from './lossless-json.mjs';
 import { extractLines, recordBase, identifier, pricing } from './protocol.mjs';
 
-export function extractClaudeEvidence(text, identityContext) {
+export function extractClaudeEvidence(text, identityContext, dependencies = {}) {
+  identityContext = { ...identityContext, budget: dependencies.budget };
   return extractLines(text, (line, sequence, records) => {
-    const native = parseLossless(line);
+    const native = parseLossless(line, dependencies);
     if (!native || typeof native !== 'object' || Array.isArray(native)) throw new Error('unsupported_source_format');
     // Conversation-only records are recognized but never copied into evidence.
     if (['user', 'system', 'progress', 'file-history-snapshot', 'queue-operation', 'summary'].includes(native.type)) return true;
@@ -26,5 +27,5 @@ export function extractClaudeEvidence(text, identityContext) {
     record.cost = decimal(native.costUSD);
     record.currency = record.cost == null ? null : 'USD';
     records.push(record); return true;
-  });
+  }, dependencies);
 }

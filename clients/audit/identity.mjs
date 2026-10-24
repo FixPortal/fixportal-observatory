@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, lstat, readFile, writeFile, chmod } from 'node:fs/promises';
+import { mkdir, lstat, readFile, writeFile, chmod, opendir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { userInfo } from 'node:os';
 import { execFileSync } from 'node:child_process';
@@ -15,8 +15,25 @@ export async function privateDirectory(directory) {
     else await chmod(directory, 0o700);
 }
 
-export async function loadIdentity(directory) {
+export async function loadIdentity(directory, dependencies = {}) {
+  const budget = dependencies.budget;
+  if (dependencies.fresh) {
+    budget?.check(true);
+    const info = await lstat(directory);
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('identity_unavailable');
+    const entries = await opendir(directory, { bufferSize: 1 });
+    try { if (await entries.read()) throw new Error('identity_unavailable'); }
+    finally { await entries.close(); }
+    // Task4 owns namespace privacy. Fresh selected mode never changes existing ACLs/material.
+    const value = { generation: randomUUID(), key: randomBytes(32).toString('hex') };
+    const path = join(directory, 'identity.json'), data = JSON.stringify(value);
+    budget?.ownedWrite(path, data);
+    await writeFile(path, data, { flag: 'wx', mode: 0o600, signal: budget?.signal });
+    budget?.check(true);
+    return { generation: value.generation, key: Buffer.from(value.key, 'hex') };
+  }
   try {
+    budget?.ownedWrite(directory, null);
     await privateDirectory(directory);
     const path = join(directory, 'identity.json');
     try {
@@ -24,7 +41,9 @@ export async function loadIdentity(directory) {
       if (!info.isFile() || info.isSymbolicLink() || info.size > 1024) throw new Error('invalid_identity');
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
-      try { await writeFile(path, JSON.stringify({ generation: randomUUID(), key: randomBytes(32).toString('hex') }), { flag: 'wx', mode: 0o600 }); }
+      const data = JSON.stringify({ generation: randomUUID(), key: randomBytes(32).toString('hex') });
+      budget?.ownedWrite(path, data);
+      try { await writeFile(path, data, { flag: 'wx', mode: 0o600 }); }
       catch (writeError) { if (writeError.code !== 'EEXIST') throw writeError; }
     }
     if (process.platform === 'win32') execFileSync('icacls.exe', [path, '/reset'], { stdio: 'pipe', windowsHide: true });

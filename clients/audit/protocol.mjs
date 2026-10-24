@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { counter } from './lossless-json.mjs';
+import { CaptureLimit } from './budget.mjs';
 
 export const EXTRACTOR_VERSION = '1.1.0';
 export const SOURCE_VERSIONS = Object.freeze({ claude: '2', codex: '1' });
@@ -28,6 +29,40 @@ export function canonical(value) {
   throw new Error('invalid_wire_value');
 }
 
+// Count the canonical ASCII wire representation without allocating that representation.
+const shortEscape = new Set([8, 9, 10, 12, 13, 92]);
+const longEscape = new Set([34, 39, 38, 43, 60, 62, 96]);
+export function canonicalByteLength(value, { budget, maximum = 512 * 1024 * 1024 } = {}) {
+  let length = 0;
+  const add = count => { if (count > maximum - length) throw new CaptureLimit(); length += count; };
+  const string = text => {
+    add(2);
+    for (let index = 0; index < text.length; index++) {
+      if (index % 512 === 0) budget?.check();
+      const code = text.charCodeAt(index);
+      add(shortEscape.has(code) ? 2 : code < 32 || code > 126 || longEscape.has(code) ? 6 : 1);
+    }
+  };
+  const visit = (item, depth = 0) => {
+    budget?.check();
+    if (depth > 64) throw new Error('invalid_wire_value');
+    if (item === null) add(4);
+    else if (typeof item === 'string') string(item);
+    else if (typeof item === 'boolean') add(item ? 4 : 5);
+    else if (typeof item === 'bigint' || typeof item === 'number' && Number.isSafeInteger(item)) add(String(item).length);
+    else if (Array.isArray(item)) {
+      add(2);
+      for (let index = 0; index < item.length; index++) { if (index) add(1); visit(item[index], depth + 1); }
+    } else if (item && Object.getPrototypeOf(item) === Object.prototype) {
+      add(2); let first = true;
+      // Ordering cannot change length; avoid sorting/allocation of encoded key/value strings.
+      for (const name of Object.keys(item)) { if (!first) add(1); first = false; string(name); add(1); visit(item[name], depth + 1); }
+    } else throw new Error('invalid_wire_value');
+  };
+  visit(value);
+  return length;
+}
+
 export function utcTimestamp(text) {
   if (typeof text !== 'string') throw new Error('invalid_timestamp');
   const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/.exec(text);
@@ -54,6 +89,7 @@ export function pricing(usage = {}, metadata = {}) {
 }
 
 export function recordBase(tool, context, sequence, native, state = {}) {
+  context.budget?.take('records', 1, true);
   const id = (domain, value) => value == null ? null : context.id(domain, value);
   return { machineId: context.machineId, sourceId: context.sourceId, sourceFormat: `${tool}-jsonl`, sourceVersion: SOURCE_VERSIONS[tool], tool, kind: 'sessionMetadata', generation: context.generation, fileId: context.fileId, sessionId: id('session', native.sessionId ?? state.sessionId), messageId: null, agentId: id('agent', native.agentId ?? state.agentId), parentId: id('session', native.parentSessionId ?? state.parentSessionId), sequence: BigInt(sequence), timestamp: utcTimestamp(native.timestamp), model: identifier(state.model, true), provider: identifier(state.provider), counters: null, cost: null, currency: null, pricing: pricing({}, state), closure: { state: 'unknown', timestamp: null, sequence: null } };
 }
@@ -66,17 +102,53 @@ export function diagnosticCounts(codes) {
 
 export const SAFE_DIAGNOSTICS = new Set(['source_line_limit', 'source_depth_limit', 'malformed_json', 'duplicate_property', 'invalid_counter', 'counter_range', 'invalid_timestamp', 'timestamp_precision', 'invalid_source_identifier', 'unsupported_source_format', 'invalid_usage_shape', 'missing_session_identity', 'invalid_source_money']);
 
-export function extractLines(text, consume) {
+export function extractLines(text, consume, dependencies = {}) {
+  const budget = dependencies.budget;
   const records = [], codes = [];
   // Buffer bound is enforced by capture; direct extraction is bounded too.
   if (typeof text !== 'string' || Buffer.byteLength(text) > 512 * 1024 * 1024) return { records, diagnostics: [{ code: 'source_file_limit', count: 1n }] };
-  const lines = text.split('\n');
+  if (budget) Object.defineProperty(records, 'push', { value(...items) {
+    for (const item of items) {
+      budget.check(true);
+      const maximum = Math.min(budget.limit('maxLineBytes'), budget.limit('maxChunkBytes'));
+      const bytes = canonicalByteLength(item, { budget, maximum: maximum - 1 }) + 1;
+      budget.take('encodedBytes', bytes, true);
+      Array.prototype.push.call(records, item);
+    }
+    return records.length;
+  } });
   let recognized = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
-    try { recognized = consume(lines[i], i + 1, records) || recognized; }
-    catch (error) { codes.push(SAFE_DIAGNOSTICS.has(error.message) ? error.message : 'invalid_usage_shape'); }
+  const stopped = error => {
+    if (!error.captureLimit) throw error;
+    budget?.stopNative();
+    codes.push('capture_limit');
+  };
+  let start = 0, sequence = 0;
+  for (; start <= text.length;) {
+    try {
+      budget?.take('lines', 1, true);
+      const newline = text.indexOf('\n', start), end = newline < 0 ? text.length : newline;
+      const lineStart = start;
+      start = end + 1; sequence++;
+      const maxLine = budget?.limit('maxLineBytes') ?? 1024 * 1024;
+      if (end - lineStart > maxLine) throw Object.assign(new Error(budget ? 'capture_limit' : 'source_line_limit'), { captureLimit: !!budget });
+      const line = text.slice(lineStart, end);
+      if (Buffer.byteLength(line) > maxLine) throw Object.assign(new Error(budget ? 'capture_limit' : 'source_line_limit'), { captureLimit: !!budget });
+      if (!line.trim()) continue;
+      budget?.room('records', 1, true);
+      recognized = consume(line, sequence, records) || recognized;
+    } catch (error) {
+      if (error.captureLimit) { stopped(error); break; }
+      try {
+        budget?.check(true);
+        budget?.take('diagnostics', 1, true);
+        codes.push(SAFE_DIAGNOSTICS.has(error.message) ? error.message : 'invalid_usage_shape');
+      } catch (limit) { stopped(limit); break; }
+    }
   }
-  if (!recognized) codes.push('unsupported_source_format');
+  if (!recognized && !codes.includes('capture_limit')) {
+    try { budget?.take('diagnostics', 1, true); codes.push('unsupported_source_format'); }
+    catch (error) { stopped(error); }
+  }
   return { records, diagnostics: diagnosticCounts(codes) };
 }

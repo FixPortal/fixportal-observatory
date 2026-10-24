@@ -228,6 +228,7 @@ jobs:
           clients/observatory-audit.test.mjs
           clients/audit-poll.test.mjs
           clients/audit-transport-budget.test.mjs
+          clients/audit-selected-capture.test.mjs
 
       - name: Offline runner packaging contracts (stdlib only)
         run: python3 -m unittest discover -s tests -p test_audit_package.py
