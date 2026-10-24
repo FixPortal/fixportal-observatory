@@ -41,7 +41,7 @@ test('valid exact binding enters two owned roots and seals without generic claim
   assert.equal(result.capture.complete, true);
   assert.equal(result.capture.manifest.readFiles, 2n);
   assert.equal(f.identities(), 1);
-  assert.ok(result.capture.records.some(record => record.timestamp.startsWith('2026-10-18')), 'pre-window Codex baseline retained');
+  assert.ok(result.capture.records.some(record => record.timestamp.startsWith('2026-10-18')), 'pre-window Codex session metadata retained');
   assert.equal(f.calls.filter(call => call.url.endsWith('/selected/claim')).length, 1);
   assert.ok(f.calls.every(call => !call.url.endsWith('/capture-requests/claim')));
   assert.deepEqual(Object.keys(JSON.parse(f.calls[0].options.body)).sort(), ['schemaVersion', 'runId', 'expectedRevision', 'fullScopeDigest', 'requestId', 'machineId', 'requestScopeDigest'].sort());
@@ -56,6 +56,31 @@ test('preflight closed approval roots expiry and caps reject before any fetch or
   }
 });
 
+test('HTTPS preflight rejects nonboolean allowLoopbackHttp before fetch or native identity work', async t => {
+  for (const [label, value] of [['string', 'true'], ['number', 1], ['null', null]]) {
+    await t.test(label, async t => {
+      const f = await fixture(t); f.config.allowLoopbackHttp = value;
+      await assert.rejects(selectedCapture(f.config, f.dependencies), /invalid_selected_capture/);
+      assert.equal(f.calls.length, 0);
+      assert.equal(f.identities(), 0);
+      assert.deepEqual(await readdir(f.config.identityDirectory), []);
+      for (const root of f.roots) assert.deepEqual(await readdir(root), ['session.jsonl']);
+    });
+  }
+});
+
+test('HTTPS preflight preserves omitted and boolean allowLoopbackHttp configurations', async t => {
+  for (const value of [undefined, false, true]) {
+    await t.test(value === undefined ? 'omitted' : String(value), async t => {
+      const f = await fixture(t);
+      if (value !== undefined) f.config.allowLoopbackHttp = value;
+      const result = await selectedCapture(f.config, f.dependencies);
+      assert.equal(result.status, 'sealed');
+      assert.equal(result.capture.complete, true);
+      assert.equal(f.identities(), 1);
+    });
+  }
+});
 test('foreign malformed scope token instance and expiry refuse before identity or upload', async t => {
   for (const mutate of [l => { l.machineId = id(9); }, l => { l.runId = id(9); }, l => { l.requestId = id(9); }, l => { l.expectedRevision++; }, l => { l.fullScopeDigest = 'cd'.repeat(32); }, l => { l.requestScopeDigest = 'cd'.repeat(32); }, l => { l.scope.to = '2026-10-22'; }, l => { l.leaseToken = ''; }, l => { l.instanceId = 'foreign'; }, l => { l.expiresAt = '2026-10-24T01:11:00Z'; }, l => { l.expiresAt = l.serverObservedAt; }, l => { l.serverObservedAt = 'malformed'; }, l => { l.roots = ['foreign']; }]) {
     const f = await fixture(t); mutate(f.lease);
