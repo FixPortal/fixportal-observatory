@@ -1,4 +1,24 @@
-# Self-audit qualification — 2026-10-22
+# Self-audit qualification — through 2026-10-25
+
+> Historical qualification record, updated with the 25 October 2026 release disposition. Counts below describe selected evidence, not every installation or provider invoice.
+
+## Release disposition — 2026-10-25
+
+The production historical run is **Closed — historical evidence unavailable**. Its
+immutable overall verifier verdict remains **Incomplete**. Event aggregation matched
+the seven retained groups, but lost original files and missing historical pricing
+evidence prevent a complete source, daily or invoice claim. Repeating the run cannot
+reconstruct deleted history.
+
+Separate fresh prospective acceptance on 24 October used bounded native Claude and
+Codex samples. Independent generator output agreed with the production API and
+rendered UI on token counts, UTC day, model, configured source and short-context
+list-price notional. Repeating collection did not double-count. The Codex collector's
+midnight/model attribution defect was corrected in [PR #405](https://github.com/FixPortal/fixportal-observatory/pull/405).
+This supports the selected prospective path, not all past usage, every local source,
+supplier invoices or the optional live Google billing export. The [user guide](self-audit-user-guide.md)
+explains how to interpret a new run and [OSS qualification](oss-qualification.md)
+records the remaining release boundary.
 
 Qualification now includes a consistent snapshot of the actual installation,
 export and deterministic replay, plus a passing full serial Windows lane on the

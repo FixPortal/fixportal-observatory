@@ -2,6 +2,7 @@
 
 ![Build](https://github.com/FixPortal/fixportal-observatory/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/github/license/FixPortal/fixportal-observatory)
+[![Release](https://img.shields.io/github/v/release/FixPortal/fixportal-observatory)](https://github.com/FixPortal/fixportal-observatory/releases/latest)
 
 ![Observatory — one clear view of AI usage, spend, subscriptions, and budget signals](docs/images/observatory-hero-oss.png)
 
@@ -21,8 +22,9 @@ Observatory is a .NET 10 and React 19 dashboard with a PostgreSQL store. Provide
 - [Postman collection](docs/observatory.postman_collection.json) — representative authenticated API requests.
 - [OSS qualification](docs/oss-qualification.md) — validation evidence and remaining limitations.
 
-Release `v1.1.0` starts a fresh public Git history; earlier history is archived by the
-maintainer. If you have an older checkout, preserve local work and clone again.
+The current product release is [v1.2.0](CHANGELOG.md). The previous
+`v1.1.0` release began a fresh public Git history; earlier history is archived by the
+maintainer. If you have an older pre-cutover checkout, preserve local work and clone again.
 
 ## Local development
 
@@ -108,6 +110,23 @@ The Overview above runs on the Compose demo seed. Note that provider estimate re
 - Source status shows configuration, freshness, failure, and unavailability separately from process liveness.
 
 Supported acquisition includes OpenAI usage/costs, Anthropic usage/cost reports and optional Claude Code analytics, GitHub Copilot organization engagement, Google Cloud Billing BigQuery export, GitHub activity/billing, and eight local transcript collectors. The [provider matrix](docs/provider-setup.md) is the authoritative capability list.
+
+## Self-audit
+
+An administrator can enable the Self-audit tab to compare a selected UTC range of
+retained Claude or Codex usage evidence with frozen Observatory figures. It reports
+coverage and findings for source accounting, daily attribution, event aggregation,
+pricing and displayed totals, then offers a readable report and private bundle for
+independent offline replay. The [user guide](docs/self-audit-user-guide.md) explains
+the workflow; the [operator guide](docs/self-audit.md) covers the opt-in companion,
+retention and verifier archives. The verifier identity is 1.1.0/rules 2, separate
+from the Observatory product release number.
+
+The historical October audit is **Closed — historical evidence unavailable** with an
+immutable **Incomplete** verifier verdict. Fresh prospective Claude and Codex samples
+matched their observed usage and displayed figures. Neither result establishes
+complete historical source coverage or invoice agreement. Live Google billing export
+remains unassessed; see [OSS qualification](docs/oss-qualification.md).
 
 ## API
 

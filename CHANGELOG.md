@@ -7,6 +7,54 @@ Dates are the release date, in UTC.
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-10-25
+
+### Added
+
+- **Self-audit in the dashboard.** Administrators can select a UTC range and configured
+  Claude or Codex source, inspect readiness, request bounded local capture, run an
+  independent comparison, and review check-level coverage and findings. Retained
+  reports, private evidence export, offline replay, displayed-total verification,
+  retention and deletion controls are documented in the [user guide](docs/self-audit-user-guide.md)
+  and [operator guide](docs/self-audit.md).
+- **Portable verifier archives.** Windows x64, Linux x64 and macOS arm64 runners carry
+  source identity, payload hashes, `LICENSE` and `NOTICE`. The verifier remains at
+  identity 1.1.0/rules 2; the product release version is independent.
+- **Selected capture and operational inventory.** An exact, bounded one-shot capture
+  path supports controlled operator runs. A guarded administrator inventory reports
+  current storage and capacity counts without exposing private evidence.
+
+### Changed
+
+- Codex cumulative usage is assigned to the observed UTC day and model instead of
+  attributing the whole session to its final day and model. Unsafe or missing model
+  evidence remains incomplete rather than being guessed.
+- Claude prompt-context bands and historical model families receive qualified price
+  treatment; missing catalog evidence remains visible as a gap.
+- Completed incomplete audits display **Closed · Incomplete**. An operator can close
+  permanently lost history as **Closed — historical evidence unavailable** without
+  changing the immutable verifier verdict.
+
+### Fixed
+
+- Restored the credential-free Docker Compose quick start after the audit project
+  dependency was added. Its web, API, ingest and 70 synthetic aggregates passed the
+  local and Linux smoke checks.
+- Included the repository's `NOTICE` attribution in every verifier archive and its
+  hashed payload manifest.
+- Resolved the release's open CodeQL finding and updated the vulnerable development
+  dependency; the final npm audit and GitHub security alert checks were clear.
+
+### Qualification
+
+- Fresh Claude and Codex production samples matched independently observed token
+  counts, UTC day, model, source, list-price notional and rendered figures; repeat
+  collection did not double-count. This does not certify invoices or all past usage.
+- The completed historical audit remains **Incomplete** because original evidence was
+  lost. Its closed status is an operational disposition, not a Matched verdict.
+- Live Google Cloud Billing BigQuery export remains **Not assessed** without a suitable
+  export. See [OSS qualification](docs/oss-qualification.md) for the release boundary.
+
 ## [1.1.0] — 2026-10-21
 
 ### Added
@@ -130,5 +178,6 @@ rather than what changed since a previous version.
   viewer key. `GET /api/spend/reporting` is deliberately unchanged: it returns aggregates and
   the Reporting tab is meant to be visible to share-link viewers.
 
-[Unreleased]: https://github.com/FixPortal/fixportal-observatory/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/FixPortal/fixportal-observatory/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/FixPortal/fixportal-observatory/releases/tag/v1.2.0
 [1.1.0]: https://github.com/FixPortal/fixportal-observatory/releases/tag/v1.1.0

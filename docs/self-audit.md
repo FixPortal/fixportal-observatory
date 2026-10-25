@@ -2,7 +2,7 @@
 
 > Operator guide. Limits use MiB/GiB; retention uses days from sealing or completion. All examples and public replay fixtures are synthetic. For the dashboard workflow, see the [user guide](self-audit-user-guide.md); for subsystem boundaries, see the [architecture guide](self-audit-architecture.md).
 
-Self-audit compares retained local usage facts with a frozen Observatory snapshot using an independent verifier. It reports matched, mismatched, incomplete or unsupported coverage for each check. Agreement within declared tolerances does not establish complete source history or invoice accuracy. The feature remains opt-in pending release qualification.
+Self-audit compares retained local usage facts with a frozen Observatory snapshot using an independent verifier. It reports matched, mismatched, incomplete or unsupported coverage for each check. Agreement within declared tolerances does not establish complete source history or invoice accuracy. The feature is opt-in. Fresh Claude and Codex samples passed prospective acceptance for their selected scope; the historical run remains closed with an Incomplete verdict because source evidence was lost. See [qualification](self-audit-qualification.md) and the [current release boundary](oss-qualification.md).
 
 ## Enable and register a companion
 
@@ -99,9 +99,9 @@ Download private bundles before replay expiry and keep an independent backup of 
 
 Runner archives are framework-dependent and require the matching architecture's **.NET 10** runtime (`Microsoft.NETCore.App`). Node is needed for capture, but not for offline verification. Install prerequisites separately before going offline. No bundle can request executable downloads, provider calls, database access or code execution.
 
-The **Audit verifier artifacts** workflow runs on a published GitHub release or manual dispatch and requires default-branch ancestry for the selected commit. It uploads a GitHub Actions artifact containing `win-x64`, `linux-x64` and `osx-arm64` ZIPs, per-archive `SHA256SUMS` sidecars and metadata. It does not create a release or attach release assets. Actions artifacts expire after 90 days; preserve archives separately for long-term replay.
+The **Audit verifier artifacts** workflow runs on a published GitHub release or manual dispatch and requires default-branch ancestry for the selected commit. It uploads a GitHub Actions artifact containing `win-x64`, `linux-x64` and `osx-arm64` ZIPs, per-archive `SHA256SUMS` sidecars and metadata. It does not create a release or attach release assets. The v1.2.0 release distributes verified copies of these files as release assets; Actions artifacts themselves expire after 90 days. Preserve the matching archives and sidecars for long-term replay.
 
-Each ZIP contains the CLI/library DLLs, dependency/runtime configuration, license, this guide and `release.json`. Metadata records the actual source commit, runtime identifier, schema, verifier and rule versions, plus SHA-256 of each payload file. Compare the ZIP with its sidecar before extraction; verify provenance against the trusted workflow/source commit. No production captures or credentials are included.
+Each ZIP contains the CLI/library DLLs, dependency/runtime configuration, `LICENSE`, `NOTICE`, this guide and `release.json`. Metadata records the actual source commit, runtime identifier, schema, verifier and rule versions, plus SHA-256 of each payload file. Compare the ZIP with its sidecar before extraction; verify provenance against the trusted workflow/source commit. The product's v1.2.0 release number is separate from the verifier's 1.1.0 compatibility identity. No production captures or credentials are included.
 
 From an extracted archive:
 
