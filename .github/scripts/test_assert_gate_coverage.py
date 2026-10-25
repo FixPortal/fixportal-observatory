@@ -4,11 +4,17 @@ Fixture-level tests drive check_file over a written workflow, so the assertion a
 the line grammar it parses cannot drift apart; unit tests pin the small helpers
 directly. check_file reports a breach by sys.exit, which pytest sees as SystemExit.
 """
+import re
 import textwrap
 
 import pytest
 
 import assert_gate_coverage as gate
+
+
+def test_double_quoted_literal_escapes_are_unambiguous():
+    assert re.fullmatch(gate._LITERAL, '"escaped \\" quote"')
+    assert re.fullmatch(gate._LITERAL, '"' + r'\!' * 24) is None
 
 
 WORKFLOW = """\

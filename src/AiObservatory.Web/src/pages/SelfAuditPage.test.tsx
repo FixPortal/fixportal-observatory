@@ -300,6 +300,16 @@ test('stable history pagination uses the returned opaque cursor and retains earl
   expect(calls.some((c) => c.path.includes('cursor=stable-cursor'))).toBe(true)
 })
 
+test('closed incomplete runs stay terminal without claiming permanent evidence loss', async () => {
+  mount()
+  const row = await screen.findByRole('button', { name: /Open audit/ })
+  expect(within(row).getByText('Closed · Incomplete')).toBeInTheDocument()
+  await userEvent.click(row)
+  expect(await screen.findByText('Closed — Incomplete.')).toBeInTheDocument()
+  expect(screen.getByText(/If the original source files are permanently unavailable/)).toBeVisible()
+  expect(screen.getByText('incomplete')).toBeInTheDocument()
+})
+
 test('collecting progress requires an acknowledgement before partial proceed and allows cancellation', async () => {
   run = { ...completed, state: 'collectingEvidence', stage: 'collectingEvidence' }
   mount()
