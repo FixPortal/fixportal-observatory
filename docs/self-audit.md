@@ -1,6 +1,6 @@
 # Independent usage self-audit
 
-> Operator guide as of 2026-10-22. Limits use MiB/GiB; retention uses days from sealing or completion. All examples and public replay fixtures are synthetic.
+> Operator guide. Limits use MiB/GiB; retention uses days from sealing or completion. All examples and public replay fixtures are synthetic. For the dashboard workflow, see the [user guide](self-audit-user-guide.md); for subsystem boundaries, see the [architecture guide](self-audit-architecture.md).
 
 Self-audit compares retained local usage facts with a frozen Observatory snapshot using an independent verifier. It reports matched, mismatched, incomplete or unsupported coverage for each check. Agreement within declared tolerances does not establish complete source history or invoice accuracy. The feature remains opt-in pending release qualification.
 
@@ -11,7 +11,7 @@ Self-audit compares retained local usage facts with a frozen Observatory snapsho
 1. Register a machine as administrator with `POST /api/audits/machines` and `{ "schemaVersion": 1 }`.
 2. Store the returned machine ID and one-time credential in a private local configuration, outside Git and exported bundles. The credential is scoped to that machine's assigned captures and is separate from the ordinary API key.
 3. Install Node 24 or later and configure explicit source roots, a dedicated identity directory and private state directory. The companion performs no home-directory discovery.
-4. Start the companion, then create a run from the dashboard's Audit page. Inspect readiness before acknowledging partial captures. The default range is the previous seven completed UTC days; the maximum is 31 days.
+4. Start the companion, then create a run from the dashboard's Self-audit page. Inspect readiness before acknowledging partial captures. The default range is the previous seven completed UTC days; the maximum is 31 days.
 
 For each selected extractor, enter the exact configured `sourceId` in the wizard. A machine-specific source ID can differ from `claude-local` or `codex-local`; the extractor family and the source instance are separate choices.
 
@@ -106,7 +106,7 @@ Each ZIP contains the CLI/library DLLs, dependency/runtime configuration, licens
 From an extracted archive:
 
 ```sh
-dotnet AiObservatory.Audit.Cli.dll replay <private-bundle.zip> --output <new-output-directory> --verifier-version 1.0.0
+dotnet AiObservatory.Audit.Cli.dll replay <private-bundle.zip> --output <new-output-directory> --verifier-version 1.1.0
 ```
 
 Use a new output directory each time; existing result files are never overwritten. Outputs are canonical `result.json`, `result.sha256` and `report.txt`. Exit codes: 0 matched, 2 mismatched, 3 incomplete, 4 invalid/incompatible/failed. Read check-level coverage even when individual comparisons match.
@@ -117,7 +117,7 @@ Normal replay requires compatible installed verifier/rule versions. A newer inst
 dotnet AiObservatory.Audit.Cli.dll replay <private-bundle.zip> --output <new-evaluation-directory> --reevaluate
 ```
 
-Reevaluation preserves `recorded-result.json` and writes linked `evaluation.json`, creating a new evaluation. Future published semantic changes require a verifier version change. The initial unreleased identity is verifier 1.0.0, schema 1, rules 1.
+Reevaluation preserves `recorded-result.json` and writes linked `evaluation.json`, creating a new evaluation. Future published semantic changes require a verifier version change. The current identity is schema 1, verifier 1.1.0, rules 2; the initial unreleased identity was verifier 1.0.0, schema 1, rules 1.
 
 ## Reproduce the synthetic smoke
 
@@ -131,6 +131,6 @@ dotnet build src/AiObservatory.Audit.Cli --configuration Release
 node scripts/audit-replay-smoke.mjs
 ```
 
-The smoke runs the built DLL twice in separate temporary directories and requires exact canonical bytes and SHA-256 `5a194bb9f85af8731a076e0fbea4baad6a57e0f8a32c5c746f3cea90d9a78f5b`. The correct result is **Incomplete**, exit 3: pricing publication evidence and a presentation probe are absent. It needs no provider credentials, server, database or private paths, and qualifies deterministic replay rather than installation source completeness.
+The smoke checks compatible replay of a current invented bundle (**Matched**, exit 0) and explicit reevaluation of an older invented bundle (**Incomplete**, exit 3) against pinned canonical results and hashes. The older evidence lacks pricing publication evidence and a presentation probe. It needs no provider credentials, server, database or private paths, and qualifies deterministic replay rather than installation source completeness.
 
 The displayed-total action requests `GET /api/audits/runs/{id}/evidence?projection=presentation&limit=200` and drains every page of frozen aggregate and spend rows before calling the dashboard summary and formatter. This projection retains full snapshot, capture, hash and verifier validation; it omits unrelated record kinds from the paginated response. Cursors bind to the run, snapshot, input scope/digest and projection. Unknown projection names and cursors from another projection or run are rejected. Ordinary detailed evidence requests retain all sanitized record kinds and can be expensive for large cohorts because each page validates the complete retained evidence.
