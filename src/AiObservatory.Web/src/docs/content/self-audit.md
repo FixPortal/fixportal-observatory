@@ -20,6 +20,8 @@ Self-audit compares frozen Observatory figures with independently extracted loca
 
 Coverage counts are groups examined, not an accuracy percentage. **Event aggregation** can match while **Source accounting** is incomplete: stored records may add up even when native history is missing. Pricing needs frozen application and catalog evidence; displayed totals need a probe tied to the frozen snapshot. Keep billed spend, estimates and subscription notional separate.
 
+**Closed · Incomplete** means the run finished with evidence gaps. If historical source files are permanently unavailable, record **Closed — historical evidence unavailable** in the operator report; the verifier result remains Incomplete. The dashboard cannot determine permanent loss from a gap code alone.
+
 ## Reports, replay and retention
 
 Viewers can read summaries, sanitized findings and reports. Administrators can request capture, replay retained inputs, verify displayed totals, export private bundles and manage evidence retention. Replay makes a linked evaluation of retained facts; it cannot restore missing source files. Displayed-total verification is a declared observation of the current frontend, not external attestation.

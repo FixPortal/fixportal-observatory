@@ -31,6 +31,8 @@ Read the **overall verdict**, then each check's verdict, coverage and findings. 
 | **Incomplete**  | Evidence needed for a conclusive comparison is absent, stale, unverified or explicitly partial, or no check ran.                       | Inspect coverage and readiness codes; obtain fresh qualified evidence where possible and run again. Permanently lost history cannot be reconstructed by replay. |
 | **Unsupported** | A check has no supported verifier or qualified source format. The overall run is **Incomplete** when a requested check is unsupported. | Treat the affected check as unverified and use a supported source or another validation method.                                                                 |
 
+**Closed · Incomplete** in Retained audits means evaluation finished; it is not a pending task. If original historical files are permanently gone, record a separate closure reason such as **Closed — historical evidence unavailable** in the operator report. Keep the verifier's Incomplete verdict and findings unchanged. The dashboard cannot infer permanent loss from a gap code alone.
+
 The checks answer different questions:
 
 | Check                      | What it compares                                                                                 |

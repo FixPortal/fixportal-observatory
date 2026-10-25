@@ -112,6 +112,13 @@ export function AuditRunDetails({
         {run.scope.requestedChecks.map((check) => auditCheckLabels[check]).join(', ')}.
       </p>
       <AuditCoverage coverage={run.coverage} verdict={run.verdict} />
+      {run.state === 'completed' && run.verdict === 'incomplete' && (
+        <p className="audit-notice">
+          <strong>Closed — Incomplete.</strong> This run has finished. Its evidence gaps remain in
+          the recorded result. If the original source files are permanently unavailable, this
+          historical period cannot be fully verified by another run.
+        </p>
+      )}
       <AuditCheckResults checks={run.checks} />
       {active && (
         <p role="status">

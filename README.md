@@ -5,7 +5,7 @@
 
 ![Observatory — one clear view of AI usage, spend, subscriptions, and budget signals](docs/images/observatory-hero-oss.png)
 
-> OSS observability for AI usage and cost evidence, as of 2026-10-21. It keeps billed spend, public-list estimates, subscription notional values, and missing data distinct.
+> OSS observability for AI usage and cost evidence. It keeps billed spend, public-list estimates, subscription notional values, and missing data distinct.
 
 Observatory is a .NET 10 and React 19 dashboard with a PostgreSQL store. Provider sources, local CLI telemetry, and manual entries retain provenance so unlike evidence is never silently merged.
 

@@ -34,7 +34,11 @@ export function AuditRunHistory({
               }}
             >
               <span>
-                <strong>{run.verdict ?? run.state}</strong>
+                <strong>
+                  {run.state === 'completed' && run.verdict === 'incomplete'
+                    ? 'Closed · Incomplete'
+                    : (run.verdict ?? run.state)}
+                </strong>
                 <span className="audit-muted audit-exact">
                   {run.scope.from} → {run.scope.to}
                 </span>
