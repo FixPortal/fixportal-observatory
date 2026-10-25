@@ -7,6 +7,30 @@ Dates are the release date, in UTC.
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-10-25
+
+### Changed
+
+- The public read-only demo now includes fourteen days of synthetic usage across eight
+  model lanes, five complete adversarial-review panels, finding-level Seats evidence,
+  rule-backed suggestions, and three months of billed examples with a visible period
+  comparison. Reviewer names and fractional averages display accurately.
+- Demo and production deploy jobs, CI, and verifier packaging use the available
+  .NET 10.0.402 SDK while the floating selector resolves to an unavailable download.
+
+### Fixed
+
+- Demo startup no longer mistakes suggestion-worker status rows for seeded data.
+  Reset replaces the review examples and suggestions along with usage and spend.
+- Documentation distinguishes the two independently audited native sources,
+  Claude and Codex, from other collectors that only ingest usage.
+
+### Qualification
+
+- The synthetic demo remains read-only, has no connected provider accounts, and
+  does not certify production figures. Independent self-audit coverage and verifier
+  identity remain as stated for v1.2.0; no audit rules changed in this patch.
+
 ## [1.2.0] — 2026-10-25
 
 ### Added
@@ -178,6 +202,7 @@ rather than what changed since a previous version.
   viewer key. `GET /api/spend/reporting` is deliberately unchanged: it returns aggregates and
   the Reporting tab is meant to be visible to share-link viewers.
 
-[Unreleased]: https://github.com/FixPortal/fixportal-observatory/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/FixPortal/fixportal-observatory/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/FixPortal/fixportal-observatory/releases/tag/v1.2.1
 [1.2.0]: https://github.com/FixPortal/fixportal-observatory/releases/tag/v1.2.0
 [1.1.0]: https://github.com/FixPortal/fixportal-observatory/releases/tag/v1.1.0

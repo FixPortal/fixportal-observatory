@@ -22,7 +22,7 @@ Observatory is a .NET 10 and React 19 dashboard with a PostgreSQL store. Provide
 - [Postman collection](docs/observatory.postman_collection.json) — representative authenticated API requests.
 - [OSS qualification](docs/oss-qualification.md) — validation evidence and remaining limitations.
 
-The current product release is [v1.2.0](CHANGELOG.md). The previous
+The current product release is [v1.2.1](CHANGELOG.md). The previous
 `v1.1.0` release began a fresh public Git history; earlier history is archived by the
 maintainer. If you have an older pre-cutover checkout, preserve local work and clone again.
 
