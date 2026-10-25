@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:container": "tsc -b tsconfig.app.json tsconfig.node.json && vite build",
     "typecheck": "tsc -b",
     "format": "prettier --check .",
     "lint": "eslint .",
