@@ -148,7 +148,7 @@
     },
     {
       "path": ".github/scripts/assert_gate_coverage.py",
-      "sha256": "192ca655c5126513965cbbfa97f50cfc0c84b055a2dbf886d77bc0b54caaa5ef",
+      "sha256": "f1ebb1071eb01b2e88d22d053e037461912a8401c6f6ca0952d24395088b872b",
       "verbatim": true,
       "commit": "a7ca45665b926525f7073068c533e28a3a232cb1",
       "syncedAt": "2026-10-20"
