@@ -109,6 +109,21 @@ public class DemoSeederTests
         )
             .Should()
             .BeFalse("finding IDs should describe the synthetic scenario");
+        var findingKeys = await db
+            .AdversarialReviewFindings.Select(f => new { f.RunId, f.FindingId })
+            .ToListAsync(TestContext.Current.CancellationToken);
+        var expectedScenarios = new Dictionary<string, string>
+        {
+            ["demo-review-1"] = "retry-after-ignored",
+            ["demo-review-2"] = "invoice-window-overlap",
+            ["demo-review-3"] = "retry-budget-unbounded",
+            ["demo-review-4"] = "tenant-scope-bypass",
+            ["demo-review-5"] = "rollback-step-missing",
+        };
+        foreach (var (runId, findingId) in expectedScenarios)
+        {
+            findingKeys.Should().Contain(f => f.RunId == runId && f.FindingId == findingId);
+        }
         var charges = await db.SpendEntries.ToListAsync(TestContext.Current.CancellationToken);
         charges
             .GroupBy(entry => entry.OccurredOn)
