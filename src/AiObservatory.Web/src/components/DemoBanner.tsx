@@ -15,7 +15,8 @@ export function DemoBanner() {
         fontSize: '0.875rem',
       }}
     >
-      Demo instance: every figure here is synthetic and the dashboard is read-only.{' '}
+      Demo instance: usage, review and spend examples are synthetic. No live provider accounts are
+      connected; the dashboard is read-only.{' '}
       <a
         href={PROJECT_URL}
         target="_blank"

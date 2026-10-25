@@ -8,6 +8,7 @@ test('shows the synthetic-data notice when VITE_DEMO_BANNER is true', () => {
   vi.stubEnv('VITE_DEMO_BANNER', 'true')
   render(<DemoBanner />)
   expect(screen.getByRole('status')).toHaveTextContent(/synthetic/i)
+  expect(screen.getByRole('status')).toHaveTextContent(/no live provider accounts are connected/i)
   expect(screen.getByRole('link', { name: /github/i })).toHaveAttribute(
     'href',
     'https://github.com/FixPortal/fixportal-observatory',

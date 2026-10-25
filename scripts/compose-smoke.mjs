@@ -56,11 +56,25 @@ try {
   const aggregates = await response.json()
   assert.ok(Array.isArray(aggregates) && aggregates.length > 0, 'quick start must contain seeded data')
   assert.ok(aggregates.some(row => row.sourceId === 'demo-seed'), 'sample data must retain its synthetic provenance')
+  assert.ok(aggregates.some(row => row.provider === 'openai'), 'demo must show OpenAI usage alongside the original lanes')
+  const readDemo = async (route) => {
+    const result = await fetch(`${origin}/api/${route}`, {
+      headers: { 'X-Observatory-Key': 'change-me' }, signal: AbortSignal.timeout(15_000),
+    })
+    assert.equal(result.status, 200, `${route} must be readable through the web proxy`)
+    return result.json()
+  }
+  const runs = await readDemo('adversarial-review/runs')
+  const findings = await readDemo('adversarial-review/findings')
+  const suggestions = await readDemo('suggestions')
+  assert.equal(runs.length, 30, 'demo must show five complete review panels')
+  assert.ok(findings.length > 0, 'review panels must have finding-level seat evidence')
+  assert.ok(suggestions.suggestions.length > 0, 'demo must show a rule-backed suggestion')
   const containers = compose(['ps', '--all', '--format', 'json'], true)
     .split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line))
   assert.ok(containers.some(item => item.Service === 'seed' && item.State === 'exited' && item.ExitCode === 0), 'seed must finish successfully')
   assert.ok(containers.some(item => item.Service === 'ingest' && item.Health === 'healthy'), 'ingest must start after seeding and become healthy')
-  console.log(`Compose smoke passed: frontend, JavaScript, API, ${aggregates.length} seeded aggregates, ingest health.`)
+  console.log(`Compose smoke passed: frontend, JavaScript, API, ${aggregates.length} seeded aggregates, five review panels, findings, suggestions, ingest health.`)
 } catch (error) {
   compose(['logs', '--no-color', '--tail', '80'])
   throw error
