@@ -107,6 +107,13 @@ describe('AdversarialReviewPanel unknown cost', () => {
     expect(screen.getByText('z.AI')).toBeInTheDocument()
   })
 
+  test('keeps fractional average finding counts visible', () => {
+    data.stats = [stat({ avgIssuesRaised: 0.4, avgIssuesAccepted: 0.4 })]
+    renderPanel()
+
+    expect(screen.getAllByText('0.4')).toHaveLength(2)
+  })
+
   test('an all-unknown group renders Unknown, never $0.00', () => {
     data.stats = [stat({})]
     renderPanel()
