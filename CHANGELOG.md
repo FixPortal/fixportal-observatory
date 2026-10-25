@@ -15,7 +15,7 @@ Dates are the release date, in UTC.
   model lanes, five complete adversarial-review panels, finding-level Seats evidence,
   rule-backed suggestions, and three months of billed examples with a visible period
   comparison. Reviewer names and fractional averages display accurately.
-- Demo and production deploy jobs, CI, and verifier packaging use the available
+- Demo and production deploy jobs, CI, mutation, and verifier packaging use the available
   .NET 10.0.402 SDK while the floating selector resolves to an unavailable download.
 
 ### Fixed
