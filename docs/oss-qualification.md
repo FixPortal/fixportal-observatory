@@ -1,14 +1,21 @@
 # OSS qualification — through 2026-10-25
 
-> Release readiness record. Historic sections retain their original evidence dates; the current v1.2.0 scope and checks are stated below. A passing technical check does not certify every provider invoice or constitute a legal opinion.
+> Release readiness record. Historic sections retain their original evidence dates; the current v1.2.1 scope and checks are stated below. A passing technical check does not certify every provider invoice or constitute a legal opinion.
 
 ## Current assessment
 
-The v1.2.0 source is suitable for a scoped OSS release and synthetic demo. The
+The v1.2.1 source is suitable for a scoped OSS release and synthetic demo. The
 dashboard's new self-audit is opt-in and has a passing fresh Claude/Codex prospective
 acceptance for the selected sources and figures. The historical production audit is
 closed with an immutable **Incomplete** verdict because its original evidence cannot
 be recovered. Neither result certifies all historical data or supplier invoices.
+
+The v1.2.1 patch adds broader, finding-level synthetic demo examples and corrects
+reviewer-average presentation. [Post-merge CI](https://github.com/FixPortal/fixportal-observatory/actions/runs/40226733699),
+[demo deployment](https://github.com/FixPortal/fixportal-observatory/actions/runs/40226741676),
+and [demo reset](https://github.com/FixPortal/fixportal-observatory/actions/runs/40226048140)
+passed; the public Overview, Adversarial Review and Reporting views were checked in a
+browser. No verifier rules or production source extractors changed in this patch.
 
 The [merged Compose quick start](https://github.com/FixPortal/fixportal-observatory/actions/runs/40214285074)
 passed on Linux after the audit-project Docker repair; the same smoke passed locally.

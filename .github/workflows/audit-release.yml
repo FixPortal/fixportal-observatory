@@ -32,7 +32,7 @@ jobs:
         run: git merge-base --is-ancestor HEAD "origin/$DEFAULT_BRANCH"
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.402
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
