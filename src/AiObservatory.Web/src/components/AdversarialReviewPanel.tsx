@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAdversarialReviewRuns, useAdversarialReviewStats } from '../api/queries'
 import { deleteAdversarialReviewRun, type AdversarialReviewStats } from '../api/client'
 import { participantColor } from '../theme/providerColors'
+import { providerDisplayName } from '../config/providers'
 import { CollapsiblePanel } from './CollapsiblePanel'
 import { Button } from '../design/Button'
 import { isReadonly } from '../auth/msal'
@@ -78,9 +79,6 @@ function formatStatCost(
 function formatCount(n: number | null | undefined): string {
   if (n == null) return '—'
   return `${bankersRound(n, 0)}`
-}
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 function RunSummary({ group }: { group: RunGroup }) {
@@ -237,7 +235,7 @@ function StatsTable({ stats, isLoading, isError }: StatsTableProps) {
                       style={{ background: participantColor(s.reviewer, s.role) }}
                       title={`${s.reviewer} ${s.role}`}
                     />
-                    {capitalize(s.reviewer)}
+                    {providerDisplayName(s.reviewer)}
                     {s.role === 'judge' && ' (judge)'}
                   </td>
                   <td>{s.model}</td>
@@ -436,7 +434,7 @@ function RunsList({ groups, isLoading, isError }: RunsListProps) {
                           style={{ background: participantColor(p.reviewer, p.role) }}
                           title={`${p.reviewer} ${p.role}`}
                         />
-                        {capitalize(p.reviewer)}
+                        {providerDisplayName(p.reviewer)}
                         {p.role === 'judge' && ' (judge)'}
                       </td>
                       <td>{p.model}</td>

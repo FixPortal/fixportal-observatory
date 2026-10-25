@@ -94,6 +94,19 @@ describe('AdversarialReviewPanel unknown cost', () => {
     ...p,
   })
 
+  test('shows provider brand names in reviewer stats', () => {
+    data.stats = [
+      stat({ reviewer: 'openai', model: 'gpt-6-luna' }),
+      stat({ reviewer: 'deepseek', model: 'deepseek-review' }),
+      stat({ reviewer: 'zai', model: 'glm-5' }),
+    ]
+    renderPanel()
+
+    expect(screen.getByText('OpenAI')).toBeInTheDocument()
+    expect(screen.getByText('DeepSeek')).toBeInTheDocument()
+    expect(screen.getByText('z.AI')).toBeInTheDocument()
+  })
+
   test('an all-unknown group renders Unknown, never $0.00', () => {
     data.stats = [stat({})]
     renderPanel()
