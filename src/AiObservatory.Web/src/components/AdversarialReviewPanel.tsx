@@ -76,9 +76,9 @@ function formatStatCost(
   const text = formatCost(n, estimated)
   return s.unknownCostRuns > 0 ? `${text} (${s.unknownCostRuns} unknown excluded)` : text
 }
-function formatCount(n: number | null | undefined): string {
+function formatAverageCount(n: number | null | undefined): string {
   if (n == null) return '—'
-  return `${bankersRound(n, 0)}`
+  return bankersRound(n, 1).toFixed(1)
 }
 
 function RunSummary({ group }: { group: RunGroup }) {
@@ -243,8 +243,8 @@ function StatsTable({ stats, isLoading, isError }: StatsTableProps) {
                   <td title={isPutativeStat(s) ? PUTATIVE_NOTE : undefined}>
                     {formatStatCost(s.avgCostPerRun, s, isPutativeStat(s))}
                   </td>
-                  <td>{formatCount(s.avgIssuesRaised)}</td>
-                  <td>{formatCount(s.avgIssuesAccepted)}</td>
+                  <td>{formatAverageCount(s.avgIssuesRaised)}</td>
+                  <td>{formatAverageCount(s.avgIssuesAccepted)}</td>
                   <td title={isPutativeStat(s) ? PUTATIVE_NOTE : undefined}>
                     {formatStatCost(s.avgCostPerAcceptedFinding, s, isPutativeStat(s))}
                   </td>
