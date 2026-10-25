@@ -13,8 +13,8 @@ A second, separate Azure stack that serves synthetic data read-only, so people c
 ## What a visitor can explore
 
 - **Overview:** fourteen rolling days of invented API and subscription/notional usage across Anthropic, Google, OpenAI and Copilot models, two subscription examples, three insights and an evidence-backed seat suggestion. All usage rows retain the `demo-seed` source identity.
-- **Adversarial Review:** five complete synthetic panels with the five active reviewer vendors and a judge. Finding outcomes populate the Seats view, including shared and unique accepted catches, a refuted catch and one unknown-cost row.
-- **Reporting:** three months of invented billed ledger entries for three vendors, so current and previous periods have data.
+- **Adversarial Review:** five complete synthetic panels with the five active reviewer vendors and a judge. Scenario-specific finding IDs and varied outcomes populate the Seats view, including shared and unique accepted catches, refuted, dropped and indeterminate findings, and one unknown-cost row.
+- **Reporting:** three months of invented billed ledger entries for three vendors, with different monthly totals so period comparisons have data.
 - **Docs:** the same in-app guide as a normal installation. Self-audit remains disabled in the public read-only demo because there is no private native evidence or registered capture machine.
 
 Source status correctly reports no live provider connections. The demo does not call or impersonate upstream accounts, and its invented monetary values are examples of the dashboard's evidence categories rather than price or invoice claims. The reset replaces these examples together, including the review findings and suggestion.

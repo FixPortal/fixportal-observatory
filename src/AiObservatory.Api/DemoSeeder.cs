@@ -359,20 +359,20 @@ internal static class DemoSeeder
                 continue;
             }
 
-            // One charge per month over three months so the Reporting comparison
-            // ("previous period") has billed evidence on both sides of the boundary.
+            // One charge per month over three months, with a visible period change.
             for (int monthsBack = 0; monthsBack < 3; monthsBack++)
             {
                 var occurredOn = firstOfThisMonth.PlusMonths(-monthsBack);
+                var amountGbp = monthlyGbp * (1.2m - monthsBack * 0.2m);
                 db.SpendEntries.Add(
                     new SpendEntry
                     {
                         OccurredOn = occurredOn,
                         VendorId = vendor.Id,
                         CategoryId = categoryId,
-                        Amount = monthlyGbp,
+                        Amount = amountGbp,
                         Currency = "GBP",
-                        AmountGbp = monthlyGbp,
+                        AmountGbp = amountGbp,
                         FxRate = 1m,
                         Description = "Demo seed — synthetic billed charge",
                         Source = SpendSource.Api,

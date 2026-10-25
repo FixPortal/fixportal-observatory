@@ -93,6 +93,29 @@ public class DemoSeederTests
 
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+        var outcomes = await db
+            .AdversarialReviewFindings.Select(f => f.Outcome)
+            .Distinct()
+            .ToListAsync(TestContext.Current.CancellationToken);
+        outcomes
+            .OrderBy(outcome => outcome, StringComparer.Ordinal)
+            .Should()
+            .Equal("accepted", "dropped", "indeterminate", "refuted");
+        (
+            await db.AdversarialReviewFindings.AnyAsync(
+                f => f.FindingId == "shared",
+                TestContext.Current.CancellationToken
+            )
+        )
+            .Should()
+            .BeFalse("finding IDs should describe the synthetic scenario");
+        var charges = await db.SpendEntries.ToListAsync(TestContext.Current.CancellationToken);
+        charges
+            .GroupBy(entry => entry.OccurredOn)
+            .Select(month => month.Sum(entry => entry.AmountGbp))
+            .Distinct()
+            .Should()
+            .HaveCount(3, "period comparisons should change across the three months");
         var vendorsBefore = await db.SpendVendors.CountAsync(TestContext.Current.CancellationToken);
 
         await DemoSeeder.ClearAsync(db, TestContext.Current.CancellationToken);
