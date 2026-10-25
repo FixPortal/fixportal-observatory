@@ -41,6 +41,7 @@ def package(published, output, rid):
     if runtime.get("framework", {}).get("name") != "Microsoft.NETCore.App" or not runtime["framework"]["version"].startswith("10."):
         raise ValueError("expected framework-dependent .NET 10 runtime")
     files["LICENSE"] = (ROOT / "LICENSE").read_bytes()
+    files["NOTICE"] = (ROOT / "NOTICE").read_bytes()
     files["RUNNER.md"] = (ROOT / "docs/self-audit.md").read_bytes()
     metadata = {
         "sourceCommit": source, "runtimeIdentifier": rid,
