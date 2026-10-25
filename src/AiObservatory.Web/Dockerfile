@@ -6,7 +6,9 @@ COPY . .
 # Clear production env vars so .env.production is not baked into the image:
 # nginx proxies /api same-origin, no Azure AD sign-in gate needed. VITE_API_KEY is blank
 # too: the admin key is added by nginx at runtime, so the bundle and image layers hold no secret.
-RUN VITE_API_BASE="" VITE_AAD_CLIENT_ID="" VITE_AAD_TENANT_ID="" VITE_AAD_API_SCOPE="" VITE_API_KEY="" npm run build
+# The container context excludes repository-level test fixtures. CI's regular build still
+# type-checks tests; the shipped image compiles the application and Vite config only.
+RUN VITE_API_BASE="" VITE_AAD_CLIENT_ID="" VITE_AAD_TENANT_ID="" VITE_AAD_API_SCOPE="" VITE_API_KEY="" npm run build:container
 
 FROM nginx:stable-alpine AS runtime
 COPY --from=build /app/dist /usr/share/nginx/html
