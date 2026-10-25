@@ -1,4 +1,34 @@
-# OSS qualification — 2026-09-10
+# OSS qualification — through 2026-10-25
+
+> Release readiness record. Historic sections retain their original evidence dates; the current v1.2.0 scope and checks are stated below. A passing technical check does not certify every provider invoice or constitute a legal opinion.
+
+## Current assessment
+
+The v1.2.0 source is suitable for a scoped OSS release and synthetic demo. The
+dashboard's new self-audit is opt-in and has a passing fresh Claude/Codex prospective
+acceptance for the selected sources and figures. The historical production audit is
+closed with an immutable **Incomplete** verdict because its original evidence cannot
+be recovered. Neither result certifies all historical data or supplier invoices.
+
+The [merged Compose quick start](https://github.com/FixPortal/fixportal-observatory/actions/runs/40214285074)
+passed on Linux after the audit-project Docker repair; the same smoke passed locally.
+[CI and production deployment](https://github.com/FixPortal/fixportal-observatory/actions/runs/40215346962)
+passed on main `08e32f93361e5867db32ddf0839fecc46bd74742`. The
+[offline verifier packaging run](https://github.com/FixPortal/fixportal-observatory/actions/runs/40215357996)
+built Windows, Linux and macOS ZIPs from that commit; all sidecar hashes matched,
+and each archive contains a hashed `LICENSE` and `NOTICE`. The public synthetic demo
+and production entry pages returned HTTP 200. npm audit, CodeQL, Dependabot and
+secret scanning had no open findings at the release check. These checks are
+point-in-time and do not replace installation-specific validation.
+
+Live Google billing qualification remains **Not assessed** (M24) because no
+suitable BigQuery export is available. The older missing Gitar verdicts remain a
+historical review-coverage gap; deferral did not supply an approval. The earlier
+deployment-overlap and mutation-attribution limitations below retain their
+original scope. See [self-audit qualification](self-audit-qualification.md) for the
+prospective and historical distinction.
+
+## Original local baseline
 
 Original local verification of `reviewer-findings-batch26`, based on main `7ea496f`.
 That pass merged in [PR #237](https://github.com/FixPortal/fixportal-observatory/pull/237)
@@ -6,21 +36,6 @@ as `deabf21`; its [post-merge CI and deployment](https://github.com/FixPortal/fi
 passed, including API and ingest health checks. The table preserves its local baseline;
 the follow-up and post-merge evidence below are recorded separately.
 They do not replace the September adversarial review or close its unrelated items.
-
-## Current assessment
-
-The evidence in this record supports Observatory as a credible OSS candidate for its
-documented, tested scope: credential-free onboarding, enforced checks, regression
-tests, and a successfully deployed remediation pass. This is a scoped assessment,
-not a claim that every provider integration or the whole assurance programme is
-complete. Live Google billing qualification remains **Not assessed** (M24).
-The missing Gitar verdicts remain a historical review-coverage gap; the maintainer
-has explicitly deferred further investigation for now, not supplied those verdicts.
-
-No additional application change is justified solely by these two evidence gaps.
-The earlier deployment-overlap and mutation-attribution limitations below still apply.
-
-## Original local baseline
 
 | Area | Evidence and disposition |
 | --- | --- |
