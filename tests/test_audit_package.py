@@ -32,7 +32,8 @@ class PackagingTests(unittest.TestCase):
                     second = packager.package(published, base / "second" / rid, rid)
                     self.assertEqual(archive.read_bytes(), second.read_bytes())
                     with zipfile.ZipFile(archive) as bundle:
-                        self.assertEqual(set(bundle.namelist()), {*packager.PAYLOAD, "LICENSE", "RUNNER.md", "release.json"})
+                        self.assertEqual(set(bundle.namelist()), {*packager.PAYLOAD, "LICENSE", "NOTICE", "RUNNER.md", "release.json"})
+                        self.assertEqual(bundle.read("NOTICE"), (ROOT / "NOTICE").read_bytes())
                         metadata = json.loads(bundle.read("release.json"))
                         self.assertEqual(metadata["runtimeIdentifier"], rid)
                         self.assertEqual(metadata["sourceCommit"], subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip())
