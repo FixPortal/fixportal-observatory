@@ -21,7 +21,10 @@ internal static class DemoSeeder
         || await db.Insights.AnyAsync(ct)
         || await db.BudgetRules.AnyAsync(ct)
         || await db.UsageEvents.AnyAsync(ct)
-        || await db.SpendEntries.AnyAsync(ct);
+        || await db.SpendEntries.AnyAsync(ct)
+        || await db.AdversarialReviewRuns.AnyAsync(ct)
+        || await db.AdversarialReviewFindings.AnyAsync(ct)
+        || await db.Suggestions.AnyAsync(ct);
 
     /// <summary>
     /// Deletes every row in the tables <see cref="SeedAsync"/> writes. The vendor and category
@@ -36,6 +39,9 @@ internal static class DemoSeeder
         await db.BudgetRules.ExecuteDeleteAsync(ct);
         await db.UsageEvents.ExecuteDeleteAsync(ct);
         await db.SpendEntries.ExecuteDeleteAsync(ct);
+        await db.AdversarialReviewFindings.ExecuteDeleteAsync(ct);
+        await db.AdversarialReviewRuns.ExecuteDeleteAsync(ct);
+        await db.Suggestions.ExecuteDeleteAsync(ct);
     }
 
     /// <summary>
@@ -154,6 +160,57 @@ internal static class DemoSeeder
                     RequestCount = 15 + i,
                 }
             );
+
+            db.DailyAggregates.Add(
+                new DailyAggregate
+                {
+                    Date = date,
+                    Provider = Provider.OpenAI,
+                    Model = "gpt-6-luna",
+                    SourceId = UsageSourceIds.DemoSeed,
+                    SourceKind = SourceKind.Synthetic,
+                    UsageScope = UsageScope.Api,
+                    CostBasis = CostBasis.ListPriceEstimate,
+                    InputTokens = 180000 + i * 1200,
+                    OutputTokens = 46000 + i * 400,
+                    CostUsd = 1.40m + i * 0.07m,
+                    RequestCount = 75 + i,
+                }
+            );
+
+            db.DailyAggregates.Add(
+                new DailyAggregate
+                {
+                    Date = date,
+                    Provider = Provider.OpenAI,
+                    Model = "gpt-6-sol",
+                    SourceId = UsageSourceIds.DemoSeed,
+                    SourceKind = SourceKind.Synthetic,
+                    UsageScope = UsageScope.Subscription,
+                    CostBasis = CostBasis.Notional,
+                    InputTokens = 92000 + i * 800,
+                    OutputTokens = 21000 + i * 180,
+                    CostUsd = 0.65m + i * 0.03m,
+                    RequestCount = 24 + i,
+                }
+            );
+
+            db.DailyAggregates.Add(
+                new DailyAggregate
+                {
+                    Date = date,
+                    Provider = Provider.Anthropic,
+                    Model = "claude-haiku-4-5",
+                    SourceId = UsageSourceIds.DemoSeed,
+                    SourceKind = SourceKind.Synthetic,
+                    UsageScope = UsageScope.Subscription,
+                    CostBasis = CostBasis.Notional,
+                    InputTokens = 125000 + i * 950,
+                    OutputTokens = 31000 + i * 250,
+                    CostUsd = 0.55m + i * 0.02m,
+                    RequestCount = 38 + i,
+                }
+            );
         }
 
         db.Subscriptions.Add(
@@ -246,6 +303,7 @@ internal static class DemoSeeder
         );
 
         await SeedBilledLedgerAsync(db, today, clock.GetCurrentInstant(), ct);
+        DemoReviewSeeder.Seed(db, today, clock.GetCurrentInstant());
 
         await db.SaveChangesAsync(ct);
     }

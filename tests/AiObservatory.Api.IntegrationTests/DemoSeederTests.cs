@@ -1,4 +1,5 @@
 using AiObservatory.Data;
+using AiObservatory.Data.Entities;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,6 +16,29 @@ namespace AiObservatory.Api.IntegrationTests;
 [Trait("Category", "Integration")]
 public class DemoSeederTests
 {
+    [Fact]
+    public async Task Worker_rule_status_does_not_prevent_initial_demo_seed()
+    {
+        await using var factory = new AiObservatoryApiFactory();
+        await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+        var ct = TestContext.Current.CancellationToken;
+        db.SuggestionRuleRuns.Add(
+            new SuggestionRuleRun
+            {
+                RuleId = "demo-worker-only",
+                EvaluatedAt = SystemClock.Instance.GetCurrentInstant(),
+                Status = "notEvaluated",
+            }
+        );
+        await db.SaveChangesAsync(ct);
+
+        (await DemoSeeder.HasAnyDataAsync(db, ct)).Should().BeFalse();
+        await DemoSeeder.SeedAsync(db, SystemClock.Instance, ct);
+        (await db.AdversarialReviewRuns.CountAsync(ct)).Should().Be(30);
+    }
+
     private sealed class ThrowingClock : IClock
     {
         public Instant GetCurrentInstant() => throw new InvalidOperationException("clock failure");
@@ -26,7 +50,11 @@ public class DemoSeederTests
         int BudgetRules,
         int Insights,
         int Events,
-        int Spend
+        int Spend,
+        int ReviewRuns,
+        int Findings,
+        int FindingParticipants,
+        int Suggestions
     )> CountSeededAsync(AiObservatoryApiFactory factory)
     {
         using var scope = factory.Services.CreateScope();
@@ -38,7 +66,11 @@ public class DemoSeederTests
             await db.BudgetRules.CountAsync(ct),
             await db.Insights.CountAsync(ct),
             await db.UsageEvents.CountAsync(ct),
-            await db.SpendEntries.CountAsync(ct)
+            await db.SpendEntries.CountAsync(ct),
+            await db.AdversarialReviewRuns.CountAsync(ct),
+            await db.AdversarialReviewFindings.CountAsync(ct),
+            await db.AdversarialReviewFindingParticipants.CountAsync(ct),
+            await db.Suggestions.CountAsync(ct)
         );
     }
 
@@ -51,6 +83,13 @@ public class DemoSeederTests
         (
             await client.PostAsync("/api/dev/seed", content: null, TestContext.Current.CancellationToken)
         ).EnsureSuccessStatusCode();
+
+        var seeded = await CountSeededAsync(factory);
+        seeded.Aggregates.Should().BeGreaterThan(70, "the demo should show more than the original five model lanes");
+        seeded.ReviewRuns.Should().Be(30, "five complete five-reviewer-plus-judge panels");
+        seeded.Findings.Should().BeGreaterThan(0, "the Seats view needs finding outcomes");
+        seeded.FindingParticipants.Should().BeGreaterThan(seeded.Findings);
+        seeded.Suggestions.Should().BeGreaterThan(0, "the demo should show a rule-backed suggestion");
 
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
@@ -81,6 +120,9 @@ public class DemoSeederTests
             var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
             await db.Subscriptions.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
             await db.Insights.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+            await db.AdversarialReviewFindings.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+            await db.AdversarialReviewRuns.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+            await db.Suggestions.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
         }
 
         using (var scope = factory.Services.CreateScope())

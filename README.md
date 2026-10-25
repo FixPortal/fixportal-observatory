@@ -30,7 +30,7 @@ maintainer. If you have an older pre-cutover checkout, preserve local work and c
 
 ### Quick start
 
-Want to look around without installing anything? Try the [public demo](https://observatory-demo.fixportal.org/): read-only, synthetic data only. How it is built and run is in [docs/demo.md](docs/demo.md).
+Want to look around without installing anything? Try the [public demo](https://observatory-demo.fixportal.org/): read-only, synthetic usage, five complete adversarial-review panels with finding-level Seats data, and a billed-reporting example. No provider accounts are connected. The [demo guide](docs/demo.md) lists what each visible view contains.
 
 Restore uses public feeds; no GitHub Packages token is required.
 
@@ -121,6 +121,8 @@ independent offline replay. The [user guide](docs/self-audit-user-guide.md) expl
 the workflow; the [operator guide](docs/self-audit.md) covers the opt-in companion,
 retention and verifier archives. The verifier identity is 1.1.0/rules 2, separate
 from the Observatory product release number.
+The other six local collectors can ingest usage but do not yet have qualified
+independent audit extractors; seeing their figures on the dashboard is not an audit verdict.
 
 The historical October audit is **Closed — historical evidence unavailable** with an
 immutable **Incomplete** verifier verdict. Fresh prospective Claude and Codex samples

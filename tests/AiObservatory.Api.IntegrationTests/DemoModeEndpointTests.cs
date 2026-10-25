@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 using AiObservatory.Data;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -31,6 +33,7 @@ public class DemoModeEndpointTests
         );
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
         (await db.DailyAggregates.AnyAsync(TestContext.Current.CancellationToken)).Should().BeTrue();
@@ -119,6 +122,21 @@ public class DemoModeEndpointTests
         var response = await client.GetAsync("/api/aggregates", TestContext.Current.CancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var runs = await client.GetFromJsonAsync<JsonElement>(
+            "/api/adversarial-review/runs",
+            TestContext.Current.CancellationToken
+        );
+        runs.GetArrayLength().Should().Be(30);
+        var findings = await client.GetFromJsonAsync<JsonElement>(
+            "/api/adversarial-review/findings",
+            TestContext.Current.CancellationToken
+        );
+        findings.GetArrayLength().Should().BeGreaterThan(0);
+        var suggestions = await client.GetFromJsonAsync<JsonElement>(
+            "/api/suggestions",
+            TestContext.Current.CancellationToken
+        );
+        suggestions.GetProperty("suggestions").GetArrayLength().Should().BeGreaterThan(0);
     }
 
     [Fact]
