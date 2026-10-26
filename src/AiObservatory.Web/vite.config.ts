@@ -47,7 +47,7 @@ export default defineConfig({
     },
   },
   build: {
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         // Split the react/query vendor out of the app chunk for cacheability.
         // recharts is lazily imported, so it lands in its own async chunk anyway.
