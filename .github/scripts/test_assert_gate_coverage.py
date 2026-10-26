@@ -5,6 +5,8 @@ the line grammar it parses cannot drift apart; unit tests pin the small helpers
 directly. check_file reports a breach by sys.exit, which pytest sees as SystemExit.
 """
 import re
+import subprocess
+import sys
 import textwrap
 
 import pytest
@@ -14,7 +16,14 @@ import assert_gate_coverage as gate
 
 def test_double_quoted_literal_escapes_are_unambiguous():
     assert re.fullmatch(gate._LITERAL, '"escaped \\" quote"')
-    assert re.fullmatch(gate._LITERAL, '"' + r'\!' * 24) is None
+    # Isolate the malformed case so catastrophic backtracking fails this test
+    # within a bounded time instead of hanging the entire suite.
+    probe = "import re, sys; assert re.fullmatch(sys.argv[1], sys.argv[2]) is None"
+    subprocess.run(
+        [sys.executable, '-S', '-c', probe, gate._LITERAL, '"' + r'\!' * 32],
+        check=True,
+        timeout=2,
+    )
 
 
 WORKFLOW = """\
