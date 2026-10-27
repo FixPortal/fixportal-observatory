@@ -96,7 +96,7 @@ node clients/observatory-sweep.mjs --dry-run --verbose
 | `OBSERVATORY_STATE` | `~/.ai-observatory/sweep-state.json` | Safe-to-delete parse cache. |
 | `OBSERVATORY_LOCAL_SOURCES` | `codex,copilot,claude,gemini,antigravity` | Comma-separated collector allowlist. `kimi`, `grok` and `pi` are dormant and must be named to run. |
 | `OBSERVATORY_MACHINE` | OS hostname | Per-machine source-id suffix (`<tool>-local@<machine>`); slugified to lowercase `[a-z0-9-]`. Set it when the hostname is unstable or shared. |
-| `CODEX_HOME`, `COPILOT_HOME`, `CLAUDE_HOME`, `KIMI_HOME`, `GEMINI_HOME` | Tool homes above | Optional home overrides. |
+| `CODEX_HOME`, `COPILOT_HOME`, `CLAUDE_HOME`, `KIMI_HOME`, `GEMINI_HOME`, `GROK_HOME`, `PI_HOME` | Tool homes above (`GROK_HOME` defaults to `~/.grok`, `PI_HOME` to `~/.pi/agent`) | Optional home overrides. |
 
 Schedule the same one-line command with your platform's scheduler. Re-running is safe and idempotent; there is no throttle or separate server-side sweeper state to maintain.
 
