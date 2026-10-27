@@ -42,6 +42,8 @@ This starts PostgreSQL, the API, provider/pricing ingest, and the frontend at [h
 
 For a manual run, install .NET SDK 10, Node `^22.22.2`, `^24.15.0`, or `>=26.0.0`, and PostgreSQL 16. The sweeper client needs Node 24 or later; see [Local producers](clients/README.md). The commands below reuse the Compose database and its local development credentials. Use `127.0.0.1`, not `localhost`: Compose publishes the port on IPv4 only, and on Windows `localhost` tries `::1` first, adding about 2 seconds to every new connection. The same applies to a `TEST_DB_CONNECTION` pointed at this database.
 
+The API cannot start without `DB_CONNECTION`: it throws `DB_CONNECTION configuration is missing.` at startup (`src/AiObservatory.Api/Program.cs:41-43`), and the ingest worker throws `DB_CONNECTION is required` (`src/AiObservatory.Ingest/Program.cs:34`). Set it in each shell that runs one of them.
+
 ```powershell
 docker compose up -d --wait db
 ```
@@ -86,6 +88,16 @@ $env:DB_CONNECTION = 'Host=127.0.0.1;Port=5433;Database=aiobservatory;Username=a
 dotnet run --project src/AiObservatory.Ingest
 ```
 
+### Docker Compose environment
+
+`docker-compose.yml` forwards only a fixed set of variables, each read from your shell or a `.env` file. Anything else must be added by hand to the matching service's `environment` block, or it never reaches the container.
+
+- `api` forwards `DB_CONNECTION`, `OBSERVATORY_API_KEY`, `GITHUB_TOKEN`, `GITHUB_BILLING_ORG`, and `Activity__ProjectOwners` (from `OBSERVATORY_PROJECT_OWNERS`) (`docker-compose.yml:22-34`).
+- `ingest` forwards `DB_CONNECTION`, `ANTHROPIC_BILLING_KEY`, `CLAUDE_CODE_USAGE_ENABLED`, `OPENAI_ADMIN_KEY`, `GITHUB_TOKEN`, `COPILOT_ORG`, the six `GOOGLE_*` settings, `Ingest__GitHubRepoAllowlist` (from `INGEST_GITHUB_REPO_ALLOWLIST`), `Ingest__PollingIntervalMinutes` (from `INGEST_POLLING_INTERVAL_MINUTES`, default 60) and `Ingest__LookbackDays` (from `INGEST_LOOKBACK_DAYS`, default 3) (`docker-compose.yml:58-75`).
+- Not forwarded; add to `ingest` to use: `GITHUB_ACTIVITY_ORG` (org discovery for `github-activity-api`; `GITHUB_BILLING_ORG` is its fallback and is also not forwarded to `ingest`, so under Compose GitHub activity needs `INGEST_GITHUB_REPO_ALLOWLIST` unless you add one of them).
+- Not forwarded; add to `api` to use: `Audit__Enabled` (Self-audit), `BUDGET_ALERT_SMTP_HOST`, `BUDGET_ALERT_SMTP_PORT`, `BUDGET_ALERT_SMTP_USER`, `BUDGET_ALERT_SMTP_PASS`, `BUDGET_ALERT_EMAIL_FROM`, `BUDGET_ALERT_MESSAGE_ID_DOMAIN`, and `SLACK_WEBHOOK_PROTECTION_KEY`. These are read by API code (`src/AiObservatory.Api/Services/SmtpMailSender.cs:31-34`, `EmailAlertNotifier.cs:26`, `src/AiObservatory.Data/Security/SlackWebhookProtector.cs:22`).
+- `OPENAI_ADMIN_KEY` is the only `OPENAI_*` setting the code reads (`src/AiObservatory.Ingest/Program.cs:98`), so nothing else is missing for OpenAI.
+
 ### Optional settings
 
 | Setting | Effect when unset |
@@ -93,6 +105,8 @@ dotnet run --project src/AiObservatory.Ingest
 | `Activity__ProjectOwners` | The Activity and GitHub tabs show every project and repository that was ingested. Set it to a comma-separated list of GitHub account names to narrow them to those owners. |
 | `VITE_ATTRIBUTION_NAME`, `VITE_ATTRIBUTION_URL` | The footer shows only a link to this project. Set both to credit whoever runs your instance. |
 | `Suggestions__*` | Suggestion rules use their built-in thresholds and the daily worker runs. Every threshold and the worker switch are listed in [Suggestions](docs/suggestions.md#settings). |
+| `Ingest__PollingIntervalMinutes` | Provider polling cycles run every 60 minutes (`IngestOptions.cs:9`). |
+| `Ingest__LookbackDays` | Each polling cycle re-requests the trailing 3 days, ending yesterday, so a missed day is filled on a later cycle; values below 1 are treated as 1 (`IngestOptions.cs:12-16`, `ProviderPollingWorkerService.cs:36`). |
 | `BUDGET_ALERT_MESSAGE_ID_DOMAIN` | Budget alert `Message-Id` headers use the domain of your configured sender address, or `observatory.local` if no sender is configured. |
 
 Use neutral placeholders such as `<observatory-api-key>` outside your secret store. See [Provider setup](docs/provider-setup.md) for acquisition settings; public pricing catalogs require no credentials. Google Cloud SKU pricing remains unavailable until verified mappings exist, independently of the bundled Gemini Developer API rates.
