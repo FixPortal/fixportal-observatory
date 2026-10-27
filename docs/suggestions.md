@@ -36,7 +36,7 @@ A rule that judged some subjects but not others only changes the subjects it jud
 | --- | --- |
 | open | Shown on the card. |
 | dismissed | Hidden. It comes back only if its evidence moves by more than `ReopenChangeFraction` against what you saw when you dismissed it, or its sample size doubles. |
-| snoozed | Hidden for 7 or 30 days, then open again if the condition still holds. |
+| snoozed | Hidden for the chosen number of days (1 to 90), then open again if the condition still holds. |
 | resolved | The condition stopped holding. Kept for history. A dismissed or snoozed suggestion resolves too when its condition clears, so a problem that clears and later returns is shown again. |
 
 A resolved suggestion cannot be dismissed or snoozed.

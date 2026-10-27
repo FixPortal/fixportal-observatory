@@ -69,20 +69,12 @@ rates, so no substitute rate is recoverable from the local evidence either.
 
 ### Optional Key Vault references
 
-The default FixPortal Bicep deployment omits `ANTHROPIC_BILLING_KEY` and `COPILOT_ORG` so an unconfigured provider does not create a broken Key Vault reference. After creating the corresponding Key Vault secret, enable either setting by passing its secret name:
+`infra/main.bicep` defaults `anthropicBillingSecretName` to `anthropic-billing-key` and `copilotOrgSecretName` to `copilot-org` (lines 17-18), and passes both to the ingest module. The ingest module (`infra/modules/ingest.bicep`, lines 6-7 and 31-35) only adds `ANTHROPIC_BILLING_KEY` and `COPILOT_ORG` when the name is non-empty. A default deployment therefore creates both Key Vault references, and they fail to resolve until the corresponding secrets exist in Key Vault.
+
+To omit a setting for an unconfigured provider, pass an empty name:
 
 ```powershell
-az deployment group create -g fpaiobs-rg -f infra/main.bicep -p anthropicBillingSecretName=anthropic-billing-key
-```
-
-```powershell
-az deployment group create -g fpaiobs-rg -f infra/main.bicep -p copilotOrgSecretName=copilot-org
-```
-
-To enable both, pass both names in the same deployment because omitted optional parameters return to their empty defaults:
-
-```powershell
-az deployment group create -g fpaiobs-rg -f infra/main.bicep -p anthropicBillingSecretName=anthropic-billing-key copilotOrgSecretName=copilot-org
+az deployment group create -g fpaiobs-rg -f infra/main.bicep -p anthropicBillingSecretName='' copilotOrgSecretName=''
 ```
 
 Google export rows preserve native export currency and credits. `export_time` advances when late corrections arrive, so affected stable groups are reaggregated. This is billed evidence, not token telemetry or an invoice clone; GBP display follows the existing historical FX path.
