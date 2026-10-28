@@ -45,6 +45,7 @@ public static class UsageSourceIds
     public const string CopilotOrgReport = "copilot-org-report";
     public const string CopilotLocal = "copilot-local";
     public const string GoogleCloudBillingExport = "google-cloud-billing-export";
+    public const string MoonshotBillingApi = "moonshot-billing-api";
     public const string KimiLocal = "kimi-local";
     public const string GrokLocal = "grok-local";
     public const string PiLocal = "pi-local";

@@ -6,6 +6,7 @@ using AiObservatory.Ingest.Services.Anthropic;
 using AiObservatory.Ingest.Services.Copilot;
 using AiObservatory.Ingest.Services.GitHub;
 using AiObservatory.Ingest.Services.Google;
+using AiObservatory.Ingest.Services.Moonshot;
 using AiObservatory.Ingest.Services.OpenAi;
 using AiObservatory.Ingest.Sources;
 using AwesomeAssertions;
@@ -43,6 +44,7 @@ public class IngestHostTests
     [InlineData("COPILOT_ORG", UsageSourceIds.CopilotOrgReport)]
     [InlineData("OPENAI_ADMIN_KEY", UsageSourceIds.OpenAiUsageApi)]
     [InlineData("OPENAI_ADMIN_KEY", UsageSourceIds.OpenAiCostsApi)]
+    [InlineData("MOONSHOT_ADMIN_KEY", UsageSourceIds.MoonshotBillingApi)]
     [InlineData("GITHUB_TOKEN", UsageSourceIds.GitHubActivityApi)]
     public async Task UnresolvedKeyVaultReferenceDoesNotEnableAProvider(string setting, string sourceId)
     {
@@ -85,6 +87,7 @@ public class IngestHostTests
                 UsageSourceIds.GoogleCloudBillingExport,
                 UsageSourceIds.OpenAiUsageApi,
                 UsageSourceIds.OpenAiCostsApi,
+                UsageSourceIds.MoonshotBillingApi,
                 UsageSourceIds.GitHubActivityApi
             );
         definitions.Should().OnlyContain(x => !x.IsConfigured);
@@ -321,6 +324,7 @@ public class IngestHostTests
     [Theory]
     [InlineData(nameof(IOpenAiAdminClient), "OPENAI_ADMIN_KEY")]
     [InlineData(nameof(IAnthropicAdminClient), "ANTHROPIC_BILLING_KEY")]
+    [InlineData(nameof(IMoonshotAdminClient), "MOONSHOT_ADMIN_KEY")]
     public async Task ProviderAdminClientsHaveNoLoggingHandlers(string clientName, string setting)
     {
         await using var factory = new IngestFactory();
@@ -358,6 +362,33 @@ public class IngestHostTests
         definitions.Should().HaveCount(2).And.OnlyContain(definition => definition.IsConfigured);
         scope.ServiceProvider.GetServices<IOpenAiAdminClient>().Should().ContainSingle();
         scope.ServiceProvider.GetRequiredService<FxRateProvider>().Should().NotBeNull();
+        scope.ServiceProvider.GetRequiredService<BillingObservationWriter>().Should().NotBeNull();
+        definitions
+            .Select(definition => definition.ToString())
+            .Should()
+            .OnlyContain(value => !value.Contains("configured-secret", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task MoonshotAdminKeyRegistersTheBillingSourceWithOneClientAndTheBillingWriter()
+    {
+        await using var factory = new IngestFactory();
+        factory.Settings["MOONSHOT_ADMIN_KEY"] = "configured-secret";
+
+        using var scope = factory.Services.CreateScope();
+        scope
+            .ServiceProvider.GetServices<IUsageSource>()
+            .Should()
+            .ContainSingle(source => source.SourceId == UsageSourceIds.MoonshotBillingApi)
+            .Which.Should()
+            .BeOfType<MoonshotBillingSource>();
+        var definitions = scope
+            .ServiceProvider.GetServices<SourceDefinition>()
+            .Where(definition => definition.SourceId == UsageSourceIds.MoonshotBillingApi)
+            .ToList();
+
+        definitions.Should().ContainSingle().Which.IsConfigured.Should().BeTrue();
+        scope.ServiceProvider.GetServices<IMoonshotAdminClient>().Should().ContainSingle();
         scope.ServiceProvider.GetRequiredService<BillingObservationWriter>().Should().NotBeNull();
         definitions
             .Select(definition => definition.ToString())
@@ -639,6 +670,7 @@ public class IngestHostTests
             "GOOGLE_BILLING_EXPORT_MAX_BYTES_BILLED",
             "GOOGLE_BILLING_EXPORT_LOCATION",
             "OPENAI_ADMIN_KEY",
+            "MOONSHOT_ADMIN_KEY",
             "APPLICATIONINSIGHTS_CONNECTION_STRING",
             "GOOGLE_CLOUD_CATALOG_API_KEY",
             "GOOGLE_CLOUD_CATALOG_SERVICE_ID",

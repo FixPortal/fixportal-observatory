@@ -75,6 +75,7 @@ test('declares every current acquisition and pricing source with public setup gu
     ['openai', 'openai-costs-api', 'Costs API', setupHref],
     ['openai', 'codex-local', 'Codex local', setupHref],
     ['openai', 'openai-pricing', 'OpenAI pricing', setupHref],
+    ['moonshot', 'moonshot-billing-api', 'Billing API', setupHref],
     ['moonshot', 'kimi-local', 'Kimi local', setupHref],
     ['moonshot', 'kimi-pricing', 'Kimi pricing', setupHref],
     ['xai', 'grok-local', 'Grok local', setupHref],
