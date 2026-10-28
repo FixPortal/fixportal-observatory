@@ -19,6 +19,10 @@ param copilotOrgSecretName string = 'copilot-org'
 // Organisation whose repositories GitHub Activity discovers when github-repo-allowlist is
 // empty. Defaults to its secret name for the same reason as the two above.
 param githubActivityOrgSecretName string = 'github-activity-org'
+// Moonshot organisation Admin API key (billing:read) for the billed Moonshot source. Defaults to its
+// secret name like the lanes above, so a bare `az deployment group create` keeps the setting; while the
+// secret is absent the reference stays unresolved and the lane stays off.
+param moonshotAdminSecretName string = 'moonshot-admin-key'
 
 // Second-stack (demo) switches. Defaults reproduce production exactly.
 param deployIngest bool = true
@@ -80,5 +84,6 @@ module ingest 'modules/ingest.bicep' = if (deployIngest) {
     anthropicBillingSecretName: anthropicBillingSecretName
     copilotOrgSecretName: copilotOrgSecretName
     githubActivityOrgSecretName: githubActivityOrgSecretName
+    moonshotAdminSecretName: moonshotAdminSecretName
   }
 }
