@@ -11,6 +11,7 @@ using AiObservatory.Ingest.Services.Anthropic;
 using AiObservatory.Ingest.Services.Copilot;
 using AiObservatory.Ingest.Services.GitHub;
 using AiObservatory.Ingest.Services.Google;
+using AiObservatory.Ingest.Services.Moonshot;
 using AiObservatory.Ingest.Services.OpenAi;
 using AiObservatory.Ingest.Sources;
 using Google.Cloud.BigQuery.V2;
@@ -116,7 +117,9 @@ var host = Host.CreateDefaultBuilder(args)
                 services.TryAddEnumerable(ServiceDescriptor.Scoped<IUsageSource, OpenAiCostsSource>());
             }
 
-            if (anthropicConfigured || openAiConfigured || googleConfigured)
+            var moonshotConfigured = RegisterMoonshotBilling(services, cfg, expectedRefreshInterval);
+
+            if (anthropicConfigured || openAiConfigured || googleConfigured || moonshotConfigured)
             {
                 services.AddMemoryCache();
                 services.AddHttpClient<FxRateProvider>().ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
@@ -271,6 +274,34 @@ static bool RegisterAnthropicSources(
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IUsageSource, ClaudeCodeUsageSource>());
     }
     return true;
+}
+
+// Moonshot — enabled when MOONSHOT_ADMIN_KEY is set.
+// Requires an organization Admin API key (sk-admin-*) with the billing:read scope; the Admin API is gated
+// behind Moonshot organization verification. Create one in the platform console under
+// Organization > Admin API Keys.
+static bool RegisterMoonshotBilling(
+    IServiceCollection services,
+    IConfiguration configuration,
+    Duration expectedRefreshInterval
+)
+{
+    var adminKey = configuration["MOONSHOT_ADMIN_KEY"];
+    var configured = IsConfigured(adminKey);
+    services.AddSingleton(new SourceDefinition(UsageSourceIds.MoonshotBillingApi, configured, expectedRefreshInterval));
+    if (configured)
+    {
+        services
+            .AddHttpClient<IMoonshotAdminClient, MoonshotAdminClient>(c =>
+            {
+                c.BaseAddress = new Uri("https://api.moonshot.ai");
+                c.DefaultRequestHeaders.Add("Authorization", $"Bearer {adminKey}");
+            })
+            .RemoveAllLoggers();
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IUsageSource, MoonshotBillingSource>());
+    }
+
+    return configured;
 }
 
 static bool RegisterGoogleBillingExport(

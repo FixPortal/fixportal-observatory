@@ -102,6 +102,7 @@ export const PROVIDERS = [
       background: 'color-mix(in srgb, var(--provider-moonshot) 12%, transparent)',
     },
     sources: [
+      { id: 'moonshot-billing-api', displayName: 'Billing API', setupHref: SETUP_HREF },
       { id: 'kimi-local', displayName: 'Kimi local', setupHref: SETUP_HREF },
       { id: 'kimi-pricing', displayName: 'Kimi pricing', setupHref: SETUP_HREF },
     ],

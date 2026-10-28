@@ -68,6 +68,7 @@ public class IngestHealthEndpointTests
             "GOOGLE_BILLING_EXPORT_MAX_BYTES_BILLED",
             "GOOGLE_BILLING_EXPORT_LOCATION",
             "OPENAI_ADMIN_KEY",
+            "MOONSHOT_ADMIN_KEY",
             "APPLICATIONINSIGHTS_CONNECTION_STRING",
             "GOOGLE_CLOUD_CATALOG_API_KEY",
             "GOOGLE_CLOUD_CATALOG_SERVICE_ID",
