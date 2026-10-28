@@ -13,6 +13,7 @@ Observatory is a .NET 10 and React 19 dashboard with a PostgreSQL store. Provide
 ## Read these first
 
 - [Provider setup](docs/provider-setup.md) — every source, access requirement, and known unavailable capability.
+- [Configuration reference](docs/configuration.md) — access keys, sign-in, browser build settings, demo mode, upgrading, and startup checks.
 - [Truth and pricing](docs/truth-and-pricing.md) — source/scope/basis meanings and safe catalog refresh.
 - [Self-audit user guide](docs/self-audit-user-guide.md) — run an audit in the UI and interpret its results.
 - [Self-audit architecture](docs/self-audit-architecture.md) — evidence flow, trust boundaries, verifier and replay.
