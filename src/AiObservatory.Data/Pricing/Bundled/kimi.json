@@ -4,6 +4,28 @@
   "retrievedAt": "2026-08-24T12:00:00Z",
   "entries": [
     {
+      "modelPrefix": "kimi-k3.1-pro-highspeed",
+      "aliases": ["kimi-k3.1-pro-highspeed"],
+      "effectiveFrom": "2026-10-28",
+      "effectiveDateIsProviderDeclared": false,
+      "cacheHit": 0.20,
+      "cacheMiss": 4.00,
+      "output": 20.00,
+      "highSpeed": true,
+      "batchMultiplier": null
+    },
+    {
+      "modelPrefix": "kimi-k3.1-pro",
+      "aliases": ["kimi-k3.1-pro"],
+      "effectiveFrom": "2026-10-28",
+      "effectiveDateIsProviderDeclared": false,
+      "cacheHit": 0.20,
+      "cacheMiss": 2.00,
+      "output": 10.00,
+      "highSpeed": false,
+      "batchMultiplier": null
+    },
+    {
       "modelPrefix": "kimi-k2.7-code-highspeed",
       "aliases": ["kimi-k2.7-code-highspeed"],
       "effectiveFrom": "2026-08-24",
