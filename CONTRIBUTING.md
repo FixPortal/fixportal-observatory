@@ -14,8 +14,9 @@ best-effort basis; issues and pull requests are welcome.
 ## Getting set up
 
 Prerequisites: **.NET 10 SDK**, **Node `^22.22.2`, `^24.15.0`, or `>=26.0.0`**, and **PostgreSQL 16** (or Docker).
-See the [README](README.md#local-development) for the full local setup,
-environment variables, and EF Core migration steps.
+See the [README](README.md#local-development) for the full local setup and
+environment variables. The API applies pending EF Core migrations when it starts,
+so local setup has no separate migration step.
 
 ```bash
 git clone https://github.com/FixPortal/fixportal-observatory.git
