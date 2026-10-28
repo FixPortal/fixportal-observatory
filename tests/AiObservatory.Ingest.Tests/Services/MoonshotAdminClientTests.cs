@@ -196,6 +196,35 @@ public sealed class MoonshotAdminClientTests : IDisposable
     }
 
     [Fact]
+    public async Task GetDailyBillsAsync_RejectsTwoDetailRowsWithTheSameModelTokenTypeAndKey()
+    {
+        // Both rows are individually valid and the day still sums, so only the identity check can catch them:
+        // they would share an observation key and the second would silently replace the first.
+        var detail = Detail("kimi-k3", "prompt", 10, 200_000, 150_000, 50_000);
+        var sut = CreateSut(
+            new QueueHandler(_ => Ok(Page(false, null, Day("2026-10-01", 400_000, 300_000, 100_000, detail, detail))))
+        );
+
+        var act = () => sut.GetDailyBillsAsync(From, Through, TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidDataException>().WithMessage("*duplicate model details*");
+    }
+
+    [Fact]
+    public async Task GetDailyBillsAsync_AllowsTheSameModelAndTokenTypeUnderDifferentKeys()
+    {
+        var first = Detail("kimi-k3", "prompt", 10, 200_000, 150_000, 50_000);
+        var second = DetailJson("kimi-k3", "prompt", 10, 200_000, 150_000, 50_000, key: "key-2");
+        var sut = CreateSut(
+            new QueueHandler(_ => Ok(Page(false, null, Day("2026-10-01", 400_000, 300_000, 100_000, first, second))))
+        );
+
+        var records = await sut.GetDailyBillsAsync(From, Through, TestContext.Current.CancellationToken);
+
+        records.Select(record => record.KeyId).Should().BeEquivalentTo("key-1", "key-2");
+    }
+
+    [Fact]
     public async Task GetDailyBillsAsync_RejectsARepeatedCursor()
     {
         var sut = CreateSut(
@@ -327,9 +356,10 @@ public sealed class MoonshotAdminClientTests : IDisposable
         long tokens,
         long total,
         long cash,
-        long voucher
+        long voucher,
+        string key = "key-1"
     ) =>
-        $$"""{"model_id":{{JsonSerializer.Serialize(model)}}{{(tokenType is null ? string.Empty : $",\"token_type\":{JsonSerializer.Serialize(tokenType)}")}},"tokens":{{tokens}},"key":"key-1","total_fee":{{total}},"recharge_fee":{{cash}},"voucher_fee":{{voucher}}}""";
+        $$"""{"model_id":{{JsonSerializer.Serialize(model)}}{{(tokenType is null ? string.Empty : $",\"token_type\":{JsonSerializer.Serialize(tokenType)}")}},"tokens":{{tokens}},"key":{{JsonSerializer.Serialize(key)}},"total_fee":{{total}},"recharge_fee":{{cash}},"voucher_fee":{{voucher}}}""";
 
     private static HttpResponseMessage Ok(string json) =>
         new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
