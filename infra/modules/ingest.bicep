@@ -6,6 +6,7 @@ param aiConnectionString string
 param anthropicBillingSecretName string = ''
 param copilotOrgSecretName string = ''
 param githubActivityOrgSecretName string = ''
+param moonshotAdminSecretName string = ''
 
 var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 
@@ -39,6 +40,12 @@ var optionalAppSettings = concat(
   // billing arm off cannot silently stop activity ingest.
   empty(githubActivityOrgSecretName) ? [] : [
     { name: 'GITHUB_ACTIVITY_ORG', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=${githubActivityOrgSecretName})' }
+  ],
+  // Organisation Admin API key (sk-admin-*, billing:read) for the moonshot-billing-api source.
+  // An absent secret leaves the reference unresolved, which the app's guard rejects, so the
+  // lane stays off until the secret exists.
+  empty(moonshotAdminSecretName) ? [] : [
+    { name: 'MOONSHOT_ADMIN_KEY', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=${moonshotAdminSecretName})' }
   ]
 )
 
