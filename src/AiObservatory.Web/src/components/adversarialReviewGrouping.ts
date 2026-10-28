@@ -2,11 +2,12 @@ import type { AdversarialReviewRun } from '../api/client'
 
 // The vendors on the panel today. Mirror of the enabled seats in the
 // adversarial-review skill's reviewers.json; update both together when a seat is swapped.
-const ACTIVE_REVIEWER_VENDORS = ['anthropic', 'google', 'openai', 'zai', 'deepseek']
+const ACTIVE_REVIEWER_VENDORS = ['anthropic', 'google', 'openai', 'zai', 'deepseek', 'moonshot']
 
 // Seats retired from the panel. Their historical runs still sort among the reviewers but
-// do not count toward a complete panel.
-const RETIRED_REVIEWER_VENDORS = ['moonshot']
+// do not count toward a complete panel. Grok (xai) left on 2026-10-11; Moonshot rejoined as a
+// counted seat on the metered API.
+const RETIRED_REVIEWER_VENDORS = ['xai']
 
 const REVIEWER_ORDER = [...ACTIVE_REVIEWER_VENDORS, ...RETIRED_REVIEWER_VENDORS]
 

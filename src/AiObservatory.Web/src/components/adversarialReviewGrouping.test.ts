@@ -64,13 +64,13 @@ test('sums per-column totals across participants', () => {
   })
 })
 
-test('flags incomplete when fewer than 5 reviewer vendors', () => {
+test('flags incomplete when fewer than 6 reviewer vendors', () => {
   const groups = groupRuns([run({ runId: 'R1', reviewer: 'anthropic', role: 'reviewer' })])
   expect(groups[0]!.isComplete).toBe(false)
-  expect(groups[0]!.statusReason).toContain('1 of 5')
+  expect(groups[0]!.statusReason).toContain('1 of 6')
 })
 
-test('a run from before the zai and deepseek seats reads as incomplete (3 of 5)', () => {
+test('a run from before the zai and deepseek seats reads as incomplete (3 of 6)', () => {
   const base = ['anthropic', 'google', 'openai'].map((v) =>
     run({ runId: 'R1', reviewer: v, role: 'reviewer' }),
   )
@@ -79,11 +79,11 @@ test('a run from before the zai and deepseek seats reads as incomplete (3 of 5)'
     run({ runId: 'R1', reviewer: 'anthropic', role: 'judge' }),
   ])[0]
   expect(withJudge!.isComplete).toBe(false)
-  expect(withJudge!.statusReason).toContain('3 of 5')
+  expect(withJudge!.statusReason).toContain('3 of 6')
 })
 
-test('a retired moonshot seat does not count toward a complete panel', () => {
-  const reviewers = ['anthropic', 'google', 'openai', 'moonshot'].map((v) =>
+test('a five-vendor run without moonshot reads as incomplete (5 of 6), not complete', () => {
+  const reviewers = ['anthropic', 'google', 'openai', 'zai', 'deepseek'].map((v) =>
     run({ runId: 'R1', reviewer: v, role: 'reviewer' }),
   )
   const group = groupRuns([
@@ -91,11 +91,11 @@ test('a retired moonshot seat does not count toward a complete panel', () => {
     run({ runId: 'R1', reviewer: 'anthropic', role: 'judge' }),
   ])[0]
   expect(group!.isComplete).toBe(false)
-  expect(group!.statusReason).toContain('3 of 5')
+  expect(group!.statusReason).toContain('5 of 6')
 })
 
-test('complete needs 5 reviewer vendors and a judge', () => {
-  const base = ['anthropic', 'google', 'openai', 'zai', 'deepseek'].map((v) =>
+test('complete needs 6 reviewer vendors, moonshot included, and a judge', () => {
+  const base = ['anthropic', 'google', 'openai', 'zai', 'deepseek', 'moonshot'].map((v) =>
     run({ runId: 'R1', reviewer: v, role: 'reviewer' }),
   )
   expect(groupRuns(base)[0]!.isComplete).toBe(false) // no judge yet
@@ -105,7 +105,7 @@ test('complete needs 5 reviewer vendors and a judge', () => {
 })
 
 test('unknown reviewer cannot replace a required vendor', () => {
-  const reviewers = ['anthropic', 'google', 'openai', 'zai', 'deepse3k'].map((v) =>
+  const reviewers = ['anthropic', 'google', 'openai', 'zai', 'deepse3k', 'moonshot'].map((v) =>
     run({ runId: 'R1', reviewer: v, role: 'reviewer' }),
   )
   const group = groupRuns([
@@ -114,7 +114,7 @@ test('unknown reviewer cannot replace a required vendor', () => {
   ])[0]
 
   expect(group!.isComplete).toBe(false)
-  expect(group!.statusReason).toContain('4 of 5')
+  expect(group!.statusReason).toContain('5 of 6')
 })
 
 test('orders participants reviewers-then-judge, newest run first', () => {
@@ -237,7 +237,7 @@ test('total cost is null when every participant cost is unknown', () => {
 test('a retired seat still counts toward validity, though not toward completeness', () => {
   const groups = groupRuns([
     run({ runId: 'R1', reviewer: 'anthropic', role: 'reviewer' }),
-    run({ runId: 'R1', reviewer: 'moonshot', role: 'reviewer' }),
+    run({ runId: 'R1', reviewer: 'xai', role: 'reviewer' }),
   ])
   expect(groups[0]!.isValid).toBe(true)
   expect(groups[0]!.isComplete).toBe(false)
