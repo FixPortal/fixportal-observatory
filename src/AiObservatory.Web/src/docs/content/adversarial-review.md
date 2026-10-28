@@ -92,7 +92,7 @@ The run's recorded time is the earliest recorded time among its participants.
 | Cost/finding | Cost divided by accepted issues. `—` for the judge and when nothing was accepted; `Unknown` when the cost is unknown. |
 | Duration     | Review duration in whole seconds.                                                                                     |
 
-Participants are ordered by the panel's vendor order (`anthropic`, `google`, `openai`, `zai`, `deepseek`, then the retired `moonshot`), then any vendor Observatory does not recognise, with the judge last.
+Participants are ordered by the panel's vendor order (`anthropic`, `google`, `openai`, `zai`, `deepseek`, `moonshot`, then the retired `xai`), then any vendor Observatory does not recognise, with the judge last.
 
 #### Run controls
 
@@ -110,12 +110,12 @@ Empty and error states: `Loading runs...`, `Couldn’t load runs — try refresh
 
 #### Completeness and validity
 
-The tab compares each run to a fixed roster of active reviewer vendors: `anthropic`, `google`, `openai`, `zai` and `deepseek`. This roster is written into the web app; it is not read from the server, so it changes only when the app is updated.
+The tab compares each run to a fixed roster of active reviewer vendors: `anthropic`, `google`, `openai`, `zai`, `deepseek` and `moonshot`. This roster is written into the web app; it is not read from the server, so it changes only when the app is updated.
 
-- A run is **complete** when it has a reviewer row for every one of the five active vendors and a judge row.
-- Otherwise it is **incomplete**, and the reason reads `N of 5 reviewers`, followed by `· no judge` when the judge row is missing. Older runs recorded before a vendor joined the panel therefore read as incomplete.
-- Reviewers from a vendor that is not in the active roster (including the retired `moonshot`) are displayed but do not count towards the five.
-- A run is **valid** when at least two active-roster reviewer vendors took part. Fewer than two is too thin to carry cross-vendor signal. This is a triage default in the interface, not a stored property.
+- A run is **complete** when it has a reviewer row for every one of the six active vendors and a judge row.
+- Otherwise it is **incomplete**, and the reason reads `N of 6 reviewers`, followed by `· no judge` when the judge row is missing. Older runs recorded before a vendor joined the panel therefore read as incomplete.
+- Reviewers from a vendor that is not in the active roster (including the retired `xai`) are displayed but do not count towards the six.
+- A run is **valid** when at least two reviewer vendors took part, retired seats included: a run is no thinner for a seat having been retired since. Fewer than two is too thin to carry cross-vendor signal. This is a triage default in the interface, not a stored property.
 
 Use the validity filter to hide thin runs and the completeness filter to find runs missing a vendor or the judge.
 
@@ -269,7 +269,7 @@ Rejection messages are fixed strings; the request body is never echoed back.
 - Compare cost per finding only between rows with a similar number of runs and no `unknown excluded` note.
 - Prefer unique catches to raw raised counts when judging a seat's value: a seat that raises many findings that others also raise adds corroboration, not coverage.
 - Treat the false-positive rate as meaningful only when the sample is `sufficient`.
-- An `incomplete` run is not an error. It means the run did not include all five active vendors and a judge.
+- An `incomplete` run is not an error. It means the run did not include all six active vendors and a judge.
 
 ## References
 
