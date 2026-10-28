@@ -146,12 +146,47 @@ public sealed class KimiPricingSourceTests
         var catalog = PricingCatalogJson.Deserialize<KimiPriceCatalog>(Bundle("kimi.json"));
 
         ((Action)catalog.Validate).Should().NotThrow();
-        catalog.Should().BeEquivalentTo(Parse(Fixtures()), options => options.WithStrictOrdering());
+        // The K3.1 entries post-date the captured fixtures (see BundledCatalogCarriesTheK31Rows), so the
+        // fixture-equivalence check covers every other entry.
+        catalog
+            .Entries.Where(entry => !K31Models.Contains(entry.ModelPrefix))
+            .Should()
+            .BeEquivalentTo(Parse(Fixtures()).Entries, options => options.WithoutStrictOrdering());
         catalog.SourceUrl.Should().Be("https://platform.kimi.ai/docs/llms.txt");
         catalog.RetrievedAt.Should().Be(RetrievedAt);
-        catalog.Entries.Should().HaveCount(4);
+        catalog.Entries.Should().HaveCount(6);
         catalog.Resolve("kimi-k2.6", false, ObservedOn)!.CacheHit.Should().Be(0.16m);
         catalog.Resolve("kimi-k3", false, ObservedOn)!.CacheHit.Should().Be(0.30m);
+    }
+
+    // kimi-k3.1-pro and its high-speed variant are not in the captured fixtures: they were read off the
+    // JavaScript-rendered https://platform.kimi.ai/docs/pricing/chat on 2026-10-28 (the raw chat.md carries
+    // no rate tables). Without these rows the "kimi-k3" prefix matches "kimi-k3.1-pro" and prices it
+    // at the K3 rates, so the assertions pin both the rates and that the longer alias wins.
+    private static readonly LocalDate K31On = new(2026, 10, 28);
+    private static readonly string[] K31Models = ["kimi-k3.1-pro", "kimi-k3.1-pro-highspeed"];
+
+    [Theory]
+    [InlineData("kimi-k3.1-pro", false, 0.20, 2.00, 10.00)]
+    [InlineData("kimi-k3.1-pro-highspeed", true, 0.20, 4.00, 20.00)]
+    [InlineData("kimi-k3", false, 0.30, 3.00, 15.00)]
+    public void BundledCatalogCarriesTheK31Rows(
+        string model,
+        bool highSpeed,
+        double cacheHit,
+        double cacheMiss,
+        double output
+    )
+    {
+        var catalog = PricingCatalogJson.Deserialize<KimiPriceCatalog>(Bundle("kimi.json"));
+
+        var entry = catalog.Resolve(model, highSpeed, K31On);
+
+        entry.Should().NotBeNull();
+        entry.CacheHit.Should().Be((decimal)cacheHit);
+        entry.CacheMiss.Should().Be((decimal)cacheMiss);
+        entry.Output.Should().Be((decimal)output);
+        entry.BatchMultiplier.Should().BeNull();
     }
 
     private const string K3Row =
