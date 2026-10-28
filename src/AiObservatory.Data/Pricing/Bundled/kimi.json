@@ -6,7 +6,7 @@
     {
       "modelPrefix": "kimi-k3.1-pro-highspeed",
       "aliases": ["kimi-k3.1-pro-highspeed"],
-      "effectiveFrom": "2026-10-28",
+      "effectiveFrom": "2026-08-24",
       "effectiveDateIsProviderDeclared": false,
       "cacheHit": 0.20,
       "cacheMiss": 4.00,
@@ -17,7 +17,7 @@
     {
       "modelPrefix": "kimi-k3.1-pro",
       "aliases": ["kimi-k3.1-pro"],
-      "effectiveFrom": "2026-10-28",
+      "effectiveFrom": "2026-08-24",
       "effectiveDateIsProviderDeclared": false,
       "cacheHit": 0.20,
       "cacheMiss": 2.00,

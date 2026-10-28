@@ -6,6 +6,7 @@ using AiObservatory.Ingest.Pricing;
 using AwesomeAssertions;
 using NodaTime;
 using NodaTime.Testing;
+using NodaTime.Text;
 
 namespace AiObservatory.Ingest.Tests.Pricing;
 
@@ -163,16 +164,22 @@ public sealed class KimiPricingSourceTests
     // JavaScript-rendered https://platform.kimi.ai/docs/pricing/chat on 2026-10-28 (the raw chat.md carries
     // no rate tables). Without these rows the "kimi-k3" prefix matches "kimi-k3.1-pro" and prices it
     // at the K3 rates, so the assertions pin both the rates and that the longer alias wins.
-    private static readonly LocalDate K31On = new(2026, 10, 28);
     private static readonly string[] K31Models = ["kimi-k3.1-pro", "kimi-k3.1-pro-highspeed"];
 
+    // The dates cover the bundle stamp (what Notional events are priced at), the day before the page was read,
+    // and the day it was read: "kimi-k3" stays applicable on every one of them, so the K3.1 rows must too.
     [Theory]
-    [InlineData("kimi-k3.1-pro", false, 0.20, 2.00, 10.00)]
-    [InlineData("kimi-k3.1-pro-highspeed", true, 0.20, 4.00, 20.00)]
-    [InlineData("kimi-k3", false, 0.30, 3.00, 15.00)]
+    [InlineData("kimi-k3.1-pro", false, "2026-08-24", 0.20, 2.00, 10.00)]
+    [InlineData("kimi-k3.1-pro", false, "2026-10-27", 0.20, 2.00, 10.00)]
+    [InlineData("kimi-k3.1-pro", false, "2026-10-28", 0.20, 2.00, 10.00)]
+    [InlineData("kimi-k3.1-pro-highspeed", true, "2026-08-24", 0.20, 4.00, 20.00)]
+    [InlineData("kimi-k3.1-pro-highspeed", true, "2026-10-28", 0.20, 4.00, 20.00)]
+    [InlineData("kimi-k3", false, "2026-08-24", 0.30, 3.00, 15.00)]
+    [InlineData("kimi-k3", false, "2026-10-28", 0.30, 3.00, 15.00)]
     public void BundledCatalogCarriesTheK31Rows(
         string model,
         bool highSpeed,
+        string usageDate,
         double cacheHit,
         double cacheMiss,
         double output
@@ -180,7 +187,7 @@ public sealed class KimiPricingSourceTests
     {
         var catalog = PricingCatalogJson.Deserialize<KimiPriceCatalog>(Bundle("kimi.json"));
 
-        var entry = catalog.Resolve(model, highSpeed, K31On);
+        var entry = catalog.Resolve(model, highSpeed, LocalDatePattern.Iso.Parse(usageDate).Value);
 
         entry.Should().NotBeNull();
         entry.CacheHit.Should().Be((decimal)cacheHit);
