@@ -153,7 +153,7 @@ Requests use `X-Observatory-Key` when API keys are configured. The most useful e
 | `GET` | `/api/aggregates` | Daily source-aware usage and cost aggregates |
 | `GET` | `/api/sources/status` | Source configuration, freshness, and sanitized status |
 | `POST` | `/api/events` | A provenance-labelled usage event |
-| `POST` | `/api/spend/feed-status` | Admin key only. Receives the tax portal's spend-feed report of expense ids it skipped, by reason code; only counts are kept. Nothing posts to it yet: the portal has not been changed to call it |
+| `POST` | `/api/spend/feed-status` | Admin key only. Receives an external expense feed's report of expenses it skipped, by reason code; only counts are kept |
 | `GET` | `/api/subscriptions` | Subscription ledger records |
 | `GET` | `/api/insights` | Generated insights |
 | `GET` | `/api/suggestions` | Rule-based suggestions about review-panel seats and subscription plans, with their evidence. See [Suggestions](docs/suggestions.md) |
