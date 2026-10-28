@@ -48,7 +48,8 @@ Pricing refreshes daily and shortly after startup when the last successful refre
 
 - [OpenAI pricing](https://developers.openai.com/api/docs/pricing.md)
 - [Claude pricing](https://platform.claude.com/docs/en/about-claude/pricing.md)
-- [Kimi documentation](https://platform.kimi.ai/docs/llms.txt)
+
+The Kimi, xAI and OpenRouter catalogs are dormant by default: no daily fetch, and the last stored snapshot keeps pricing their history. Set `PRICING_RETIRED_SOURCES_ENABLED=true` to opt back in; Kimi then fetches its [documentation](https://platform.kimi.ai/docs/llms.txt).
 
 The Gemini Developer API catalog is bundled rather than fetched: `gemini-developer-api-pricing` loads from the shipped catalog at startup and is unaffected by fetch outages.
 

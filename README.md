@@ -123,7 +123,7 @@ The Overview above runs on the Compose demo seed. Note that provider estimate re
 - Missing money or tokens read `Not reported`, never zero.
 - Source status shows configuration, freshness, failure, and unavailability separately from process liveness.
 
-Supported acquisition includes OpenAI usage/costs, Anthropic usage/cost reports and optional Claude Code analytics, GitHub Copilot organization engagement, Google Cloud Billing BigQuery export, GitHub activity/billing, and eight local transcript collectors. The [provider matrix](docs/provider-setup.md) is the authoritative capability list.
+Supported acquisition includes OpenAI usage/costs, Anthropic usage/cost reports and optional Claude Code analytics, GitHub Copilot organization engagement, Google Cloud Billing BigQuery export, GitHub activity/billing, and eight local transcript collectors (five on by default; Kimi, Grok and PI are opt-in through `OBSERVATORY_LOCAL_SOURCES`). The [provider matrix](docs/provider-setup.md) is the authoritative capability list.
 
 ## Self-audit
 
