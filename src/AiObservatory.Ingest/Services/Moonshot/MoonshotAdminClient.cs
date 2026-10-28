@@ -156,38 +156,21 @@ public sealed class MoonshotAdminClient(HttpClient http) : IMoonshotAdminClient
         long detailTotal = 0;
         long detailCash = 0;
         long detailVoucher = 0;
+        // The documented grain is one row per model x token type x key. A repeat would share an
+        // observation key and the second row would silently replace the first, so refuse it.
+        var seenDetails = new HashSet<(string?, string?, string?)>();
         foreach (var detail in RequireArray(bill, "model_details").EnumerateArray())
         {
-            if (detail.ValueKind != JsonValueKind.Object)
+            var (record, fees) = ParseDetail(detail, date, dateText);
+            if (!seenDetails.Add((record.ModelId, record.TokenType, record.KeyId)))
             {
-                throw new InvalidDataException("Moonshot model detail must be a JSON object.");
+                throw new InvalidDataException("Moonshot returned duplicate model details for a day.");
             }
 
-            var detailFeeTotal = RequireFee(detail, "total_fee");
-            var detailFeeCash = RequireFee(detail, "recharge_fee");
-            var detailFeeVoucher = RequireFee(detail, "voucher_fee");
-            RequireSplit(detailFeeTotal, detailFeeCash, detailFeeVoucher);
-            detailTotal = checked(detailTotal + detailFeeTotal);
-            detailCash = checked(detailCash + detailFeeCash);
-            detailVoucher = checked(detailVoucher + detailFeeVoucher);
-
-            records.Add(
-                new MoonshotBillRecord(
-                    date,
-                    AdminResponseJson.RequireNonBlankString(detail, "model_id", Provider),
-                    AdminResponseJson.RequireNonBlankString(detail, "token_type", Provider),
-                    AdminResponseJson.RequireNonBlankString(detail, "key", Provider),
-                    RequireNonNegativeInt64(detail, "tokens"),
-                    ToUsd(detailFeeTotal),
-                    ToUsd(detailFeeCash),
-                    ToUsd(detailFeeVoucher),
-                    new JsonObject
-                    {
-                        ["date"] = dateText,
-                        ["detail"] = JsonNode.Parse(detail.GetRawText()),
-                    }.ToJsonString()
-                )
-            );
+            detailTotal = checked(detailTotal + fees.Total);
+            detailCash = checked(detailCash + fees.Cash);
+            detailVoucher = checked(detailVoucher + fees.Voucher);
+            records.Add(record);
         }
 
         // The outer fees also carry charges the breakdown leaves out (cache calls, tool calls, cache
@@ -224,6 +207,36 @@ public sealed class MoonshotAdminClient(HttpClient http) : IMoonshotAdminClient
                 )
             );
         }
+    }
+
+    private static (MoonshotBillRecord Record, (long Total, long Cash, long Voucher) Fees) ParseDetail(
+        JsonElement detail,
+        LocalDate date,
+        string dateText
+    )
+    {
+        if (detail.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException("Moonshot model detail must be a JSON object.");
+        }
+
+        var total = RequireFee(detail, "total_fee");
+        var cash = RequireFee(detail, "recharge_fee");
+        var voucher = RequireFee(detail, "voucher_fee");
+        RequireSplit(total, cash, voucher);
+
+        var record = new MoonshotBillRecord(
+            date,
+            AdminResponseJson.RequireNonBlankString(detail, "model_id", Provider),
+            AdminResponseJson.RequireNonBlankString(detail, "token_type", Provider),
+            AdminResponseJson.RequireNonBlankString(detail, "key", Provider),
+            RequireNonNegativeInt64(detail, "tokens"),
+            ToUsd(total),
+            ToUsd(cash),
+            ToUsd(voucher),
+            new JsonObject { ["date"] = dateText, ["detail"] = JsonNode.Parse(detail.GetRawText()) }.ToJsonString()
+        );
+        return (record, (total, cash, voucher));
     }
 
     private static bool IsNoDataForOrganization(HttpStatusCode status, byte[] body, int page) =>
