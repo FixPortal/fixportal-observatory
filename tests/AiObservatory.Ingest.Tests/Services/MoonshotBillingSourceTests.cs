@@ -168,6 +168,100 @@ public sealed class MoonshotBillingSourceTests(ProviderPollingDatabase database)
         rows.Select(row => row.ObservationKey).Should().OnlyHaveUniqueItems();
     }
 
+    // The writer refuses a net amount that rounds to zero GBP at the ledger's 4-decimal precision (the test FX rate
+    // is 0.8, so 0.00004 USD is 0.000032 GBP). Real Moonshot lines reach that size: a few hundred cache-hit tokens
+    // bill about 4 milli-cent. Left alone, one such line aborts the whole ingest on every poll.
+    [Fact]
+    public async Task IngestAsync_FoldsLinesTooSmallForTheLedgerIntoOneLine_AndKeepsTheRest()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var day = new LocalDate(2026, 9, 16);
+        var model = $"model-{suffix}";
+        var client = Substitute.For<IMoonshotAdminClient>();
+        client
+            .GetDailyBillsAsync(Arg.Any<LocalDate>(), Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns([
+                Line(day, model, "completion", 1m, 1m, 0m),
+                Line(day, model, "auto-caching", 0.00004m, 0.00004m, 0m),
+                Line(day, model, "cache-write-5m", 0.00004m, 0.00004m, 0m),
+                Line(day, model, "cache-write-1h", 0.00004m, 0.00004m, 0m),
+            ]);
+        await using var db = CreateDb();
+        using var resources = new WriterResources(db);
+        var sut = CreateSut(client, resources);
+
+        var result = await sut.IngestAsync(day, day, TestContext.Current.CancellationToken);
+
+        var ct = TestContext.Current.CancellationToken;
+        var rows = await db
+            .BillingObservations.AsNoTracking()
+            .Where(row => row.SourceId == UsageSourceIds.MoonshotBillingApi && row.OccurredOn == day)
+            .ToListAsync(ct);
+        rows.Select(row => row.Sku).Should().BeEquivalentTo($"{model}/completion", MoonshotBillingSource.SubLedgerSku);
+        var folded = rows.Single(row => row.Sku == MoonshotBillingSource.SubLedgerSku);
+        folded.GrossAmount.Should().Be(0.00012m);
+        folded.NetAmount.Should().Be(0.00012m);
+        folded.CreditAmount.Should().Be(0m);
+        using (var raw = JsonDocument.Parse(folded.RawPayload))
+        {
+            raw.RootElement.GetProperty("folded").GetArrayLength().Should().Be(3);
+        }
+        result.LatestObservationAt.Should().Be(Instant.FromUtc(2026, 9, 16, 16, 0));
+    }
+
+    [Fact]
+    public async Task IngestAsync_DropsTooSmallLinesWhoseSumStaysBelowTheLedgerPrecision_WithoutFailing()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var day = new LocalDate(2026, 9, 17);
+        var model = $"model-{suffix}";
+        var client = Substitute.For<IMoonshotAdminClient>();
+        client
+            .GetDailyBillsAsync(Arg.Any<LocalDate>(), Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns([
+                Line(day, model, "auto-caching", 0.00004m, 0.00004m, 0m),
+                Line(day, model, "completion", 1m, 1m, 0m),
+            ]);
+        await using var db = CreateDb();
+        using var resources = new WriterResources(db);
+        var sut = CreateSut(client, resources);
+
+        var act = () => sut.IngestAsync(day, day, TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync();
+        var ct = TestContext.Current.CancellationToken;
+        (await db.BillingObservations.AsNoTracking().CountAsync(row => row.Sku == $"{model}/auto-caching", ct))
+            .Should()
+            .Be(0);
+        (await db.BillingObservations.AsNoTracking().CountAsync(row => row.Sku == $"{model}/completion", ct))
+            .Should()
+            .Be(1);
+    }
+
+    [Fact]
+    public async Task IngestAsync_KeepsAVoucherCoveredLineWhateverItsSize()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var day = new LocalDate(2026, 9, 18);
+        var model = $"model-{suffix}";
+        var client = Substitute.For<IMoonshotAdminClient>();
+        client
+            .GetDailyBillsAsync(Arg.Any<LocalDate>(), Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns([Line(day, model, "auto-caching", 0.00004m, 0m, 0.00004m)]);
+        await using var db = CreateDb();
+        using var resources = new WriterResources(db);
+        var sut = CreateSut(client, resources);
+
+        await sut.IngestAsync(day, day, TestContext.Current.CancellationToken);
+
+        var row = await db
+            .BillingObservations.AsNoTracking()
+            .SingleAsync(row => row.Sku == $"{model}/auto-caching", TestContext.Current.CancellationToken);
+        row.NetAmount.Should().Be(0m);
+        row.GrossAmount.Should().Be(0.00004m);
+        row.CreditAmount.Should().Be(-0.00004m);
+    }
+
     [Fact]
     public async Task IngestAsync_WhenTheClientFails_WritesNothing()
     {
