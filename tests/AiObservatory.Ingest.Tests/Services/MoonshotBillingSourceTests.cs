@@ -239,6 +239,101 @@ public sealed class MoonshotBillingSourceTests(ProviderPollingDatabase database)
     }
 
     [Fact]
+    public async Task IngestAsync_IsIdempotentForTheFoldedLine()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var day = new LocalDate(2026, 9, 19);
+        var model = $"model-{suffix}";
+        var client = Substitute.For<IMoonshotAdminClient>();
+        client
+            .GetDailyBillsAsync(Arg.Any<LocalDate>(), Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns([
+                Line(day, model, "auto-caching", 0.00004m, 0.00004m, 0m),
+                Line(day, model, "cache-write-5m", 0.00004m, 0.00004m, 0m),
+                Line(day, model, "cache-write-1h", 0.00004m, 0.00004m, 0m),
+            ]);
+        await using var db = CreateDb();
+        using var resources = new WriterResources(db);
+        var sut = CreateSut(client, resources);
+
+        await sut.IngestAsync(day, day, TestContext.Current.CancellationToken);
+        await sut.IngestAsync(day, day, TestContext.Current.CancellationToken);
+        await sut.IngestAsync(day, day, TestContext.Current.CancellationToken);
+
+        var ct = TestContext.Current.CancellationToken;
+        var folded = await db
+            .BillingObservations.AsNoTracking()
+            .Where(row => row.SourceId == UsageSourceIds.MoonshotBillingApi && row.OccurredOn == day)
+            .ToListAsync(ct);
+        folded.Should().ContainSingle().Which.Sku.Should().Be(MoonshotBillingSource.SubLedgerSku);
+        (
+            await db
+                .SpendEntries.AsNoTracking()
+                .CountAsync(
+                    row =>
+                        row.SourceId == UsageSourceIds.MoonshotBillingApi
+                        && row.Description == MoonshotBillingSource.SubLedgerSku
+                        && row.OccurredOn == day,
+                    ct
+                )
+        )
+            .Should()
+            .Be(1);
+    }
+
+    [Fact]
+    public async Task IngestAsync_KeepsALineWhoseCashIsExactlyTheFloorOnItsOwn()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var day = new LocalDate(2026, 9, 20);
+        var model = $"model-{suffix}";
+        var client = Substitute.For<IMoonshotAdminClient>();
+        client
+            .GetDailyBillsAsync(Arg.Any<LocalDate>(), Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns([Line(day, model, "auto-caching", 0.0001m, 0.0001m, 0m)]);
+        await using var db = CreateDb();
+        using var resources = new WriterResources(db);
+        var sut = CreateSut(client, resources);
+
+        await sut.IngestAsync(day, day, TestContext.Current.CancellationToken);
+
+        var rows = await db
+            .BillingObservations.AsNoTracking()
+            .Where(row => row.SourceId == UsageSourceIds.MoonshotBillingApi && row.OccurredOn == day)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        rows.Should().ContainSingle().Which.Sku.Should().Be($"{model}/auto-caching");
+    }
+
+    // The 0.0001 USD floor assumes a USD to GBP rate above 0.5. At a lower rate a line just over the floor still
+    // rounds to zero GBP and the writer refuses it; the source must skip that one observation, not abort the poll.
+    [Fact]
+    public async Task IngestAsync_WhenTheRateMakesALineRoundToZero_SkipsItAndKeepsTheRest()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var day = new LocalDate(2026, 9, 21);
+        var model = $"model-{suffix}";
+        var client = Substitute.For<IMoonshotAdminClient>();
+        client
+            .GetDailyBillsAsync(Arg.Any<LocalDate>(), Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns([
+                Line(day, model, "auto-caching", 0.0002m, 0.0002m, 0m),
+                Line(day, model, "completion", 1m, 1m, 0m),
+            ]);
+        await using var db = CreateDb();
+        using var resources = new WriterResources(db, gbpRate: 0.1m);
+        var sut = CreateSut(client, resources);
+
+        var act = () => sut.IngestAsync(day, day, TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync();
+        var rows = await db
+            .BillingObservations.AsNoTracking()
+            .Where(row => row.SourceId == UsageSourceIds.MoonshotBillingApi && row.OccurredOn == day)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        rows.Should().ContainSingle().Which.Sku.Should().Be($"{model}/completion");
+    }
+
+    [Fact]
     public async Task IngestAsync_KeepsAVoucherCoveredLineWhateverItsSize()
     {
         var suffix = Guid.NewGuid().ToString("N");
@@ -342,10 +437,11 @@ public sealed class MoonshotBillingSourceTests(ProviderPollingDatabase database)
         private readonly HttpClient _http = new();
         private readonly MemoryCache _cache = new(new MemoryCacheOptions());
 
-        public WriterResources(AiObservatoryDbContext db)
+        public WriterResources(AiObservatoryDbContext db, decimal gbpRate = 0.8m)
         {
             var fx = Substitute.For<FxRateProvider>(_http, _cache, NullLogger<FxRateProvider>.Instance);
-            fx.GetGbpRateOnAsync(Arg.Any<string>(), Arg.Any<LocalDate>(), Arg.Any<CancellationToken>()).Returns(0.8m);
+            fx.GetGbpRateOnAsync(Arg.Any<string>(), Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+                .Returns(gbpRate);
             Writer = new BillingObservationWriter(db, fx, new FakeClock(Instant.FromUtc(2026, 10, 3, 9, 0)));
         }
 

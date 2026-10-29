@@ -41,7 +41,7 @@ public class BillingObservationWriter(AiObservatoryDbContext db, FxRateProvider 
             amountGbp = decimal.Round(observation.NetAmount * fxRate.Value, 4, MidpointRounding.ToEven);
             if (amountGbp == 0m)
             {
-                throw new InvalidOperationException("The billed amount rounds to zero GBP.");
+                throw new LedgerPrecisionException("The billed amount rounds to zero GBP.");
             }
         }
 
