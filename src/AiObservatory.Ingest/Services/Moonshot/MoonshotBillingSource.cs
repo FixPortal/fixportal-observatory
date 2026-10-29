@@ -42,8 +42,21 @@ public sealed class MoonshotBillingSource(
         var retained = 0;
         foreach (var observation in ToObservations(records, observedAt))
         {
-            await writer.RecordAsync(observation, "moonshot", "api-usage", cancellationToken);
-            retained++;
+            try
+            {
+                await writer.RecordAsync(observation, "moonshot", "api-usage", cancellationToken);
+                retained++;
+            }
+            catch (LedgerPrecisionException exception)
+            {
+                // The floor above is a heuristic about the exchange rate; the writer is the authority. Skip this one
+                // observation, keep the rest of the poll.
+                logger.LogWarning(
+                    exception,
+                    "Moonshot: skipped one observation on {Date}, its amount is below the ledger precision at the current exchange rate",
+                    observation.OccurredOn
+                );
+            }
         }
 
         logger.LogInformation("Moonshot: retained {Count} billed cost observations", retained);
