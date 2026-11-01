@@ -11,8 +11,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NodaTime;
 using NodaTime.Serialization.SystemTextJson;
-using NSubstitute;
 using Npgsql;
+using NSubstitute;
 
 namespace AiObservatory.Data.Tests.Pricing;
 

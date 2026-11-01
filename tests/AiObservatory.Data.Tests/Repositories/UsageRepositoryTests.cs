@@ -1095,7 +1095,11 @@ public class UsageRepositoryTests : IAsyncLifetime
         // The sweepers' steady state re-posts an identical snapshot, cost-less, with a fresh ObservedAt.
         for (var sweep = 1; sweep <= 2; sweep++)
         {
-            var replay = NewEvent(cost: null, cacheSavings: null, observedAt: Instant.FromUtc(2026, 8, 24, 12, 5 * sweep));
+            var replay = NewEvent(
+                cost: null,
+                cacheSavings: null,
+                observedAt: Instant.FromUtc(2026, 8, 24, 12, 5 * sweep)
+            );
             replay.CostBasis = CostBasis.Notional;
             replay.SourceKind = SourceKind.LocalTelemetry;
             (await _repo.RecordEventAsync(replay, ct))
