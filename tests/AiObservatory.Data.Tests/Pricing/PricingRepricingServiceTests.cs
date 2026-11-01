@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NodaTime;
 using NodaTime.Serialization.SystemTextJson;
+using NSubstitute;
 using Npgsql;
 
 namespace AiObservatory.Data.Tests.Pricing;
@@ -340,6 +341,39 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
 
             return base.ReaderExecutedAsync(command, eventData, result, cancellationToken);
         }
+    }
+
+    [Fact]
+    public async Task StandalonePassSendsOnlyEventsWhoseApplicationIsMissingOrChangedToTheRepository()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _store.ActivateAsync(Candidate("catalog", 2m), ct);
+        var pricing = new UsageRepository(_db, _store, Resolver(_store));
+        // Current: priced through the resolver, so it carries a stored application at its revision.
+        var current = Event("current", CostBasis.ListPriceEstimate, null, null);
+        (await pricing.RecordEstimatedEventAsync(current, ct)).Disposition.Should().Be(RecordEventDisposition.Created);
+        // Legacy: the same price but no application row (revision 0), as a pre-migration event.
+        var legacy = Event("legacy", CostBasis.ListPriceEstimate, 2m, 0m);
+        await _repository.RecordEventAsync(legacy, ct);
+        var repository = Substitute.For<IUsageRepository>();
+        var repricing = new PricingRepricingService(_db, repository, Resolver(_store), _store);
+
+        await repricing.RepriceProviderAsync(Provider.OpenAI, ct);
+
+        await repository
+            .Received(1)
+            .UpdateEventPricingWithEvidenceAsync(
+                Arg.Is<UsageEvent>(usage => usage.EventKey == "legacy"),
+                Arg.Any<ResolvedPriceApplication?>(),
+                Arg.Any<CancellationToken>()
+            );
+        await repository
+            .DidNotReceive()
+            .UpdateEventPricingWithEvidenceAsync(
+                Arg.Is<UsageEvent>(usage => usage.EventKey == "current"),
+                Arg.Any<ResolvedPriceApplication?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]

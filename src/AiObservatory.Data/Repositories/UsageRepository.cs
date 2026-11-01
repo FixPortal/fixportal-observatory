@@ -562,6 +562,13 @@ public class UsageRepository(
         var cacheSavingsDelta = (evt.CacheSavingsUsd ?? 0m) - (previousCacheSavingsUsd ?? 0m);
         var unknownCacheSavingsDelta =
             (evt.CacheSavingsUsd is null ? 1 : 0) - (previousCacheSavingsUsd is null ? 1 : 0);
+        if (costDelta == 0m && unknownCostDelta == 0 && cacheSavingsDelta == 0m && unknownCacheSavingsDelta == 0)
+        {
+            // Nothing moved (an equal-cost event repriced onto a new application): the upsert would
+            // only take the aggregate row lock to add zero.
+            return;
+        }
+
         var insertInput = Math.Max(0, evt.InputTokens);
         var insertOutput = Math.Max(0, evt.OutputTokens);
         var insertCacheRead = Math.Max(0, evt.CacheReadTokens ?? 0L);
