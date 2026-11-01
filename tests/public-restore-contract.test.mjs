@@ -78,6 +78,7 @@ function packageReferenceAttributes(xml) {
         while (index < xml.length && /\s/.test(xml[index])) index++
         assert.equal(xml[index], '=', `attribute ${name} has no value at offset ${index}`)
         index++
+        while (index < xml.length && /\s/.test(xml[index])) index++
         const quote = xml[index]
         assert.ok(quote === '"' || quote === "'", `attribute ${name} is not quoted at offset ${index}`)
         const end = xml.indexOf(quote, index + 1)
@@ -242,4 +243,11 @@ test('public restore contract excludes private package plumbing and leaves live 
     timeout: 300_000,
   })
   assert.equal(build.status, 0, `isolated restore contaminated live build assets:\n${build.stdout}\n${build.stderr}`)
+})
+
+test('PackageReference parser accepts whitespace after the equals sign', () => {
+  assert.deepEqual(
+    packageReferenceAttributes('<PackageReference Include = "A" Version=\n  "1.0" />'),
+    [{ Include: 'A', Version: '1.0' }],
+  )
 })
