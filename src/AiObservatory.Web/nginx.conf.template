@@ -4,18 +4,27 @@
 # characters that cannot sit inside the quoted string; an unset key is the empty string (Dockerfile),
 # which sends no header, so the API answers 401.
 #
+# SECURITY MODEL: this proxy is an UNAUTHENTICATED ADMIN PROXY. Anything that can reach this port
+# and is not rejected by the rules below is sent to the API with the admin key. The image is
+# published on loopback only (docker-compose.yml); never expose it beyond the machine. The header
+# rules below are CSRF hardening against a browser on the same machine, not authentication: every
+# header they read is written by the client, so a non-browser client can set any of them.
+#
 # The key is added only to requests the SPA itself made. A cross-site page can send a CORS-simple
 # POST (a form, or fetch with mode no-cors) with no preflight, so injecting for every keyless
 # request would let it drive admin POSTs. Browsers that send Sec-Fetch-Site are trusted on
-# same-origin/none; older ones fall back to an Origin equal to this server's own Host (either
-# scheme, so a TLS-terminating proxy in front still works). A request with neither header is not
-# a browser and is trusted. A request that already carries a key (a ?key= viewer link) keeps it.
-map "$http_sec_fetch_site|$http_origin|$http_host" $same_origin_request {
+# same-origin/none; older ones fall back to an Origin equal to the Host header this server
+# receives (either scheme). That comparison is against the raw Host, so a proxy in front must
+# pass Host through unchanged or a legacy browser's same-origin write is refused. A request with
+# neither header is indistinguishable from a browser that omits them (Firefox before 70 sends no
+# Origin on a cross-site form POST), so it is trusted only for GET and HEAD, never a write.
+# A request that already carries a key (a ?key= viewer link) keeps it.
+map "$request_method|$http_sec_fetch_site|$http_origin|$http_host" $same_origin_request {
     default                0;
-    "~^same-origin\|"      1;
-    "~^none\|"             1;
-    "~^\|\|"               1;
-    "~^\|https?://(.*)\|\1$"  1;
+    "~^[A-Z]+\|same-origin\|"  1;
+    "~^[A-Z]+\|none\|"         1;
+    "~^(GET|HEAD)\|\|\|"       1;
+    "~^[A-Z]+\|\|https?://(.*)\|\1$"  1;
 }
 
 map "$same_origin_request|$http_x_observatory_key" $observatory_key {

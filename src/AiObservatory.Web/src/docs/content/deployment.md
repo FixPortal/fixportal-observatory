@@ -98,6 +98,8 @@ The web image builds the app and serves it with nginx. The relevant behaviour of
 
 Responses of types JavaScript, JSON, SVG and CSS are gzip-compressed.
 
+This proxy is not an authentication boundary. Any client that can reach the web container's port is forwarded with the admin key unless the header rules refuse it, and those rules read headers the client writes itself. They protect against a page in a browser on the same machine, not against a non-browser client, so publish the port on loopback only, as `docker-compose.yml` does. A request that carries neither `Sec-Fetch-Site` nor `Origin` is forwarded with the key only for `GET` and `HEAD`, because Firefox before version 70 sends no `Origin` on a cross-site form post. A proxy placed in front of this one must pass the `Host` header through unchanged: an older browser's same-origin write is accepted by comparing its `Origin` with the `Host` this server receives.
+
 The API trusts `X-Forwarded-For` only from private network ranges, so behind this proxy the rate limiter sees the real client address. If you put the API behind a different proxy, make sure it sits in one of `10.0.0.0/8`, `172.16.0.0/12` or `192.168.0.0/16`, otherwise every client shares the proxy's address and its allowance.
 
 On Azure Static Web Apps there is no nginx. The build ships `staticwebapp.config.json`, copied from `public/` into the root of the uploaded files, whose `navigationFallback` serves `index.html` for client-side routes such as `/docs/api`. Requests under `/assets/` and for file types such as `.js`, `.css` and `.png` are excluded, so a missing file is still a 404. Without that file a reload or shared link to a docs chapter answers with the platform's 404 page.

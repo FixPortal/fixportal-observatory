@@ -22,6 +22,53 @@ function jobBlock(text, jobId) {
   return next === -1 ? rest : rest.slice(0, next + 1)
 }
 
+// Evaluates the real `$same_origin_request` map from the web image's nginx template the way
+// nginx does (first matching row wins, `default` otherwise), so the admin-key rule is asserted
+// against the shipped file rather than a copy of it.
+function sameOriginDecision(template, request) {
+  const map = /map\s+"([^"]+)"\s+\$same_origin_request\s*\{([^}]*)\}/.exec(template)
+  assert.ok(map, 'nginx.conf.template must define the $same_origin_request map')
+  const variables = {
+    $request_method: request.method,
+    $http_sec_fetch_site: request.site ?? '',
+    $http_origin: request.origin ?? '',
+    $http_host: request.host ?? 'observatory.example',
+  }
+  const input = map[1].replace(/\$\w+/g, name => variables[name] ?? '')
+  let fallback = '0'
+  for (const row of map[2].split(';')) {
+    const parts = /^\s*(?:"([^"]*)"|(\S+))\s+(\S+)\s*$/.exec(row)
+    if (!parts) continue
+    const pattern = parts[1] ?? parts[2]
+    if (pattern === 'default') { fallback = parts[3]; continue }
+    if (pattern.startsWith('~') && new RegExp(pattern.slice(1)).test(input)) { return parts[3] }
+  }
+  return fallback
+}
+
+test('the web proxy injects the admin key only for same-origin browsers or a bodyless read', async () => {
+  const template = await read('src/AiObservatory.Web/nginx.conf.template')
+  const host = 'observatory.example'
+  const cases = [
+    [{ method: 'POST', site: 'same-origin' }, '1'],
+    [{ method: 'POST', site: 'none' }, '1'],
+    [{ method: 'POST', site: 'cross-site' }, '0'],
+    [{ method: 'POST', origin: `https://${host}`, host }, '1'],
+    [{ method: 'POST', origin: 'https://evil.example', host }, '0'],
+    // A browser that sends no Origin or Sec-Fetch-Site (Firefox before 70 on a cross-site form POST)
+    // is indistinguishable from a non-browser client, so the empty case may only carry reads.
+    [{ method: 'POST' }, '0'],
+    [{ method: 'PUT' }, '0'],
+    [{ method: 'DELETE' }, '0'],
+    [{ method: 'GET' }, '1'],
+    [{ method: 'HEAD' }, '1'],
+    [{ method: 'GET', site: 'cross-site' }, '0'],
+  ]
+  for (const [request, expected] of cases) {
+    assert.equal(sameOriginDecision(template, request), expected, JSON.stringify(request))
+  }
+})
+
 test('deploy-ingest deploys only after the API deploy', async () => {
   const ingest = jobBlock(await read('.github/workflows/deploy.yml'), 'deploy-ingest')
   // The API deploy stops the ingest worker for its migrations; deploying the worker
