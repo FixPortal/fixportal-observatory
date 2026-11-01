@@ -310,11 +310,6 @@ public class UsageRepository(
             return new RecordEventResult(existing.Id, RecordEventDisposition.Unchanged);
         }
 
-        if (CanonicalEquals(existing, evt))
-        {
-            return await ApplyUnchangedSnapshotAsync(existing, evt, sourceSuppliedCost, operatorCorrection, ct);
-        }
-
         // A manual cost correction (the CorrectedAt marker) outranks a replay whose source
         // carried no cost of its own: the local sweepers re-post every snapshot with costUsd
         // null on every run, always with a fresh ObservedAt, so the ordering guard above
@@ -327,6 +322,20 @@ public class UsageRepository(
         var correctedCostUsd = existing.CostUsd;
         var correctedCacheSavingsUsd = existing.CacheSavingsUsd;
         var correctedCostBasis = existing.CostBasis;
+        if (preserveCorrectedCost)
+        {
+            // Compare after the preservation, or every replay of a corrected event looks
+            // changed and appends a pricing revision even though only ObservedAt moved.
+            evt.CostUsd = correctedCostUsd;
+            evt.CacheSavingsUsd = correctedCacheSavingsUsd;
+            evt.CostBasis = correctedCostBasis;
+        }
+
+        if (CanonicalEquals(existing, evt))
+        {
+            return await ApplyUnchangedSnapshotAsync(existing, evt, sourceSuppliedCost, operatorCorrection, ct);
+        }
+
         await ApplyAggregateDeltaAsync(existing, -1, ct);
         CopyCanonicalValues(existing, evt);
         if (preserveCorrectedCost)
