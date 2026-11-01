@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative, isAbsolute, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -19,6 +19,29 @@ import {
 } from './observatory-sweep.mjs'
 
 const TEST_MACHINE = 'test-machine'
+
+// Recursive deletes only ever target a directory this file created: makeTemp records each
+// mkdtemp result, and removeTemp refuses anything that is not one of them or beneath one.
+const ownedTempRoots = new Set()
+
+async function makeTemp(prefix) {
+  const root = await mkdtemp(join(tmpdir(), prefix))
+  ownedTempRoots.add(resolve(root))
+  return root
+}
+
+async function removeTemp(target) {
+  const resolved = resolve(target)
+  const owner = [...ownedTempRoots].find(root => {
+    const rel = relative(root, resolved)
+    return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
+  })
+  if (!owner || resolved === resolve(tmpdir())) {
+    throw new Error(`refusing to delete ${resolved}: not a directory created by this test file`)
+  }
+  console.log(`cleanup: removing ${resolved}`)
+  await rm(resolved, { recursive: true, force: true })
+}
 
 // Synthetic native rows: prompt expectations below are hand-calculated.
 function claudePromptRow(usage = {}, message = {}, timestamp = '2026-10-22T12:00:00Z') {
@@ -245,7 +268,7 @@ for (const counter of ['output_tokens', 'cache_read_input_tokens', 'cache_creati
 }
 
 test('Claude prompt version-6 cache is reparsed even at the same mtime and lost files stay incomplete', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-claude-prompt-cache-'))
+  const root = await makeTemp('observatory-claude-prompt-cache-')
   const path = join(root, 'invented.jsonl')
   const files = [{ path, mtimeMs: 123 }]
   const oldState = () => ({ parseCacheVersion: 6, files: { claude: { [path]: {
@@ -262,12 +285,12 @@ test('Claude prompt version-6 cache is reparsed even at the same mtime and lost 
     assert.equal(missing.incompleteSources.has('claude'), true)
     assert.equal(missing.emptySources.has('claude'), false)
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('Claude prompt invalid scan cannot post active corrections, old-key tombstones or legacy migration', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-claude-prompt-invalid-'))
+  const root = await makeTemp('observatory-claude-prompt-invalid-')
   const path = join(root, 'invented.jsonl')
   const keys = ['OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES', 'OBSERVATORY_MACHINE', 'CLAUDE_HOME']
   const before = Object.fromEntries(keys.map(key => [key, process.env[key]]))
@@ -295,13 +318,13 @@ test('Claude prompt invalid scan cannot post active corrections, old-key tombsto
     for (const key of keys) {
       if (before[key] === undefined) { delete process.env[key] } else { process.env[key] = before[key] }
     }
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 for (const failure of ['malformed JSONL', 'invalid counters', 'overflowed counters', 'unreadable file']) {
   test(`main warns once before posting for incomplete Claude ${failure}, including cache hits`, async () => {
-    const root = await mkdtemp(join(tmpdir(), 'observatory-claude-warning-'))
+    const root = await makeTemp('observatory-claude-warning-')
     const path = join(root, 'claude.jsonl')
     const kimiPath = join(root, 'wire.jsonl')
     const statePath = join(root, 'state.json')
@@ -356,7 +379,7 @@ for (const failure of ['malformed JSONL', 'invalid counters', 'overflowed counte
       for (const key of keys) {
         if (before[key] === undefined) { delete process.env[key] } else { process.env[key] = before[key] }
       }
-      await rm(root, { recursive: true, force: true })
+      await removeTemp(root)
     }
   })
 }
@@ -415,7 +438,7 @@ for (const [name, unsafe, invalidCounters] of CLAUDE_SAFETY_CASES) {
   })
   for (const cacheVersion of [null, 7, 8]) {
     test(`Claude safety main withholds ${name} with ${cacheVersion ? `version${cacheVersion} reparse` : 'cold cache'} and persisted hit`, async () => {
-      const root = await mkdtemp(join(tmpdir(), 'observatory-claude-safety-'))
+      const root = await makeTemp('observatory-claude-safety-')
       const path = join(root, 'claude.jsonl'), kimiPath = join(root, 'wire.jsonl'), statePath = join(root, 'state.json')
       const keys = ['OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES', 'OBSERVATORY_MACHINE', 'CLAUDE_HOME', 'KIMI_HOME']
       const before = Object.fromEntries(keys.map(key => [key, process.env[key]]))
@@ -460,7 +483,7 @@ for (const [name, unsafe, invalidCounters] of CLAUDE_SAFETY_CASES) {
       } finally {
         globalThis.fetch = originalFetch; console.error = originalError
         for (const key of keys) { if (before[key] === undefined) { delete process.env[key] } else { process.env[key] = before[key] } }
-        await rm(root, { recursive: true, force: true })
+        await removeTemp(root)
       }
     })
   }
@@ -538,7 +561,7 @@ test('Claude prompt truncated JSON retains valid records but cannot plan destruc
 })
 
 test('Claude prompt malformed discovery remains incomplete on serialized cache hits and recovers after a complete read', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-claude-prompt-partial-'))
+  const root = await makeTemp('observatory-claude-prompt-partial-')
   const path = join(root, 'invented.jsonl')
   const statePath = join(root, 'state.json')
   const keys = ['OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES', 'OBSERVATORY_MACHINE', 'CLAUDE_HOME']
@@ -581,7 +604,7 @@ test('Claude prompt malformed discovery remains incomplete on serialized cache h
     for (const key of keys) {
       if (before[key] === undefined) { delete process.env[key] } else { process.env[key] = before[key] }
     }
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
@@ -705,7 +728,7 @@ test('Codex model context without new usage cannot relabel previous usage', () =
 })
 
 test('Codex usage without valid model context remains unplaced and makes the source incomplete', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'codex-unplaced-'))
+  const root = await makeTemp('codex-unplaced-')
   const path = join(root, 'rollout.jsonl')
   try {
     for (const prefix of [[], ...[undefined, null, '', ' ', 42, {}].map(model => [
@@ -727,7 +750,7 @@ test('Codex usage without valid model context remains unplaced and makes the sou
       }
     }
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
@@ -743,7 +766,7 @@ test('Codex invalid context after valid usage clears the model for subsequent in
 })
 
 test('Codex invalid cumulative subsets persist as an incomplete source through the parse cache', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'codex-incomplete-'))
+  const root = await makeTemp('codex-incomplete-')
   const path = join(root, 'rollout.jsonl')
   try {
     await writeFile(path, codexUsageRow('2026-10-24T00:00:00Z', 10, 1, 11))
@@ -755,7 +778,7 @@ test('Codex invalid cumulative subsets persist as an incomplete source through t
       state = JSON.parse(JSON.stringify(state))
     }
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
@@ -996,7 +1019,7 @@ test('Gemini review transcripts produce API list-price snapshots', () => {
 })
 
 test('Antigravity databases produce subscription notional snapshots', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-antigravity-'))
+  const root = await makeTemp('observatory-antigravity-')
   const dbPath = join(root, 'session-id.db')
   const db = new DatabaseSync(dbPath)
   db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB)')
@@ -1022,12 +1045,12 @@ test('Antigravity databases produce subscription notional snapshots', async () =
     assert.equal(snapshot.outputTokens, 30)
     assert.equal(snapshot.thoughtTokens, 7)
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('Antigravity parser ignores protobuf fields that only resemble token counters', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-antigravity-false-token-'))
+  const root = await makeTemp('observatory-antigravity-false-token-')
   const dbPath = join(root, 'session-id.db')
   const db = new DatabaseSync(dbPath)
   db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB)')
@@ -1045,12 +1068,12 @@ test('Antigravity parser ignores protobuf fields that only resemble token counte
     assert.equal(record.outputTokens, 20)
     assert.equal(record.thoughtTokens, 5)
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('Antigravity parser reports rejected usage rows while retaining valid totals', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-antigravity-rejected-row-'))
+  const root = await makeTemp('observatory-antigravity-rejected-row-')
   const dbPath = join(root, 'session-id.db')
   const db = new DatabaseSync(dbPath)
   db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB)')
@@ -1070,12 +1093,12 @@ test('Antigravity parser reports rejected usage rows while retaining valid total
     assert.equal(record.inputTokens, 100)
     assert.deepEqual(messages, [`Skipped 1 unrecognized Antigravity usage row in ${dbPath}`])
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('scanRecords discovers retained Gemini reviews and Antigravity conversations', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-google-scan-'))
+  const root = await makeTemp('observatory-google-scan-')
   const geminiHome = join(root, 'gemini')
   const reviewChats = join(geminiHome, 'tmp', 'gem-review-fixture', 'chats')
   const conversations = join(geminiHome, 'antigravity-cli', 'conversations')
@@ -1103,7 +1126,7 @@ test('scanRecords discovers retained Gemini reviews and Antigravity conversation
     const { records } = await scanRecords(cfg, {}, new Set(['gemini', 'antigravity']))
     assert.deepEqual(records.map(record => record.tool).sort(), ['antigravity', 'gemini-review'])
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
@@ -1234,7 +1257,7 @@ test('updateFileCache does not collapse distinct composite cache keys with the s
 })
 
 test('scanRecords rebuilds an unversioned matching-mtime cache instead of reusing stale records', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-upgrade-'))
+  const root = await makeTemp('observatory-sweep-upgrade-')
   const sessions = join(root, 'codex', 'sessions')
   await mkdir(sessions, { recursive: true })
   const path = join(sessions, 'rollout.jsonl')
@@ -1266,7 +1289,7 @@ test('scanRecords rebuilds an unversioned matching-mtime cache instead of reusin
     assert.deepEqual(Array.from(state.files.codex[path].records), [])
     assert.equal(state.files.codex[path].incomplete, true)
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
@@ -1344,7 +1367,7 @@ test('scanRecords handles transcript histories larger than the engine argument l
 })
 
 test('listJsonl discovers old and current transcripts so age never changes cumulative truth', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-'))
+  const root = await makeTemp('observatory-sweep-')
   const nested = join(root, 'nested')
   await mkdir(nested)
   const oldPath = join(root, 'old.jsonl')
@@ -1358,22 +1381,22 @@ test('listJsonl discovers old and current transcripts so age never changes cumul
 
     assert.deepEqual(files.map(file => file.path).sort(), [currentPath, oldPath].sort())
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('listJsonl tolerates only an absent top-level tool directory', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-missing-'))
+  const root = await makeTemp('observatory-sweep-missing-')
 
   try {
     assert.deepEqual(await listJsonl(join(root, 'missing')), [])
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('touching and restoring a transcript cannot move usage to another day', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-touch-'))
+  const root = await makeTemp('observatory-sweep-touch-')
   const sessions = join(root, 'codex', 'sessions')
   await mkdir(sessions, { recursive: true })
   const path = join(sessions, 'rollout.jsonl')
@@ -1404,7 +1427,7 @@ test('touching and restoring a transcript cannot move usage to another day', asy
       '2026-08-24T12:00:00Z', '2026-08-24T12:00:00Z', '2026-08-24T12:00:00Z',
     ])
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
@@ -1894,7 +1917,7 @@ test('parsePi carries the cost OpenRouter charged through to the snapshot', () =
 })
 
 test('scanRecords discovers Grok usage files and PI transcripts', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-xai-meta-scan-'))
+  const root = await makeTemp('observatory-xai-meta-scan-')
   const grokSession = join(root, 'grok', 'sessions', 'C%3A%5CUsers%5Cchris', 'session-id')
   const piSession = join(root, 'pi', 'sessions', '--D--repo--')
   await mkdir(grokSession, { recursive: true })
@@ -1913,12 +1936,12 @@ test('scanRecords discovers Grok usage files and PI transcripts', async () => {
     assert.equal(records.filter(record => record.tool === 'grok').length, 3)
     assert.equal(records.filter(record => record.tool === 'pi').length, 2)
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('Antigravity model detection ignores prose that merely mentions a model', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-antigravity-prose-'))
+  const root = await makeTemp('observatory-antigravity-prose-')
   const dbPath = join(root, 'session-id.db')
   const db = new DatabaseSync(dbPath)
   db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB)')
@@ -1934,7 +1957,7 @@ test('Antigravity model detection ignores prose that merely mentions a model', a
 
     assert.equal(record.model, 'gemini-3.1-pro-high')
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
@@ -1976,7 +1999,7 @@ test('updateFileCache flags only an unreadable-and-uncached file as an incomplet
 })
 
 test('scanRecords reparses a version-2 cache instead of reusing its stale records', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-v2-'))
+  const root = await makeTemp('observatory-sweep-v2-')
   const sessions = join(root, 'codex', 'sessions')
   await mkdir(sessions, { recursive: true })
   const path = join(sessions, 'rollout.jsonl')
@@ -2012,12 +2035,12 @@ test('scanRecords reparses a version-2 cache instead of reusing its stale record
     assert.deepEqual(Array.from(state.files.codex[path].records), [])
     assert.equal(state.files.codex[path].incomplete, true)
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('scanRecords marks a populated recordless root as cleanly empty and a missing root as unverifiable', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-empty-'))
+  const root = await makeTemp('observatory-sweep-empty-')
   await mkdir(join(root, 'codex', 'sessions', '2026', '08', '24'), { recursive: true })
   const cfg = {
     codexHome: join(root, 'codex'),
@@ -2036,7 +2059,7 @@ test('scanRecords marks a populated recordless root as cleanly empty and a missi
     assert.deepEqual([...incompleteSources], [])
     assert.deepEqual([...emptySources], ['codex'])
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
@@ -2067,7 +2090,7 @@ test('buildDailySnapshots namespaces source ids per machine so hosts never share
 })
 
 test('main fetches inventory only for enabled per-machine sources and never tombstones an unverifiable empty scan', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-main-'))
+  const root = await makeTemp('observatory-sweep-main-')
   const statePath = join(root, 'state', 'sweep.json')
   const posts = []
   const gets = []
@@ -2129,12 +2152,12 @@ test('main fetches inventory only for enabled per-machine sources and never tomb
     assert.deepEqual(posts, [])
   } finally {
     await new Promise(resolve => server.close(resolve))
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('main tombstones stale server keys for an enabled source whose transcripts were all deleted', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-deleted-'))
+  const root = await makeTemp('observatory-sweep-deleted-')
   // Deleting every transcript leaves the discovery root's directory skeleton
   // behind; only the .jsonl payloads are gone, so the empty scan is verified.
   await mkdir(join(root, 'codex', 'sessions', '2026', '08', '24'), { recursive: true })
@@ -2195,12 +2218,12 @@ test('main tombstones stale server keys for an enabled source whose transcripts 
     assert.equal(JSON.parse(posts[0].rawPayload).tombstone, true)
   } finally {
     await new Promise(resolve => server.close(resolve))
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('main retries a failed server-inventory tombstone from persisted state and then succeeds', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-main-'))
+  const root = await makeTemp('observatory-sweep-main-')
   const sessions = join(root, 'codex', 'sessions')
   const statePath = join(root, 'state', 'sweep.json')
   await mkdir(sessions, { recursive: true })
@@ -2291,12 +2314,12 @@ test('main retries a failed server-inventory tombstone from persisted state and 
     ])
   } finally {
     await new Promise(resolve => server.close(resolve))
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('main withholds a source tombstone after its replacement exhausts retries but continues unrelated sources', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-replacement-'))
+  const root = await makeTemp('observatory-sweep-replacement-')
   const projects = join(root, 'claude', 'projects')
   const kimiSessions = join(root, 'kimi', 'sessions')
   const statePath = join(root, 'state', 'sweep.json')
@@ -2377,12 +2400,12 @@ test('main withholds a source tombstone after its replacement exhausts retries b
     assert.equal(posts.some(body => body.eventKey === oldClaude.eventKey), false)
   } finally {
     await new Promise(resolve => server.close(resolve))
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('main aborts nested discovery failures without replacing cache or posting partial truth', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-read-error-'))
+  const root = await makeTemp('observatory-sweep-read-error-')
   const statePath = join(root, 'state', 'sweep.json')
   const originalState = JSON.stringify({
     parseCacheVersion: 1,
@@ -2446,12 +2469,12 @@ test('main aborts nested discovery failures without replacing cache or posting p
       if (priorEnv[key] === undefined) { delete process.env[key] } else { process.env[key] = priorEnv[key] }
     }
     await new Promise(resolve => server.close(resolve))
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('main withholds corrections and tombstones for an incompletely scanned source after a cache wipe', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-incomplete-'))
+  const root = await makeTemp('observatory-sweep-incomplete-')
   const codexSessions = join(root, 'codex', 'sessions')
   const kimiSessions = join(root, 'kimi', 'sessions')
   const statePath = join(root, 'state', 'sweep.json')
@@ -2543,12 +2566,12 @@ test('main withholds corrections and tombstones for an incompletely scanned sour
       if (priorEnv[key] === undefined) { delete process.env[key] } else { process.env[key] = priorEnv[key] }
     }
     await new Promise(resolve => server.close(resolve))
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('main tombstones the legacy un-suffixed namespace once and records the migration in state', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-legacy-'))
+  const root = await makeTemp('observatory-sweep-legacy-')
   const sessions = join(root, 'codex', 'sessions')
   const statePath = join(root, 'state', 'sweep.json')
   await mkdir(sessions, { recursive: true })
@@ -2627,12 +2650,12 @@ test('main tombstones the legacy un-suffixed namespace once and records the migr
       if (priorEnv[key] === undefined) { delete process.env[key] } else { process.env[key] = priorEnv[key] }
     }
     await new Promise(resolve => server.close(resolve))
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('main retries the legacy migration when the legacy inventory fetch fails', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-legacy-fail-'))
+  const root = await makeTemp('observatory-sweep-legacy-fail-')
   const sessions = join(root, 'codex', 'sessions')
   const statePath = join(root, 'state', 'sweep.json')
   await mkdir(sessions, { recursive: true })
@@ -2693,12 +2716,12 @@ test('main retries the legacy migration when the legacy inventory fetch fails', 
       if (priorEnv[key] === undefined) { delete process.env[key] } else { process.env[key] = priorEnv[key] }
     }
     await new Promise(resolve => server.close(resolve))
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('main retries the legacy migration when a legacy tombstone post fails', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-legacy-retry-'))
+  const root = await makeTemp('observatory-sweep-legacy-retry-')
   const sessions = join(root, 'codex', 'sessions')
   const statePath = join(root, 'state', 'sweep.json')
   await mkdir(sessions, { recursive: true })
@@ -2788,12 +2811,12 @@ test('main retries the legacy migration when a legacy tombstone post fails', asy
       if (priorEnv[key] === undefined) { delete process.env[key] } else { process.env[key] = priorEnv[key] }
     }
     await new Promise(resolve => server.close(resolve))
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('main tolerates one source inventory failing and still sweeps the rest', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-inventory-failure-'))
+  const root = await makeTemp('observatory-sweep-inventory-failure-')
   const kimiSessions = join(root, 'kimi', 'sessions')
   const statePath = join(root, 'state', 'sweep.json')
   await mkdir(kimiSessions, { recursive: true })
@@ -2848,13 +2871,13 @@ test('main tolerates one source inventory failing and still sweeps the rest', as
     assert.match(stderr, /Inventory unavailable for codex-local@test-machine/)
   } finally {
     await new Promise(resolve => server.close(resolve))
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 // N02 A1: the legacy series is zeroed only after this machine's replacement is verified.
 test('main leaves the legacy namespace and its marker alone when the source root is missing', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-legacy-missing-'))
+  const root = await makeTemp('observatory-sweep-legacy-missing-')
   const statePath = join(root, 'state', 'sweep.json')
   const posts = []
   const server = createServer(async (request, response) => {
@@ -2910,7 +2933,7 @@ test('main leaves the legacy namespace and its marker alone when the source root
       if (priorEnv[key] === undefined) { delete process.env[key] } else { process.env[key] = priorEnv[key] }
     }
     await new Promise(resolve => server.close(resolve))
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
@@ -2938,36 +2961,36 @@ async function antigravityFixture(root) {
 }
 
 test('scanRecords reuses cached usage when a conversation database loses its transcript', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-agy-no-transcript-'))
+  const root = await makeTemp('observatory-agy-no-transcript-')
   try {
     const { cfg, brain } = await antigravityFixture(root)
     const state = {}
     const first = await scanRecords(cfg, state, new Set(['antigravity']))
     assert.equal(first.records.length, 1)
-    await rm(brain, { recursive: true, force: true })
+    await removeTemp(brain)
     const second = await scanRecords(cfg, state, new Set(['antigravity']))
     assert.equal(second.records.length, 1, 'the cached records stay')
     assert.equal(second.emptySources.has('antigravity'), false)
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('scanRecords flags a source incomplete, not verified-empty, when no transcript exists and nothing is cached', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-agy-no-transcript-cold-'))
+  const root = await makeTemp('observatory-agy-no-transcript-cold-')
   try {
     const { cfg, brain } = await antigravityFixture(root)
-    await rm(brain, { recursive: true, force: true })
+    await removeTemp(brain)
     const scan = await scanRecords(cfg, {}, new Set(['antigravity']))
     assert.equal(scan.incompleteSources.has('antigravity'), true)
     assert.equal(scan.emptySources.has('antigravity'), false)
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
 })
 
 test('dry run previews offline without touching the server', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'observatory-sweep-dry-run-'))
+  const root = await makeTemp('observatory-sweep-dry-run-')
   const statePath = join(root, 'state', 'sweep.json')
   const run = promisify(execFile)
   const env = {
@@ -2988,6 +3011,14 @@ test('dry run previews offline without touching the server', async () => {
   try {
     await run(process.execPath, [fileURLToPath(new URL('./observatory-sweep.mjs', import.meta.url)), '--dry-run'], { env })
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemp(root)
   }
+})
+
+test('removeTemp refuses a target this test file did not create', async () => {
+  await assert.rejects(() => removeTemp(tmpdir()), /refusing to delete/)
+  await assert.rejects(() => removeTemp(join(tmpdir(), 'not-created-by-this-test')), /refusing to delete/)
+  const root = await makeTemp('observatory-removetemp-')
+  await assert.rejects(() => removeTemp(join(root, '..')), /refusing to delete/)
+  await removeTemp(root)
 })
