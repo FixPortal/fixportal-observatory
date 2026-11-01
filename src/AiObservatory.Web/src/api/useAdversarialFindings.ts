@@ -33,7 +33,8 @@ export interface FindingRow {
 }
 
 // Same auth priority as client.ts. The findings contract lives with its hook so this
-// package adds one API module without widening the shared client surface.
+// package adds one API module without widening the shared client surface; the copy of
+// authHeaders below is that deliberate trade (it predates this pass).
 async function authHeaders(): Promise<Record<string, string>> {
   if (urlApiKey) return { 'X-Observatory-Key': urlApiKey }
   const token = await getAccessToken()

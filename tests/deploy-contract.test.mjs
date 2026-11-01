@@ -28,13 +28,17 @@ function jobBlock(text, jobId) {
 function sameOriginDecision(template, request) {
   const map = /map\s+"([^"]+)"\s+\$same_origin_request\s*\{([^}]*)\}/.exec(template)
   assert.ok(map, 'nginx.conf.template must define the $same_origin_request map')
+  const { method, site = '', origin = '', host = 'observatory.example' } = request
   const variables = {
-    $request_method: request.method,
-    $http_sec_fetch_site: request.site ?? '',
-    $http_origin: request.origin ?? '',
-    $http_host: request.host ?? 'observatory.example',
+    $request_method: method,
+    $http_sec_fetch_site: site,
+    $http_origin: origin,
+    $http_host: host,
   }
-  const input = map[1].replace(/\$\w+/g, name => variables[name] ?? '')
+  const input = map[1].replace(/\$\w+/g, name => {
+    assert.ok(Object.hasOwn(variables, name), `the map key uses ${name}, which this test does not model`)
+    return variables[name]
+  })
   let fallback = '0'
   for (const row of map[2].split(';')) {
     const parts = /^\s*(?:"([^"]*)"|(\S+))\s+(\S+)\s*$/.exec(row)
