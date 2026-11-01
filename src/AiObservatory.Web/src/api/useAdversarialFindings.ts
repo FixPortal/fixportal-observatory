@@ -1,6 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { ApiError } from './client'
 import { apiKey, getAccessToken, urlApiKey } from '../auth/msal'
+import type { Clock } from '../lib/clock'
+import { useClock } from '../lib/useClock'
 
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api'
 
@@ -39,8 +42,17 @@ async function authHeaders(): Promise<Record<string, string>> {
   return {}
 }
 
-async function getAdversarialFindings(): Promise<FindingRow[]> {
-  const response = await fetch(`${BASE}/adversarial-review/findings`, {
+export const FINDINGS_WINDOW_DAYS = 180
+
+/** The UTC date (YYYY-MM-DD) the findings window opens on; the Seats tab applies it to runs too. */
+export function findingsWindowStart(clock: Clock): string {
+  return new Date(clock.now().getTime() - FINDINGS_WINDOW_DAYS * 86_400_000)
+    .toISOString()
+    .slice(0, 10)
+}
+
+async function getAdversarialFindings(since: string): Promise<FindingRow[]> {
+  const response = await fetch(`${BASE}/adversarial-review/findings?since=${since}`, {
     headers: await authHeaders(),
   })
   if (!response.ok) {
@@ -54,16 +66,19 @@ async function getAdversarialFindings(): Promise<FindingRow[]> {
 
 export function useAdversarialFindings(): {
   findings: FindingRow[]
+  since: string
   isError: boolean
   isLoading: boolean
 } {
+  const clock = useClock()
+  const since = useMemo(() => findingsWindowStart(clock), [clock])
   const {
     data = [],
     isError,
     isPending,
   } = useQuery({
-    queryKey: ['adversarial-review-findings'],
-    queryFn: getAdversarialFindings,
+    queryKey: ['adversarial-review-findings', since],
+    queryFn: () => getAdversarialFindings(since),
   })
-  return { findings: data, isError, isLoading: isPending }
+  return { findings: data, since, isError, isLoading: isPending }
 }

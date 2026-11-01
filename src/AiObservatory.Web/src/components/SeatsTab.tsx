@@ -303,10 +303,18 @@ function drillRows(runs: RunRow[], findings: FindingRow[], seatKey: string): Dri
 }
 
 export function SeatsTab({ runs, runsLoading, runsError }: Props) {
-  const { findings, isError: findingsError, isLoading: findingsLoading } = useAdversarialFindings()
+  const {
+    findings,
+    since,
+    isError: findingsError,
+    isLoading: findingsLoading,
+  } = useAdversarialFindings()
   const [pivot, setPivot] = useState<Pivot>('unique')
   const [requestedSeatKey, setRequestedSeatKey] = useState<string | null>(null)
-  const metrics = useMemo(() => computeSeatMetrics(runs, findings, pivot), [runs, findings, pivot])
+  const metrics = useMemo(
+    () => computeSeatMetrics(runs, findings, pivot, since),
+    [runs, findings, pivot, since],
+  )
   const selectedKey = metrics.some((seat) => seat.key === requestedSeatKey)
     ? requestedSeatKey
     : metrics[0]?.key

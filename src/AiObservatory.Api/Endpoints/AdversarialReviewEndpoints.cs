@@ -6,7 +6,8 @@ namespace AiObservatory.Api.Endpoints;
 
 public static class AdversarialReviewEndpoints
 {
-    // Three times the Seats tab's 60-day window: wide enough for any view the dashboard offers.
+    // Used only when a caller sends no `since`. The Seats tab sends its own explicit `since` and
+    // applies the same date to the runs list, which this endpoint pair does not window by itself.
     private const int DefaultFindingsWindowDays = 180;
 
     // Returning the builder is the standard fluent endpoint-mapping convention.
