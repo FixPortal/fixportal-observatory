@@ -69,7 +69,13 @@ test('groups reviewer rows by the run model and labels a plus-separated row mixe
 test('a run older than the findings window is left out rather than counted as counts-only', () => {
   const metrics = computeSeatMetrics(
     [
-      run({ runId: 'OLD', recordedAt: '2026-01-02T12:00:00Z', costUsd: 7, issuesRaised: 3, issuesAccepted: 2 }),
+      run({
+        runId: 'OLD',
+        recordedAt: '2026-01-02T12:00:00Z',
+        costUsd: 7,
+        issuesRaised: 3,
+        issuesAccepted: 2,
+      }),
       run({ runId: 'NEW', recordedAt: '2026-10-19T12:00:00Z', costUsd: 1 }),
     ],
     [finding({ runId: 'NEW' })],

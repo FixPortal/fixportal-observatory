@@ -58,6 +58,8 @@ function roundCost(value) {
 
 // A hold names the first UTC day (YYYY-MM-DD) whose keys a fault can affect: '' holds every key
 // of the source, undefined holds none. Keys before that day are complete and keep flowing.
+// Because undefined means "no hold", every place that turns a fault into a hold defaults a missing
+// day to '' (the `?? ''` below) so an absent value fails closed instead of silently releasing keys.
 function earlierHold(a, b) {
   if (a === undefined) { return b }
   if (b === undefined) { return a }
@@ -224,8 +226,9 @@ export function parseCodexRecords(content) {
   const rows = []
   let holdFrom
   let incomplete = false
-  // Last UTC day a row was accepted on. A fault can leave that day and every later one short.
-  let lastDay
+  // Last UTC day a row was accepted on ('' until one is: a fault then holds the whole source).
+  // A fault can leave that day and every later one short.
+  let lastDay = ''
   const hold = from => { incomplete = true; holdFrom = earlierHold(holdFrom, from) }
   // One record per UTC date and model: per-increment records only grow the cache and state file.
   const finish = () => {
@@ -249,7 +252,7 @@ export function parseCodexRecords(content) {
     if (!line) { continue }
     let row
     // A skipped line lets the next row absorb its increment across a day or model boundary.
-    try { row = JSON.parse(line) } catch { hold(lastDay ?? ''); continue }
+    try { row = JSON.parse(line) } catch { hold(lastDay); continue }
     if (!row || typeof row !== 'object') { continue }
     const payload = row.payload
     if (row.type === 'session_meta' && typeof payload?.model_provider === 'string') { modelProvider = payload.model_provider }
@@ -264,7 +267,7 @@ export function parseCodexRecords(content) {
     const optional = ['cached_input_tokens', 'cache_write_input_tokens', 'reasoning_output_tokens']
     if (typeof usage !== 'object' || Array.isArray(usage) || !timestamp || required.some(key => !safeTokenCount(usage[key])) ||
         optional.some(key => Object.hasOwn(usage, key) && !safeTokenCount(usage[key]))) {
-      hold(lastDay ?? '')
+      hold(lastDay)
       return finish()
     }
     const current = {
@@ -275,12 +278,12 @@ export function parseCodexRecords(content) {
     // Native nonzero cache writes lack an established overlap/pricing oracle.
     // Do not guess whether these are already included in the input meter.
     if (current.cacheWrite > 0) {
-      hold(lastDay ?? '')
+      hold(lastDay)
       return finish()
     }
-    const delta = Object.fromEntries(Object.keys(current).map(key => [key, current[key] - previous[key]]))
+    const delta =Object.fromEntries(Object.keys(current).map(key => [key, current[key] - previous[key]]))
     if (Object.values(delta).some(value => value < 0) || delta.cacheRead > delta.input || delta.reasoning > delta.output) {
-      hold(lastDay ?? '')
+      hold(lastDay)
       return finish()
     }
     previous = current
@@ -462,20 +465,21 @@ export function parseClaude(content) {
   const records = []
   let incomplete = false
   let holdFrom
-  // A row with no usable timestamp can only be placed after the last dated row before it.
-  let lastDay
+  // A row with no usable timestamp can only be placed after the last dated row before it
+  // ('' until there is one: the fault then holds the whole source).
+  let lastDay = ''
   const hold = from => { incomplete = true; holdFrom = earlierHold(holdFrom, from) }
   for (const line of content.split('\n')) {
     if (!line.trim()) { continue }
     let row
-    try { row = JSON.parse(line) } catch { hold(lastDay ?? ''); continue }
+    try { row = JSON.parse(line) } catch { hold(lastDay); continue }
     if (!row || typeof row !== 'object') { continue }
     const message = row.type === 'assistant' ? row.message : null
     if (!message || typeof message !== 'object' || !Object.hasOwn(message, 'usage')) { continue }
     const usage = message.usage
     const occurredAtUtc = claudeTimestamp(row.timestamp)
     if (occurredAtUtc) { lastDay = occurredAtUtc.slice(0, 10) }
-    if (!usage || typeof usage !== 'object' || Array.isArray(usage) || !occurredAtUtc) { hold(lastDay ?? ''); continue }
+    if (!usage || typeof usage !== 'object' || Array.isArray(usage) || !occurredAtUtc) { hold(lastDay); continue }
 
     const promptFacts = claudePromptFacts(usage)
     const promptObservation = claudePromptObservation(usage)

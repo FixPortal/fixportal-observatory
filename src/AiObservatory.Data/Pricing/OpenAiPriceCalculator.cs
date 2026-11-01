@@ -18,7 +18,7 @@ public sealed class OpenAiPriceCalculator : IProviderPriceCalculator
     /// snapshot whose generic write rate was superseded.
     /// </summary>
     public bool RefusesCacheWrite(UsageEvent usage, string normalizedCatalog) =>
-        (usage.CacheWriteTokens ?? 0) > 0 && Lookup(usage, normalizedCatalog) is { Entry.CacheWrite: null };
+        usage.CacheWriteTokens is > 0 && Lookup(usage, normalizedCatalog) is { Entry.CacheWrite: null };
 
     public CalculatedPrice? CalculateWithEvidence(UsageEvent usage, string normalizedCatalog)
     {
