@@ -18,4 +18,7 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL.NodaTime" />
     <PackageReference Include="Npgsql.NodaTime" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AiObservatory.Data.Tests" />
+  </ItemGroup>
 </Project>

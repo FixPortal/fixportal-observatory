@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -153,9 +154,30 @@ public sealed class UsagePriceResolver
             && PricingEvidence.AllowsHistoricalClaudeFlatQuote(
                 usage,
                 evidence.RootElement,
-                PricingCatalogJson.Deserialize<AnthropicPriceCatalog>(active.NormalizedCatalog),
+                ParsedAnthropicCatalog(active),
                 usage.OccurredAt.InUtc().Date
             );
+    }
+
+    // Parsed once per distinct catalog content rather than once per event: every load of a snapshot
+    // yields a fresh string, so the key is the content. Retained catalogs are few; the bound only
+    // stops a pathological stream of distinct catalogs from growing the cache without limit.
+    private const int MaximumParsedAnthropicCatalogs = 64;
+    private static readonly ConcurrentDictionary<string, AnthropicPriceCatalog> ParsedAnthropicCatalogs = new(
+        StringComparer.Ordinal
+    );
+
+    internal static AnthropicPriceCatalog ParsedAnthropicCatalog(PricingSnapshot snapshot)
+    {
+        if (ParsedAnthropicCatalogs.Count >= MaximumParsedAnthropicCatalogs)
+        {
+            ParsedAnthropicCatalogs.Clear();
+        }
+
+        return ParsedAnthropicCatalogs.GetOrAdd(
+            snapshot.NormalizedCatalog,
+            static json => PricingCatalogJson.Deserialize<AnthropicPriceCatalog>(json)
+        );
     }
 
     private static bool RequiresClaudeContext(
@@ -175,7 +197,7 @@ public sealed class UsagePriceResolver
         using var evidence = ProviderPricingJson.Evidence(usage.RawPayload);
         foreach (var snapshot in snapshots)
         {
-            var catalog = PricingCatalogJson.Deserialize<AnthropicPriceCatalog>(snapshot.NormalizedCatalog);
+            var catalog = ParsedAnthropicCatalog(snapshot);
             if (
                 catalog.RequiresPromptContext(usage.Model, date)
                 || !allowHistoricalFlatClaim
