@@ -1377,7 +1377,7 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
     if (result.incomplete) {
       incompleteSources.add(tool)
       heldFrom.set(tool, result.holdFrom ?? '')
-      heldFiles.set(tool, result.heldFiles ?? 0)
+      heldFiles.set(tool, result.heldFiles)
     }
     else if (result.records.length === 0 && await discoveryRootPopulated(root)) { emptySources.add(tool) }
   }
