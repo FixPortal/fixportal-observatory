@@ -523,6 +523,19 @@ public sealed class UsagePriceResolverTests : IAsyncLifetime
     }
 
     [Fact]
+    public void ResolverParsesAnAnthropicCatalogOncePerSnapshotContentNotOncePerEvent()
+    {
+        // Two loads of the same snapshot yield distinct string instances with equal content.
+        var content = Json(AnthropicCatalog());
+        var first = UsagePriceResolver.ParsedAnthropicCatalog(new PricingSnapshot { NormalizedCatalog = content });
+        var second = UsagePriceResolver.ParsedAnthropicCatalog(
+            new PricingSnapshot { NormalizedCatalog = new string(content.AsSpan()) }
+        );
+
+        second.Should().BeSameAs(first, "a pass over N events must not re-deserialise the same catalog N times");
+    }
+
+    [Fact]
     public async Task ResolverFallsThroughToAnOlderSnapshotForANotionalModelRetiredFromTheActiveCatalog()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -872,21 +885,7 @@ public sealed class UsagePriceResolverTests : IAsyncLifetime
         usage.OccurredAt = Instant.FromUtc(2026, 9, 20, 0, 0);
         var resolver = Resolver();
         var quote = cached
-            ? await (Task<ResolvedPriceApplication?>)
-                typeof(UsagePriceResolver)
-                    .GetMethod(
-                        nameof(UsagePriceResolver.ResolveWithEvidenceAsync),
-                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
-                        [
-                            typeof(UsageEvent),
-                            typeof(Dictionary<string, List<PricingSnapshot>>),
-                            typeof(CancellationToken),
-                        ]
-                    )!
-                    .Invoke(
-                        resolver,
-                        [usage, new Dictionary<string, List<PricingSnapshot>>(), TestContext.Current.CancellationToken]
-                    )!
+            ? await resolver.ResolveWithEvidenceAsync(usage, [], TestContext.Current.CancellationToken)
             : await resolver.ResolveWithEvidenceAsync(usage, TestContext.Current.CancellationToken);
         quote.Should().NotBeNull();
         quote.SnapshotId.Should().Be(sameCatalog ? current.Id : retained.Id);
@@ -950,18 +949,7 @@ public sealed class UsagePriceResolverTests : IAsyncLifetime
         usage.OccurredAt = Instant.FromUtc(2026, 9, 20, 0, 0);
         var resolver = Resolver();
         var quote = cached
-            ? await (Task<ResolvedPriceApplication?>)
-                typeof(UsagePriceResolver)
-                    .GetMethod(
-                        nameof(UsagePriceResolver.ResolveWithEvidenceAsync),
-                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
-                        [
-                            typeof(UsageEvent),
-                            typeof(Dictionary<string, List<PricingSnapshot>>),
-                            typeof(CancellationToken),
-                        ]
-                    )!
-                    .Invoke(resolver, [usage, new Dictionary<string, List<PricingSnapshot>>(), ct])!
+            ? await resolver.ResolveWithEvidenceAsync(usage, [], ct)
             : await resolver.ResolveWithEvidenceAsync(usage, ct);
         if (!correctFallback)
         {
