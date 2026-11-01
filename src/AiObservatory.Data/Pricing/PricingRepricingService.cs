@@ -25,7 +25,12 @@ public sealed class PricingRepricingService(
         {
             var activationEvents = await LoadRepricingCandidatesAsync(provider, cancellationToken);
             var activationApplications = await LoadCurrentApplicationsAsync(provider, cancellationToken);
-            await RepriceLockedAsync(activationEvents, activationApplications, snapshotsBySourceId: null, cancellationToken);
+            await RepriceLockedAsync(
+                activationEvents,
+                activationApplications,
+                snapshotsBySourceId: null,
+                cancellationToken
+            );
             return;
         }
 

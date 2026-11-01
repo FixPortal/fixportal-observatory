@@ -117,7 +117,10 @@ public sealed class UsagePriceResolver
 
             // This snapshot carries the model but refuses the write dimension: stopping here keeps
             // one event from pricing wholly from a superseded catalog, and surfaces the gap.
-            if (calculator is OpenAiPriceCalculator openAi && openAi.RefusesCacheWrite(usage, snapshot.NormalizedCatalog))
+            if (
+                calculator is OpenAiPriceCalculator openAi
+                && openAi.RefusesCacheWrite(usage, snapshot.NormalizedCatalog)
+            )
             {
                 WarnOnce(usage, "cache-write-rate");
                 return null;
