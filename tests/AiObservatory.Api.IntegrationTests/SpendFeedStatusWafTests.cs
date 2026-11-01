@@ -129,6 +129,62 @@ public class SpendFeedStatusWafTests(AiObservatoryApiFactory factory) : IClassFi
     }
 
     [Fact]
+    public async Task Newer_clean_report_after_an_older_skip_clears_the_failure()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var admin = factory.CreateAdminClient();
+        await ClearRowAsync();
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            (await admin.PostAsJsonAsync(Route, Stamped(now.AddMinutes(-4).ToString("O"), (1, "no-vendor")), ct))
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent);
+            (await RowsAsync()).Should().ContainSingle().Subject.IsAvailable.Should().BeFalse();
+
+            (await admin.PostAsJsonAsync(Route, Stamped(now.AddMinutes(-1).ToString("O")), ct))
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent);
+
+            var row = (await RowsAsync()).Should().ContainSingle().Subject;
+            row.IsAvailable.Should().BeTrue();
+            row.LastError.Should().BeNull();
+            row.ConsecutiveFailureCount.Should().Be(0);
+        }
+        finally
+        {
+            await ClearRowAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Older_clean_report_delivered_after_a_newer_skip_does_not_clear_the_failure()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var admin = factory.CreateAdminClient();
+        await ClearRowAsync();
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            (await admin.PostAsJsonAsync(Route, Stamped(now.AddMinutes(-1).ToString("O"), (1, "no-vendor")), ct))
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent);
+
+            (await admin.PostAsJsonAsync(Route, Stamped(now.AddMinutes(-4).ToString("O")), ct))
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent);
+
+            var row = (await RowsAsync()).Should().ContainSingle().Subject;
+            row.IsAvailable.Should().BeFalse("a late older clean report must not erase a newer skip");
+            row.LastError.Should().Be("1 expense skipped: 1 no-vendor");
+        }
+        finally
+        {
+            await ClearRowAsync();
+        }
+    }
+
+    [Fact]
     public async Task Skip_reported_at_the_same_time_counts_the_retry_and_a_newer_skip_applies()
     {
         var ct = TestContext.Current.CancellationToken;

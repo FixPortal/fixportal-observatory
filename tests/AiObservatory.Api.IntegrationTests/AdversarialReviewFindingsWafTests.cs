@@ -97,19 +97,22 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
         corroborated.GetProperty("repo").GetString().Should().Be("example-app");
     }
 
-    // The window floor is a UTC midnight, so "tomorrow" is always after a row recorded now and
-    // "yesterday" always before it.
+    // The window floor is a UTC midnight, so "tomorrow" is always after a row recorded now,
+    // "yesterday" always before it, and today's own date (offset 0) opens the window at or before it.
+    // The date is taken before the post: taken after, a run across UTC midnight would turn "today"
+    // into a date after the row.
     [Theory]
     [InlineData(1, false)]
+    [InlineData(0, true)]
     [InlineData(-1, true)]
     public async Task The_since_window_keeps_only_findings_recorded_on_or_after_it(int dayOffset, bool expectedPresent)
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = factory.CreateAdminClient();
         var runId = $"since-{Guid.NewGuid():N}";
+        var since = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(dayOffset).ToString("yyyy-MM-dd");
         await SeedRunAsync(client, runId);
         (await client.PostAsJsonAsync(FindingsRoute, ValidBody(runId), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
-        var since = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(dayOffset).ToString("yyyy-MM-dd");
 
         var rows = await client.GetFromJsonAsync<JsonElement>($"{FindingsRoute}?since={since}", ct);
 

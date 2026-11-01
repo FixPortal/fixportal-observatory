@@ -21,7 +21,8 @@ public class SuggestionsEndpointsWafTests(AiObservatoryApiFactory factory) : ICl
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
-        // The database is shared by the whole run, so start every test from a clean row for the key.
+        // The class owns its database (see above), but it is shared by every test in the class, so
+        // start each test from a clean row for the key.
         await db.Suggestions.Where(s => s.Key == UnusedKey).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
         if (await db.Subscriptions.AnyAsync(s => s.Provider == Provider.Meta, TestContext.Current.CancellationToken))
         {
