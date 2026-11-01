@@ -366,7 +366,7 @@ for (const failure of ['malformed JSONL', 'invalid counters', 'overflowed counte
         assert.equal(warnings.length, 1, 'exactly one warning for the withheld source each run')
         assert.match(warnings[0].warning, /claude-local@test-machine/)
         assert.match(warnings[0].warning, /possible causes: unreadable file, malformed JSONL, malformed assistant usage or timestamp, or invalid or overflowed counters/)
-        assert.match(warnings[0].warning, /corrections and tombstones are withheld/)
+        assert.match(warnings[0].warning, /keys for .+ are held until the affected file.s. parse cleanly/)
         assert.equal(warnings[0].warning.includes(root), false, 'native paths are absent')
         const events = activity.filter(item => item.url && new URL(item.url).pathname === '/api/events')
         assert.ok(events.some(item => item.body.sourceId === 'kimi-local@test-machine'), 'the other source proceeds')
@@ -470,7 +470,7 @@ for (const [name, unsafe, invalidCounters] of CLAUDE_SAFETY_CASES) {
           const warnings = activity.filter(item => item.warning?.startsWith('Scan incomplete'))
           assert.equal(warnings.length, 1)
           assert.match(warnings[0].warning, /claude-local@test-machine/)
-          assert.match(warnings[0].warning, /corrections and tombstones are withheld/)
+          assert.match(warnings[0].warning, /keys for .+ are held until the affected file.s. parse cleanly/)
           assert.equal(warnings[0].warning.includes(root), false)
           assert.ok(activity.indexOf(warnings[0]) < activity.findIndex(item => item.url))
           const state = JSON.parse(await readFile(statePath, 'utf8'))
@@ -1755,7 +1755,7 @@ test('postSweepStatus posts counts with a server-safe model id and never throws'
     await sweep.postSweepStatus(base, 'k', 'Test Box', [{ tool: 'codex', model: 'has space/ok', count: 2 }])
     assert.equal(received.url, '/api/sources/sweep-status')
     assert.equal(received.key, 'k')
-    assert.deepEqual(received.body, { machine: 'test-box', unplaced: [{ tool: 'codex', model: 'has_space/ok', count: 2 }] })
+    assert.deepEqual(received.body, { machine: 'test-box', unplaced: [{ tool: 'codex', model: 'has_space/ok', count: 2 }], heldFiles: 0 })
   } finally {
     await new Promise(resolve => server.close(resolve))
   }
@@ -3021,4 +3021,173 @@ test('removeTemp refuses a target this test file did not create', async () => {
   const root = await makeTemp('observatory-removetemp-')
   await assert.rejects(() => removeTemp(join(root, '..')), /refusing to delete/)
   await removeTemp(root)
+})
+
+// --- Per-key holds (R-F3, R-F4+F9, R-F5, R-F33, R-P2-GPT-1, R-P2-Gemini-1) ---
+
+const CODEX_SOL = JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-6-sol' } })
+
+test('Codex parse fault holds only keys from the last accepted UTC day', () => {
+  const records = sweep.parseCodexRecords([
+    CODEX_SOL,
+    codexUsageRow('2026-10-23T12:00:00Z', 100, 10),
+    codexUsageRow('2026-10-24T12:00:00Z', 150, 15),
+    codexUsageRow('2026-10-25T12:00:00Z', 120, 12),
+  ].join('\n'))
+  assert.equal(records.incomplete, true)
+  assert.equal(records.holdFrom, '2026-10-24')
+  assert.deepEqual(records.map(record => record.date), ['2026-10-23', '2026-10-24'])
+})
+
+test('Codex parse fault before any accepted row holds the whole source', () => {
+  const records = sweep.parseCodexRecords([CODEX_SOL, codexUsageRow('2026-10-25T12:00:00Z', -1, 0)].join('\n'))
+  assert.equal(records.incomplete, true)
+  assert.equal(records.holdFrom, '')
+})
+
+test('Codex malformed line is held, not skipped silently, and later rows are still read', () => {
+  const records = sweep.parseCodexRecords([
+    CODEX_SOL,
+    codexUsageRow('2026-10-23T12:00:00Z', 100, 10),
+    '{"truncated":',
+    codexUsageRow('2026-10-24T12:00:00Z', 150, 15),
+  ].join('\n'))
+  assert.equal(records.incomplete, true)
+  assert.equal(records.holdFrom, '2026-10-23')
+  assert.equal(records.length, 2)
+})
+
+test('Codex increments combine per UTC date and model', () => {
+  const records = sweep.parseCodexRecords([
+    CODEX_SOL,
+    codexUsageRow('2026-10-23T01:00:00Z', 100, 10),
+    codexUsageRow('2026-10-23T02:00:00Z', 160, 16),
+    codexUsageRow('2026-10-23T03:00:00Z', 200, 20),
+  ].join('\n'))
+  assert.equal(records.length, 1)
+  assert.equal(records[0].cum.input, 200)
+  assert.equal(records[0].cum.output, 20)
+  assert.equal(records[0].occurredAtUtc, '2026-10-23T03:00:00Z')
+})
+
+test('buildDailySnapshots attributes an array-level incomplete flag to its own tool', () => {
+  const records = sweep.parseCodexRecords([CODEX_SOL, codexUsageRow('2026-10-25T12:00:00Z', -1, 0)].join('\n'))
+  const snapshots = buildDailySnapshots(records, TEST_MACHINE)
+  assert.equal(snapshots.heldFrom.has(`codex-local@${TEST_MACHINE}`), true)
+  assert.equal(snapshots.heldFrom.has(`claude-local@${TEST_MACHINE}`), false)
+})
+
+test('Claude invalid counters hold only keys from that record day', () => {
+  const content = [
+    claudePromptRow(COMPLETE_CLAUDE_PROMPT, { id: 'm1' }, '2026-10-22T12:00:00Z'),
+    claudePromptRow({ ...COMPLETE_CLAUDE_PROMPT, input_tokens: -1 }, { id: 'm2' }, '2026-10-23T12:00:00Z'),
+  ].join('\n')
+  const snapshots = buildDailySnapshots(parseClaude(content), TEST_MACHINE)
+  assert.deepEqual(snapshots.map(snapshot => snapshot.eventKey.split(':')[1]), ['2026-10-22'])
+  assert.equal(snapshots.heldFrom.get(`claude-local@${TEST_MACHINE}`), '2026-10-23')
+})
+
+test('Claude truncated row holds from the preceding valid row day', () => {
+  const records = parseClaude([
+    claudePromptRow(COMPLETE_CLAUDE_PROMPT, { id: 'm1' }, '2026-10-22T12:00:00Z'),
+    '{"type":"assistant","message":',
+  ].join('\n'))
+  assert.equal(records.incomplete, true)
+  assert.equal(records.holdFrom, '2026-10-22')
+  assert.equal(parseClaude('{"type":"assistant"').holdFrom, '')
+})
+
+test('planSnapshotSubmissions applies per-key holds to submissions and tombstones', () => {
+  const snapshot = (day, sourceId = 'claude-local@m') => ({
+    sourceId, eventKey: `claude:${day}:m:u:u:u`, runtime: 'claude', inputTokens: 1,
+  })
+  const snapshots = [snapshot('2026-10-22'), snapshot('2026-10-24')]
+  const inventory = [snapshot('2026-10-20'), snapshot('2026-10-23'), snapshot('2026-10-24')]
+  const holds = new Map([['claude-local@m', '2026-10-23']])
+  const plan = planSnapshotSubmissions(snapshots, inventory, holds)
+  assert.deepEqual(
+    plan.map(item => `${item.active ? 'post' : 'tombstone'} ${item.snapshot.eventKey.split(':')[1]}`),
+    ['post 2026-10-22', 'tombstone 2026-10-20'],
+  )
+})
+
+test('updateFileCache reports held files, the earliest hold and counted cache reuse', async () => {
+  const files = [
+    { path: 'a', mtimeMs: 2 }, { path: 'b', mtimeMs: 2 }, { path: 'c', mtimeMs: 2 },
+  ]
+  const cache = {
+    a: { mtimeMs: 1, records: [], incomplete: true, holdFrom: '2026-10-24' },
+    c: { mtimeMs: 1, records: [{ x: 1 }] },
+  }
+  const lines = []
+  const original = console.error
+  console.error = line => lines.push(String(line))
+  let result
+  try {
+    result = await updateFileCache(files, cache, (content) => {
+      const parsed = []
+      if (content === 'a') { parsed.incomplete = true; parsed.holdFrom = '2026-10-26' }
+      return parsed
+    }, async path => { if (path === 'c') { throw new Error('locked') } return path })
+  } finally { console.error = original }
+  assert.equal(result.incomplete, true)
+  assert.equal(result.holdFrom, '2026-10-26')
+  assert.equal(result.heldFiles, 1)
+  assert.equal(result.reusedFiles, 1)
+  assert.equal(lines.some(line => /reusing cached records/.test(line)), true)
+})
+
+test('scanRecords exposes per-tool hold dates and held file counts', async () => {
+  const root = await makeTemp('observatory-sweep-holds-')
+  const sessions = join(root, 'codex', 'sessions')
+  await mkdir(sessions, { recursive: true })
+  await writeFile(join(sessions, 'a.jsonl'), [
+    CODEX_SOL,
+    codexUsageRow('2026-10-23T12:00:00Z', 100, 10),
+    codexUsageRow('2026-10-25T12:00:00Z', 50, 5),
+  ].join('\n'))
+  try {
+    const cfg = { codexHome: join(root, 'codex'), copilotHome: join(root, 'c'), claudeHome: join(root, 'cl'), kimiHome: join(root, 'k'), geminiHome: join(root, 'g') }
+    const scan = await scanRecords(cfg, {}, new Set(['codex']))
+    assert.equal(scan.heldFrom.get('codex'), '2026-10-23')
+    assert.equal(scan.heldFiles.get('codex'), 1)
+  } finally { await removeTemp(root) }
+})
+
+test('postSweepStatus carries the held file count', async () => {
+  let body
+  const server = createServer(async (request, response) => {
+    let text = ''
+    for await (const chunk of request) { text += chunk }
+    body = JSON.parse(text)
+    response.writeHead(200).end('{}')
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    await sweep.postSweepStatus(`http://127.0.0.1:${server.address().port}`, 'k', 'm', [], 3)
+    assert.equal(body.heldFiles, 3)
+  } finally { await new Promise(resolve => server.close(resolve)) }
+})
+
+test('one bad Codex row holds later days while earlier days keep posting (R-F3 through the scan pipeline)', async () => {
+  const root = await makeTemp('observatory-sweep-perkey-')
+  const sessions = join(root, 'codex', 'sessions')
+  await mkdir(sessions, { recursive: true })
+  await writeFile(join(sessions, 'a.jsonl'), [
+    CODEX_SOL,
+    codexUsageRow('2026-10-22T12:00:00Z', 100, 10),
+    codexUsageRow('2026-10-23T12:00:00Z', 150, 15),
+    codexUsageRow('2026-10-24T12:00:00Z', 90, 9),
+  ].join('\n'))
+  try {
+    const cfg = { codexHome: join(root, 'codex'), copilotHome: join(root, 'c'), claudeHome: join(root, 'cl'), kimiHome: join(root, 'k'), geminiHome: join(root, 'g') }
+    const scan = await scanRecords(cfg, {}, new Set(['codex']))
+    const snapshots = buildDailySnapshots(scan.records, TEST_MACHINE)
+    const holds = sweep.mergeHolds(
+      new Map([...scan.heldFrom].map(([tool, from]) => [`${tool}-local@${TEST_MACHINE}`, from])),
+      snapshots.heldFrom,
+    )
+    const plan = planSnapshotSubmissions(snapshots, [], holds)
+    assert.deepEqual(plan.map(item => item.snapshot.eventKey.split(':')[1]), ['2026-10-22'])
+  } finally { await removeTemp(root) }
 })
