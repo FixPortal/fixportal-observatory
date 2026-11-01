@@ -15,6 +15,7 @@ internal static class DemoReviewSeeder
         ("google", "gemini-2.5-pro", 0.24m),
         ("zai", "glm-5", 0.12m),
         ("deepseek", "deepseek-review", 0.08m),
+        ("moonshot", "kimi-k3-1", 0.1m),
     ];
 
     private static readonly (
