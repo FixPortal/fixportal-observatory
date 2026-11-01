@@ -1081,6 +1081,36 @@ public class UsageRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Costless_replay_of_a_corrected_event_adds_no_pricing_revision()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var original = NewEvent(cost: 1m);
+        original.CostBasis = CostBasis.ListPriceEstimate;
+        original.SourceKind = SourceKind.LocalTelemetry;
+        await _repo.RecordEventAsync(original, ct);
+        await _repo.PatchEventCostAsync(Provider.OpenAI, UsageSourceIds.OpenAiUsageApi, "day:model", 3m, ct: ct);
+        var corrected = await _ctx.UsageEvents.AsNoTracking().SingleAsync(ct);
+        var applicationsAfterPatch = await _ctx.PricingApplications.CountAsync(ct);
+
+        // The sweepers' steady state re-posts an identical snapshot, cost-less, with a fresh ObservedAt.
+        for (var sweep = 1; sweep <= 2; sweep++)
+        {
+            var replay = NewEvent(cost: null, cacheSavings: null, observedAt: Instant.FromUtc(2026, 8, 24, 12, 5 * sweep));
+            replay.CostBasis = CostBasis.Notional;
+            replay.SourceKind = SourceKind.LocalTelemetry;
+            (await _repo.RecordEventAsync(replay, ct))
+                .Disposition.Should()
+                .Be(RecordEventDisposition.Unchanged, "only ObservedAt moved");
+        }
+
+        var saved = await _ctx.UsageEvents.AsNoTracking().SingleAsync(ct);
+        saved.CostUsd.Should().Be(3m);
+        saved.CurrentPricingRevision.Should().Be(corrected.CurrentPricingRevision);
+        saved.ObservedAt.Should().Be(Instant.FromUtc(2026, 8, 24, 12, 10), "the watermark still advances");
+        (await _ctx.PricingApplications.CountAsync(ct)).Should().Be(applicationsAfterPatch);
+    }
+
+    [Fact]
     public async Task PatchEventCost_noop_patch_still_stamps_CorrectedAt_and_survives_costless_replay()
     {
         var ct = TestContext.Current.CancellationToken;
