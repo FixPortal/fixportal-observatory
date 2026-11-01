@@ -126,7 +126,7 @@ public class DemoModeEndpointTests
             "/api/adversarial-review/runs",
             TestContext.Current.CancellationToken
         );
-        runs.GetArrayLength().Should().Be(30);
+        runs.GetArrayLength().Should().Be(35);
         var findings = await client.GetFromJsonAsync<JsonElement>(
             "/api/adversarial-review/findings",
             TestContext.Current.CancellationToken

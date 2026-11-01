@@ -36,7 +36,34 @@ public class DemoSeederTests
 
         (await DemoSeeder.HasAnyDataAsync(db, ct)).Should().BeFalse();
         await DemoSeeder.SeedAsync(db, SystemClock.Instance, ct);
-        (await db.AdversarialReviewRuns.CountAsync(ct)).Should().Be(30);
+        (await db.AdversarialReviewRuns.CountAsync(ct)).Should().Be(35);
+    }
+
+    [Fact]
+    public async Task Every_demo_panel_seats_each_active_reviewer_vendor()
+    {
+        await using var factory = new AiObservatoryApiFactory();
+        await factory.InitializeAsync();
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+        var ct = TestContext.Current.CancellationToken;
+
+        await DemoSeeder.SeedAsync(db, SystemClock.Instance, ct);
+
+        // Mirrors ACTIVE_REVIEWER_VENDORS in src/AiObservatory.Web/src/components/adversarialReviewGrouping.ts,
+        // which counts a panel complete only when every one of these has a reviewer row.
+        string[] active = ["anthropic", "google", "openai", "zai", "deepseek", "moonshot"];
+        var panels = (await db.AdversarialReviewRuns.Where(r => r.Role == "reviewer").ToListAsync(ct)).GroupBy(r =>
+            r.RunId
+        );
+        foreach (var panel in panels)
+        {
+            panel
+                .Select(r => r.Reviewer)
+                .Distinct()
+                .Should()
+                .BeEquivalentTo(active, $"demo panel {panel.Key} should read as complete, not 5 of 6");
+        }
     }
 
     private sealed class ThrowingClock : IClock
@@ -86,7 +113,7 @@ public class DemoSeederTests
 
         var seeded = await CountSeededAsync(factory);
         seeded.Aggregates.Should().BeGreaterThan(70, "the demo should show more than the original five model lanes");
-        seeded.ReviewRuns.Should().Be(30, "five complete five-reviewer-plus-judge panels");
+        seeded.ReviewRuns.Should().Be(35, "five complete six-reviewer-plus-judge panels");
         seeded.Findings.Should().BeGreaterThan(0, "the Seats view needs finding outcomes");
         seeded.FindingParticipants.Should().BeGreaterThan(seeded.Findings);
         seeded.Suggestions.Should().BeGreaterThan(0, "the demo should show a rule-backed suggestion");
