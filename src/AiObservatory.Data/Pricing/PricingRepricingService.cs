@@ -24,7 +24,8 @@ public sealed class PricingRepricingService(
         if (db.Database.CurrentTransaction is not null)
         {
             var activationEvents = await LoadRepricingCandidatesAsync(provider, cancellationToken);
-            await RepriceLockedAsync(activationEvents, snapshotsBySourceId: null, cancellationToken);
+            var activationApplications = await LoadCurrentApplicationsAsync(provider, cancellationToken);
+            await RepriceLockedAsync(activationEvents, activationApplications, snapshotsBySourceId: null, cancellationToken);
             return;
         }
 
@@ -38,6 +39,7 @@ public sealed class PricingRepricingService(
         // full pass. The lock acquisition stays inside the await using so a throw there cannot
         // leave a half-open transaction attached to the scoped context.
         IReadOnlyList<UsageEvent> events;
+        Dictionary<Guid, StoredApplication> applications;
         Dictionary<string, List<PricingSnapshot>> snapshotsBySourceId;
         await using (var transaction = await db.Database.BeginTransactionAsync(cancellationToken))
         {
@@ -45,6 +47,7 @@ public sealed class PricingRepricingService(
             {
                 await store.AcquireSharedActivationLocksAsync(provider, cancellationToken);
                 events = await LoadRepricingCandidatesAsync(provider, cancellationToken);
+                applications = await LoadCurrentApplicationsAsync(provider, cancellationToken);
                 snapshotsBySourceId = await LoadSnapshotCacheAsync(events, cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
             }
@@ -56,7 +59,52 @@ public sealed class PricingRepricingService(
             }
         }
 
-        await RepriceLockedAsync(events, snapshotsBySourceId, cancellationToken);
+        await RepriceLockedAsync(events, applications, snapshotsBySourceId, cancellationToken);
+    }
+
+    // The application each candidate currently carries, read alongside the candidates so an
+    // event whose price and application identity are unchanged is skipped in memory instead of
+    // costing a locked repository round trip. An event still at revision 0 has no row here and
+    // so still goes through, which keeps the first-pass provenance backfill.
+    private async Task<Dictionary<Guid, StoredApplication>> LoadCurrentApplicationsAsync(
+        Provider provider,
+        CancellationToken cancellationToken
+    ) =>
+        (
+            await (
+                from application in db.PricingApplications.AsNoTracking()
+                join usage in db.UsageEvents on application.EventId equals usage.Id
+                where
+                    usage.Provider == provider
+                    && (usage.CostBasis == CostBasis.ListPriceEstimate || usage.CostBasis == CostBasis.Notional)
+                    && application.Revision == usage.CurrentPricingRevision
+                select new StoredApplication(
+                    application.EventId,
+                    application.SnapshotId,
+                    application.SnapshotHash,
+                    application.RateKey,
+                    application.RuleVersion,
+                    application.PricingDate
+                )
+            ).ToListAsync(cancellationToken)
+        ).ToDictionary(stored => stored.EventId);
+
+    private sealed record StoredApplication(
+        Guid EventId,
+        Guid? SnapshotId,
+        string? SnapshotHash,
+        string? RateKey,
+        string RuleVersion,
+        DateOnly PricingDate
+    )
+    {
+        // The same identity UsageRepository.SameApplicationAsync matches under the row lock.
+        public bool Matches(ResolvedPriceApplication application) =>
+            SnapshotId == application.SnapshotId
+            && SnapshotHash == application.SnapshotHash
+            && RateKey == application.RateKey
+            && RuleVersion == application.PricingRuleVersion
+            && PricingDate == application.PricingDate;
     }
 
     // ponytail: pricing changes are rare and Observatory volume is modest; target by effective date/model if this scan is measured as slow.
@@ -96,6 +144,7 @@ public sealed class PricingRepricingService(
 
     private async Task RepriceLockedAsync(
         IReadOnlyList<UsageEvent> events,
+        IReadOnlyDictionary<Guid, StoredApplication> applications,
         Dictionary<string, List<PricingSnapshot>>? snapshotsBySourceId,
         CancellationToken cancellationToken
     )
@@ -125,6 +174,7 @@ public sealed class PricingRepricingService(
 
             if (
                 application is not null
+                    && !(applications.TryGetValue(usage.Id, out var stored) && stored.Matches(application))
                 || usage.CostUsd != quote?.CostUsd
                 || usage.CacheSavingsUsd != quote?.CacheSavingsUsd
             )
