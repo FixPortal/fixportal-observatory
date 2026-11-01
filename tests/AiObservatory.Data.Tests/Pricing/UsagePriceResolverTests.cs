@@ -490,6 +490,38 @@ public sealed class UsagePriceResolverTests : IAsyncLifetime
         quote!.CostUsd.Should().Be(12m);
     }
 
+    [Theory]
+    [InlineData(CostBasis.ListPriceEstimate)]
+    [InlineData(CostBasis.Notional)]
+    public async Task ResolverDoesNotPriceACacheWriteFromASupersededCatalogWhenTheCurrentOneRefusesIt(CostBasis basis)
+    {
+        // The current document prices cache writes by duration, so the parser stores no write rate:
+        // a positive write is deliberately unpriceable. That is a refusal by a catalog that DOES
+        // carry the model, not a catalog that lacks it, so older snapshots must not be consulted.
+        var ct = TestContext.Current.CancellationToken;
+        var baseEntry = OpenAiCatalog().Entries.Single();
+        await _store.ActivateAsync(Candidate(OpenAiCatalog(baseEntry)), ct);
+        var current = OpenAiCatalog(baseEntry with { Input = 9m, Output = 30m, CacheWrite = null }) with
+        {
+            RetrievedAt = RetrievedAt.Plus(Duration.FromDays(1)),
+        };
+        await _store.ActivateAsync(Candidate(current), ct);
+        var resolver = Resolver();
+        const string raw = """{"processing":"standard","context":"short","region":"global"}""";
+
+        var writing = await resolver.ResolveWithEvidenceAsync(
+            Event(Provider.OpenAI, "gpt-5.4", raw, cacheWrite: 1, costBasis: basis),
+            ct
+        );
+        var writeFree = await resolver.ResolveWithEvidenceAsync(
+            Event(Provider.OpenAI, "gpt-5.4", raw, costBasis: basis),
+            ct
+        );
+
+        writing.Should().BeNull("the superseded catalog's generic write rate must not price this event");
+        writeFree!.Quote.CostUsd.Should().Be(39m, "write-free usage still prices from the current catalog");
+    }
+
     [Fact]
     public async Task ResolverFallsThroughToAnOlderSnapshotForANotionalModelRetiredFromTheActiveCatalog()
     {

@@ -633,7 +633,7 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
         replay.ObservedAt = Instant.FromUtc(2026, 8, 25, 2, 0);
         (await pricingRepository.RecordEstimatedEventAsync(replay, ct))
             .Disposition.Should()
-            .Be(RecordEventDisposition.Corrected);
+            .Be(RecordEventDisposition.Unchanged, "only ObservedAt moved once the correction is preserved");
 
         var saved = await _db.UsageEvents.AsNoTracking().SingleAsync(ct);
         saved
