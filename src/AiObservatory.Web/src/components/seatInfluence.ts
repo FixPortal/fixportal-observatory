@@ -240,7 +240,12 @@ export function computeSeatMetrics(
   runs: RunRow[],
   findings: FindingRow[],
   pivot: Pivot,
+  // The findings endpoint only returns findings recorded since this UTC date. A run older than it
+  // can never appear among the findings, so it would be miscounted as counts-only; leave it out so
+  // both inputs describe the same window.
+  since?: string,
 ): SeatMetrics[] {
+  if (since !== undefined) runs = runs.filter((row) => row.recordedAt >= since)
   const seats = new Map<string, SeatAggregates>()
   const reviewerRows = new Map<string, RunRow>()
   const detailedRunIds = new Set(findings.map((finding) => finding.runId))
