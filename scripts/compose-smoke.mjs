@@ -67,7 +67,7 @@ try {
   const runs = await readDemo('adversarial-review/runs')
   const findings = await readDemo('adversarial-review/findings')
   const suggestions = await readDemo('suggestions')
-  assert.equal(runs.length, 30, 'demo must show five complete review panels')
+  assert.equal(runs.length, 35, 'demo must show five complete review panels')
   assert.ok(findings.length > 0, 'review panels must have finding-level seat evidence')
   assert.ok(suggestions.suggestions.length > 0, 'demo must show a rule-backed suggestion')
   const containers = compose(['ps', '--all', '--format', 'json'], true)
