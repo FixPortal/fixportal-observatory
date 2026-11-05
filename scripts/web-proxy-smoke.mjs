@@ -43,17 +43,19 @@ try {
     '-v', echoConf + ':/etc/nginx/conf.d/echo.conf:ro',
     '-e', 'OBSERVATORY_API_KEY=sekret', '-p', port + ':80', image,
   ])
-  const post = async (headers) => {
+  const post = async (headers, method = 'POST') => {
     for (let i = 0; i < 20; i++) {
       try {
-        return await (await fetch('http://localhost:' + port + '/api/x', { method: 'POST', headers })).text()
+        return await (await fetch('http://localhost:' + port + '/api/x', { method, headers })).text()
       } catch {
         await new Promise((r) => setTimeout(r, 500))
       }
     }
     throw new Error('proxy never answered')
   }
-  expect('no browser headers', await post({}), 'key=[sekret]')
+  // No Sec-Fetch-Site and no Origin: trusted for reads only, never a write (nginx.conf.template).
+  expect('no browser headers, GET', await post({}, 'GET'), 'key=[sekret]')
+  expect('no browser headers, POST', await post({}), 'key=[]')
   expect('same-origin', await post({ 'Sec-Fetch-Site': 'same-origin' }), 'key=[sekret]')
   expect('cross-site', await post({ 'Sec-Fetch-Site': 'cross-site', Origin: 'http://evil.example' }), 'key=[]')
   expect('same-site', await post({ 'Sec-Fetch-Site': 'same-site' }), 'key=[]')
