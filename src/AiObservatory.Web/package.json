@@ -60,6 +60,10 @@
     "vitest": "5.1.0"
   },
   "overrides": {
+    "minimatch": "^11.0.5",
+    "archunit": {
+      "minimatch": "^10.2.6"
+    },
     "plantuml-parser": {
       "fast-glob": "$fast-glob"
     }
