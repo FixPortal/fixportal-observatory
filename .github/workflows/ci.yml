@@ -79,9 +79,8 @@ jobs:
         with:
           persist-credentials: false
 
+      # No dotnet-version: setup-dotnet installs from global.json, the single SDK pin.
       - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: 10.0.402
 
       - uses: actions/setup-node@v7
         with:
@@ -129,9 +128,8 @@ jobs:
         with:
           persist-credentials: false
 
+      # No dotnet-version: setup-dotnet installs from global.json, the single SDK pin.
       - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: 10.0.402
 
       - name: Restore local tools
         run: dotnet tool restore
@@ -206,9 +204,8 @@ jobs:
           # git, so it needs the checkout to be a working repository, not just a file tree.
           persist-credentials: false
 
+      # No dotnet-version: setup-dotnet installs from global.json, the single SDK pin.
       - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: 10.0.402
 
       - uses: actions/setup-node@v7
         with:
