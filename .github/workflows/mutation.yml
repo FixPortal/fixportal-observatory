@@ -36,9 +36,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # No dotnet-version: setup-dotnet installs from global.json, the single SDK pin.
       - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: 10.0.402
 
       - name: Restore
         run: dotnet restore AiObservatory.slnx
