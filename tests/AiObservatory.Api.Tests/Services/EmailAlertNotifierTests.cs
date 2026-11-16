@@ -82,8 +82,8 @@ public class EmailAlertNotifierTests
         var smtp = Substitute.For<ISmtpClient>();
         smtp.IsConnected.Returns(true);
         MimeMessage? sent = null;
-        smtp.When(x => x.SendAsync(Arg.Any<MimeMessage>(), Arg.Any<CancellationToken>(), Arg.Any<ITransferProgress>()))
-            .Do(x => sent = x.Arg<MimeMessage>());
+        smtp.When(x => x.SendAsync(Arg.Any<ISendRequest>(), Arg.Any<CancellationToken>()))
+            .Do(x => sent = x.Arg<ISendRequest>().Message);
 
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(
@@ -174,8 +174,8 @@ public class EmailAlertNotifierTests
         var smtp = Substitute.For<ISmtpClient>();
         smtp.IsConnected.Returns(true);
         MimeMessage? sent = null;
-        smtp.When(x => x.SendAsync(Arg.Any<MimeMessage>(), Arg.Any<CancellationToken>(), Arg.Any<ITransferProgress>()))
-            .Do(x => sent = x.Arg<MimeMessage>());
+        smtp.When(x => x.SendAsync(Arg.Any<ISendRequest>(), Arg.Any<CancellationToken>()))
+            .Do(x => sent = x.Arg<ISendRequest>().Message);
 
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(
@@ -218,8 +218,8 @@ public class EmailAlertNotifierTests
         var smtp = Substitute.For<ISmtpClient>();
         smtp.IsConnected.Returns(true);
         MimeMessage? sent = null;
-        smtp.When(x => x.SendAsync(Arg.Any<MimeMessage>(), Arg.Any<CancellationToken>(), Arg.Any<ITransferProgress>()))
-            .Do(x => sent = x.Arg<MimeMessage>());
+        smtp.When(x => x.SendAsync(Arg.Any<ISendRequest>(), Arg.Any<CancellationToken>()))
+            .Do(x => sent = x.Arg<ISendRequest>().Message);
 
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["BUDGET_ALERT_SMTP_USER"] = "obs@example.com" })
