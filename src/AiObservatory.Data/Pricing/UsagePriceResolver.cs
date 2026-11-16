@@ -177,9 +177,8 @@ public sealed class UsagePriceResolver
             ParsedAnthropicCatalogs.Clear();
         }
 
-        return ParsedAnthropicCatalogs.GetOrAdd(
-            snapshot.NormalizedCatalog,
-            static json => PricingCatalogJson.Deserialize<AnthropicPriceCatalog>(json)
+        return ParsedAnthropicCatalogs.GetOrAdd(snapshot.NormalizedCatalog, static json =>
+            PricingCatalogJson.Deserialize<AnthropicPriceCatalog>(json)
         );
     }
 

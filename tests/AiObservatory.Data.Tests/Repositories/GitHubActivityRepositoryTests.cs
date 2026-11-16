@@ -17,8 +17,7 @@ public class GitHubActivityRepositoryTests : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        var baseConn =
-            Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
+        var baseConn = Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
             ?? "Host=localhost;Database=aiobs_test;Username=postgres;Password=postgres";
         _connStr = new NpgsqlConnectionStringBuilder(baseConn)
         {
@@ -373,9 +372,7 @@ public class GitHubActivityRepositoryTests : IAsyncLifetime
         var second = Instant.FromUtc(2026, 6, 10, 9, 0);
 
         // Nothing mid-walk yet: the cursor reads back null alongside the flags.
-        (await _repo.GetBackfillStatusAsync("fix-portal/example", ct))
-            .WorkflowRunsCursor.Should()
-            .BeNull();
+        (await _repo.GetBackfillStatusAsync("fix-portal/example", ct)).WorkflowRunsCursor.Should().BeNull();
 
         // A truncated listing persists how far the walk got; the flags stay untouched.
         await _repo.SaveWorkflowRunsCursorAsync("fix-portal/example", first, ct);

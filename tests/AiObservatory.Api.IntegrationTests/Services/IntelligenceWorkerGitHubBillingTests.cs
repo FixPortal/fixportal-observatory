@@ -88,11 +88,9 @@ public class IntelligenceWorkerGitHubBillingTests : IAsyncLifetime
         // GetConnectionString strips the password (Persist Security Info defaults off), so
         // rebuild from the harness's own env var and swap in the factory's throwaway
         // database name — the credentials the container actually requires stay intact.
-        var harness =
-            Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
+        var harness = Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
             ?? throw new InvalidOperationException("TEST_DB_CONNECTION is not set.");
-        var database =
-            db.Database.GetConnectionString()
+        var database = db.Database.GetConnectionString()
             ?? throw new InvalidOperationException("Factory database has no connection string.");
         return new NpgsqlConnectionStringBuilder(harness)
         {

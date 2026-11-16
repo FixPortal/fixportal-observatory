@@ -372,10 +372,8 @@ public sealed class BundleTests
     public async Task Read_CompressedBomb_Rejects()
     {
         using var zip = await Write(Fixture());
-        using var bomb = Rewrite(
-            zip,
-            entries =>
-                entries.Select(e => e.Key == "snapshot/events.ndjson" ? new(e.Key, new byte[2 * 1024 * 1024]) : e)
+        using var bomb = Rewrite(zip, entries =>
+            entries.Select(e => e.Key == "snapshot/events.ndjson" ? new(e.Key, new byte[2 * 1024 * 1024]) : e)
         );
         await Reject(bomb);
     }

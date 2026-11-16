@@ -92,10 +92,7 @@ public sealed class ClaudeAuditAdapter : ISourceAuditAdapter
                 findings.Add(SourceAuditSupport.Gap(record, "claude_prompt_context_unknown"));
             }
             // A companion-supplied derived context is never proof. Capacity stays unchanged.
-            record = record with
-            {
-                Pricing = record.Pricing with { Context = context },
-            };
+            record = record with { Pricing = record.Pricing with { Context = context } };
         }
         groups.Add(
             new(

@@ -146,8 +146,8 @@ public sealed class PricingArithmeticCheck
             gap(field == "costUsd" ? "production_cost_missing" : "production_cache_savings_missing");
             return false;
         }
-        var tolerance =
-            input.Tolerances.SingleOrDefault(t => t.Name == "pricingArithmetic." + field)?.AbsoluteTolerance ?? 0m;
+        var tolerance = input.Tolerances.SingleOrDefault(t => t.Name == "pricingArithmetic." + field)?.AbsoluteTolerance
+            ?? 0m;
         if (actual.Value > tolerance || actual.Value < -tolerance)
         {
             var key = e.RowId.ToString("D");
@@ -299,8 +299,8 @@ public sealed class PricingArithmeticCheck
             return false;
         }
         var delta = ComparisonSupport.Difference(expected, e.CostUsd.Value);
-        var tolerance =
-            input.Tolerances.SingleOrDefault(t => t.Name == "pricingArithmetic.costUsd")?.AbsoluteTolerance ?? 0m;
+        var tolerance = input.Tolerances.SingleOrDefault(t => t.Name == "pricingArithmetic.costUsd")?.AbsoluteTolerance
+            ?? 0m;
         if (delta > tolerance || delta < -tolerance)
         {
             findings.Add(
@@ -357,8 +357,9 @@ public sealed class PricingArithmeticCheck
             throw new AuditValidationException("money_overflow");
         }
         var delta = ComparisonSupport.Difference(expected, e.CacheSavingsUsd.Value);
-        var tolerance =
-            input.Tolerances.SingleOrDefault(t => t.Name == "pricingArithmetic.cacheSavingsUsd")?.AbsoluteTolerance
+        var tolerance = input
+            .Tolerances.SingleOrDefault(t => t.Name == "pricingArithmetic.cacheSavingsUsd")
+            ?.AbsoluteTolerance
             ?? 0m;
         if (delta > tolerance || delta < -tolerance)
         {

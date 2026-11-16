@@ -49,11 +49,9 @@ public class InsightGeneratorConcurrencyTests : IAsyncLifetime
             }
         );
         await monitor.SaveChangesAsync(ct);
-        var connection =
-            monitor.Database.GetConnectionString()
+        var connection = monitor.Database.GetConnectionString()
             ?? throw new InvalidOperationException("Factory database has no connection string.");
-        var harness =
-            Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
+        var harness = Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
             ?? throw new InvalidOperationException("TEST_DB_CONNECTION is required.");
         var ownedConnection = new NpgsqlConnectionStringBuilder(harness)
         {
@@ -89,9 +87,7 @@ public class InsightGeneratorConcurrencyTests : IAsyncLifetime
             winnerTask = winner.GenerateForDateAsync(AnalysisDate, ct);
             await gate.Inserted.Task.WaitAsync(ct);
             // The INSERT really happened, but the production transaction has not committed.
-            (await monitor.Insights.AsNoTracking().CountAsync(ct))
-                .Should()
-                .Be(0);
+            (await monitor.Insights.AsNoTracking().CountAsync(ct)).Should().Be(0);
             loserTask = loser.GenerateForDateAsync(AnalysisDate, ct);
             var blocked = await WaitForAdvisoryWaitOrCompletionAsync(monitor, winnerPid, loserPid, loserTask, ct);
             gate.Release.TrySetResult();

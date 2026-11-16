@@ -19,97 +19,79 @@ public static class AuditRunEndpoints
             .AddEndpointFilter<AuditProtocolFilter>()
             .AddEndpointFilter<ApiKeyEndpointFilter>();
         reads.MapGet("/capabilities", () => Results.Ok(Capabilities()));
-        reads.MapGet(
-            "/readiness",
-            async (HttpRequest request, AuditReadinessService service, CancellationToken ct) =>
+        reads.MapGet("/readiness", async (HttpRequest request, AuditReadinessService service, CancellationToken ct) =>
+        {
+            var from = Date(request.Query["from"].ToString());
+            var to = Date(request.Query["to"].ToString());
+            var sources = request
+                .Query["sources"]
+                .ToString()
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (sources.Length is 0 or > 32)
             {
-                var from = Date(request.Query["from"].ToString());
-                var to = Date(request.Query["to"].ToString());
-                var sources = request
-                    .Query["sources"]
-                    .ToString()
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                if (sources.Length is 0 or > 32)
+                throw new AuditStoreException("invalid_source_selection", 400);
+            }
+            return Results.Ok(
+                await service.GetAsync(
+                    new(
+                        from,
+                        to,
+                        sources.Distinct().Select(s => new SourceSelection(Guid.Empty, s)).ToArray(),
+                        [CheckCode.SourceAccounting],
+                        [],
+                        false
+                    ),
+                    ct
+                )
+            );
+        });
+        reads.MapGet("/runs", async (HttpRequest request, AuditStore store, CancellationToken ct) =>
+        {
+            var limit = 50;
+            if (request.Query.ContainsKey("limit") && !int.TryParse(request.Query["limit"], out limit))
+            {
+                throw new AuditStoreException("invalid_page_limit", 400);
+            }
+            var (before, id) = ParseCursor(request.Query["cursor"].ToString());
+            var runs = await store.ListRunsAsync(before, id, limit, ct);
+            var last = runs.LastOrDefault();
+            return Results.Ok(
+                new
                 {
-                    throw new AuditStoreException("invalid_source_selection", 400);
+                    schemaVersion = 1,
+                    items = runs.Select(Summary),
+                    nextCursor = runs.Count == limit && last != null ? Cursor(last) : null,
                 }
-                return Results.Ok(
-                    await service.GetAsync(
-                        new(
-                            from,
-                            to,
-                            sources.Distinct().Select(s => new SourceSelection(Guid.Empty, s)).ToArray(),
-                            [CheckCode.SourceAccounting],
-                            [],
-                            false
-                        ),
-                        ct
-                    )
-                );
-            }
-        );
-        reads.MapGet(
-            "/runs",
-            async (HttpRequest request, AuditStore store, CancellationToken ct) =>
-            {
-                var limit = 50;
-                if (request.Query.ContainsKey("limit") && !int.TryParse(request.Query["limit"], out limit))
-                {
-                    throw new AuditStoreException("invalid_page_limit", 400);
-                }
-                var (before, id) = ParseCursor(request.Query["cursor"].ToString());
-                var runs = await store.ListRunsAsync(before, id, limit, ct);
-                var last = runs.LastOrDefault();
-                return Results.Ok(
-                    new
-                    {
-                        schemaVersion = 1,
-                        items = runs.Select(Summary),
-                        nextCursor = runs.Count == limit && last != null ? Cursor(last) : null,
-                    }
-                );
-            }
-        );
-        reads.MapGet(
-            "/runs/{id:guid}",
-            async (Guid id, AuditStore store, CancellationToken ct) =>
-            {
-                var run = await store.GetRunAsync(id, ct);
-                return run == null ? Results.NotFound() : Results.Ok(Summary(run));
-            }
-        );
+            );
+        });
+        reads.MapGet("/runs/{id:guid}", async (Guid id, AuditStore store, CancellationToken ct) =>
+        {
+            var run = await store.GetRunAsync(id, ct);
+            return run == null ? Results.NotFound() : Results.Ok(Summary(run));
+        });
         var writes = app.MapGroup("/api/audits/runs")
             .RequireRateLimiting("api")
             .AddEndpointFilter<AuditProtocolFilter>()
             .AddEndpointFilter<AuditAdminAuthorityFilter>()
             .AddEndpointFilter<ApiKeyEndpointFilter>()
             .AddEndpointFilter<AdminOnlyApiKeyEndpointFilter>();
-        writes.MapPost(
-            "",
-            async (HttpRequest request, AuditRunService service, CancellationToken ct) =>
-            {
-                using var doc = JsonDocument.Parse(await AuditCaptureProtocol.ReadAsync(request, 64 * 1024, ct));
-                var root = doc.RootElement;
-                ValidateEnvelope(root);
-                return await Create(request, root, service, ct);
-            }
-        );
-        writes.MapPost(
-            "/{id:guid}/cancel",
-            async (Guid id, AuditStore store, CancellationToken ct) =>
-            {
-                await store.CancelRunAsync(id, ct);
-                return Results.NoContent();
-            }
-        );
-        writes.MapPost(
-            "/{id:guid}/proceed",
-            async (Guid id, AuditStore store, CancellationToken ct) =>
-            {
-                await store.ProceedRunAsync(id, ct);
-                return Results.NoContent();
-            }
-        );
+        writes.MapPost("", async (HttpRequest request, AuditRunService service, CancellationToken ct) =>
+        {
+            using var doc = JsonDocument.Parse(await AuditCaptureProtocol.ReadAsync(request, 64 * 1024, ct));
+            var root = doc.RootElement;
+            ValidateEnvelope(root);
+            return await Create(request, root, service, ct);
+        });
+        writes.MapPost("/{id:guid}/cancel", async (Guid id, AuditStore store, CancellationToken ct) =>
+        {
+            await store.CancelRunAsync(id, ct);
+            return Results.NoContent();
+        });
+        writes.MapPost("/{id:guid}/proceed", async (Guid id, AuditStore store, CancellationToken ct) =>
+        {
+            await store.ProceedRunAsync(id, ct);
+            return Results.NoContent();
+        });
         writes.MapPost(
             "/{id:guid}/replay",
             async (Guid id, HttpRequest request, AuditRunService service, CancellationToken ct) =>
@@ -215,8 +197,7 @@ public static class AuditRunEndpoints
         var scope = AuditCanonicalJson.Deserialize<AuditScope>(
             Encoding.UTF8.GetBytes(root.GetProperty("scope").GetRawText())
         );
-        var captures =
-            root.GetProperty("captureIds").Deserialize<Guid[]>()
+        var captures = root.GetProperty("captureIds").Deserialize<Guid[]>()
             ?? throw new AuditStoreException("invalid_capture_selection", 400);
         var id = await service.CreateAsync(
             new(scope, captures, root.GetProperty("requestFreshCapture").GetBoolean()),

@@ -57,8 +57,7 @@ public sealed class AuditWorkerService(
                 lease.RunId,
                 owned.Token
             );
-            var snapshot =
-                await store.ReadSnapshotAsync(lease.RunId, owned.Token)
+            var snapshot = await store.ReadSnapshotAsync(lease.RunId, owned.Token)
                 ?? throw new AuditStoreException("snapshot_unavailable", 410);
             if (!await store.SetRunStageAsync(lease, "verifying", owned.Token))
             {

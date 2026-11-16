@@ -25,9 +25,8 @@ internal sealed class PricingApplicationConfiguration : IEntityTypeConfiguration
 {
     public void Configure(EntityTypeBuilder<PricingApplication> b)
     {
-        b.ToTable(
-            "PricingApplications",
-            t => t.HasCheckConstraint("CK_PricingApplication_Revision", "\"Revision\" > 0")
+        b.ToTable("PricingApplications", t =>
+            t.HasCheckConstraint("CK_PricingApplication_Revision", "\"Revision\" > 0")
         );
         b.HasKey(x => new { x.EventId, x.Revision });
         b.Property(x => x.RevisionDigest).HasMaxLength(64).IsRequired();

@@ -33,8 +33,7 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        var baseConnection =
-            Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
+        var baseConnection = Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
             ?? "Host=localhost;Database=aiobs_test;Username=postgres;Password=postgres";
         _connectionString = new NpgsqlConnectionStringBuilder(baseConnection)
         {
@@ -426,10 +425,8 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
         await _db.SaveChangesAsync(ct);
         _db.ChangeTracker.Clear();
 
-        await _store.ActivateAsync(
-            Candidate("qualification-warmup", 2m),
-            ct,
-            (_, callbackCt) => _repricing.RepriceProviderAsync(Provider.OpenAI, callbackCt)
+        await _store.ActivateAsync(Candidate("qualification-warmup", 2m), ct, (_, callbackCt) =>
+            _repricing.RepriceProviderAsync(Provider.OpenAI, callbackCt)
         );
 
         var elapsed = new List<TimeSpan>();
@@ -471,10 +468,8 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
             ct
         );
 
-        await _store.ActivateAsync(
-            Candidate("windowed", 2m, (new LocalDate(2026, 9, 1), 3m)),
-            ct,
-            (_, callbackCt) => _repricing.RepriceProviderAsync(Provider.OpenAI, callbackCt)
+        await _store.ActivateAsync(Candidate("windowed", 2m, (new LocalDate(2026, 9, 1), 3m)), ct, (_, callbackCt) =>
+            _repricing.RepriceProviderAsync(Provider.OpenAI, callbackCt)
         );
 
         var costs = await _db
@@ -520,10 +515,8 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
             activationResolver,
             activationStore
         );
-        var activation = activationStore.ActivateAsync(
-            Candidate("new", 2m),
-            ct,
-            (_, callbackCt) => activationRepricing.RepriceProviderAsync(Provider.OpenAI, callbackCt)
+        var activation = activationStore.ActivateAsync(Candidate("new", 2m), ct, (_, callbackCt) =>
+            activationRepricing.RepriceProviderAsync(Provider.OpenAI, callbackCt)
         );
         await WaitForBlockedLockAsync("advisory", ct);
         activation.IsCompleted.Should().BeFalse();
@@ -551,21 +544,17 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
         var activationToken = cancel ? cancellation.Token : ct;
 
         var activation = async () =>
-            await _store.ActivateAsync(
-                Candidate("new", 2m),
-                activationToken,
-                async (_, callbackCt) =>
+            await _store.ActivateAsync(Candidate("new", 2m), activationToken, async (_, callbackCt) =>
+            {
+                await _repricing.RepriceProviderAsync(Provider.OpenAI, callbackCt);
+                if (cancel)
                 {
-                    await _repricing.RepriceProviderAsync(Provider.OpenAI, callbackCt);
-                    if (cancel)
-                    {
-                        await cancellation.CancelAsync();
-                        callbackCt.ThrowIfCancellationRequested();
-                    }
-
-                    throw new InvalidOperationException("fail activation");
+                    await cancellation.CancelAsync();
+                    callbackCt.ThrowIfCancellationRequested();
                 }
-            );
+
+                throw new InvalidOperationException("fail activation");
+            });
 
         if (cancel)
         {

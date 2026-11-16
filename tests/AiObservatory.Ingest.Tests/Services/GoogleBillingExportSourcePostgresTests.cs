@@ -27,9 +27,8 @@ public sealed class GoogleBillingExportSourcePostgresTests : IAsyncLifetime
         var database = $"aiobs_google_export_{Guid.NewGuid():N}";
         var baseConnection = Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")!;
         var options = new DbContextOptionsBuilder<AiObservatoryDbContext>()
-            .UseNpgsql(
-                new NpgsqlConnectionStringBuilder(baseConnection) { Database = database }.ConnectionString,
-                x => x.UseNodaTime()
+            .UseNpgsql(new NpgsqlConnectionStringBuilder(baseConnection) { Database = database }.ConnectionString, x =>
+                x.UseNodaTime()
             )
             .Options;
         _db = new AiObservatoryDbContext(options);

@@ -179,12 +179,10 @@ public sealed class GitHubBillingSyncServiceTests : IDisposable
     public async Task RejectedLinesFailTheSyncAfterTheRestOfTheBillIsProcessed()
     {
         var writes = new List<CapturedWrite>();
-        var writer = Writer(
-            writes,
-            observation =>
-                observation.Sku == "linux"
-                    ? throw new InvalidOperationException("test rejection")
-                    : BillingWriteDisposition.Created
+        var writer = Writer(writes, observation =>
+            observation.Sku == "linux"
+                ? throw new InvalidOperationException("test rejection")
+                : BillingWriteDisposition.Created
         );
         var sut = Create(ClientReturning(Item("actions", "linux", 10m), Item("code_quality", "quality", 20m)), writer);
 

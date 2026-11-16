@@ -78,8 +78,7 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
 
     public AiObservatoryApiFactory()
     {
-        var baseConn =
-            System.Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
+        var baseConn = System.Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
             ?? "Host=localhost;Database=aiobs_test;Username=postgres;Password=postgres";
         _connectionString = new NpgsqlConnectionStringBuilder(baseConn)
         {

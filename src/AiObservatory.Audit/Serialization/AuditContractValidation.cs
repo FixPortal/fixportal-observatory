@@ -23,12 +23,10 @@ internal static class AuditContractValidation
             Require(
                 property != null
                     && NullableProperties
-                        .GetOrAdd(
-                            property,
-                            static member =>
-                                new(() =>
-                                    new NullabilityInfoContext().Create(member).ReadState == NullabilityState.Nullable
-                                )
+                        .GetOrAdd(property, static member =>
+                            new(() =>
+                                new NullabilityInfoContext().Create(member).ReadState == NullabilityState.Nullable
+                            )
                         )
                         .Value,
                 "required_value"

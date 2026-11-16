@@ -132,8 +132,7 @@ public sealed class LegacyAlertEmailStartupTests
 
     private static string DatabaseConnectionString()
     {
-        var baseConnection =
-            Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
+        var baseConnection = Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
             ?? "Host=localhost;Database=aiobs_test;Username=postgres;Password=postgres";
         return new NpgsqlConnectionStringBuilder(baseConnection)
         {

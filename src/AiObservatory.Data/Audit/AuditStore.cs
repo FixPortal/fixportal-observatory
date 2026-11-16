@@ -591,8 +591,7 @@ public sealed partial class AuditStore
                 Stage = x.Stage,
                 CreatedAt = x.CreatedAt,
                 CompletedAt = x.CompletedAt,
-                ServerCutoff =
-                    x.ServerCutoff
+                ServerCutoff = x.ServerCutoff
                     ?? _db.Set<AuditServerSnapshot>()
                         .Where(s => s.RunId == x.Id)
                         .Select(s => (Instant?)s.FrozenAt)
@@ -889,8 +888,7 @@ public sealed partial class AuditStore
 
     private async Task<AuditRetentionSettings> Retention(CancellationToken ct)
     {
-        var settings =
-            _db.Set<AuditRetentionSettings>().Local.SingleOrDefault(x => x.InstanceId == _instanceId)
+        var settings = _db.Set<AuditRetentionSettings>().Local.SingleOrDefault(x => x.InstanceId == _instanceId)
             ?? await _db.Set<AuditRetentionSettings>().SingleOrDefaultAsync(x => x.InstanceId == _instanceId, ct);
         if (settings != null)
         {

@@ -13,30 +13,26 @@ public static class AuditRetentionEndpoints
             .AddEndpointFilter<AuditAdminAuthorityFilter>()
             .AddEndpointFilter<ApiKeyEndpointFilter>()
             .AddEndpointFilter<AdminOnlyApiKeyEndpointFilter>();
-        admin.MapGet(
-            "/retention",
-            async (AuditStore store, CancellationToken ct) => Results.Ok(await store.GetRetentionAsync(ct))
+        admin.MapGet("/retention", async (AuditStore store, CancellationToken ct) =>
+            Results.Ok(await store.GetRetentionAsync(ct))
         );
-        admin.MapPatch(
-            "/retention",
-            async (HttpRequest request, AuditStore store, CancellationToken ct) =>
+        admin.MapPatch("/retention", async (HttpRequest request, AuditStore store, CancellationToken ct) =>
+        {
+            var bytes = await AuditCaptureProtocol.ReadAsync(request, 1024, ct);
+            using var body = JsonDocument.Parse(bytes);
+            var root = body.RootElement;
+            if (
+                root.ValueKind != JsonValueKind.Object
+                || root.EnumerateObject().Count() != 2
+                || !root.TryGetProperty("evidenceDays", out var evidence)
+                || !root.TryGetProperty("summaryDays", out var summary)
+            )
             {
-                var bytes = await AuditCaptureProtocol.ReadAsync(request, 1024, ct);
-                using var body = JsonDocument.Parse(bytes);
-                var root = body.RootElement;
-                if (
-                    root.ValueKind != JsonValueKind.Object
-                    || root.EnumerateObject().Count() != 2
-                    || !root.TryGetProperty("evidenceDays", out var evidence)
-                    || !root.TryGetProperty("summaryDays", out var summary)
-                )
-                {
-                    throw new AuditStoreException("invalid_retention", 400);
-                }
-                await store.UpdateRetentionAsync(Days(evidence), Days(summary), ct);
-                return Results.Ok(await store.GetRetentionAsync(ct));
+                throw new AuditStoreException("invalid_retention", 400);
             }
-        );
+            await store.UpdateRetentionAsync(Days(evidence), Days(summary), ct);
+            return Results.Ok(await store.GetRetentionAsync(ct));
+        });
         admin.MapGet(
             "/captures/{id:guid}/deletion-impact",
             async (Guid id, AuditRetentionService service, CancellationToken ct) =>
@@ -55,14 +51,11 @@ public static class AuditRetentionEndpoints
                 return Results.NoContent();
             }
         );
-        admin.MapDelete(
-            "/runs/{id:guid}",
-            async (Guid id, AuditRetentionService service, CancellationToken ct) =>
-            {
-                await service.DeleteRunAsync(id, ct);
-                return Results.NoContent();
-            }
-        );
+        admin.MapDelete("/runs/{id:guid}", async (Guid id, AuditRetentionService service, CancellationToken ct) =>
+        {
+            await service.DeleteRunAsync(id, ct);
+            return Results.NoContent();
+        });
     }
 
     private static int? Days(JsonElement value)

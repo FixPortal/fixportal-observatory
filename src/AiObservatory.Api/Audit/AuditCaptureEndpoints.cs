@@ -12,33 +12,30 @@ public static class AuditCaptureEndpoints
             .RequireRateLimiting("api")
             .AddEndpointFilter<AuditProtocolFilter>()
             .AddEndpointFilter<AuditMachineKeyFilter>();
-        machine.MapPost(
-            "/claim",
-            async (HttpContext context, AuditStore store, IClock clock, CancellationToken ct) =>
-            {
-                using var body = await AuditCaptureProtocol.Envelope(context.Request, false, ct);
-                var auth = AuditMachineKeyFilter.Credential(context);
-                var lease = await store.TryClaimCaptureAsync(
-                    auth.MachineId,
-                    auth.CredentialId,
-                    clock.GetCurrentInstant(),
-                    ct
+        machine.MapPost("/claim", async (HttpContext context, AuditStore store, IClock clock, CancellationToken ct) =>
+        {
+            using var body = await AuditCaptureProtocol.Envelope(context.Request, false, ct);
+            var auth = AuditMachineKeyFilter.Credential(context);
+            var lease = await store.TryClaimCaptureAsync(
+                auth.MachineId,
+                auth.CredentialId,
+                clock.GetCurrentInstant(),
+                ct
+            );
+            return lease == null
+                ? Results.NoContent()
+                : Results.Ok(
+                    new
+                    {
+                        schemaVersion = 1,
+                        lease.RequestId,
+                        lease.MachineId,
+                        leaseToken = lease.Token,
+                        expiresAt = lease.ExpiresAt.ToDateTimeOffset(),
+                        lease.Scope,
+                    }
                 );
-                return lease == null
-                    ? Results.NoContent()
-                    : Results.Ok(
-                        new
-                        {
-                            schemaVersion = 1,
-                            lease.RequestId,
-                            lease.MachineId,
-                            leaseToken = lease.Token,
-                            expiresAt = lease.ExpiresAt.ToDateTimeOffset(),
-                            lease.Scope,
-                        }
-                    );
-            }
-        );
+        });
         machine.MapPut(
             "/{id:guid}/chunks/{index:int}",
             async (

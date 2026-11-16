@@ -28,8 +28,7 @@ public sealed class OperationalInventoryAdminFilter(IConfiguration configuration
         }
         if (http.User.Identity?.IsAuthenticated == true)
         {
-            var identity =
-                http.User.FindFirstValue("http://schemas.microsoft.com/identity/claims/objectidentifier")
+            var identity = http.User.FindFirstValue("http://schemas.microsoft.com/identity/claims/objectidentifier")
                 ?? http.User.FindFirstValue(ClaimTypes.NameIdentifier)
                 ?? http.User.FindFirstValue("sub");
             var tenant = http.User.FindFirstValue("http://schemas.microsoft.com/identity/claims/tenantid") ?? "";

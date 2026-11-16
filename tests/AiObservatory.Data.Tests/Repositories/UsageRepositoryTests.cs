@@ -21,8 +21,7 @@ public class UsageRepositoryTests : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        var baseConn =
-            Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
+        var baseConn = Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
             ?? "Host=localhost;Database=aiobs_test;Username=postgres;Password=postgres";
         _connStr = new NpgsqlConnectionStringBuilder(baseConn)
         {
@@ -178,14 +177,12 @@ public class UsageRepositoryTests : IAsyncLifetime
         var saved = await _ctx.UsageEvents.AsNoTracking().SingleAsync(ct);
         saved
             .Should()
-            .BeEquivalentTo(
-                corrected,
-                options =>
-                    options
-                        .Excluding(e => e.Id)
-                        .Excluding(e => e.IngestedAt)
-                        .Excluding(e => e.RawPayload)
-                        .Excluding(e => e.CurrentPricingRevision)
+            .BeEquivalentTo(corrected, options =>
+                options
+                    .Excluding(e => e.Id)
+                    .Excluding(e => e.IngestedAt)
+                    .Excluding(e => e.RawPayload)
+                    .Excluding(e => e.CurrentPricingRevision)
             );
         saved
             .CurrentPricingRevision.Should()
@@ -765,9 +762,7 @@ public class UsageRepositoryTests : IAsyncLifetime
         result.OldCostUsd.Should().Be(0.0083m);
         result.NewCostUsd.Should().Be(0.0083m);
         // CostUsd unchanged on the entity.
-        (await _ctx.UsageEvents.FindAsync([evt.Id], ct))!
-            .CostUsd.Should()
-            .Be(0.0083m);
+        (await _ctx.UsageEvents.FindAsync([evt.Id], ct))!.CostUsd.Should().Be(0.0083m);
     }
 
     [Fact]

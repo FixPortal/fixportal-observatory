@@ -27,8 +27,7 @@ public sealed class PricingSnapshotStoreTests : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        var baseConnection =
-            Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
+        var baseConnection = Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
             ?? "Host=localhost;Database=aiobs_test;Username=postgres;Password=postgres";
         _connectionString = new NpgsqlConnectionStringBuilder(baseConnection)
         {
@@ -62,10 +61,8 @@ public sealed class PricingSnapshotStoreTests : IAsyncLifetime
 
         (await _store.ActivateAsync(first, ct)).Should().Be(PricingActivationResult.Activated);
         (
-            await _store.ActivateAsync(
-                first,
-                ct,
-                (_, _) => throw new InvalidOperationException("unchanged activation invoked its callback")
+            await _store.ActivateAsync(first, ct, (_, _) =>
+                throw new InvalidOperationException("unchanged activation invoked its callback")
             )
         )
             .Should()
@@ -105,9 +102,7 @@ public sealed class PricingSnapshotStoreTests : IAsyncLifetime
         (await _store.GetActiveAsync(PricingSourceIds.OpenAi, ct))!.ContentHash.Should().Be(first.ContentHash);
 
         // Reactivating the already-active document is still a no-op.
-        (await _store.ActivateAsync(reverted, ct))
-            .Should()
-            .Be(PricingActivationResult.Unchanged);
+        (await _store.ActivateAsync(reverted, ct)).Should().Be(PricingActivationResult.Unchanged);
         (await _db.PricingSnapshots.AsNoTracking().CountAsync(ct)).Should().Be(2);
     }
 
@@ -118,23 +113,14 @@ public sealed class PricingSnapshotStoreTests : IAsyncLifetime
         var original = Candidate("original", 1m);
         await _store.ActivateAsync(original, ct);
 
-        var act = () =>
-            _store.ActivateAsync(
-                Candidate("rejected replacement", 2m),
-                ct,
-                async (_, callbackCt) =>
-                {
-                    _db.SourceSyncStates.Add(
-                        new SourceSyncState
-                        {
-                            SourceId = "callback-side-effect",
-                            ExpectedRefreshIntervalSeconds = 86_400,
-                        }
-                    );
-                    await _db.SaveChangesAsync(callbackCt);
-                    throw new InvalidOperationException("repricing failed");
-                }
-            );
+        var act = () => _store.ActivateAsync(Candidate("rejected replacement", 2m), ct, async (_, callbackCt) =>
+            {
+                _db.SourceSyncStates.Add(
+                    new SourceSyncState { SourceId = "callback-side-effect", ExpectedRefreshIntervalSeconds = 86_400 }
+                );
+                await _db.SaveChangesAsync(callbackCt);
+                throw new InvalidOperationException("repricing failed");
+            });
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("repricing failed");
         _db.ChangeTracker.Entries().Should().BeEmpty();
@@ -452,24 +438,19 @@ public sealed class PricingSnapshotStoreTests : IAsyncLifetime
         using var cancellation = new CancellationTokenSource();
         var replacement = Candidate("cancelled", 2m, retrievedAt: RetrievedAt.Plus(Duration.FromMinutes(1)));
 
-        var act = () =>
-            _store.ActivateAsync(
-                replacement,
-                cancellation.Token,
-                async (_, callbackToken) =>
-                {
-                    _db.SourceSyncStates.Add(
-                        new SourceSyncState
-                        {
-                            SourceId = "cancelled-callback-side-effect",
-                            ExpectedRefreshIntervalSeconds = 86_400,
-                        }
-                    );
-                    await _db.SaveChangesAsync(callbackToken);
-                    await cancellation.CancelAsync();
-                    callbackToken.ThrowIfCancellationRequested();
-                }
-            );
+        var act = () => _store.ActivateAsync(replacement, cancellation.Token, async (_, callbackToken) =>
+            {
+                _db.SourceSyncStates.Add(
+                    new SourceSyncState
+                    {
+                        SourceId = "cancelled-callback-side-effect",
+                        ExpectedRefreshIntervalSeconds = 86_400,
+                    }
+                );
+                await _db.SaveChangesAsync(callbackToken);
+                await cancellation.CancelAsync();
+                callbackToken.ThrowIfCancellationRequested();
+            });
 
         var thrown = await act.Should().ThrowAsync<OperationCanceledException>();
         thrown.Which.CancellationToken.Should().Be(cancellation.Token);
