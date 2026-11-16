@@ -22,7 +22,9 @@ public class PromptBuilder
         string Gbp(decimal usd) => "£" + (usd * usdToGbp).ToString("F2", CultureInfo.InvariantCulture);
 
         var sb = new StringBuilder();
-        sb.AppendLine($"Analyse this AI usage data for {periodStart} to {periodEnd} and produce insights.");
+        sb.AppendLine(
+            $"Analyse this AI usage data for {periodStart.ToString(null, CultureInfo.InvariantCulture)} to {periodEnd.ToString(null, CultureInfo.InvariantCulture)} and produce insights."
+        );
         sb.AppendLine();
 
         var totalUnknownCosts = aggregates.Sum(a => a.UnknownCostCount);

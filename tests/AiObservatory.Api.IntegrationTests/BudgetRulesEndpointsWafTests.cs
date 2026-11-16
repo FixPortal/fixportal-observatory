@@ -121,8 +121,14 @@ public class BudgetRulesEndpointsWafTests(AiObservatoryApiFactory factory)
 
         rule.TryGetProperty("currentSpendGbp", out var currentSpend).Should().BeTrue();
         currentSpend.GetDecimal().Should().Be(12.34m);
-        rule.GetProperty("windowStart").GetString().Should().Be(today.ToString("yyyy-MM-dd", null));
-        rule.GetProperty("windowEnd").GetString().Should().Be(today.ToString("yyyy-MM-dd", null));
+        rule.GetProperty("windowStart")
+            .GetString()
+            .Should()
+            .Be(today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        rule.GetProperty("windowEnd")
+            .GetString()
+            .Should()
+            .Be(today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
     }
 
     // NS-4: a Daily rule must show the window the alert worker actually evaluates — the last
@@ -174,8 +180,16 @@ public class BudgetRulesEndpointsWafTests(AiObservatoryApiFactory factory)
         var response = await client.GetFromJsonAsync<JsonElement>("/api/budget-rules", ct);
         var ruleJson = response.EnumerateArray().Single(item => item.GetProperty("id").GetGuid() == ruleId);
 
-        ruleJson.GetProperty("windowStart").GetString().Should().Be(yesterday.ToString("yyyy-MM-dd", null));
-        ruleJson.GetProperty("windowEnd").GetString().Should().Be(yesterday.ToString("yyyy-MM-dd", null));
+        ruleJson
+            .GetProperty("windowStart")
+            .GetString()
+            .Should()
+            .Be(yesterday.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        ruleJson
+            .GetProperty("windowEnd")
+            .GetString()
+            .Should()
+            .Be(yesterday.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
         // Today's 99 is outside the evaluated window; only yesterday's completed-day spend counts.
         ruleJson.GetProperty("currentSpendGbp").GetDecimal().Should().Be(12.34m);
     }
@@ -204,8 +218,16 @@ public class BudgetRulesEndpointsWafTests(AiObservatoryApiFactory factory)
         var response = await client.GetFromJsonAsync<JsonElement>("/api/budget-rules", ct);
         var ruleJson = response.EnumerateArray().Single(item => item.GetProperty("id").GetGuid() == ruleId);
 
-        ruleJson.GetProperty("windowStart").GetString().Should().Be(today.ToString("yyyy-MM-dd", null));
-        ruleJson.GetProperty("windowEnd").GetString().Should().Be(today.ToString("yyyy-MM-dd", null));
+        ruleJson
+            .GetProperty("windowStart")
+            .GetString()
+            .Should()
+            .Be(today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        ruleJson
+            .GetProperty("windowEnd")
+            .GetString()
+            .Should()
+            .Be(today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
 
         // The assembly shares one database (parallelism is off), so today's spend is whatever
         // every test in the run has filed under today — the monthly-window sibling above files

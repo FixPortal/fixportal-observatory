@@ -397,7 +397,7 @@ public static class ActivityEndpoints
                 g.Sum(s => s.ActiveSeconds),
                 MergeIntervalSeconds(g.Select(s => (s.Start, s.End)))
             ))
-            .OrderBy(d => d.Date)
+            .OrderBy(d => d.Date, StringComparer.Ordinal)
             .ToList();
     }
 
