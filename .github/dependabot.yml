@@ -4,8 +4,7 @@ updates:
   - package-ecosystem: nuget
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: "06:00"
       timezone: Europe/London
     open-pull-requests-limit: 10
@@ -57,8 +56,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: "06:00"
       timezone: Europe/London
     open-pull-requests-limit: 5
@@ -73,8 +71,7 @@ updates:
   - package-ecosystem: npm
     directory: /src/AiObservatory.Web
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: "06:00"
       timezone: Europe/London
     open-pull-requests-limit: 10

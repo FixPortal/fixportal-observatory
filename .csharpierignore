@@ -6,3 +6,4 @@
 *.slnx
 *.xaml
 *.axaml
+**/Migrations/**
