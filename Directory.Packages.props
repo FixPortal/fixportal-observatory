@@ -6,7 +6,7 @@
   <ItemGroup>
     <PackageVersion Include="FixPortal.CodeStyle" Version="0.1.13" />
     <!-- xUnit v3 -->
-    <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.13.0" />
     <PackageVersion Include="xunit.v3" Version="4.0.3" />
     <PackageVersion Include="TngTech.ArchUnitNET.xUnitV3" Version="0.13.5" />
     <!-- Test infrastructure -->
@@ -42,8 +42,8 @@
     <PackageVersion Include="MailKit" Version="4.18.2" />
     <!-- Ingest -->
     <PackageVersion Include="Google.Cloud.BigQuery.V2" Version="3.12.0" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.15" />
   </ItemGroup>
 </Project>
