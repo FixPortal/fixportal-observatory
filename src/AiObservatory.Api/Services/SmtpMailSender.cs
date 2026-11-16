@@ -1,3 +1,4 @@
+using MailKit;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
@@ -45,7 +46,7 @@ public sealed class SmtpMailSender(ISmtpClient smtpClient, IConfiguration config
                 await smtpClient.AuthenticateAsync(settings.User, settings.Password, ct);
             }
 
-            await smtpClient.SendAsync(message, ct);
+            await smtpClient.SendAsync(new SendRequest(message), ct);
         }
         finally
         {
