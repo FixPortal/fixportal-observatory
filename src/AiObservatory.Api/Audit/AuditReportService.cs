@@ -26,21 +26,15 @@ public sealed class AuditReportService(
             // The writer validates capture membership and recomputes the recorded result's binding.
             // Do that expensive validation once, after checking the retained byte identities.
             var bundle = ReadDetached(materialized);
-            await AuditBundleWriter.WriteAsync(
-                destination,
-                bundle,
-                ct,
-                stage =>
-                    diagnostics?.Start(
-                        stage switch
-                        {
-                            AuditBundleWriteStage.Validation => "validation",
-                            AuditBundleWriteStage.EntrySerialization => "entry_serialization",
-                            AuditBundleWriteStage.ZipWrite => "zip_write",
-                            _ => throw new ArgumentOutOfRangeException(nameof(stage)),
-                        }
-                    )
-            );
+            await AuditBundleWriter.WriteAsync(destination, bundle, ct, stage => diagnostics?.Start(
+                    stage switch
+                    {
+                        AuditBundleWriteStage.Validation => "validation",
+                        AuditBundleWriteStage.EntrySerialization => "entry_serialization",
+                        AuditBundleWriteStage.ZipWrite => "zip_write",
+                        _ => throw new ArgumentOutOfRangeException(nameof(stage)),
+                    }
+                ));
             diagnostics?.Complete();
         }
         catch (Exception error)

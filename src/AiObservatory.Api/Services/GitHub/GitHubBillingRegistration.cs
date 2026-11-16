@@ -29,19 +29,16 @@ public static class GitHubBillingRegistration
             return;
         }
 
-        services.AddHttpClient(
-            GitHubBillingClient.HttpClientName,
-            c =>
-            {
-                c.BaseAddress = GitHubApi;
-                c.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
-                c.DefaultRequestHeaders.Add("User-Agent", "fpaiobs-api");
-                c.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
-                // Bounded well below the 100s default: this runs inside the daily background
-                // cycle, and a hung GitHub must not hold that cycle open indefinitely.
-                c.Timeout = TimeSpan.FromSeconds(30);
-            }
-        );
+        services.AddHttpClient(GitHubBillingClient.HttpClientName, c =>
+        {
+            c.BaseAddress = GitHubApi;
+            c.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
+            c.DefaultRequestHeaders.Add("User-Agent", "fpaiobs-api");
+            c.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+            // Bounded well below the 100s default: this runs inside the daily background
+            // cycle, and a hung GitHub must not hold that cycle open indefinitely.
+            c.Timeout = TimeSpan.FromSeconds(30);
+        });
 
         services.AddScoped(sp => new GitHubBillingClient(
             sp.GetRequiredService<IHttpClientFactory>().CreateClient(GitHubBillingClient.HttpClientName),

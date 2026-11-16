@@ -27,8 +27,7 @@ public sealed class BillingObservationWriterTests : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        var baseConnection =
-            Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
+        var baseConnection = Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
             ?? "Host=localhost;Database=aiobs_test;Username=postgres;Password=postgres";
         _connectionString = new NpgsqlConnectionStringBuilder(baseConnection)
         {

@@ -42,15 +42,12 @@ public partial class InitialSchema : Migration
             },
             constraints: table =>
             {
-                table.PrimaryKey(
-                    "PK_DailyAggregates",
-                    x => new
-                    {
-                        x.Date,
-                        x.Provider,
-                        x.Model,
-                    }
-                );
+                table.PrimaryKey("PK_DailyAggregates", x => new
+                {
+                    x.Date,
+                    x.Provider,
+                    x.Model,
+                });
             }
         );
 

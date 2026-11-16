@@ -344,36 +344,29 @@ public sealed class OpenAiPricingSourceTests
         };
 
     private static string RemoveModelRow(string document, string processing, string model) =>
-        MutateTable(
-            document,
-            processing,
-            lines => lines.Where(line => !line.StartsWith($"| {model}", StringComparison.Ordinal)).ToArray()
+        MutateTable(document, processing, lines =>
+            lines.Where(line => !line.StartsWith($"| {model}", StringComparison.Ordinal)).ToArray()
         );
 
     private static string RemoveContextLane(string document, string processing, string model, string context) =>
-        MutateTable(
-            document,
-            processing,
-            lines =>
-                lines
-                    .Select(line =>
+        MutateTable(document, processing, lines => lines
+                .Select(line =>
+                {
+                    if (!line.StartsWith($"| {model}", StringComparison.Ordinal))
                     {
-                        if (!line.StartsWith($"| {model}", StringComparison.Ordinal))
-                        {
-                            return line;
-                        }
+                        return line;
+                    }
 
-                        var cells = line.Split('|');
-                        var start = context == "short" ? 2 : 6;
-                        for (var index = start; index < start + 4; index++)
-                        {
-                            cells[index] = " - ";
-                        }
+                    var cells = line.Split('|');
+                    var start = context == "short" ? 2 : 6;
+                    for (var index = start; index < start + 4; index++)
+                    {
+                        cells[index] = " - ";
+                    }
 
-                        return string.Join('|', cells);
-                    })
-                    .ToArray()
-        );
+                    return string.Join('|', cells);
+                })
+                .ToArray());
 
     private static string MutateTable(string document, string processing, Func<string[], string[]> mutation)
     {

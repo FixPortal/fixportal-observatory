@@ -116,21 +116,17 @@ public class IntelligenceWorkerExecutionTests
         var firstBudgetCall = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondBudgetCall = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var calls = 0;
-        var budget = Budget(
-            repository,
-            clock,
-            () =>
+        var budget = Budget(repository, clock, () =>
+        {
+            if (Interlocked.Increment(ref calls) == 1)
             {
-                if (Interlocked.Increment(ref calls) == 1)
-                {
-                    firstBudgetCall.TrySetResult();
-                }
-                else
-                {
-                    secondBudgetCall.TrySetResult();
-                }
+                firstBudgetCall.TrySetResult();
             }
-        );
+            else
+            {
+                secondBudgetCall.TrySetResult();
+            }
+        });
         var services = new ServiceCollection().AddSingleton(repository).AddSingleton(budget).BuildServiceProvider();
         // Park the worker inside a controlled delay: observing the requested delay proves the
         // schedule deterministically, where racing a real 100ms timer only proved the worker

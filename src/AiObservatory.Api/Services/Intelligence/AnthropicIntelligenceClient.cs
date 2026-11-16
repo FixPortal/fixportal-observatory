@@ -123,12 +123,10 @@ public class AnthropicIntelligenceClient
 
         var response = await client.Messages.GetClaudeMessageAsync(parameters, ct);
 
-        var toolUse =
-            response.Content.OfType<ToolUseContent>().FirstOrDefault(t => t.Name == InsightsToolName)
+        var toolUse = response.Content.OfType<ToolUseContent>().FirstOrDefault(t => t.Name == InsightsToolName)
             ?? throw new InvalidOperationException("Intelligence response did not contain expected tool use block.");
 
-        var insightsArray =
-            toolUse.Input?["insights"]?.AsArray()
+        var insightsArray = toolUse.Input?["insights"]?.AsArray()
             ?? throw new InvalidOperationException("Intelligence tool use response missing 'insights' array.");
 
         _logger.LogInformation("Intelligence client received {Count} insights from Claude", insightsArray.Count);

@@ -46,8 +46,7 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
             );
             CheckRateLimit(response);
             response.EnsureSuccessStatusCode();
-            var batch =
-                await response.Content.ReadFromJsonAsync<List<OrgRepositoryDto>>(JsonOptions, ct)
+            var batch = await response.Content.ReadFromJsonAsync<List<OrgRepositoryDto>>(JsonOptions, ct)
                 ?? throw new InvalidDataException("GitHub repositories response omitted a page.");
 
             // Archived repos are excluded: they cannot produce new activity, so polling them
@@ -98,8 +97,7 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
             );
             CheckRateLimit(response);
             response.EnsureSuccessStatusCode();
-            var prs =
-                await response.Content.ReadFromJsonAsync<List<PullRequestDto>>(JsonOptions, ct)
+            var prs = await response.Content.ReadFromJsonAsync<List<PullRequestDto>>(JsonOptions, ct)
                 ?? throw new InvalidDataException("GitHub pull requests response omitted a page.");
 
             var reachedOlderThanSince = false;
@@ -171,8 +169,7 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
             );
             CheckRateLimit(response);
             response.EnsureSuccessStatusCode();
-            var pageReviews =
-                await response.Content.ReadFromJsonAsync<List<ReviewDto>>(JsonOptions, ct)
+            var pageReviews = await response.Content.ReadFromJsonAsync<List<ReviewDto>>(JsonOptions, ct)
                 ?? throw new InvalidDataException("GitHub reviews response omitted a page.");
             reviews.AddRange(pageReviews);
             if (pageReviews.Count < PerPage)
@@ -244,8 +241,7 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
             );
             CheckRateLimit(response);
             response.EnsureSuccessStatusCode();
-            var commits =
-                await response.Content.ReadFromJsonAsync<List<CommitListDto>>(JsonOptions, ct)
+            var commits = await response.Content.ReadFromJsonAsync<List<CommitListDto>>(JsonOptions, ct)
                 ?? throw new InvalidDataException("GitHub commits response omitted a page.");
 
             foreach (var c in commits)
@@ -255,8 +251,7 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
                 using var detailResponse = await http.GetAsync($"/repos/{repo}/commits/{c.Sha}", ct);
                 CheckRateLimit(detailResponse);
                 detailResponse.EnsureSuccessStatusCode();
-                var detail =
-                    await detailResponse.Content.ReadFromJsonAsync<CommitDetailDto>(JsonOptions, ct)
+                var detail = await detailResponse.Content.ReadFromJsonAsync<CommitDetailDto>(JsonOptions, ct)
                     ?? new CommitDetailDto(c.Sha, new CommitStatsDto(0, 0));
 
                 results.Add(
@@ -348,8 +343,7 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
             );
             CheckRateLimit(response);
             response.EnsureSuccessStatusCode();
-            var body =
-                await response.Content.ReadFromJsonAsync<WorkflowRunsResponseDto>(JsonOptions, ct)
+            var body = await response.Content.ReadFromJsonAsync<WorkflowRunsResponseDto>(JsonOptions, ct)
                 ?? new WorkflowRunsResponseDto([]);
 
             foreach (var run in body.WorkflowRuns)

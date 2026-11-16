@@ -80,8 +80,7 @@ public sealed class RoutingCatalogService
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         try
         {
-            var catalog =
-                JsonSerializer.Deserialize<RoutingCatalog>(File.ReadAllText(path), JsonOptions)
+            var catalog = JsonSerializer.Deserialize<RoutingCatalog>(File.ReadAllText(path), JsonOptions)
                 ?? throw new InvalidDataException("Routing projection is empty.");
             Validate(catalog);
             return new RoutingCatalogService(catalog);

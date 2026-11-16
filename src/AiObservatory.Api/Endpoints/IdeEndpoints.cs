@@ -53,8 +53,7 @@ public static class IdeEndpoints
         IdeEventEnvelope envelope;
         try
         {
-            envelope =
-                JsonSerializer.Deserialize<IdeEventEnvelope>(bytes, EventJsonOptions)
+            envelope = JsonSerializer.Deserialize<IdeEventEnvelope>(bytes, EventJsonOptions)
                 ?? throw new InvalidDataException("IDE event is empty.");
         }
         catch (JsonException exception)

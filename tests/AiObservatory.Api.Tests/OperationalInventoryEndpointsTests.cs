@@ -114,15 +114,12 @@ public sealed class OperationalInventoryEndpointsTests
     public async Task BodyDetectionFeatureRejectsBodyWithoutLengthOrTransferEncoding()
     {
         var reader = new CountingReader();
-        await using var app = await Host(
-            reader,
-            configureRequest: context =>
-            {
-                context.Request.ContentLength.Should().BeNull();
-                context.Request.Headers.ContainsKey("Transfer-Encoding").Should().BeFalse();
-                context.Features.Set<IHttpRequestBodyDetectionFeature>(new BodyDetectionFeature());
-            }
-        );
+        await using var app = await Host(reader, configureRequest: context =>
+        {
+            context.Request.ContentLength.Should().BeNull();
+            context.Request.Headers.ContainsKey("Transfer-Encoding").Should().BeFalse();
+            context.Features.Set<IHttpRequestBodyDetectionFeature>(new BodyDetectionFeature());
+        });
         using var client = app.GetTestClient();
         using var response = await Send(client, Admin);
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);

@@ -40,12 +40,9 @@ public sealed class PostgresTestAssemblyFixture : IAsyncLifetime
         }
         var admin = new NpgsqlConnectionStringBuilder(connectionString) { Database = "postgres", Pooling = false };
         var template = await Templates
-            .GetOrAdd(
-                admin.ConnectionString,
-                _ => new Lazy<OwnedTemplateDatabase>(() =>
-                    new OwnedTemplateDatabase(admin.ConnectionString, MigrateTemplateAsync, DeleteTemplateAsync)
-                )
-            )
+            .GetOrAdd(admin.ConnectionString, _ => new Lazy<OwnedTemplateDatabase>(() =>
+                new OwnedTemplateDatabase(admin.ConnectionString, MigrateTemplateAsync, DeleteTemplateAsync)
+            ))
             .Value.Initialization.WaitAsync(ct);
         await using var connection = new NpgsqlConnection(admin.ConnectionString);
         await connection.OpenAsync(ct);
@@ -100,18 +97,13 @@ public sealed class PostgresTestAssemblyFixture : IAsyncLifetime
         Environment.SetEnvironmentVariable("TEST_DB_CONNECTION", _ownedConnection);
     }
 
-    public ValueTask DisposeAsync() =>
-        DisposeOwnedAsync(
-            Templates,
-            _container,
-            () =>
+    public ValueTask DisposeAsync() => DisposeOwnedAsync(Templates, _container, () =>
+        {
+            if (_ownedConnection is { } owned && Environment.GetEnvironmentVariable("TEST_DB_CONNECTION") == owned)
             {
-                if (_ownedConnection is { } owned && Environment.GetEnvironmentVariable("TEST_DB_CONNECTION") == owned)
-                {
-                    Environment.SetEnvironmentVariable("TEST_DB_CONNECTION", null);
-                }
+                Environment.SetEnvironmentVariable("TEST_DB_CONNECTION", null);
             }
-        );
+        });
 
     internal static async ValueTask DisposeOwnedAsync(
         ConcurrentDictionary<string, Lazy<OwnedTemplateDatabase>> templates,

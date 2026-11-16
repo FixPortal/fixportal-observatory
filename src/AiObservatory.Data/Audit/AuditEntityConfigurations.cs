@@ -16,9 +16,8 @@ internal sealed class AuditMachineCredentialConfiguration : IEntityTypeConfigura
 {
     public void Configure(EntityTypeBuilder<AuditMachineCredential> b)
     {
-        b.ToTable(
-            "AuditMachineCredentials",
-            t => t.HasCheckConstraint("CK_AuditCredential_Hash", "octet_length(\"SecretHash\") = 32")
+        b.ToTable("AuditMachineCredentials", t =>
+            t.HasCheckConstraint("CK_AuditCredential_Hash", "octet_length(\"SecretHash\") = 32")
         );
         b.HasKey(x => x.Id);
         b.HasOne<AuditMachine>().WithMany().HasForeignKey(x => x.MachineId).OnDelete(DeleteBehavior.Cascade);
@@ -30,20 +29,14 @@ internal sealed class AuditCaptureRequestConfiguration : IEntityTypeConfiguratio
 {
     public void Configure(EntityTypeBuilder<AuditCaptureRequest> b)
     {
-        b.ToTable(
-            "AuditCaptureRequests",
-            t =>
-            {
-                t.HasCheckConstraint(
-                    "CK_AuditRequest_State",
-                    "\"State\" IN ('pending','uploading','sealed','expired')"
-                );
-                t.HasCheckConstraint(
-                    "CK_AuditRequest_Counts",
-                    "\"UploadedBytes\" >= 0 AND \"UploadedBytes\" <= 536870912 AND \"RecordCount\" >= 0 AND \"RecordCount\" <= 1000000 AND \"Revision\" >= 0"
-                );
-            }
-        );
+        b.ToTable("AuditCaptureRequests", t =>
+        {
+            t.HasCheckConstraint("CK_AuditRequest_State", "\"State\" IN ('pending','uploading','sealed','expired')");
+            t.HasCheckConstraint(
+                "CK_AuditRequest_Counts",
+                "\"UploadedBytes\" >= 0 AND \"UploadedBytes\" <= 536870912 AND \"RecordCount\" >= 0 AND \"RecordCount\" <= 1000000 AND \"Revision\" >= 0"
+            );
+        });
         b.HasKey(x => x.Id);
         b.Property(x => x.State).HasMaxLength(20);
         b.Property(x => x.Revision).IsConcurrencyToken();
@@ -83,17 +76,14 @@ internal sealed class AuditEvidenceChunkConfiguration : IEntityTypeConfiguration
 {
     public void Configure(EntityTypeBuilder<AuditEvidenceChunk> b)
     {
-        b.ToTable(
-            "AuditEvidenceChunks",
-            t =>
-            {
-                t.HasCheckConstraint(
-                    "CK_AuditChunk_Bounds",
-                    "\"Index\" >= 0 AND \"Index\" < 10000 AND octet_length(\"Bytes\") > 0 AND octet_length(\"Bytes\") <= 8388608 AND \"RecordCount\" > 0 AND \"RecordCount\" <= 1000000"
-                );
-                t.HasCheckConstraint("CK_AuditChunk_Hash", "\"Sha256\" ~ '^[0-9a-f]{64}$'");
-            }
-        );
+        b.ToTable("AuditEvidenceChunks", t =>
+        {
+            t.HasCheckConstraint(
+                "CK_AuditChunk_Bounds",
+                "\"Index\" >= 0 AND \"Index\" < 10000 AND octet_length(\"Bytes\") > 0 AND octet_length(\"Bytes\") <= 8388608 AND \"RecordCount\" > 0 AND \"RecordCount\" <= 1000000"
+            );
+            t.HasCheckConstraint("CK_AuditChunk_Hash", "\"Sha256\" ~ '^[0-9a-f]{64}$'");
+        });
         b.HasKey(x => new { x.RequestId, x.Index });
         b.Property(x => x.Sha256).HasMaxLength(64);
         b.HasOne<AuditCaptureRequest>().WithMany().HasForeignKey(x => x.RequestId).OnDelete(DeleteBehavior.Cascade);
@@ -111,17 +101,14 @@ internal sealed class AuditRunConfiguration : IEntityTypeConfiguration<AuditRun>
 {
     public void Configure(EntityTypeBuilder<AuditRun> b)
     {
-        b.ToTable(
-            "AuditRuns",
-            t =>
-            {
-                t.HasCheckConstraint(
-                    "CK_AuditRun_State",
-                    "\"State\" IN ('collecting','queued','executing','completed','cancelled','failed')"
-                );
-                t.HasCheckConstraint("CK_AuditRun_Attempts", "\"Attempts\" BETWEEN 0 AND 3 AND \"Revision\" >= 0");
-            }
-        );
+        b.ToTable("AuditRuns", t =>
+        {
+            t.HasCheckConstraint(
+                "CK_AuditRun_State",
+                "\"State\" IN ('collecting','queued','executing','completed','cancelled','failed')"
+            );
+            t.HasCheckConstraint("CK_AuditRun_Attempts", "\"Attempts\" BETWEEN 0 AND 3 AND \"Revision\" >= 0");
+        });
         b.Property(x => x.Stage).HasMaxLength(32).HasDefaultValue("queued");
         b.Property(x => x.CaptureRequestIds).HasDefaultValueSql("'{}'::uuid[]");
         b.HasKey(x => x.Id);
@@ -161,13 +148,11 @@ internal sealed class AuditServerSnapshotConfiguration : IEntityTypeConfiguratio
 {
     public void Configure(EntityTypeBuilder<AuditServerSnapshot> b)
     {
-        b.ToTable(
-            "AuditServerSnapshots",
-            t =>
-                t.HasCheckConstraint(
-                    "CK_AuditSnapshot_Bounds",
-                    "octet_length(\"Bytes\") <= 536870912 AND \"Revision\" >= 0"
-                )
+        b.ToTable("AuditServerSnapshots", t =>
+            t.HasCheckConstraint(
+                "CK_AuditSnapshot_Bounds",
+                "octet_length(\"Bytes\") <= 536870912 AND \"Revision\" >= 0"
+            )
         );
         b.HasKey(x => x.Id);
         b.Property(x => x.Sha256).HasMaxLength(64);
@@ -191,13 +176,11 @@ internal sealed class AuditRetentionSettingsConfiguration : IEntityTypeConfigura
 {
     public void Configure(EntityTypeBuilder<AuditRetentionSettings> b)
     {
-        b.ToTable(
-            "AuditRetentionSettings",
-            t =>
-                t.HasCheckConstraint(
-                    "CK_AuditRetention_Days",
-                    "(\"EvidenceDays\" IS NULL OR \"EvidenceDays\" > 0) AND (\"SummaryDays\" IS NULL OR \"SummaryDays\" > 0) AND \"Revision\" >= 0"
-                )
+        b.ToTable("AuditRetentionSettings", t =>
+            t.HasCheckConstraint(
+                "CK_AuditRetention_Days",
+                "(\"EvidenceDays\" IS NULL OR \"EvidenceDays\" > 0) AND (\"SummaryDays\" IS NULL OR \"SummaryDays\" > 0) AND \"Revision\" >= 0"
+            )
         );
         b.HasKey(x => x.InstanceId);
         b.Property(x => x.InstanceId).HasMaxLength(128);

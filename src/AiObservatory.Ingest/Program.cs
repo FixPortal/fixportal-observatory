@@ -31,8 +31,8 @@ var host = Host.CreateDefaultBuilder(args)
             // access) is left by App Service as the literal "@Microsoft.KeyVault(...)" string.
             // That is non-empty, so a plain IsNullOrEmpty gate would enable the provider with a
             // garbage credential and 401 hourly forever. Treat such a value as unset.
-            var connectionString =
-                cfg["DB_CONNECTION"] ?? throw new InvalidOperationException("DB_CONNECTION is required");
+            var connectionString = cfg["DB_CONNECTION"]
+                ?? throw new InvalidOperationException("DB_CONNECTION is required");
             services.AddDataLayer(connectionString);
             services.AddSingleton<IClock>(SystemClock.Instance);
 
@@ -67,17 +67,14 @@ var host = Host.CreateDefaultBuilder(args)
             );
             if (copilotConfigured)
             {
-                services.AddHttpClient(
-                    nameof(ICopilotReportClient),
-                    c =>
-                    {
-                        c.BaseAddress = new Uri("https://api.github.com");
-                        c.DefaultRequestHeaders.Add("Authorization", $"Bearer {githubToken}");
-                        c.DefaultRequestHeaders.Add("User-Agent", "fpaiobs-ingest");
-                        c.DefaultRequestHeaders.Add("Accept", "application/vnd.github+json");
-                        c.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2026-03-10");
-                    }
-                );
+                services.AddHttpClient(nameof(ICopilotReportClient), c =>
+                {
+                    c.BaseAddress = new Uri("https://api.github.com");
+                    c.DefaultRequestHeaders.Add("Authorization", $"Bearer {githubToken}");
+                    c.DefaultRequestHeaders.Add("User-Agent", "fpaiobs-ingest");
+                    c.DefaultRequestHeaders.Add("Accept", "application/vnd.github+json");
+                    c.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2026-03-10");
+                });
                 services.AddHttpClient("CopilotSignedDownloads").RemoveAllLoggers();
                 services.AddScoped<ICopilotReportClient>(sp =>
                 {

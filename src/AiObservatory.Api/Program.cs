@@ -38,8 +38,7 @@ builder.Services.ConfigureHttpJsonOptions(o =>
     );
 });
 
-var dbConnection =
-    builder.Configuration["DB_CONNECTION"]
+var dbConnection = builder.Configuration["DB_CONNECTION"]
     ?? throw new InvalidOperationException("DB_CONNECTION configuration is missing.");
 builder.Services.AddDataLayer(dbConnection);
 
@@ -257,34 +256,28 @@ if (app.Environment.IsDevelopment())
 
 if (app.Environment.IsDevelopment() || demoMode)
 {
-    api.MapPost(
-        "/dev/seed",
-        async (AiObservatoryDbContext db, IClock clock, CancellationToken ct) =>
+    api.MapPost("/dev/seed", async (AiObservatoryDbContext db, IClock clock, CancellationToken ct) =>
+    {
+        // Idempotent: only seed a genuinely empty database. The Docker compose seed service
+        // calls this on every `up`; the guard must cover EVERY table the seed writes (see
+        // DemoSeeder.HasAnyDataAsync) or a self-hoster's pre-existing config is destroyed.
+        if (await DemoSeeder.HasAnyDataAsync(db, ct))
         {
-            // Idempotent: only seed a genuinely empty database. The Docker compose seed service
-            // calls this on every `up`; the guard must cover EVERY table the seed writes (see
-            // DemoSeeder.HasAnyDataAsync) or a self-hoster's pre-existing config is destroyed.
-            if (await DemoSeeder.HasAnyDataAsync(db, ct))
-            {
-                return Results.Ok("Already seeded — skipping (data present).");
-            }
-
-            await DemoSeeder.SeedAsync(db, clock, ct);
-            return Results.Ok("Seed successful");
+            return Results.Ok("Already seeded — skipping (data present).");
         }
-    );
+
+        await DemoSeeder.SeedAsync(db, clock, ct);
+        return Results.Ok("Seed successful");
+    });
 }
 
 if (demoMode)
 {
-    api.MapPost(
-        "/dev/reset-demo",
-        async (AiObservatoryDbContext db, IClock clock, CancellationToken ct) =>
-        {
-            await DemoSeeder.ResetAsync(db, clock, ct);
-            return Results.Ok("Demo reset");
-        }
-    );
+    api.MapPost("/dev/reset-demo", async (AiObservatoryDbContext db, IClock clock, CancellationToken ct) =>
+    {
+        await DemoSeeder.ResetAsync(db, clock, ct);
+        return Results.Ok("Demo reset");
+    });
 }
 
 api.MapEventsEndpoints();
@@ -362,22 +355,16 @@ public partial class Program
     internal static void ConfigureApiRateLimiter(RateLimiterOptions o, IConfiguration configuration)
     {
         o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-        o.AddPolicy(
-            "api",
-            ctx =>
+        o.AddPolicy("api", ctx =>
+        {
+            var partitionKey = ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+            return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
             {
-                var partitionKey = ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
-                return RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey,
-                    _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = configuration.GetValue("RateLimiting:ApiPermitLimit", 120),
-                        Window = TimeSpan.FromMinutes(1),
-                        QueueLimit = 0,
-                    }
-                );
-            }
-        );
+                PermitLimit = configuration.GetValue("RateLimiting:ApiPermitLimit", 120),
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            });
+        });
     }
 
     internal static void ValidateRateLimitPermitLimit(WebApplicationBuilder builder)

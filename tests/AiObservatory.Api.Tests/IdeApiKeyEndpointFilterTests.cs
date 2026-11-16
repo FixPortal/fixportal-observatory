@@ -23,14 +23,11 @@ public sealed class IdeApiKeyEndpointFilterTests
         http.Request.Headers["X-Observatory-IDE-Key"] = "ide-key-12345";
         var called = false;
 
-        var result = await filter.InvokeAsync(
-            EndpointFilterInvocationContext.Create(http),
-            _ =>
-            {
-                called = true;
-                return ValueTask.FromResult<object?>(Results.Ok());
-            }
-        );
+        var result = await filter.InvokeAsync(EndpointFilterInvocationContext.Create(http), _ =>
+        {
+            called = true;
+            return ValueTask.FromResult<object?>(Results.Ok());
+        });
 
         called.Should().BeTrue();
         result.Should().BeOfType<Ok>();
@@ -49,9 +46,8 @@ public sealed class IdeApiKeyEndpointFilterTests
         var http = new DefaultHttpContext();
         http.Request.Headers[header] = value;
 
-        var result = await filter.InvokeAsync(
-            EndpointFilterInvocationContext.Create(http),
-            _ => ValueTask.FromResult<object?>(Results.Ok())
+        var result = await filter.InvokeAsync(EndpointFilterInvocationContext.Create(http), _ =>
+            ValueTask.FromResult<object?>(Results.Ok())
         );
 
         result.Should().BeOfType<UnauthorizedHttpResult>();
@@ -70,9 +66,8 @@ public sealed class IdeApiKeyEndpointFilterTests
             User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "chris")], "Bearer")),
         };
 
-        var result = await filter.InvokeAsync(
-            EndpointFilterInvocationContext.Create(http),
-            _ => ValueTask.FromResult<object?>(Results.Ok())
+        var result = await filter.InvokeAsync(EndpointFilterInvocationContext.Create(http), _ =>
+            ValueTask.FromResult<object?>(Results.Ok())
         );
 
         result.Should().BeOfType<UnauthorizedHttpResult>();

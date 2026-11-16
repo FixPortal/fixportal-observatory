@@ -117,10 +117,8 @@ public sealed class PricingRefreshWorkerService(
             var candidate = await source.FetchAsync(cancellationToken);
             if (candidate is not null)
             {
-                await store.ActivateAsync(
-                    candidate,
-                    cancellationToken,
-                    (_, callbackCt) => repricing.RepriceProviderAsync(candidate.Provider, callbackCt)
+                await store.ActivateAsync(candidate, cancellationToken, (_, callbackCt) =>
+                    repricing.RepriceProviderAsync(candidate.Provider, callbackCt)
                 );
             }
             await states.MarkSuccessAsync(

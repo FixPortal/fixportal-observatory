@@ -85,8 +85,7 @@ public static partial class AuditSelectedInvocationEndpoints
         int? statusCode = null
     )
     {
-        var status =
-            statusCode
+        var status = statusCode
             ?? outcome.Status switch
             {
                 "completed" or "admitted" => 200,

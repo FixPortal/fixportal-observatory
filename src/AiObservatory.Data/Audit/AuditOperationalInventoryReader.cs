@@ -27,15 +27,14 @@ public sealed class AuditOperationalInventoryReader(AiObservatoryDbContext db, s
 
         // SQL identifiers and DTO aliases are literals. Only the fixed instance value is parameterized.
         var observed = await db.Database.SqlQuery<Instant>($"SELECT current_timestamp AS \"Value\"").SingleAsync(ct);
-        var policy =
-            await db
-                .Database.SqlQuery<InventoryPolicy>(
-                    $"""
-                    SELECT true AS "StoredRowPresent", "EvidenceDays", "SummaryDays", "Revision"
-                    FROM public."AuditRetentionSettings" WHERE "InstanceId"={instanceId}
-                    """
-                )
-                .SingleOrDefaultAsync(ct)
+        var policy = await db
+            .Database.SqlQuery<InventoryPolicy>(
+                $"""
+                SELECT true AS "StoredRowPresent", "EvidenceDays", "SummaryDays", "Revision"
+                FROM public."AuditRetentionSettings" WHERE "InstanceId"={instanceId}
+                """
+            )
+            .SingleOrDefaultAsync(ct)
             ?? new InventoryPolicy(false, null, null, null);
         var runs = await db
             .Database.SqlQuery<InventoryRuns>(

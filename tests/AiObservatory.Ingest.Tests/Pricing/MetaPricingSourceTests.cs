@@ -112,9 +112,8 @@ public sealed class MetaPricingSourceTests
         PricingCatalogJson
             .Deserialize<MetaPriceCatalog>(candidate.NormalizedCatalog)
             .Should()
-            .BeEquivalentTo(
-                MetaPricingSource.Parse(document, RetrievedAt).Catalog,
-                options => options.WithStrictOrdering()
+            .BeEquivalentTo(MetaPricingSource.Parse(document, RetrievedAt).Catalog, options =>
+                options.WithStrictOrdering()
             );
     }
 

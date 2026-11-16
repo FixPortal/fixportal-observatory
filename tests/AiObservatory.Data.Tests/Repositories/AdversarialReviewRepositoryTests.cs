@@ -22,8 +22,7 @@ public class AdversarialReviewRepositoryTests : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        var baseConn =
-            Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
+        var baseConn = Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
             ?? "Host=localhost;Database=aiobs_test;Username=postgres;Password=postgres";
         // Keep the "_test" marker (DisposeAsync only drops a _test database).
         _connStr = new NpgsqlConnectionStringBuilder(baseConn)

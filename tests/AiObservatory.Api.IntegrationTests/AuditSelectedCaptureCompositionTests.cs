@@ -528,8 +528,7 @@ public sealed class AuditSelectedCaptureCompositionTests
 
     private static string OwnedConnection()
     {
-        var supplied =
-            Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
+        var supplied = Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
             ?? throw new InvalidOperationException("The PostgreSQL assembly fixture must initialize first.");
         return new NpgsqlConnectionStringBuilder(supplied)
         {

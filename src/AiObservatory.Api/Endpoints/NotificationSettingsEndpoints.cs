@@ -12,16 +12,13 @@ public static class NotificationSettingsEndpoints
     // ReSharper disable once UnusedMethodReturnValue.Global
     public static IEndpointRouteBuilder MapNotificationSettingsEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet(
-            "/notification-settings",
-            async (AiObservatoryDbContext db, CancellationToken ct) =>
-            {
-                var settings = await db
-                    .NotificationSettings.AsNoTracking()
-                    .FirstOrDefaultAsync(s => s.Id == Data.Entities.NotificationSettings.SingletonId, ct);
-                return Results.Ok(ToResponse(settings?.AlertEmailTo, settings?.SlackWebhookUrl));
-            }
-        );
+        app.MapGet("/notification-settings", async (AiObservatoryDbContext db, CancellationToken ct) =>
+        {
+            var settings = await db
+                .NotificationSettings.AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == Data.Entities.NotificationSettings.SingletonId, ct);
+            return Results.Ok(ToResponse(settings?.AlertEmailTo, settings?.SlackWebhookUrl));
+        });
 
         // Body is bound as raw JsonElement, not a fixed record: a field OMITTED from the JSON
         // body must leave that setting unchanged, while a field present as null or "" clears

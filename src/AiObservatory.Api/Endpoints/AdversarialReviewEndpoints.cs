@@ -102,26 +102,20 @@ public static class AdversarialReviewEndpoints
             }
         );
 
-        app.MapGet(
-            "/adversarial-review/stats",
-            async (IAdversarialReviewRepository repo, HttpContext ctx) =>
-            {
-                var stats = await repo.GetStatsAsync(ctx.RequestAborted);
-                return Results.Ok(stats);
-            }
-        );
+        app.MapGet("/adversarial-review/stats", async (IAdversarialReviewRepository repo, HttpContext ctx) =>
+        {
+            var stats = await repo.GetStatsAsync(ctx.RequestAborted);
+            return Results.Ok(stats);
+        });
 
         // Purge ALL adversarial-review runs. Admin-key gated by the /api group's
         // ApiKeyEndpointFilter (non-GET requires the admin key). Irreversible —
         // used to reset the table for a clean re-track.
-        app.MapDelete(
-            "/adversarial-review/runs",
-            async (IAdversarialReviewRepository repo, HttpContext ctx) =>
-            {
-                var deleted = await repo.DeleteAllRunsAsync(ctx.RequestAborted);
-                return Results.Ok(new { deleted });
-            }
-        );
+        app.MapDelete("/adversarial-review/runs", async (IAdversarialReviewRepository repo, HttpContext ctx) =>
+        {
+            var deleted = await repo.DeleteAllRunsAsync(ctx.RequestAborted);
+            return Results.Ok(new { deleted });
+        });
 
         // Removes one sweep (all participant rows sharing runId). Admin-key gated
         // by the /api group's ApiKeyEndpointFilter, same as the full purge above.

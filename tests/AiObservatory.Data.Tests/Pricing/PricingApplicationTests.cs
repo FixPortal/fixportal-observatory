@@ -385,10 +385,8 @@ public sealed class PricingApplicationTests : IAsyncLifetime
         );
         var repricing = new PricingRepricingService(_db, repository, resolver, store);
         (
-            await store.ActivateAsync(
-                candidate,
-                ct,
-                (_, token) => repricing.RepriceProviderAsync(Provider.Anthropic, token)
+            await store.ActivateAsync(candidate, ct, (_, token) =>
+                repricing.RepriceProviderAsync(Provider.Anthropic, token)
             )
         )
             .Should()
@@ -397,13 +395,11 @@ public sealed class PricingApplicationTests : IAsyncLifetime
         var after = await _db.UsageEvents.AsNoTracking().SingleAsync(ct);
         after
             .Should()
-            .BeEquivalentTo(
-                before,
-                options =>
-                    options
-                        .Excluding(row => row.CostUsd)
-                        .Excluding(row => row.CacheSavingsUsd)
-                        .Excluding(row => row.CurrentPricingRevision)
+            .BeEquivalentTo(before, options =>
+                options
+                    .Excluding(row => row.CostUsd)
+                    .Excluding(row => row.CacheSavingsUsd)
+                    .Excluding(row => row.CurrentPricingRevision)
             );
         after.CostUsd.Should().Be(expectedCost);
         after.CacheSavingsUsd.Should().Be(expectedSavings);
@@ -433,10 +429,8 @@ public sealed class PricingApplicationTests : IAsyncLifetime
         aggregate.RequestCount.Should().Be(1);
 
         (
-            await store.ActivateAsync(
-                candidate,
-                ct,
-                (_, token) => repricing.RepriceProviderAsync(Provider.Anthropic, token)
+            await store.ActivateAsync(candidate, ct, (_, token) =>
+                repricing.RepriceProviderAsync(Provider.Anthropic, token)
             )
         )
             .Should()
@@ -515,10 +509,8 @@ public sealed class PricingApplicationTests : IAsyncLifetime
         );
         var repricing = new PricingRepricingService(_db, repository, resolver, store);
         (
-            await store.ActivateAsync(
-                candidate,
-                ct,
-                (_, token) => repricing.RepriceProviderAsync(Provider.Anthropic, token)
+            await store.ActivateAsync(candidate, ct, (_, token) =>
+                repricing.RepriceProviderAsync(Provider.Anthropic, token)
             )
         )
             .Should()
@@ -541,13 +533,11 @@ public sealed class PricingApplicationTests : IAsyncLifetime
         }
         after
             .Should()
-            .BeEquivalentTo(
-                before,
-                options =>
-                    options
-                        .Excluding(row => row.CostUsd)
-                        .Excluding(row => row.CacheSavingsUsd)
-                        .Excluding(row => row.CurrentPricingRevision)
+            .BeEquivalentTo(before, options =>
+                options
+                    .Excluding(row => row.CostUsd)
+                    .Excluding(row => row.CacheSavingsUsd)
+                    .Excluding(row => row.CurrentPricingRevision)
             );
         after.RawPayload.Should().Be(before.RawPayload);
         PricingEvidence.SourceDimensions(after).Context.Should().Be(ClaudeContextFixture.Upper);
@@ -574,14 +564,12 @@ public sealed class PricingApplicationTests : IAsyncLifetime
         var aggregate = await _db.DailyAggregates.AsNoTracking().SingleAsync(ct);
         aggregate
             .Should()
-            .BeEquivalentTo(
-                oldAggregate,
-                options =>
-                    options
-                        .Excluding(row => row.CostUsd)
-                        .Excluding(row => row.CacheSavingsUsd)
-                        .Excluding(row => row.UnknownCostCount)
-                        .Excluding(row => row.UnknownCacheSavingsCount)
+            .BeEquivalentTo(oldAggregate, options =>
+                options
+                    .Excluding(row => row.CostUsd)
+                    .Excluding(row => row.CacheSavingsUsd)
+                    .Excluding(row => row.UnknownCostCount)
+                    .Excluding(row => row.UnknownCacheSavingsCount)
             );
         aggregate.CostUsd.Should().Be(23.25m);
         aggregate.CacheSavingsUsd.Should().Be(-2.25m);

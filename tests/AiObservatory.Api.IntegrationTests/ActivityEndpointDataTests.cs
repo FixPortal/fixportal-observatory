@@ -17,8 +17,7 @@ public class ActivityEndpointDataTests : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        var baseConn =
-            Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
+        var baseConn = Environment.GetEnvironmentVariable("TEST_DB_CONNECTION")
             ?? "Host=localhost;Database=aiobs_test;Username=postgres;Password=postgres";
         _connStr = new NpgsqlConnectionStringBuilder(baseConn)
         {

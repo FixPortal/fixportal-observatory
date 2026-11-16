@@ -444,8 +444,8 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
         {
             await using var scope = services.CreateAsyncScope();
             return await scope
-                    .ServiceProvider.GetRequiredService<SourceSyncStateStore>()
-                    .GetAsync(sourceId, TestContext.Current.CancellationToken)
+                .ServiceProvider.GetRequiredService<SourceSyncStateStore>()
+                .GetAsync(sourceId, TestContext.Current.CancellationToken)
                 ?? throw new InvalidOperationException("Source state was not persisted.");
         }
 

@@ -16,14 +16,11 @@ public static class BudgetRulesEndpoints
     {
         app.MapGet("/budget-rules", GetBudgetRulesAsync);
 
-        app.MapGet(
-                "/budget-rules/{id:guid}",
-                async (Guid id, AiObservatoryDbContext db, CancellationToken ct) =>
-                {
-                    var rule = await db.BudgetRules.FindAsync([id], ct);
-                    return rule is not null ? Results.Ok(rule) : Results.NotFound();
-                }
-            )
+        app.MapGet("/budget-rules/{id:guid}", async (Guid id, AiObservatoryDbContext db, CancellationToken ct) =>
+            {
+                var rule = await db.BudgetRules.FindAsync([id], ct);
+                return rule is not null ? Results.Ok(rule) : Results.NotFound();
+            })
             .WithName("GetBudgetRuleById");
 
         app.MapPost(
@@ -50,16 +47,13 @@ public static class BudgetRulesEndpoints
             }
         );
 
-        app.MapDelete(
-            "/budget-rules/{id:guid}",
-            async (Guid id, AiObservatoryDbContext db, CancellationToken ct) =>
-            {
-                // Report the row count: a 204 for an id that never existed would let a client
-                // believe it deleted something it didn't (mirrors DeleteEntryAsync).
-                var deleted = await db.BudgetRules.Where(r => r.Id == id).ExecuteDeleteAsync(ct);
-                return deleted == 0 ? Results.NotFound() : Results.NoContent();
-            }
-        );
+        app.MapDelete("/budget-rules/{id:guid}", async (Guid id, AiObservatoryDbContext db, CancellationToken ct) =>
+        {
+            // Report the row count: a 204 for an id that never existed would let a client
+            // believe it deleted something it didn't (mirrors DeleteEntryAsync).
+            var deleted = await db.BudgetRules.Where(r => r.Id == id).ExecuteDeleteAsync(ct);
+            return deleted == 0 ? Results.NotFound() : Results.NoContent();
+        });
 
         return app;
     }
