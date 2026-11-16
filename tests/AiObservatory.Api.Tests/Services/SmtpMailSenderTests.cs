@@ -20,7 +20,7 @@ public class SmtpMailSenderTests
         // The disconnect lives in a finally: a failed send must not leak a live SMTP session.
         var smtp = Substitute.For<ISmtpClient>();
         smtp.IsConnected.Returns(true);
-        smtp.SendAsync(Arg.Any<MimeMessage>(), Arg.Any<CancellationToken>(), Arg.Any<ITransferProgress>())
+        smtp.SendAsync(Arg.Any<ISendRequest>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("send failed"));
         var sut = new SmtpMailSender(smtp, Config);
 
