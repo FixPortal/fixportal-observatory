@@ -455,7 +455,7 @@ public static class SpendEntriesEndpoints
                 group.Sum(point => point.AmountGbp)
             ))
             .OrderByDescending(point => point.AmountGbp)
-            .ThenBy(point => point.Name)
+            .ThenBy(point => point.Name, StringComparer.Ordinal)
             .ToList();
         var categorySeries = aggregateRows
             .GroupBy(point => new { point.CategoryId, point.CategoryName })
@@ -465,7 +465,7 @@ public static class SpendEntriesEndpoints
                 group.Sum(point => point.AmountGbp)
             ))
             .OrderByDescending(point => point.AmountGbp)
-            .ThenBy(point => point.Name)
+            .ThenBy(point => point.Name, StringComparer.Ordinal)
             .ToList();
         var daysInRange = Period.Between(fromDate.Value, toDate.Value, PeriodUnits.Days).Days + 1;
         var topVendor = vendorSeries.FirstOrDefault();

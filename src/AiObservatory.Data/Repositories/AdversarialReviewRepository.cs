@@ -161,9 +161,9 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
 
         return runs.GroupBy(r => (r.Reviewer, r.Model, r.Role))
             .Select(ToStats)
-            .OrderBy(s => s.Reviewer)
-            .ThenBy(s => s.Model)
-            .ThenBy(s => s.Role)
+            .OrderBy(s => s.Reviewer, StringComparer.Ordinal)
+            .ThenBy(s => s.Model, StringComparer.Ordinal)
+            .ThenBy(s => s.Role, StringComparer.Ordinal)
             .ToList();
     }
 

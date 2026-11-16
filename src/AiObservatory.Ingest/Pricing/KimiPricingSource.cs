@@ -149,7 +149,7 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
             retrievedAt,
             entries
                 .Values.OrderByDescending(entry => entry.ModelPrefix.Length)
-                .ThenBy(entry => entry.ModelPrefix)
+                .ThenBy(entry => entry.ModelPrefix, StringComparer.Ordinal)
                 .ToList()
         );
         catalog.Validate();

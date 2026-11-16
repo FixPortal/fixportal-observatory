@@ -447,7 +447,7 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
         _output.WriteLine(
             $"events={eventCount}; measuredIterations={elapsed.Count}; medianMs={median.TotalMilliseconds:F1}; "
                 + $"eventsPerSecond={eventCount / median.TotalSeconds:F1}; "
-                + $"runsMs=[{string.Join(", ", elapsed.Select(run => run.TotalMilliseconds.ToString("F1")))}]"
+                + $"runsMs=[{string.Join(", ", elapsed.Select(run => run.TotalMilliseconds.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)))}]"
         );
 
         var repricedCount = await _db.UsageEvents.AsNoTracking().CountAsync(usage => usage.CostUsd == 5m, ct);

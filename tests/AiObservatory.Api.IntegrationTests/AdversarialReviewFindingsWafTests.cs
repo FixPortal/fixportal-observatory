@@ -110,7 +110,10 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
         var ct = TestContext.Current.CancellationToken;
         using var client = factory.CreateAdminClient();
         var runId = $"since-{Guid.NewGuid():N}";
-        var since = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(dayOffset).ToString("yyyy-MM-dd");
+        var since = DateOnly
+            .FromDateTime(DateTime.UtcNow)
+            .AddDays(dayOffset)
+            .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         await SeedRunAsync(client, runId);
         (await client.PostAsJsonAsync(FindingsRoute, ValidBody(runId), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -127,7 +130,10 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
         var runId = $"named-{Guid.NewGuid():N}";
         await SeedRunAsync(client, runId);
         (await client.PostAsJsonAsync(FindingsRoute, ValidBody(runId), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
-        var tomorrow = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1).ToString("yyyy-MM-dd");
+        var tomorrow = DateOnly
+            .FromDateTime(DateTime.UtcNow)
+            .AddDays(1)
+            .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
         var rows = await client.GetFromJsonAsync<JsonElement>($"{FindingsRoute}?runId={runId}&since={tomorrow}", ct);
 

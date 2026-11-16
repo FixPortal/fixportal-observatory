@@ -410,7 +410,7 @@ public sealed class MoonshotBillingSourceTests(ProviderPollingDatabase database)
             JsonSerializer.Serialize(
                 new
                 {
-                    date = date.ToString("yyyy-MM-dd", null),
+                    date = date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
                     detail = new
                     {
                         model_id = model,
