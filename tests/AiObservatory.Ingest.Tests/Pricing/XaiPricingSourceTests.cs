@@ -122,17 +122,6 @@ public sealed class XaiPricingSourceTests
     }
 
     [Fact]
-    public async Task FetchReturnsTheSameCandidateInstanceWhenTheDocumentHasNotChanged()
-    {
-        using var source = new XaiPricingSource(new FakeClock(RetrievedAt), new StubHandler(Fixture()));
-
-        var first = await source.FetchAsync(TestContext.Current.CancellationToken);
-        var second = await source.FetchAsync(TestContext.Current.CancellationToken);
-
-        second.Should().BeSameAs(first);
-    }
-
-    [Fact]
     public void BundledCatalogMatchesTheRatesThePublishedTableCarries()
     {
         var parsed = XaiPricingSource.Parse(Fixture(), RetrievedAt);

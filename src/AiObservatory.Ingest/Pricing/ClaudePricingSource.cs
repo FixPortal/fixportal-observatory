@@ -34,7 +34,6 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
     private static readonly string[] RequiredFastModels = ["claude-opus-5", "claude-opus-4-8"];
     private readonly IClock _clock;
     private readonly FirstPartyDocumentFetcher _fetcher;
-    private PricingSnapshotCandidate? _lastCandidate;
 
     public ClaudePricingSource(IClock clock, IHttpClientFactory httpClientFactory)
     {
@@ -70,12 +69,7 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
             raw,
             Parse(raw, retrievedAt)
         );
-        if (_lastCandidate?.ContentHash == candidate.ContentHash)
-        {
-            return _lastCandidate;
-        }
-
-        return _lastCandidate = candidate;
+        return candidate;
     }
 
     public static AnthropicPriceCatalog Parse(string document, Instant retrievedAt)

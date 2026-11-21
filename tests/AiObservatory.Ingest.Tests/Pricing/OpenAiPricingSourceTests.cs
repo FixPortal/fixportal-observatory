@@ -252,7 +252,7 @@ public sealed class OpenAiPricingSourceTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task FetchBuildsAnExactEvidenceCandidateAndReusesItWhenUnchanged(bool current)
+    public async Task FetchBuildsAnExactEvidenceCandidate(bool current)
     {
         var raw = current ? CurrentFixture() : Fixture();
         var handler = new FirstPartyDocumentFetcherTests.RecordingHandler(
@@ -261,10 +261,8 @@ public sealed class OpenAiPricingSourceTests
         var source = new OpenAiPricingSource(new FakeClock(RetrievedAt), handler);
 
         var first = await source.FetchAsync(TestContext.Current.CancellationToken);
-        var second = await source.FetchAsync(TestContext.Current.CancellationToken);
 
-        first.Should().BeSameAs(second);
-        first.Provider.Should().Be(Provider.OpenAI);
+        first!.Provider.Should().Be(Provider.OpenAI);
         first.SourceId.Should().Be(PricingSourceIds.OpenAi);
         first.SourceUrl.Should().Be("https://developers.openai.com/api/docs/pricing.md");
         first.RawEvidence.Should().Be(raw);

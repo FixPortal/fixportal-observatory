@@ -124,6 +124,26 @@ public sealed class ClaudePricingSourceTests
         sourceType.Should().Implement<IDisposable>();
     }
 
+    [Theory]
+    [InlineData(typeof(OpenAiPricingSource))]
+    [InlineData(typeof(ClaudePricingSource))]
+    [InlineData(typeof(KimiPricingSource))]
+    [InlineData(typeof(XaiPricingSource))]
+    [InlineData(typeof(MetaPricingSource))]
+    public void PricingSourcesKeepNoCandidateAcrossFetches(Type sourceType)
+    {
+        // Sources are Scoped and rebuilt for every refresh pass (Program.RegisterPricingSources),
+        // so a candidate remembered between FetchAsync calls is never read in the host.
+        sourceType
+            .GetFields(
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.Public
+                    | System.Reflection.BindingFlags.NonPublic
+            )
+            .Should()
+            .NotContain(field => field.FieldType == typeof(PricingSnapshotCandidate));
+    }
+
     [Fact]
     public async Task DisposingTheRefreshScopeDisposesTheSourceClient()
     {
