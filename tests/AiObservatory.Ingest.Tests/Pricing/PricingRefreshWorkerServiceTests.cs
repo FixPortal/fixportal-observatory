@@ -6,6 +6,7 @@ using AiObservatory.Data.Repositories;
 using AiObservatory.Ingest.Pricing;
 using AiObservatory.Ingest.Sources;
 using AiObservatory.Ingest.Tests.Services;
+using AiObservatory.Testing;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -235,10 +236,11 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
     [InlineData("malformed")]
     public async Task IsolatesBundleFailureAndContinuesLaterBundlesAndRemoteRefresh(string failure)
     {
-        var directory = await CopyBundlesWithBrokenOpenAiAsync(failure);
+        var directory = OwnedTempDirectory.Create("pricing-worker-");
         var bundleLogger = new CapturingLogger<BundledPricingCatalogLoader>();
         try
         {
+            await CopyBundlesWithBrokenOpenAiAsync(directory.Path, failure);
             var healthyCandidate = await CandidateAsync(PricingSourceIds.Claude, "healthy remote evidence");
             var healthy = Substitute.For<IPricingSource>();
             healthy.SourceId.Returns(PricingSourceIds.Claude);
@@ -254,7 +256,7 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
             harness = await CreateHarnessAsync(
                 [healthy],
                 [Definition(PricingSourceIds.Claude)],
-                directory.FullName,
+                directory.Path,
                 bundleLogger
             );
             await using (harness)
@@ -279,14 +281,14 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
             bundleLogger.Messages.Should().ContainSingle();
             var message = bundleLogger.Messages.Single();
             message.Should().Contain(PricingSourceIds.OpenAi);
-            message.Should().NotContain(directory.FullName);
+            message.Should().NotContain(directory.Path);
             message.Should().NotContain("secret");
             message.Should().NotContain("?signature=");
             message.Length.Should().BeLessThan(600);
         }
         finally
         {
-            directory.Delete(recursive: true);
+            directory.Delete();
         }
     }
 
@@ -386,10 +388,9 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
         };
     }
 
-    private static async Task<DirectoryInfo> CopyBundlesWithBrokenOpenAiAsync(string failure)
+    private static async Task CopyBundlesWithBrokenOpenAiAsync(string directory, string failure)
     {
-        var directory = Directory.CreateTempSubdirectory();
-        var bundleDirectory = Directory.CreateDirectory(Path.Combine(directory.FullName, "Pricing", "Bundled"));
+        var bundleDirectory = Directory.CreateDirectory(Path.Combine(directory, "Pricing", "Bundled"));
         foreach (
             var fileName in new[]
             {
@@ -419,7 +420,6 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
                 TestContext.Current.CancellationToken
             );
         }
-        return directory;
     }
 
     private async Task<WorkerHarness> CreateHarnessAsync(

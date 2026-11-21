@@ -6,6 +6,7 @@ using AiObservatory.Data.Repositories;
 using AiObservatory.Ingest.Pricing;
 using AiObservatory.Ingest.Sources;
 using AiObservatory.Ingest.Tests.Services;
+using AiObservatory.Testing;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -221,10 +222,10 @@ public sealed class BundledPricingCatalogLoaderTests(ProviderPollingDatabase dat
     public async Task RejectsAnUnmappedBundleMemberWithoutAbortingTheBundlePass()
     {
         await using var harness = await CreateHarnessAsync();
-        var directory = Directory.CreateTempSubdirectory();
+        var directory = OwnedTempDirectory.Create("bundled-pricing-");
         try
         {
-            var bundleDirectory = Directory.CreateDirectory(Path.Combine(directory.FullName, "Pricing", "Bundled"));
+            var bundleDirectory = Directory.CreateDirectory(Path.Combine(directory.Path, "Pricing", "Bundled"));
             await File.WriteAllTextAsync(
                 Path.Combine(bundleDirectory.FullName, "openai.json"),
                 """
@@ -242,7 +243,7 @@ public sealed class BundledPricingCatalogLoaderTests(ProviderPollingDatabase dat
                 harness.Store,
                 harness.Repricing,
                 NullLogger<BundledPricingCatalogLoader>.Instance,
-                directory.FullName
+                directory.Path
             );
 
             await loader.LoadAsync(TestContext.Current.CancellationToken);
@@ -253,7 +254,7 @@ public sealed class BundledPricingCatalogLoaderTests(ProviderPollingDatabase dat
         }
         finally
         {
-            directory.Delete(recursive: true);
+            directory.Delete();
         }
     }
 
