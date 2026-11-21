@@ -13,6 +13,7 @@ namespace AiObservatory.Api.IntegrationTests;
 public class ActivityEndpointDataTests : IAsyncLifetime
 {
     private string _connStr = null!;
+    private string? _ownedDatabase;
     private AiObservatoryDbContext _ctx = null!;
 
     public async ValueTask InitializeAsync()
@@ -21,8 +22,11 @@ public class ActivityEndpointDataTests : IAsyncLifetime
             ?? "Host=localhost;Database=aiobs_test;Username=postgres;Password=postgres";
         _connStr = new NpgsqlConnectionStringBuilder(baseConn)
         {
-            Database = "aiobs_test_activity_api",
+            Database = $"aiobs_test_activity_api_{Guid.NewGuid():N}",
         }.ConnectionString;
+        // Recorded before the first connection, so DisposeAsync drops exactly the database this
+        // instance named (a fresh GUID) and never one that merely matches a prefix.
+        _ownedDatabase = new NpgsqlConnectionStringBuilder(_connStr).Database;
         var options = new DbContextOptionsBuilder<AiObservatoryDbContext>()
             .UseNpgsql(_connStr, o => o.UseNodaTime())
             .Options;
@@ -32,14 +36,32 @@ public class ActivityEndpointDataTests : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
-        if (_ctx is not null && _connStr.Contains("_test", StringComparison.OrdinalIgnoreCase))
+        if (
+            _ctx is not null
+            && _ownedDatabase is not null
+            && string.Equals(
+                new NpgsqlConnectionStringBuilder(_connStr).Database,
+                _ownedDatabase,
+                StringComparison.Ordinal
+            )
+        )
         {
+            await System.Console.Error.WriteLineAsync($"Dropping owned test database '{_ownedDatabase}'.");
             await _ctx.Database.EnsureDeletedAsync();
         }
         if (_ctx is not null)
         {
             await _ctx.DisposeAsync();
         }
+    }
+
+    [Fact]
+    public void UsesADatabaseNameNoOtherRunSharesAndDropsOnlyThatDatabase()
+    {
+        var database = new NpgsqlConnectionStringBuilder(_connStr).Database;
+
+        database.Should().NotBe("aiobs_test_activity_api", "a fixed name would be dropped on every run");
+        database.Should().Be(_ownedDatabase);
     }
 
     [Fact]
