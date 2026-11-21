@@ -14,4 +14,10 @@ public sealed class SourceSyncState
     public LocalDate? PendingFromDate { get; set; }
     public int ConsecutiveFailureCount { get; set; }
     public string? LastError { get; set; }
+
+    /// <summary>
+    /// Sweep-status rows only: the files the machine's last sweep held back across all its sources,
+    /// as the sweep reported it. Null for other sources and for a sweep that did not report it.
+    /// </summary>
+    public int? HeldFiles { get; set; }
 }

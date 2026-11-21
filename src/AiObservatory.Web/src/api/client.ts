@@ -155,6 +155,8 @@ export interface SourceStatusResponse {
   latestObservationAt: string | null
   consecutiveFailureCount: number
   lastError: string | null
+  /** Sweep-status rows only: files the machine's last sweep held back; null otherwise. */
+  heldFiles: number | null
 }
 
 export const getSourceStatuses = () => getJson<SourceStatusResponse[]>('/sources/status')

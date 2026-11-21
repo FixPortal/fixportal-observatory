@@ -1526,6 +1526,9 @@ namespace AiObservatory.Data.Migrations
                     b.Property<long>("ExpectedRefreshIntervalSeconds")
                         .HasColumnType("bigint");
 
+                    b.Property<int?>("HeldFiles")
+                        .HasColumnType("integer");
+
                     b.Property<bool?>("IsAvailable")
                         .HasColumnType("boolean");
 

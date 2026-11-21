@@ -26,6 +26,7 @@ const status = (overrides: Partial<SourceStatusResponse>): SourceStatusResponse 
   latestObservationAt: '2026-08-25T10:00:00Z',
   consecutiveFailureCount: 0,
   lastError: null,
+  heldFiles: null,
   ...overrides,
 })
 
