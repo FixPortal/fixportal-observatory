@@ -1160,6 +1160,7 @@ export function mergeHolds(...maps) {
 }
 
 const eventKeyDay = eventKey => /^[^:]+:(\d{4}-\d{2}-\d{2})(?::|$)/.exec(eventKey)?.[1]
+const dayModel = snapshot => `${eventKeyDay(snapshot.eventKey)}\n${snapshot.model}`
 
 // eventKey is `<tool>:<UTC date>:...` for every local-telemetry key. A key with no readable date
 // is held whenever its source has any hold, because its day cannot be shown to lie outside it.
@@ -1443,9 +1444,11 @@ async function fetchSnapshotInventory(url, apiKey, enabled, machine) {
 // One-shot migration for the per-machine namespace: snapshots posted before source ids
 // carried the @<machine> suffix still sit under the bare ids (codex-local etc.), so the
 // first post-upgrade run would otherwise double all pre-upgrade history beside the new
-// series. Tombstone every legacy key once and record completion in the state file; a
-// failed fetch or post leaves the marker unset so the next run retries.
-async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc, replacementVerified) {
+// series. Tombstone, once, each legacy key that this run replaced with a per-machine post for
+// the same day and model, and record completion in the state file; a failed fetch or post
+// leaves the marker unset so the next run retries. Every other legacy key is kept: its day may
+// be older than this machine's retention, or belong to another machine under the shared id.
+async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc, replacementVerified, replacedDays) {
   state.legacySourceMigration ??= {}
   for (const tool of enabled) {
     if (state.legacySourceMigration[tool]) { continue }
@@ -1473,8 +1476,10 @@ async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc
       console.error(`Legacy inventory unavailable for ${legacyId} (${error.message}); the migration is retried next run.`)
       continue
     }
+    const replaced = replacedDays(tool)
+    const superseded = legacyInventory.filter(snapshot => replaced.has(dayModel(snapshot)))
     let completed = true
-    for (const snapshot of legacyInventory) {
+    for (const snapshot of superseded) {
       if (!await postEvent(url, apiKey, { ...zeroSnapshot(snapshot), observedAtUtc })) {
         completed = false
       }
@@ -1484,8 +1489,8 @@ async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc
       continue
     }
     state.legacySourceMigration[tool] = observedAtUtc
-    if (legacyInventory.length > 0) {
-      console.error(`Tombstoned ${legacyInventory.length} legacy ${legacyId} key(s) superseded by the per-machine namespace.`)
+    if (superseded.length > 0) {
+      console.error(`Tombstoned ${superseded.length} legacy ${legacyId} key(s) superseded by the per-machine namespace; ${legacyInventory.length - superseded.length} kept.`)
     }
   }
 }
@@ -1724,6 +1729,8 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
 
   let posted = 0
   const activeSucceeded = new Map()
+  // Day and model of every per-machine snapshot that posted this run, per source.
+  const replacedDays = new Map()
   // A source whose clean scan verified an empty local history (populated
   // discovery root, no read failures, no records) has nothing left to replace:
   // seed success for the legacy migration below. It plans no tombstones (no
@@ -1744,6 +1751,8 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     )
     if (succeeded) {
       posted++
+      const days = replacedDays.get(submission.snapshot.sourceId) ?? new Set()
+      replacedDays.set(submission.snapshot.sourceId, days.add(dayModel(submission.snapshot)))
     }
   }
   for (const submission of submissions.filter(item => !item.active)) {
@@ -1771,6 +1780,7 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
       // A held source posted only its unheld days: zeroing the legacy keys for the held days would
       // lose them, and the marker would stop the migration from ever retrying.
       tool => activeSucceeded.get(localSourceId(tool, machine)) === true && !holds.has(localSourceId(tool, machine)),
+      tool => replacedDays.get(localSourceId(tool, machine)) ?? new Set(),
     )
     await saveState(statePath, state)
   }

@@ -127,7 +127,7 @@ Copilot fronts other vendors' models. The script files a model under OpenAI when
 
 Source ids carry the machine name, so two machines never share a namespace and cannot zero each other's history. The name is lower-cased and every run of characters outside `a-z` and `0-9` becomes one hyphen; an empty result becomes `unknown-machine`. Two host names that reduce to the same slug (`build.example` and `build-example`) would collide. Set `OBSERVATORY_MACHINE` to a unique value on such a host.
 
-Snapshots posted by older versions, before the suffix existed, sit under the bare ids (`codex-local`). On the first run under a suffixed id the script zeroes every key in the matching bare id once and records that in the state file. If a fetch or post fails, it retries on the next run. It also waits while any day of that tool is held on this machine, so held days are never zeroed before they are replaced.
+Snapshots posted by older versions, before the suffix existed, sit under the bare ids (`codex-local`). On the first run under a suffixed id the script zeroes, once, each bare-id key whose day and model that same run posted under the suffixed id, and records that in the state file. Every other bare-id key is kept: its day may be older than the local files, or it may be another machine's usage under the shared id. If a fetch or post fails, it retries on the next run. It also waits while any day of that tool is held on this machine, so held days are never zeroed before they are replaced.
 
 ### Sessions that cannot be placed
 

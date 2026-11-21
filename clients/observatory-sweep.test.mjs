@@ -2564,14 +2564,16 @@ test('main withholds corrections and tombstones for an incompletely scanned sour
   }
 })
 
-test('main tombstones the legacy un-suffixed namespace once and records the migration in state', async () => {
+test('main tombstones the replaced legacy un-suffixed keys once and records the migration in state', async () => {
   const root = await makeTemp('observatory-sweep-legacy-')
   const sessions = join(root, 'codex', 'sessions')
   const statePath = join(root, 'state', 'sweep.json')
   await mkdir(sessions, { recursive: true })
+  // The local history replaces both legacy days, so both legacy keys are zeroed.
   await writeFile(join(sessions, 'rollout.jsonl'), [
     JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }),
-    JSON.stringify({ timestamp: '2026-08-24T12:00:00Z', type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5 } } } }),
+    codexUsageRow('2026-08-10T12:00:00Z', 10, 5),
+    codexUsageRow('2026-08-11T12:00:00Z', 20, 10),
   ].join('\n'))
   const legacyRecord = eventKey => ({
     provider: 'openai', occurredAtUtc: '2026-08-10T12:00:00Z', model: 'gpt-5.5',
@@ -2721,7 +2723,8 @@ test('main retries the legacy migration when a legacy tombstone post fails', asy
   await mkdir(sessions, { recursive: true })
   await writeFile(join(sessions, 'rollout.jsonl'), [
     JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }),
-    JSON.stringify({ timestamp: '2026-08-24T12:00:00Z', type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5 } } } }),
+    codexUsageRow('2026-08-10T12:00:00Z', 10, 5),
+    codexUsageRow('2026-08-11T12:00:00Z', 20, 10),
   ].join('\n'))
   const legacyRecord = eventKey => ({
     provider: 'openai', occurredAtUtc: '2026-08-10T12:00:00Z', model: 'gpt-5.5',
@@ -3664,5 +3667,21 @@ test('main never zeroes a key older than the oldest day the local files still co
       await runMainWith({ root, statePath: join(root, 'state', 'sweep.json'), server: recording.server })
     })
     assert.deepEqual(machinePosts(recording.posts).filter(isTombstone).map(body => body.eventKey), ['codex:2026-10-12:gpt-5.5'])
+  } finally { await removeTemp(root) }
+})
+
+// C3-C4
+test('main zeroes only the legacy keys this run replaced for the same day and model', async () => {
+  const root = await makeTemp('observatory-legacy-replaced-')
+  await writeCodexRollout(root)
+  const recording = recordingServer(['codex:2026-08-24:gpt-5.5', 'codex:2026-08-10:gpt-5.5', 'codex:2026-08-24:gpt-5.4'])
+  const statePath = join(root, 'state', 'sweep.json')
+  try {
+    await withRecordingServer(recording, async () => {
+      await runMainWith({ root, statePath, server: recording.server })
+    })
+    assert.deepEqual(machinePosts(recording.posts, 'codex-local').map(body => body.eventKey), ['codex:2026-08-24:gpt-5.5'])
+    const state = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(typeof state.legacySourceMigration.codex, 'string')
   } finally { await removeTemp(root) }
 })
