@@ -335,6 +335,34 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
     }
 
     [Fact]
+    public async Task RetriesAFailedBundleLoadOnTheNextHourlyPass()
+    {
+        var directory = OwnedTempDirectory.Create("pricing-worker-retry-");
+        try
+        {
+            await CopyBundlesWithBrokenOpenAiAsync(directory.Path, "malformed");
+            var clock = new FakeClock(Now);
+            await using var harness = await CreateHarnessAsync([], [], directory.Path, clock: clock);
+            await harness.Worker.RunOnceAsync(TestContext.Current.CancellationToken);
+            (await harness.LoadActiveAsync(PricingSourceIds.OpenAi)).Should().BeNull();
+
+            File.Copy(
+                Path.Combine(AppContext.BaseDirectory, "Pricing", "Bundled", "openai.json"),
+                Path.Combine(directory.Path, "Pricing", "Bundled", "openai.json"),
+                overwrite: true
+            );
+            clock.Advance(Duration.FromHours(1));
+            await harness.Worker.RunOnceAsync(TestContext.Current.CancellationToken);
+
+            (await harness.LoadActiveAsync(PricingSourceIds.OpenAi)).Should().NotBeNull();
+        }
+        finally
+        {
+            directory.Delete();
+        }
+    }
+
+    [Fact]
     public async Task FailureAndUnchangedFetchBothPreserveTheActiveHash()
     {
         var failed = Substitute.For<IPricingSource>();

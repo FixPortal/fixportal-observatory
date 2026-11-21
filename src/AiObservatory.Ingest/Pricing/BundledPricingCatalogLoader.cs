@@ -32,9 +32,11 @@ public sealed class BundledPricingCatalogLoader
         _baseDirectory = baseDirectory;
     }
 
-    public async Task LoadAsync(CancellationToken cancellationToken)
+    /// <summary>Loads every bundle; false when any provider's load failed (logged), so the caller can retry.</summary>
+    public async Task<bool> LoadAsync(CancellationToken cancellationToken)
     {
-        await LoadAsync<OpenAiPriceCatalog>(
+        var loaded = true;
+        loaded &= await LoadAsync<OpenAiPriceCatalog>(
             Provider.OpenAI,
             PricingSourceIds.OpenAi,
             "openai.json",
@@ -42,7 +44,7 @@ public sealed class BundledPricingCatalogLoader
             static catalog => catalog.RetrievedAt,
             cancellationToken
         );
-        await LoadAsync<AnthropicPriceCatalog>(
+        loaded &= await LoadAsync<AnthropicPriceCatalog>(
             Provider.Anthropic,
             PricingSourceIds.Claude,
             "claude.json",
@@ -50,7 +52,7 @@ public sealed class BundledPricingCatalogLoader
             static catalog => catalog.RetrievedAt,
             cancellationToken
         );
-        await LoadAsync<KimiPriceCatalog>(
+        loaded &= await LoadAsync<KimiPriceCatalog>(
             Provider.Moonshot,
             PricingSourceIds.Kimi,
             "kimi.json",
@@ -58,7 +60,7 @@ public sealed class BundledPricingCatalogLoader
             static catalog => catalog.RetrievedAt,
             cancellationToken
         );
-        await LoadAsync<GooglePriceCatalog>(
+        loaded &= await LoadAsync<GooglePriceCatalog>(
             Provider.Google,
             PricingSourceIds.GoogleCloudCatalog,
             "google.json",
@@ -66,7 +68,7 @@ public sealed class BundledPricingCatalogLoader
             static catalog => catalog.RetrievedAt,
             cancellationToken
         );
-        await LoadAsync<XaiPriceCatalog>(
+        loaded &= await LoadAsync<XaiPriceCatalog>(
             Provider.Xai,
             PricingSourceIds.Xai,
             "xai.json",
@@ -74,7 +76,7 @@ public sealed class BundledPricingCatalogLoader
             static catalog => catalog.RetrievedAt,
             cancellationToken
         );
-        await LoadAsync<MetaPriceCatalog>(
+        loaded &= await LoadAsync<MetaPriceCatalog>(
             Provider.Meta,
             PricingSourceIds.MetaOpenRouter,
             "meta.json",
@@ -82,7 +84,7 @@ public sealed class BundledPricingCatalogLoader
             static catalog => catalog.RetrievedAt,
             cancellationToken
         );
-        await LoadAsync<ZaiPriceCatalog>(
+        loaded &= await LoadAsync<ZaiPriceCatalog>(
             Provider.Zai,
             PricingSourceIds.ZaiList,
             "zai.json",
@@ -91,7 +93,7 @@ public sealed class BundledPricingCatalogLoader
             cancellationToken,
             replaceActive: true
         );
-        await LoadAsync<DeepSeekPriceCatalog>(
+        loaded &= await LoadAsync<DeepSeekPriceCatalog>(
             Provider.DeepSeek,
             PricingSourceIds.DeepSeekList,
             "deepseek.json",
@@ -100,7 +102,7 @@ public sealed class BundledPricingCatalogLoader
             cancellationToken,
             replaceActive: true
         );
-        await LoadAsync<GeminiDeveloperPriceCatalog>(
+        loaded &= await LoadAsync<GeminiDeveloperPriceCatalog>(
             Provider.Google,
             PricingSourceIds.GeminiDeveloperApi,
             "gemini-developer-api.json",
@@ -109,9 +111,10 @@ public sealed class BundledPricingCatalogLoader
             cancellationToken,
             replaceActive: true
         );
+        return loaded;
     }
 
-    private async Task LoadAsync<T>(
+    private async Task<bool> LoadAsync<T>(
         Provider provider,
         string sourceId,
         string fileName,
@@ -142,6 +145,7 @@ public sealed class BundledPricingCatalogLoader
             {
                 await _repricing.RepriceProviderAsync(provider, cancellationToken);
             }
+            return true;
         }
         catch (OperationCanceledException)
         {
@@ -150,6 +154,7 @@ public sealed class BundledPricingCatalogLoader
         catch (Exception exception)
         {
             LogLoadFailure(sourceId, exception);
+            return false;
         }
     }
 
