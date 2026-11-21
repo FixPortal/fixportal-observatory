@@ -238,18 +238,35 @@ public class SpendFeedStatusWafTests(AiObservatoryApiFactory factory) : IClassFi
         (await RowsAsync()).Should().BeEmpty();
     }
 
-    [Fact]
-    public async Task Concurrent_posts_leave_one_row()
+    // Two cases share the fixture's database in turn: the second is the "a sibling left the row
+    // behind" situation, so it fails if the test does not start from an empty table.
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task Concurrent_posts_leave_one_row(int run)
     {
         var ct = TestContext.Current.CancellationToken;
         var admin = factory.CreateAdminClient();
+        await ClearRowAsync();
+        try
+        {
+            var responses = await Task.WhenAll(
+                Enumerable.Range(0, 8).Select(_ => admin.PostAsJsonAsync(Route, Body(1, 0, (5, "aged-out")), ct))
+            );
 
-        var responses = await Task.WhenAll(
-            Enumerable.Range(0, 8).Select(_ => admin.PostAsJsonAsync(Route, Body(1, 0, (5, "aged-out")), ct))
-        );
-
-        responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.NoContent);
-        (await RowsAsync()).Should().ContainSingle();
+            responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.NoContent);
+            // Every post records one failure, so eight from an empty table is exactly eight; a row
+            // left behind by an earlier run would add to it and the insert race would go untested.
+            (await RowsAsync())
+                .Should()
+                .ContainSingle()
+                .Which.ConsecutiveFailureCount.Should()
+                .Be(8, "run {0} must start from an empty table", run);
+        }
+        finally
+        {
+            await ClearRowAsync();
+        }
     }
 
     [Fact]
