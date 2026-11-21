@@ -1004,6 +1004,58 @@ public class SpendEntriesEndpointsWafTests(AiObservatoryApiFactory factory) : IC
         patch.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    /// <summary>Holds the FX call open until released, so a second request can run inside it.</summary>
+    private sealed class GatedFxHandler : HttpMessageHandler
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            Entered.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"rates":{"GBP":0.8}}""", Encoding.UTF8, "application/json"),
+            };
+        }
+    }
+
+    [Fact]
+    public async Task ConcurrentPatchesCannotLeaveAnAmountGbpThatDisagreesWithAmountAndFxRate()
+    {
+        var gate = new GatedFxHandler();
+        await using var stubFactory = WithStubbedFx(factory, gate);
+        using var client = AdminClient(stubFactory);
+        var ct = TestContext.Current.CancellationToken;
+        var (categoryId, vendorId) = await SeedCatalogAsync(client);
+        var id = await CreateEntryAsync(client, categoryId, vendorId, amount: 80m, currency: "GBP");
+
+        // A changes the currency and parks inside its FX lookup, holding the row it already read.
+        var patchCurrency = client.PatchAsJsonAsync($"/api/spend/entries/{id}", new { Currency = "USD" }, ct);
+        await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30), ct);
+        // B changes the amount and commits while A is parked.
+        (await client.PatchAsJsonAsync($"/api/spend/entries/{id}", new { Amount = 100m }, ct))
+            .StatusCode.Should()
+            .Be(HttpStatusCode.OK);
+        gate.Release.SetResult();
+        var currencyResponse = await patchCurrency;
+
+        var rows = await client.GetFromJsonAsync<JsonElement>($"/api/spend/entries?vendorId={vendorId}", ct);
+        var row = rows.EnumerateArray().Single();
+        var amount = row.GetProperty("amount").GetDecimal();
+        var fxRate = row.GetProperty("fxRate").GetDecimal();
+        row.GetProperty("amountGbp")
+            .GetDecimal()
+            .Should()
+            .Be(decimal.Round(amount * fxRate, 4), "the stored GBP figure must equal Amount * FxRate");
+        currencyResponse.StatusCode.Should().Be(HttpStatusCode.Conflict, "the stale write loses");
+    }
+
     [Fact]
     public async Task PostWithANullArrayElement_IsRejectedBeforeAnyRowIsWritten()
     {

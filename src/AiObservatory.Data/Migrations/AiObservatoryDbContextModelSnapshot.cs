@@ -1701,6 +1701,12 @@ namespace AiObservatory.Data.Migrations
                     b.Property<Guid>("VendorId")
                         .HasColumnType("uuid");
 
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CategoryId");
