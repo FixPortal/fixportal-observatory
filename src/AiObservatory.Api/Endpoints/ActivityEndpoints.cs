@@ -370,6 +370,7 @@ public static class ActivityEndpoints
             }
 
             var totalSeconds = (session.LastSeenAt - session.StartedAt).TotalSeconds;
+            var fragments = new List<(LocalDate Date, Instant Start, Instant End, double Exact)>();
             var cursor = clippedStart;
             while (cursor < clippedEnd)
             {
@@ -377,16 +378,27 @@ public static class ActivityEndpoints
                 var nextMidnight = date.PlusDays(1).AtStartOfDayInZone(DateTimeZone.Utc).ToInstant();
                 var fragmentEnd = Min(clippedEnd, nextMidnight);
                 var fragmentSeconds = (fragmentEnd - cursor).TotalSeconds;
-                var activeSeconds =
-                    totalSeconds > 0
-                        ? (long)
-                            Math.Round(
-                                session.ActiveSeconds * fragmentSeconds / totalSeconds,
-                                MidpointRounding.AwayFromZero
-                            )
-                        : 0;
-                slices.Add((date, cursor, fragmentEnd, activeSeconds));
+                fragments.Add((date, cursor, fragmentEnd, session.ActiveSeconds * fragmentSeconds / totalSeconds));
                 cursor = fragmentEnd;
+            }
+
+            // Largest-remainder apportionment: whole-second shares that sum to the rounded total,
+            // so a session split at midnight is never reported as more seconds than it holds.
+            var floors = fragments.Select(f => (long)Math.Floor(f.Exact)).ToArray();
+            var remaining = (long)Math.Round(fragments.Sum(f => f.Exact), MidpointRounding.AwayFromZero) - floors.Sum();
+            var byRemainder = Enumerable
+                .Range(0, fragments.Count)
+                .OrderByDescending(i => fragments[i].Exact - floors[i])
+                .ThenBy(i => i)
+                .Take((int)Math.Max(0, remaining));
+            foreach (var i in byRemainder)
+            {
+                floors[i]++;
+            }
+
+            for (var i = 0; i < fragments.Count; i++)
+            {
+                slices.Add((fragments[i].Date, fragments[i].Start, fragments[i].End, floors[i]));
             }
         }
 
