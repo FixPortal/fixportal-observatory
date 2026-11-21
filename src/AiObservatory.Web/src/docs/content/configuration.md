@@ -116,7 +116,7 @@ Details:
 | ------------------------------------------- | ------- | -------------------------------------------------------------------------------------------- | -------------------------- |
 | `Suggestions:WorkerEnabled`                 | `true`  | Whether the daily suggestions worker runs. `POST /api/suggestions/refresh` works either way. | Boolean.                   |
 | `Suggestions:SeatWindowDays`                | `60`    | Days of review-panel history the seat rules read, ending yesterday (UTC).                    | Greater than 0.            |
-| `Suggestions:MinDetailedRuns`               | `5`     | Runs with finding rows a seat needs before `seat.no-unique-catch` judges it.                 | Greater than 0.            |
+| `Suggestions:MinDetailedRuns`               | `5`     | Detailed runs a seat needs before `seat.no-unique-catch` judges it.                          | Greater than 0.            |
 | `Suggestions:MinSettledFindings`            | `10`    | Settled findings a seat needs before `seat.high-false-positive` judges it.                   | Greater than 0.            |
 | `Suggestions:FalsePositiveThreshold`        | `0.5`   | Refuted share above which a seat fires.                                                      | Greater than 0, at most 1. |
 | `Suggestions:MinCatchesForConfirmationOnly` | `10`    | Accepted catches a seat needs before `seat.confirmation-only` judges it.                     | Greater than 0.            |

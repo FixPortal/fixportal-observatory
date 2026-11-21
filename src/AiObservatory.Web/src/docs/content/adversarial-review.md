@@ -154,7 +154,7 @@ The pivot buttons choose the single "influence" measure used on the charts and i
 | Accepted per run      | All accepted findings (including accepted counts from runs without finding detail) divided by all of the seat's runs. |
 | Acceptance rate       | Accepted divided by raised.                                                                                           |
 
-The line beneath the buttons names the active measure (for example `Unique accepted per detailed run`). A **detailed run** is a run that has finding rows. Beside it, `N runs unknown cost` counts reviewer rows with unknown cost across all seats.
+The line beneath the buttons names the active measure (for example `Unique accepted per detailed run`). A **detailed run** is a run whose finding set was posted, even an empty one: a clean run whose panel raised nothing is detailed, not counts-only. Beside it, `N runs unknown cost` counts reviewer rows with unknown cost across all seats.
 
 ### Finding outcomes and the seat counters
 
@@ -185,7 +185,7 @@ Uniqueness is decided by the number of distinct reviewer vendors listed on the f
 | Known cost          | Sum of cost over the seat's runs with known cost. `Unknown` when every run is unknown.                                                                                                                                               |
 | Cost / unique       | Known cost of the seat's detailed runs divided by its unique catches. `—` when there are no unique catches or no known cost. Runs without finding detail are excluded from the numerator because they cannot produce unique catches. |
 | Unknown-cost runs   | Count of the seat's runs with unknown cost.                                                                                                                                                                                          |
-| Counts-only runs    | Count of the seat's runs that have no finding rows. For these runs only the raised and accepted totals are available.                                                                                                                |
+| Counts-only runs    | Count of the seat's runs whose finding set was never posted. For these runs only the raised and accepted totals are available.                                                                                                       |
 | Sample              | `small sample` when the seat has fewer than five runs, otherwise `sufficient`. Treat rates for small samples with caution.                                                                                                           |
 
 The accepted figure mixes two sources (finding rows for detailed runs, run-level counts for counts-only runs), whereas the false-positive rate uses finding rows only, because counts-only runs have no refuted counterpart.
@@ -250,7 +250,7 @@ A participant is identified by run id, reviewer and role. Posting the same parti
 
 ### Finding fields
 
-`POST /api/adversarial-review/findings` takes `runId`, an optional `repo`, and a `findings` array. It replaces the run's entire finding set in one transaction, so re-posting after a re-aggregation leaves no stale rows. The run must already exist (`404` otherwise), and a `repo` that disagrees with the run rows is rejected.
+`POST /api/adversarial-review/findings` takes `runId`, an optional `repo`, and a `findings` array. It replaces the run's entire finding set in one transaction, so re-posting after a re-aggregation leaves no stale rows. Posting an empty `findings` array records a clean run: the run becomes a detailed run with no catches rather than a counts-only one. The run must already exist (`404` otherwise), and a `repo` that disagrees with the run rows is rejected.
 
 | Rule                     | Limit                                                                                                                             |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |

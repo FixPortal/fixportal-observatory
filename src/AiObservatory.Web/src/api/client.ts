@@ -333,6 +333,8 @@ export interface AdversarialReviewRun {
   issuesAccepted: number
   costPerAcceptedFinding: number | null
   chunkCount: number | null
+  /** True once a finding set, possibly empty, was posted for this row's run. */
+  findingsCaptured: boolean
   runId: string
   recordedAt: string
 }

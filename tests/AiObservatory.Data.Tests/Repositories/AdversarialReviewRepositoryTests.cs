@@ -88,6 +88,21 @@ public class AdversarialReviewRepositoryTests : IAsyncLifetime
         };
 
     [Fact]
+    public async Task Posting_an_empty_finding_set_marks_every_row_of_the_run_captured_and_a_correction_keeps_it()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _repo.RecordRunAsync(Run("CLEAN", "zai", "reviewer", "glm", raised: 0, accepted: 0), ct);
+        await _repo.RecordRunAsync(Run("CLEAN", "anthropic", "judge", "opus"), ct);
+        await _repo.RecordRunAsync(Run("OTHER", "zai", "reviewer", "glm"), ct);
+
+        (await _repo.ReplaceFindingsAsync("CLEAN", [], ct)).Should().BeTrue();
+        await _repo.RecordRunAsync(Run("CLEAN", "zai", "reviewer", "glm", raised: 0, accepted: 0), ct);
+
+        (await _repo.GetRunsAsync("CLEAN", ct)).Should().HaveCount(2).And.OnlyContain(r => r.FindingsCaptured);
+        (await _repo.GetRunsAsync("OTHER", ct)).Should().ContainSingle().Which.FindingsCaptured.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Losing_a_confirmed_insert_race_corrects_the_winner_and_keeps_the_context_usable()
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);

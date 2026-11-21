@@ -3,7 +3,7 @@
     "key": "deepseek-v4",
     "label": "deepseek-v4",
     "mixed": false,
-    "runs": 2,
+    "runs": 3,
     "raised": 2,
     "accepted": 2,
     "unique": 2,
@@ -14,9 +14,9 @@
     "indeterminate": 0,
     "falsePositiveRate": 0,
     "acceptanceRate": 1,
-    "knownCostUsd": 2,
+    "knownCostUsd": 4,
     "unknownCostRuns": 1,
-    "costPerUnique": 2,
+    "costPerUnique": 4,
     "countsOnlyRuns": 0,
     "smallSample": true,
     "byWeek": [
@@ -27,8 +27,8 @@
       },
       {
         "week": "2026-W43",
-        "costUsd": 0,
-        "influence": 1
+        "costUsd": 2,
+        "influence": 0.5
       }
     ]
   },

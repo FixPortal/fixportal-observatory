@@ -48,6 +48,7 @@ public static class AdversarialReviewEndpoints
                         r.IssuesAccepted,
                         r.CostPerAcceptedFinding,
                         r.ChunkCount,
+                        r.FindingsCaptured,
                         r.RunId,
                         recordedAt = r.RecordedAt.ToString(),
                     })

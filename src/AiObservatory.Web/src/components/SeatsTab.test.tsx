@@ -50,6 +50,7 @@ function run(p: Partial<RunRow>): RunRow {
     costPerAcceptedFinding: null,
     costUnknown: false,
     chunkCount: null,
+    findingsCaptured: true,
     runId: 'R1',
     recordedAt: '2026-10-19T12:00:00Z',
     ...p,

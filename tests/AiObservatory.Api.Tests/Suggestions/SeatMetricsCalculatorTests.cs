@@ -20,7 +20,8 @@ public class SeatMetricsCalculatorTests
         int IssuesRaised,
         int IssuesAccepted,
         string RunId,
-        string RecordedAt
+        string RecordedAt,
+        bool FindingsCaptured
     );
 
     private sealed record ParticipantJson(string Reviewer, string Model, string? Verdict = null);
@@ -61,7 +62,8 @@ public class SeatMetricsCalculatorTests
         int raised,
         int accepted,
         string runId,
-        Instant recordedAt
+        Instant recordedAt,
+        bool findingsCaptured = false
     ) =>
         new()
         {
@@ -74,6 +76,7 @@ public class SeatMetricsCalculatorTests
             IssuesAccepted = accepted,
             RunId = runId,
             RecordedAt = recordedAt,
+            FindingsCaptured = findingsCaptured,
         };
 
     internal static AdversarialReviewFinding ToFinding(
@@ -139,7 +142,8 @@ public class SeatMetricsCalculatorTests
                     r.IssuesRaised,
                     r.IssuesAccepted,
                     r.RunId,
-                    InstantPattern.ExtendedIso.Parse(r.RecordedAt).Value
+                    InstantPattern.ExtendedIso.Parse(r.RecordedAt).Value,
+                    r.FindingsCaptured
                 )
             )
             .ToList();
@@ -223,14 +227,28 @@ public class SeatMetricsCalculatorTests
     }
 
     [Fact]
+    public void A_clean_run_posted_with_no_findings_is_a_detailed_run_not_counts_only()
+    {
+        var runs = new[]
+        {
+            ToRun("zai", "glm-5.3", "reviewer", 1m, false, 0, 0, "CLEAN", Instant.FromUtc(2026, 10, 1, 12, 0), true),
+        };
+
+        var seat = SeatMetricsCalculator.Compute(runs, []).Single();
+
+        seat.CountsOnlyRuns.Should().Be(0);
+        seat.Runs.Should().Be(1);
+    }
+
+    [Fact]
     public void Cost_per_unique_catch_divides_known_cost_by_catches_of_known_cost_runs_only()
     {
         // $10 known-cost run with 1 unique catch, plus an unknown-cost run with 2: $10 per catch, not $3.33.
         var at = Instant.FromUtc(2026, 10, 1, 12, 0);
         var runs = new[]
         {
-            ToRun("a", "m", "reviewer", 10m, false, 0, 0, "K", at),
-            ToRun("a", "m", "reviewer", 0m, true, 0, 0, "U", at),
+            ToRun("a", "m", "reviewer", 10m, false, 0, 0, "K", at, findingsCaptured: true),
+            ToRun("a", "m", "reviewer", 0m, true, 0, 0, "U", at, findingsCaptured: true),
         };
         var findings = new[]
         {

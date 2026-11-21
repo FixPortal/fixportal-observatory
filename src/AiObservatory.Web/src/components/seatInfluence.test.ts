@@ -21,6 +21,7 @@ function run(p: Partial<RunRow>): RunRow {
     costPerAcceptedFinding: null,
     costUnknown: false,
     chunkCount: null,
+    findingsCaptured: true,
     runId: 'R1',
     recordedAt: '2026-10-19T12:00:00Z',
     ...p,
@@ -235,10 +236,20 @@ test('matches the shared seat-metrics contract fixture', () => {
   expect(computeSeatMetrics(input.runs, input.findings, 'unique')).toEqual(expected)
 })
 
+test('a clean run posted with an empty finding set is detailed, not counts-only', () => {
+  const metrics = computeSeatMetrics(
+    [run({ runId: 'CLEAN', findingsCaptured: true })],
+    [],
+    'unique',
+  )
+
+  expect(metrics[0]).toMatchObject({ runs: 1, countsOnlyRuns: 0 })
+})
+
 test('the false-positive rate counts finding-row catches only, not counts-only accepted counts', () => {
   const metrics = computeSeatMetrics(
     [
-      run({ runId: 'R1', issuesRaised: 5, issuesAccepted: 4 }),
+      run({ runId: 'R1', issuesRaised: 5, issuesAccepted: 4, findingsCaptured: false }),
       run({ id: 'detailed', runId: 'R2', recordedAt: '2026-10-20T12:00:00Z' }),
     ],
     [
@@ -267,6 +278,7 @@ test('a counts-only run contributes counts to acceptance but not unique or corro
       }),
       run({
         id: 'counts-only',
+        findingsCaptured: false,
         runId: 'R2',
         issuesRaised: 4,
         issuesAccepted: 3,
@@ -301,6 +313,7 @@ test('uses the selected pivot as per-run influence, excluding counts-only from u
     run({ runId: 'R1', costUsd: 2 }),
     run({
       id: 'counts-only',
+      findingsCaptured: false,
       runId: 'R2',
       issuesRaised: 2,
       issuesAccepted: 1,
