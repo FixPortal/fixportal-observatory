@@ -116,9 +116,9 @@ jobs:
       # that deploy AND the next one reported success. Production was down for ~25 minutes
       # with nothing red anywhere. This step is what turns that into a failed deploy.
       #
-      # Only THIS build reporting THIS commit proves the deploy landed. The probe used to
-      # accept a 401 from /api, but the build it replaced answers that too, so a package
-      # that could not start would pass while the old one kept serving. GET /version is
+      # Only THIS build reporting THIS commit proves the deploy landed. A 401 from /api
+      # cannot: the build being replaced answers it too, so a package that could not
+      # start would pass while the old one kept serving. GET /version is
       # unauthenticated and returns the commit the SDK stamped into the assembly from this
       # checkout, so no API key goes into this workflow. Anything else -- 5xx, 000, a
       # placeholder page, a redirect, a 404, a stopped site, or the previous commit -- is

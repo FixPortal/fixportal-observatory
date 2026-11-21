@@ -55,7 +55,7 @@ public static partial class SweepStatusEndpoints
                 sourceId,
                 ExpectedRefreshInterval,
                 now,
-                Describe(req.Unplaced, req.HeldFiles ?? 0),
+                Describe(req.Unplaced, req.HeldFiles),
                 ct
             );
         }
@@ -105,28 +105,26 @@ public static partial class SweepStatusEndpoints
     /// Counts only, e.g. "5 sessions unplaced: codex gpt-x (3), codex unknown (2)", led by
     /// "N files held: not posted this sweep" when the sweep held files back.
     /// </summary>
-    internal static string Describe(IReadOnlyCollection<SweepUnplaced> unplaced, int heldFiles = 0)
+    internal static string Describe(IReadOnlyCollection<SweepUnplaced> unplaced, int? heldFiles = null)
     {
-        string? heldText = null;
-        if (heldFiles > 0)
+        var sections = new List<string>();
+        if (heldFiles is > 0)
         {
-            heldText = $"{heldFiles} {(heldFiles == 1 ? "file" : "files")} held: not posted this sweep";
+            sections.Add($"{heldFiles} {(heldFiles == 1 ? "file" : "files")} held: not posted this sweep");
         }
-        if (unplaced.Count == 0)
+        if (unplaced.Count > 0)
         {
-            return heldText ?? "";
+            var total = unplaced.Sum(u => u.Count);
+            var parts = unplaced
+                .OrderByDescending(u => u.Count)
+                .ThenBy(u => u.Tool, StringComparer.Ordinal)
+                .ThenBy(u => u.Model, StringComparer.Ordinal)
+                .Take(5)
+                .Select(u => $"{u.Tool} {u.Model} ({u.Count})");
+            var more = unplaced.Count > 5 ? $", +{unplaced.Count - 5} more" : "";
+            sections.Add($"{total} {(total == 1 ? "session" : "sessions")} unplaced: {string.Join(", ", parts)}{more}");
         }
-        var total = unplaced.Sum(u => u.Count);
-        var parts = unplaced
-            .OrderByDescending(u => u.Count)
-            .ThenBy(u => u.Tool, StringComparer.Ordinal)
-            .ThenBy(u => u.Model, StringComparer.Ordinal)
-            .Take(5)
-            .Select(u => $"{u.Tool} {u.Model} ({u.Count})");
-        var more = unplaced.Count > 5 ? $", +{unplaced.Count - 5} more" : "";
-        var text =
-            (heldText is null ? "" : heldText + "; ")
-            + $"{total} {(total == 1 ? "session" : "sessions")} unplaced: {string.Join(", ", parts)}{more}";
+        var text = string.Join("; ", sections);
         // LastError is varchar(500); the total leads, so cutting the tail keeps the part that matters.
         return text.Length <= LastErrorMaxLength ? text : text[..(LastErrorMaxLength - 3)] + "...";
     }
