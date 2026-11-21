@@ -447,8 +447,48 @@ public sealed class AuditSelectedCaptureCompositionTests
         var stderr = ReadOutputAsync(process.StandardError);
         // Cancellation requests cooperative stop through this child's pipe, then still joins normal exit.
         // Runner loss closes the parent pipe; the CLI treats that EOF as the same stop request.
-        await process.WaitForExitAsync(CancellationToken.None);
+        await WaitOrKillAsync(process, CliCeiling);
         return new(process.ExitCode, await stdout, await stderr);
+    }
+
+    // The CLI's own cap is maxDurationMs (60 s in the configuration above); the margin covers shutdown.
+    private static readonly TimeSpan CliCeiling = TimeSpan.FromSeconds(90);
+
+    [Fact]
+    public async Task CliWait_KillsAChildThatIgnoresItsDeadline()
+    {
+        var start = new ProcessStartInfo(NodeExecutable()) { UseShellExecute = false, CreateNoWindow = true };
+        start.ArgumentList.Add("-e");
+        start.ArgumentList.Add("setInterval(() => {}, 1000)");
+        using var process = Process.Start(start)!;
+        try
+        {
+            (await WaitOrKillAsync(process, TimeSpan.FromSeconds(2))).Should().BeFalse();
+            process.HasExited.Should().BeTrue();
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+    }
+
+    private static async Task<bool> WaitOrKillAsync(Process process, TimeSpan limit)
+    {
+        using var deadline = new CancellationTokenSource(limit);
+        try
+        {
+            await process.WaitForExitAsync(deadline.Token);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(CancellationToken.None);
+            return false;
+        }
     }
 
     private static void RequestStop(StreamWriter input)
