@@ -882,6 +882,56 @@ public class UsageMigrationTests : IAsyncLifetime
         enforced.Should().Be(1);
     }
 
+    // A tombstoned claim is the (rule, period) idempotency record: deleting it on rollback would
+    // silently re-arm a budget alert that already fired, so the rollback refuses instead.
+    [Fact]
+    public async Task BudgetAlertClaimInsightSetNull_RollbackRefusesWhileTombstonedClaimsExist()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var ruleId = Guid.Parse("30000000-0000-0000-0000-0000000000a1");
+        var claimId = Guid.Parse("30000000-0000-0000-0000-0000000000a2");
+        await using var db = new AiObservatoryDbContext(_options);
+        var migrator = db.Database.GetService<IMigrator>();
+        await migrator.MigrateAsync(cancellationToken: ct);
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO "BudgetRules" ("Id", "Period", "ThresholdGbp", "EvaluationStartsOn")
+            VALUES ({ruleId}, 'Daily', 10, '2026-11-01')
+            """,
+            ct
+        );
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO "BudgetAlertClaims" ("Id", "BudgetRuleId", "PeriodStart", "PeriodEnd", "InsightId", "ThresholdGbp", "ActualSpendGbp", "CreatedAt")
+            VALUES ({claimId}, {ruleId}, '2026-11-01', '2026-11-01', NULL, 10, 12, '2026-11-01T12:00:00Z')
+            """,
+            ct
+        );
+
+        var refused = () => migrator.MigrateAsync("20261121145220_SpendEntryXminRowVersion", ct);
+
+        await refused.Should().ThrowAsync<PostgresException>().WithMessage("*rollback refused*");
+        var remaining = await db
+            .Database.SqlQuery<int>(
+                $"""SELECT count(*)::int AS "Value" FROM "BudgetAlertClaims" WHERE "Id" = {claimId}"""
+            )
+            .SingleAsync(ct);
+        remaining.Should().Be(1);
+
+        // With no tombstone left the same rollback applies.
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"""DELETE FROM "BudgetAlertClaims" WHERE "Id" = {claimId}""",
+            ct
+        );
+        await migrator.MigrateAsync("20261121145220_SpendEntryXminRowVersion", ct);
+        var applied = await db
+            .Database.SqlQuery<string>(
+                $"""SELECT "MigrationId" AS "Value" FROM "__EFMigrationsHistory" WHERE "MigrationId" LIKE '%BudgetAlertClaimInsightSetNull'"""
+            )
+            .ToListAsync(ct);
+        applied.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task DropObservationProvenanceDefaults_RemovesProvenanceDefaultsAfterBackfill()
     {
