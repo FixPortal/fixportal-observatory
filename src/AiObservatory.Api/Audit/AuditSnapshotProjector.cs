@@ -86,6 +86,35 @@ public static class AuditSnapshotProjector
             a.RequestCount
         );
 
+    /// <summary>
+    /// Stored rows that differ only in an unfreezable model all project to the empty (unknown) model, so they share
+    /// one key. Canonical serialisation rejects duplicate identities, so they are summed into one row.
+    /// </summary>
+    public static IReadOnlyList<FrozenAggregate> MergeAggregates(IEnumerable<FrozenAggregate> rows) =>
+        rows.GroupBy(r => r.Key)
+            .Select(g =>
+                g.Aggregate(
+                    (a, b) =>
+                        a with
+                        {
+                            InputTokens = AuditNumbers.AddCounters(a.InputTokens, b.InputTokens),
+                            OutputTokens = AuditNumbers.AddCounters(a.OutputTokens, b.OutputTokens),
+                            CacheReadTokens = AuditNumbers.AddCounters(a.CacheReadTokens, b.CacheReadTokens),
+                            CacheWriteTokens = AuditNumbers.AddCounters(a.CacheWriteTokens, b.CacheWriteTokens),
+                            CacheWrite1hTokens = AuditNumbers.AddCounters(a.CacheWrite1hTokens, b.CacheWrite1hTokens),
+                            CostUsd = a.CostUsd + b.CostUsd,
+                            UnknownCostCount = AuditNumbers.AddCounters(a.UnknownCostCount, b.UnknownCostCount),
+                            CacheSavingsUsd = a.CacheSavingsUsd + b.CacheSavingsUsd,
+                            UnknownCacheSavingsCount = AuditNumbers.AddCounters(
+                                a.UnknownCacheSavingsCount,
+                                b.UnknownCacheSavingsCount
+                            ),
+                            RequestCount = AuditNumbers.AddCounters(a.RequestCount, b.RequestCount),
+                        }
+                )
+            )
+            .ToArray();
+
     public static FrozenSpend Spend(SpendEntry s)
     {
         var value = new FrozenSpend(

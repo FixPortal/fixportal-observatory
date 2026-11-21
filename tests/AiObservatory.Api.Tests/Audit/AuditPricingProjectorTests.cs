@@ -376,6 +376,40 @@ public sealed class AuditPricingProjectorTests
         serializeAggregate.Should().NotThrow();
     }
 
+    // Two stored rows that differ only in an out-of-charset model both project to an empty model.
+    // The snapshot must still serialise, with the counters summed and none lost.
+    [Fact]
+    public void AggregatesSharingAnUnknownModelKey_SerialiseAsOneSummedRow()
+    {
+        static DailyAggregate Row(string model, long input, decimal cost) =>
+            new()
+            {
+                Date = new(2026, 10, 22),
+                Provider = Provider.Anthropic,
+                Model = model,
+                SourceId = "claude-local",
+                InputTokens = input,
+                OutputTokens = 1,
+                CostUsd = cost,
+                UnknownCostCount = 1,
+                RequestCount = 2,
+            };
+        var rows = new[] { Row("claude-opus-4-8[1m]", 10, 0.5m), Row("model with space", 20, 0.25m), Row("", 30, 1m) }
+            .Select(AuditSnapshotProjector.Aggregate)
+            .ToArray();
+
+        var merged = AuditSnapshotProjector.MergeAggregates(rows);
+
+        var serialize = () => AiObservatory.Audit.Serialization.AuditCanonicalJson.Serialize(merged);
+        serialize.Should().NotThrow();
+        var only = merged.Should().ContainSingle().Subject;
+        only.InputTokens.Should().Be(60);
+        only.OutputTokens.Should().Be(3);
+        only.CostUsd.Should().Be(1.75m);
+        only.UnknownCostCount.Should().Be(3);
+        only.RequestCount.Should().Be(6);
+    }
+
     [Fact]
     public void ConformingModel_ProjectsUnchanged()
     {

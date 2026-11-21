@@ -169,7 +169,7 @@ public sealed class AuditSnapshotService
             RuleVersion = AuditVerifierIdentity.RuleVersion,
             Scope = scope,
             Events = events,
-            Aggregates = aggregates,
+            Aggregates = AuditSnapshotProjector.MergeAggregates(aggregates),
             Spend = spend,
             FinancialObservations = financial,
             SourceStatuses = statuses,
