@@ -197,7 +197,7 @@ public sealed class PricingRepricingService(
                 "Repricing skipped {SkippedCount} event(s) for {Provider}/{Model}: no pricing snapshot covers them; keeping the existing costs.",
                 count,
                 provider,
-                model.Replace('\r', ' ').Replace('\n', ' ')
+                UsagePriceResolver.SanitizeModelForLog(model)
             );
         }
     }

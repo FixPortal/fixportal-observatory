@@ -239,18 +239,22 @@ public sealed class UsagePriceResolver
             return;
         }
 
-        var sanitizedModel = model.Replace('\r', ' ').Replace('\n', ' ');
-        if (sanitizedModel.Length > MaximumLoggedModelLength)
-        {
-            sanitizedModel = sanitizedModel[..MaximumLoggedModelLength] + "...";
-        }
-
         _logger.LogWarning(
             "No exact {Provider} price for model '{Model}'; missing or unmatched dimensions: {MissingDimensions}.",
             usage.Provider,
-            sanitizedModel,
+            SanitizeModelForLog(model),
             missing
         );
+    }
+
+    // The model string is producer-supplied and unbounded: strip line breaks and cap the length
+    // before it reaches a log line.
+    internal static string SanitizeModelForLog(string model)
+    {
+        var sanitized = model.Replace('\r', ' ').Replace('\n', ' ');
+        return sanitized.Length > MaximumLoggedModelLength
+            ? sanitized[..MaximumLoggedModelLength] + "..."
+            : sanitized;
     }
 
     private static bool TryMarkReported(Provider provider, string modelFingerprint, string missing)
