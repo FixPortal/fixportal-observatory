@@ -18,6 +18,8 @@ public class GitHubIngestionServiceTests
     private static IOptions<IngestOptions> Options(params string[] repos) =>
         Microsoft.Extensions.Options.Options.Create(new IngestOptions { GitHubRepoAllowlist = repos });
 
+    private static readonly GitHubCommitRecord OneCommit = new("fix-portal/example", "abc123", "chris", FixedNow, 1, 0);
+
     private static readonly GitHubBackfillStatus NoPriorData = new(false, false, false, false);
     private static readonly GitHubBackfillStatus FullyBackfilled = new(true, true, true, true);
 
@@ -157,7 +159,9 @@ public class GitHubIngestionServiceTests
         client
             .GetPullRequestsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
             .Returns([]);
-        client.GetCommitsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>()).Returns([]);
+        client
+            .GetCommitsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns([OneCommit]);
         client
             .GetWorkflowRunsAsync(
                 "fix-portal/example",
@@ -197,6 +201,50 @@ public class GitHubIngestionServiceTests
             );
     }
 
+    // An empty repository answers 409, which the client turns into no commits. Marking the lane
+    // complete then would shrink the next poll to the rolling window and drop every commit
+    // dated before it once history is pushed.
+    [Fact]
+    public async Task IngestAsync_WhenCommitPollReturnsNothing_KeepsTheCommitBackfillOpen()
+    {
+        var client = Substitute.For<IGitHubActivityClient>();
+        var repo = Substitute.For<IGitHubActivityRepository>();
+        repo.GetBackfillStatusAsync("fix-portal/example", Arg.Any<CancellationToken>())
+            .Returns(new GitHubBackfillStatus(true, false, true, true));
+        client
+            .GetPullRequestsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+        client.GetCommitsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>()).Returns([]);
+        client
+            .GetWorkflowRunsAsync(
+                "fix-portal/example",
+                Arg.Any<LocalDate>(),
+                Arg.Any<Instant?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new GitHubWorkflowRunResult([], false));
+        var sut = new GitHubIngestionService(
+            client,
+            repo,
+            Options("fix-portal/example"),
+            NullLogger<GitHubIngestionService>.Instance,
+            Clock
+        );
+
+        var pollDate = new LocalDate(2026, 7, 1);
+        await sut.IngestAsync(pollDate, pollDate, TestContext.Current.CancellationToken);
+        await sut.IngestAsync(pollDate.PlusDays(1), pollDate.PlusDays(1), TestContext.Current.CancellationToken);
+
+        await repo.DidNotReceive()
+            .MarkBackfillCompletedAsync("fix-portal/example", GitHubActivityKind.Commits, Arg.Any<CancellationToken>());
+        await client
+            .Received(1)
+            .GetCommitsAsync("fix-portal/example", pollDate.PlusDays(-30), Arg.Any<CancellationToken>());
+        await client
+            .Received(1)
+            .GetCommitsAsync("fix-portal/example", pollDate.PlusDays(1).PlusDays(-30), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task IngestAsync_WhenWorkflowRunsHitThePaginationCap_DoesNotMarkBackfillComplete()
     {
@@ -208,7 +256,9 @@ public class GitHubIngestionServiceTests
         client
             .GetPullRequestsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
             .Returns([]);
-        client.GetCommitsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>()).Returns([]);
+        client
+            .GetCommitsAsync("fix-portal/example", Arg.Any<LocalDate>(), Arg.Any<CancellationToken>())
+            .Returns([OneCommit]);
         client
             .GetWorkflowRunsAsync(
                 "fix-portal/example",
