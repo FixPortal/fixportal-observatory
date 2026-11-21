@@ -232,21 +232,28 @@ def action_refs(document):
             for step in steps:
                 if isinstance(step, dict) and isinstance(step.get("uses"), str):
                     refs.append((name, step["uses"]))
-        container = job.get("container")
-        if isinstance(container, str):
-            refs.append((name, container))
-        elif isinstance(container, dict) and isinstance(container.get("image"), str):
-            refs.append((name, container["image"]))
-        services = job.get("services")
-        if isinstance(services, dict):
-            for service in services.values():
-                if isinstance(service, str):
-                    # Shorthand: `services: { db: postgres }` names the image
-                    # directly, with no mapping and no `image:` key.
-                    refs.append((name, service))
-                elif isinstance(service, dict) and isinstance(service.get("image"), str):
-                    refs.append((name, service["image"]))
+        refs += [(name, image) for image in container_images(job)]
     return refs
+
+
+def container_images(job):
+    """The `container:` and `services:` images of one job."""
+    images = []
+    container = job.get("container")
+    if isinstance(container, str):
+        images.append(container)
+    elif isinstance(container, dict) and isinstance(container.get("image"), str):
+        images.append(container["image"])
+    services = job.get("services")
+    if isinstance(services, dict):
+        for service in services.values():
+            if isinstance(service, str):
+                # Shorthand: `services: { db: postgres }` names the image
+                # directly, with no mapping and no `image:` key.
+                images.append(service)
+            elif isinstance(service, dict) and isinstance(service.get("image"), str):
+                images.append(service["image"])
+    return images
 
 
 def is_pinned(ref):
@@ -297,7 +304,10 @@ def digest_pinned_uses(document):
     for job in (jobs.values() if isinstance(jobs, dict) else []):
         if not isinstance(job, dict):
             continue
-        candidates = [job.get("uses")] + [step.get("uses") for step in (job.get("steps") or []) if isinstance(step, dict)]
+        # `steps: true` is not a list; iterating it raised TypeError in place of the
+        # annotated failure the other readers give (ci-frontend review 20261119T121117Z, C2-F5).
+        steps = job.get("steps") if isinstance(job.get("steps"), list) else []
+        candidates = [job.get("uses")] + [step.get("uses") for step in steps if isinstance(step, dict)]
         refs += [ref for ref in candidates if isinstance(ref, str) and is_digest_ref(ref)]
     return refs
 
@@ -388,7 +398,33 @@ def local_action_refs(document, action_dir):
         image = runs.get("image")
         if isinstance(image, str) and not is_local_docker_build(image, action_dir):
             refs.append(image)
+        elif isinstance(image, str):
+            # The Dockerfile is this repository's code; the images it builds FROM are not.
+            refs += dockerfile_base_images(action_dir / image)
     return refs
+
+
+def dockerfile_base_images(dockerfile):
+    """The registry images a local Dockerfile builds FROM.
+
+    A local build was exempt from the pin check as "this repository's own reviewed code",
+    but its base image is pulled from a registry like any other and ran unpinned while the
+    summary claimed every container image pinned (ci-frontend review 20261119T121117Z,
+    C2-X3). `scratch` and an earlier build stage's name are not registry images.
+    """
+    # shortcut: one FROM per physical line; a backslash-continued FROM or an ARG-built
+    # image name is not resolved (the latter fails the pin check). Upgrade if either appears.
+    stages, images = set(), []
+    for line in dockerfile.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = re.match(r"\s*FROM\s+(?:--\S+\s+)*(\S+)(?:\s+AS\s+(\S+))?", line, re.IGNORECASE)
+        if not match:
+            continue
+        image, stage = match.group(1), match.group(2)
+        if image.lower() != "scratch" and image.lower() not in stages:
+            images.append(image)
+        if stage:
+            stages.add(stage.lower())
+    return images
 
 
 def workflow_checks_out_code(document):
@@ -418,7 +454,8 @@ def workflow_checks_out_code(document):
     `git clone`/`git fetch` of a PR ref, `gh pr checkout`, and any `curl`/`wget` of a
     tarball or archive URL. A remote reusable workflow, and any remote action outside
     `actions/*` (step level, or reached through a local composite or reusable workflow),
-    is refused outright in an exempted workflow (remote_reusable_workflows,
+    and any container image (a job's `container:`/`services:`, a local docker action's
+    image or Dockerfile base), is refused outright in an exempted workflow (remote_reusable_workflows,
     remote_third_party_actions), since its YAML is not in the checkout for anyone to
     follow. A rationale
     that only says "no checkout action" has not
@@ -518,6 +555,9 @@ def remote_third_party_actions(document, visited):
             refs += [s["uses"] for s in steps if isinstance(s, dict) and isinstance(s.get("uses"), str)]
         for ref in refs:
             found.extend(_remote_third_party_in_ref(ref, visited))
+        # A container or service image is remote code as well: nothing in the checkout
+        # shows what it runs (ci-frontend review 20261119T121117Z, C2-F4).
+        found.extend(container_images(job))
     return found
 
 
@@ -531,11 +571,15 @@ def _remote_third_party_in_ref(ref, visited):
     if is_reusable_workflow_ref(ref):
         inner = load_local(ref)
         return remote_third_party_actions(inner, visited) if inner is not None else []
-    inner = load_local(local_manifest(ref))
+    manifest = local_manifest(ref)
+    inner = load_local(manifest)
     if inner is None:
         return []
-    found = []
-    for inner_ref in composite_step_refs(inner):
+    composite = composite_step_refs(inner)
+    # What is left is a docker action's registry image, or the base image of its local
+    # Dockerfile build: remote code with no `uses:` step to carry it (C2-F4).
+    found = [image for image in local_action_refs(inner, manifest.parent) if image not in composite]
+    for inner_ref in composite:
         found.extend(_remote_third_party_in_ref(inner_ref, visited))
     return found
 
@@ -794,8 +838,8 @@ def main():
                     print(
                         f"::error file={path}::This workflow is named in "
                         "PRIVILEGED_TRIGGER_NO_CHECKOUT but calls a non-local reusable "
-                        "workflow or a remote action outside actions/* "
-                        f"({', '.join(sorted(set(remote_calls)))}). Its YAML is not in "
+                        "workflow or a remote action outside actions/*, or runs a container "
+                        f"image ({', '.join(sorted(set(remote_calls)))}). Its code is not in "
                         "this checkout, so whether it checks out head code cannot be verified. "
                         "Vendor it under .github/workflows/ or .github/actions/, or remove the "
                         "exemption."

@@ -92,9 +92,66 @@ def poetry_local(spec):
     return isinstance(spec, dict) and any(k in spec for k in ("path", "git", "url"))
 
 PEP508_DIRECT = re.compile(r"\s*[A-Za-z0-9][A-Za-z0-9._-]*(\[[^\]]*\])?\s*@\s*\S")  # `name @ url`: installed from the URL
-PYPI_INDEX = re.compile(r"^\s*(?:-i|--index-url|--extra-index-url)[\s=]+(\S+)")
+# A find-links source serves packages pypi.org does not hold, and --no-index forbids pypi.org outright,
+# so both read like a non-PyPI index.
+PYPI_INDEX = re.compile(r"^\s*(?:-i|--index-url|--extra-index-url|-f|--find-links)[\s=]+(\S+)")
+NO_INDEX = re.compile(r"^\s*--no-index\b")
 
 REQ_INCLUDE = re.compile(r"^\s*(?:-r|-c|--requirement|--constraint)[\s=]+(\S+)")
+
+def split_lines(text):
+    """Lines as git counts them: only \\n ends one (a CR before it is dropped). str.splitlines()
+    also breaks on \\v, \\f, \\x1c-\\x1e, NEL, U+2028/9 and a lone CR, which would shift every
+    reported line number away from the PR diff's."""
+    lines = [l[:-1] if l.endswith("\r") else l for l in text.split("\n")]
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+def locate(text, token, after=None):
+    """1-based line of the first match of regex `token` at or after the first match of `after`
+    (1 when none). Scoping to the section the dependency was parsed from keeps an earlier mention
+    of the name (a keyword, an override, a description) from taking the line."""
+    start = 0
+    if after:
+        m = re.search(after, text, re.M)
+        start = m.start() if m else 0
+    m = re.compile(token, re.M).search(text, start)
+    return text.count("\n", 0, m.start()) + 1 if m else 1
+
+def pip_options(line, rel, indexes, includes):
+    """Records what one requirements line says about where packages come from: a non-PyPI index
+    or find-links source marks rel private, and -r/-c names a file pip applies the same options to."""
+    idx = PYPI_INDEX.match(line)
+    if (NO_INDEX.match(line) or (idx and not host_is(idx.group(1), *PYPI_HOSTS))) and indexes is not None:
+        indexes.append(rel)
+    inc = REQ_INCLUDE.match(line)
+    if inc and includes is not None and "://" not in inc.group(1):
+        includes.setdefault(rel, []).append(posixpath.normpath(posixpath.join(posixpath.dirname(rel), inc.group(1))))
+
+def read_included_options(root, includes, indexes, done, problems):
+    """Follows -r/-c includes into files nobody listed, whatever their name: pip applies an index
+    option from any file in the install, so an unchanged or oddly named child still decides whether
+    a package is private. Only option lines are read. A path outside the tree is never opened; the
+    `done` set ends a cycle."""
+    tree = root.resolve()
+    queue = [child for children in list(includes.values()) for child in children]
+    while queue:
+        rel = queue.pop()
+        if rel in done:
+            continue
+        done.add(rel)
+        try:
+            path = (root / rel).resolve()
+            if not path.is_relative_to(tree) or not path.is_file():
+                continue
+            text = path.read_bytes().decode("utf-8-sig", errors="replace")
+        except (OSError, ValueError) as e:
+            problems.append(f"failed to read {rel}: {type(e).__name__}")
+            continue
+        for line in split_lines(text):
+            pip_options(line, rel, indexes, includes)
+        queue.extend(includes.get(rel, []))
 
 def declared(root, rel, indexes=None, includes=None):
     """Declared dependencies as (ecosystem, name, line). A manifest that declares a PyPI index
@@ -124,22 +181,15 @@ def declared(root, rel, indexes=None, includes=None):
                     out.append(("nuget", pkg, bare.count("\n", 0, tag.start()) + 1 if tag else 1))
     elif name == "package.json":
         data = json.loads(text)
-        lines = text.splitlines()
         for section in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
             for key, spec in (data.get(section) or {}).items():
                 pkg = npm_registry_name(key, spec)
                 if pkg is None:
                     continue  # file:, link:, workspace:, git and URL specs name no registry package
-                line = next((i for i, l in enumerate(lines, 1) if f'"{key}"' in l), 1)
-                out.append(("npm", pkg, line))
+                out.append(("npm", pkg, locate(text, rf'"{re.escape(key)}"\s*:', rf'"{section}"\s*:\s*\{{')))
     elif re.match(r"requirements.*\.txt$", name):
-        for i, line in enumerate(text.splitlines(), 1):
-            idx = PYPI_INDEX.match(line)
-            if idx and not host_is(idx.group(1), *PYPI_HOSTS) and indexes is not None:
-                indexes.append(rel)
-            inc = REQ_INCLUDE.match(line)
-            if inc and includes is not None:
-                includes.setdefault(rel, []).append(posixpath.normpath(posixpath.join(posixpath.dirname(rel), inc.group(1))))
+        for i, line in enumerate(split_lines(text), 1):
+            pip_options(line, rel, indexes, includes)
             m = re.match(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)", line)
             if not m or line.strip().startswith(("#", "-", ".", "/", "~")):
                 continue
@@ -151,7 +201,6 @@ def declared(root, rel, indexes=None, includes=None):
     elif name == "pyproject.toml":
         if tomllib is None:
             raise RuntimeError("tomllib not available")
-        lines = text.splitlines()
         data = tomllib.loads(text)
         # Poetry's built-in PyPI source is named `PyPI` and carries no url. A custom source blocks the
         # manifest unless it is `explicit`: an explicit source serves only the dependencies that name it.
@@ -167,27 +216,23 @@ def declared(root, rel, indexes=None, includes=None):
             if PEP508_DIRECT.match(dep_str):
                 continue
             pkg = re.match(r"([A-Za-z0-9][A-Za-z0-9._-]*)", dep_str).group(1)
-            line = next((i for i, l in enumerate(lines, 1) if pkg in l), 1)
-            out.append(("pypi", pkg, line))
+            out.append(("pypi", pkg, locate(text, rf'["\']\s*{re.escape(pkg)}(?![\w.-])', r"^\s*dependencies\s*=\s*\[")))
         for section, deps in (data.get("project", {}).get("optional-dependencies") or {}).items():
             for dep_str in deps:
                 if PEP508_DIRECT.match(dep_str):
                     continue
                 pkg = re.match(r"([A-Za-z0-9][A-Za-z0-9._-]*)", dep_str).group(1)
-                line = next((i for i, l in enumerate(lines, 1) if pkg in l), 1)
-                out.append(("pypi", pkg, line))
+                out.append(("pypi", pkg, locate(text, rf'["\']\s*{re.escape(pkg)}(?![\w.-])', r"optional-dependencies")))
         poetry_deps = data.get("tool", {}).get("poetry", {}).get("dependencies") or {}
         def served_elsewhere(spec):
             return isinstance(spec, dict) and spec.get("source") in explicit
         for pkg, spec in poetry_deps.items():
             if pkg != "python" and not poetry_local(spec) and not served_elsewhere(spec):
-                line = next((i for i, l in enumerate(lines, 1) if pkg in l), 1)
-                out.append(("pypi", pkg, line))
-        for group_deps in (data.get("tool", {}).get("poetry", {}).get("group") or {}).values():
+                out.append(("pypi", pkg, locate(text, rf'^\s*["\']?{re.escape(pkg)}["\']?\s*=', r"^\s*\[tool\.poetry\.dependencies\]")))
+        for group, group_deps in (data.get("tool", {}).get("poetry", {}).get("group") or {}).items():
             for pkg, spec in (group_deps.get("dependencies") or {}).items():
                 if pkg != "python" and not poetry_local(spec) and not served_elsewhere(spec):
-                    line = next((i for i, l in enumerate(lines, 1) if pkg in l), 1)
-                    out.append(("pypi", pkg, line))
+                    out.append(("pypi", pkg, locate(text, rf'^\s*["\']?{re.escape(pkg)}["\']?\s*=', rf"^\s*\[tool\.poetry\.group\.{re.escape(group)}\.dependencies\]")))
     return out
 
 def exists(eco, pkg, fixture):
@@ -252,6 +297,7 @@ def main():
             parse_errors.append(f"failed to parse {rel}: {type(e).__name__}")
             continue
         decl_by_file.append((rel, decls))
+    read_included_options(root, includes, index_files, {rel for rel, _ in decl_by_file}, parse_errors)
     # pip applies an index option to every file in the same install, so a requirements file
     # joined to one that sets a private index (in either direction, through -r or -c) shares it.
     linked = {}
