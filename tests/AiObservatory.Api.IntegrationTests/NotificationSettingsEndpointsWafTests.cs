@@ -128,10 +128,12 @@ public class NotificationSettingsEndpointsWafTests(AiObservatoryApiFactory facto
 
         using var client = factory.CreateAdminClient();
 
-        // The undecryptable row must materialise for the GET too: still reported as
-        // configured (a webhook IS stored, just unreadable), email side intact.
+        // The undecryptable row must materialise for the GET too. It is reported as NOT
+        // configured: the Slack notifier refuses to send to it, so showing a live channel would
+        // be false. Email side intact.
         var get = await client.GetFromJsonAsync<JsonElement>("/api/notification-settings", ct);
-        get.GetProperty("slackConfigured").GetBoolean().Should().BeTrue();
+        get.GetProperty("slackConfigured").GetBoolean().Should().BeFalse();
+        get.GetProperty("slackMasked").ValueKind.Should().Be(JsonValueKind.Null);
         get.GetProperty("emailConfigured").GetBoolean().Should().BeTrue();
 
         var response = await client.PutAsJsonAsync(
