@@ -1,4 +1,5 @@
 using System.Net;
+using AiObservatory.Api.Services.Intelligence;
 using AiObservatory.Data;
 using AiObservatory.Data.Spend;
 using Microsoft.AspNetCore.Hosting;
@@ -35,6 +36,14 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
     public const string AdminKey = "test-admin-key-0123456789";
     public const string ReadOnlyKey = "test-readonly-key-0123456789";
     public const string IdeKey = "test-ide-key-0123456789";
+
+    // Credentials a developer may have exported; cleared for every host so no test reaches a real provider.
+    internal static readonly string[] AmbientCredentialVariables =
+    [
+        "ANTHROPIC_API_KEY",
+        "GITHUB_TOKEN",
+        "GITHUB_BILLING_ORG",
+    ];
 
     public string Environment { get; set; } = Environments.Development;
     public bool UseMigratedTemplate { get; init; } = true;
@@ -108,10 +117,20 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
         // fast null (not cached), which is what a refresh sees offline. A test that needs a rate
         // layers its own handler with WithWebHostBuilder, which is registered after this and wins.
         builder.ConfigureTestServices(services =>
+        {
             services
                 .AddHttpClient<FxRateProvider>()
-                .ConfigurePrimaryHttpMessageHandler(() => new FxUnavailableHandler())
-        );
+                .ConfigurePrimaryHttpMessageHandler(() => new FxUnavailableHandler());
+            // The host's own worker would race tests that drive a worker of their own on the same
+            // rows, and its catch-up path calls a model provider. Tests build the worker they need.
+            var worker = services.SingleOrDefault(d =>
+                d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(IntelligenceWorkerService)
+            );
+            if (worker is not null)
+            {
+                services.Remove(worker);
+            }
+        });
         if (ClockOverride is { } clock)
         {
             builder.ConfigureServices(services =>
@@ -153,6 +172,12 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
         System.Environment.SetEnvironmentVariable("OBSERVATORY_IDE_API_KEY", IdeKeyOverride);
         System.Environment.SetEnvironmentVariable("OBSERVATORY_DEMO_MODE", DemoMode ? "true" : null);
         System.Environment.SetEnvironmentVariable("SWA_ORIGIN", "https://example.test");
+        // No test host may read a credential from the developer's environment or reach a real
+        // provider. A test that needs one supplies it through ConfigurationOverrides.
+        foreach (var credential in AmbientCredentialVariables)
+        {
+            System.Environment.SetEnvironmentVariable(credential, null);
+        }
         // The owner allowlist is configuration now, and empty means allow everything. The
         // Activity and GitHub suites assert that a NON-allowlisted owner is excluded, so they
         // need a non-empty list or they would pass vacuously against an allow-all default.
@@ -202,6 +227,11 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
 
     public override async ValueTask DisposeAsync()
     {
+        // Stop the host first: its hosted workers still hold connections to the database.
+        await base.DisposeAsync();
+        // _connectionString always names this instance's own GUID-suffixed database, never a
+        // caller-supplied one, so it is safe to drop.
+        var database = new NpgsqlConnectionStringBuilder(_connectionString).Database;
         try
         {
             var options = new DbContextOptionsBuilder<AiObservatoryDbContext>()
@@ -210,11 +240,11 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
             await using var ctx = new AiObservatoryDbContext(options);
             await ctx.Database.EnsureDeletedAsync();
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort cleanup; a leaked throwaway DB doesn't fail the test.
+            // A leaked throwaway DB doesn't fail the test, but it must not be silent.
+            await System.Console.Error.WriteLineAsync($"Could not drop throwaway database '{database}': {ex}");
         }
-        await base.DisposeAsync();
     }
 }
 
