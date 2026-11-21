@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AiObservatory.Data.Repositories;
@@ -240,6 +241,12 @@ public class GitHubActivityClient(HttpClient http, ILogger<GitHubActivityClient>
                 ct
             );
             CheckRateLimit(response);
+            // GitHub answers 409 for the commits list of an empty repository. That is a repo
+            // with nothing to ingest, not a failed cycle, so it must not degrade the source.
+            if (page == 1 && response.StatusCode == HttpStatusCode.Conflict)
+            {
+                return results;
+            }
             response.EnsureSuccessStatusCode();
             var commits = await response.Content.ReadFromJsonAsync<List<CommitListDto>>(JsonOptions, ct)
                 ?? throw new InvalidDataException("GitHub commits response omitted a page.");
