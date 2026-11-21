@@ -87,7 +87,7 @@ Generated insights come from the intelligence worker that runs inside the API pr
 
 The same cycle also checks budget rules, syncs GitHub billing if configured, and sends the daily source-health digest. See [Reporting](/docs/reporting) and [Data sources](/docs/data-sources#the-daily-digest).
 
-You can also generate insights on demand with `POST /api/insights/generate`, which analyses the 30 days ending today (UTC) and returns how many insights were stored. It needs the admin key.
+You can also generate insights on demand with `POST /api/insights/generate`, which analyses the 30 days ending yesterday (UTC), as the daily run does and returns how many insights were stored. It needs the admin key.
 
 ### What needs an API key
 
