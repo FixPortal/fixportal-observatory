@@ -40,6 +40,7 @@
 
   <ItemGroup>
     <Compile Include="..\PostgresTestAssemblyFixture.cs" Link="PostgresTestAssemblyFixture.cs" />
+    <Compile Include="..\OwnedTempDirectory.cs" Link="OwnedTempDirectory.cs" />
   </ItemGroup>
 
 </Project>
