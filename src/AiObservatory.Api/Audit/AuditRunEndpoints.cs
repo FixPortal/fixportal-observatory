@@ -6,6 +6,7 @@ using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
 using AiObservatory.Audit.Sources;
 using AiObservatory.Data.Audit;
+using Microsoft.AspNetCore.Http.Features;
 using NodaTime;
 
 namespace AiObservatory.Api.Audit;
@@ -127,7 +128,12 @@ public static class AuditRunEndpoints
 
     private static async Task ValidateReplayRequest(HttpRequest request, CancellationToken ct)
     {
-        if (request.ContentLength is null or 0 && !request.Headers.ContainsKey("Transfer-Encoding"))
+        // An HTTP/2 stream can carry a body with neither Content-Length nor Transfer-Encoding.
+        if (
+            request.ContentLength is null or 0
+            && !request.Headers.ContainsKey("Transfer-Encoding")
+            && request.HttpContext.Features.Get<IHttpRequestBodyDetectionFeature>()?.CanHaveBody != true
+        )
         {
             return;
         }
