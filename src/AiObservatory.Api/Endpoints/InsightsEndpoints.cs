@@ -42,7 +42,7 @@ public static class InsightsEndpoints
         });
 
         // Clear ALL insights (admin-key gated; it's a DELETE). Used for a fresh start
-        // before regenerating. Irreversible.
+        // before regenerating. Irreversible for insights; alert claims survive as tombstones.
         app.MapDelete("/insights", async (AiObservatoryDbContext db, IClock clock, CancellationToken ct) =>
         {
             await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -60,7 +60,9 @@ public static class InsightsEndpoints
                 return Results.Conflict("Budget alert email delivery is in progress; retry after its lease expires.");
             }
 
-            await db.BudgetAlertClaims.ExecuteDeleteAsync(ct);
+            // Claims are kept: a daily rule rescans from its start date with no watermark, so the
+            // (rule, period) claim is the only thing stopping every past breach re-alerting. The
+            // FK nulls each claim's InsightId when its insight goes.
             var deleted = await db.Insights.ExecuteDeleteAsync(ct);
             await tx.CommitAsync(ct);
             return Results.Ok(new { deleted });

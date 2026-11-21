@@ -8,7 +8,9 @@ public sealed class BudgetAlertClaim
     public Guid BudgetRuleId { get; init; }
     public LocalDate PeriodStart { get; init; }
     public LocalDate PeriodEnd { get; init; }
-    public Guid InsightId { get; init; }
+
+    // Null once the insight is cleared: the claim stays as the (rule, period) idempotency tombstone.
+    public Guid? InsightId { get; init; }
     public decimal ThresholdGbp { get; init; }
     public decimal ActualSpendGbp { get; init; }
     public Instant CreatedAt { get; init; }

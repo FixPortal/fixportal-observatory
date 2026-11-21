@@ -15,7 +15,7 @@ namespace AiObservatory.Api.IntegrationTests;
 public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClassFixture<AiObservatoryApiFactory>
 {
     [Fact]
-    public async Task DeleteInsights_removes_claimed_and_unclaimed_insights_with_their_delivery_state()
+    public async Task DeleteInsights_removes_insights_but_keeps_the_alert_claims_as_tombstones()
     {
         var ct = TestContext.Current.CancellationToken;
         var period = new LocalDate(2026, 8, 25);
@@ -58,7 +58,14 @@ public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClass
         using var assertionScope = factory.Services.CreateScope();
         var assertionDb = assertionScope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
         (await assertionDb.Insights.AsNoTracking().CountAsync(ct)).Should().Be(0);
-        (await assertionDb.BudgetAlertClaims.AsNoTracking().CountAsync(ct)).Should().Be(0);
+        // The (rule, period) claim is the only thing stopping a daily breach re-alerting, so
+        // clearing the feed must not delete it; it just loses its link to the cleared insight.
+        var claims = await assertionDb
+            .BudgetAlertClaims.AsNoTracking()
+            .Where(claim => claim.BudgetRuleId == rule.Id)
+            .ToListAsync(ct);
+        claims.Should().ContainSingle();
+        claims[0].InsightId.Should().BeNull();
     }
 
     [Fact]
@@ -253,7 +260,8 @@ public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClass
             var response = await deleteTask;
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            (await acquisitionTask).Should().BeFalse();
+            // The claim survives the purge as a tombstone, so the queued acquisition now succeeds.
+            (await acquisitionTask).Should().BeTrue();
             using var assertionScope = factory.Services.CreateScope();
             var assertionDb = assertionScope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
             (await assertionDb.Insights.AsNoTracking().CountAsync(candidate => candidate.Id == insight.Id, ct))
@@ -261,7 +269,7 @@ public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClass
                 .Be(0);
             (await assertionDb.BudgetAlertClaims.AsNoTracking().CountAsync(candidate => candidate.Id == claim.Id, ct))
                 .Should()
-                .Be(0);
+                .Be(1);
         }
         finally
         {
