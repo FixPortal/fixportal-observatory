@@ -1188,13 +1188,36 @@ function zeroSnapshot(snapshot) {
   }
 }
 
-/** Plan current snapshots plus zero corrections for server keys that vanished locally. */
-export function planSnapshotSubmissions(snapshots, inventory = [], holds = snapshots.holds ?? new Map()) {
+/** Earliest UTC day per key of `items`, read with `dayOf` (undefined days are skipped). */
+function earliestDays(items, keyOf, dayOf) {
+  const earliest = new Map()
+  for (const item of items) {
+    const day = dayOf(item)
+    if (typeof day !== 'string') { continue }
+    const key = keyOf(item)
+    if (!earliest.has(key) || day < earliest.get(key)) { earliest.set(key, day) }
+  }
+  return earliest
+}
+
+/**
+ * Plan current snapshots plus zero corrections for server keys that vanished locally.
+ * `provableFrom` maps a source to the earliest day its surviving local files still cover. A
+ * vanished key dated before that day (or undated, or in a source with no surviving records) may
+ * only have aged out of the vendor CLI's own retention, so it is frozen rather than zeroed.
+ */
+export function planSnapshotSubmissions(
+  snapshots, inventory = [], holds = snapshots.holds ?? new Map(),
+  provableFrom = earliestDays(snapshots, snapshot => snapshot.sourceId, snapshot => eventKeyDay(snapshot.eventKey)),
+) {
   const identity = snapshot => `${snapshot.sourceId}\n${snapshot.eventKey}`
   const currentKeys = new Set(snapshots.map(identity))
   const submissions = snapshots.filter(snapshot => !isHeld(holds, snapshot.sourceId, snapshot.eventKey)).map(snapshot => ({ snapshot, active: true }))
   for (const snapshot of Object.values(inventory)) {
     if (isHeld(holds, snapshot.sourceId, snapshot.eventKey)) { continue }
+    const day = eventKeyDay(snapshot.eventKey)
+    const floor = provableFrom.get(snapshot.sourceId)
+    if (floor === undefined || day === undefined || day < floor) { continue }
     if (!currentKeys.has(identity(snapshot))) {
       // ponytail: /api/events has correction but no deletion. Zero corrections
       // leave a one-request ceiling per removed key; add deletion only if request counts need exact removal.
@@ -1507,12 +1530,12 @@ const geminiReviewEntry = entry => entry.isDirectory() && entry.name.toLowerCase
 
 /**
  * Scan every enabled source and return its records plus two disjoint source
- * sets. `incompleteSources` hit an unreadable-and-uncached file, so their
- * corrections and tombstones are withheld. `emptySources` scanned cleanly and
- * found no records under a populated discovery root, so their empty history is
- * verified and their stale server keys may be tombstoned. A source whose root
- * is missing or entry-less (unmounted home, mistyped *_HOME) lands in neither
- * set and keeps its tombstones suppressed.
+ * sets. `incompleteSources` hold days (`holds`) whose corrections and
+ * tombstones are withheld. `emptySources` scanned cleanly and found no records
+ * under a populated discovery root, so their empty history is verified for the
+ * legacy migration. A source whose root is missing or entry-less (unmounted
+ * home, mistyped *_HOME) lands in neither set. `provableFrom` is each tool's
+ * earliest record day; older server keys are never tombstoned.
  */
 export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
   const records = []
@@ -1520,8 +1543,12 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
   const emptySources = new Set()
   const holds = new Map()
   const heldFiles = new Map()
+  // Earliest day any surviving local file of the tool records usage on.
+  const provableFrom = new Map()
   const noteScan = async (tool, root, result, accept) => {
     if (result.heldFiles > 0) { heldFiles.set(tool, result.heldFiles) }
+    const earliest = earliestDays(result.records, () => tool, record => record.date).get(tool)
+    if (earliest !== undefined) { provableFrom.set(tool, earliest) }
     if (result.incomplete) {
       incompleteSources.add(tool)
       holds.set(tool, result.holds)
@@ -1642,7 +1669,7 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
     for (const record of result.records) { records.push(record) }
   }
 
-  return { records, incompleteSources, emptySources, holds, heldFiles }
+  return { records, incompleteSources, emptySources, holds, heldFiles, provableFrom }
 }
 
 export async function main({ discover = listJsonl, now = () => new Date() } = {}) {
@@ -1670,7 +1697,7 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   const { inventory, failedSources } = DRY_RUN
     ? { inventory: [], failedSources: new Set() }
     : await fetchSnapshotInventory(url, apiKey, enabled, machine)
-  const { records, emptySources, holds: scanHolds, heldFiles } = await scanRecords(cfg, state, enabled, discover)
+  const { records, emptySources, holds: scanHolds, heldFiles, provableFrom } = await scanRecords(cfg, state, enabled, discover)
   const snapshots = buildDailySnapshots(records, machine)
   const unplaced = countUnplaced(records, machine)
   for (const { tool, model, count } of unplaced) {
@@ -1689,14 +1716,18 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   const heldFileCount = [...heldFiles.values()].reduce((sum, count) => sum + count, 0)
   // Always posted: a held scan reports its held file count, so it never reads as a clean sweep.
   if (!DRY_RUN) { await postSweepStatus(url, apiKey, machine, unplaced, heldFileCount) }
-  const submissions = planSnapshotSubmissions(snapshots, inventory, holds)
+  const submissions = planSnapshotSubmissions(
+    snapshots, inventory, holds,
+    new Map([...provableFrom].map(([tool, day]) => [localSourceId(tool, machine), day])),
+  )
   await saveState(statePath, state)
 
   let posted = 0
   const activeSucceeded = new Map()
   // A source whose clean scan verified an empty local history (populated
   // discovery root, no read failures, no records) has nothing left to replace:
-  // seed success so its stale server keys can be tombstoned below. Every other
+  // seed success for the legacy migration below. It plans no tombstones (no
+  // surviving file covers a day; see planSnapshotSubmissions). Every other
   // source without active submissions stays unseeded and keeps suppressing.
   for (const tool of emptySources) {
     activeSucceeded.set(localSourceId(tool, machine), true)
@@ -1721,9 +1752,8 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     if (failedSources.has(submission.snapshot.sourceId)) { continue }
     // Held keys were already left out of the plan (planSnapshotSubmissions): a held key may
     // only have vanished from the scan, not from disk.
-    // Tombstones post only for a source whose replacement is verified: either
-    // its active submissions all succeeded this run, or its clean scan proved
-    // an empty local history (seeded above). `false` (a replacement exhausted
+    // Tombstones post only for a source whose replacement is verified: its
+    // active submissions all succeeded this run. `false` (a replacement exhausted
     // retries) and `undefined` (a disabled, incompletely scanned, or
     // unverifiable source) both suppress, so a partial or disabled run can
     // never zero server history.
