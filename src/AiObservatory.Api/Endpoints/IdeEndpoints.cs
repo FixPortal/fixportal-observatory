@@ -250,6 +250,9 @@ public static class IdeEndpoints
             // Identity wrappers are reference-type records: without this, a missing JSON member
             // deserializes as null and ParseEvent/HasCompleteIdentity throw NullReferenceException.
             RespectRequiredConstructorParameters = true,
+            // A present JSON null is not a missing member, so the line above does not catch it;
+            // without this it deserializes into a non-nullable record and dereferences null (500).
+            RespectNullableAnnotations = true,
             // /api/events rejects duplicate JSON properties (JsonDocumentOptions); the envelope
             // must match, or a shadowed duplicate idempotencyKey/occurredAt hashes differently
             // from how it parses.
