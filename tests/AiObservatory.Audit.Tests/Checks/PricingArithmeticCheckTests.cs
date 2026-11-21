@@ -491,6 +491,23 @@ public sealed class PricingArithmeticCheckTests
         result.Coverage.Gaps.Should().NotBeEmpty();
     }
 
+    [Theory]
+    [InlineData(1L, null, "exact_zero_rule_counters_not_zero")]
+    [InlineData(0L, 1L, "exact_zero_rule_counters_not_zero")]
+    [InlineData(0L, null, "exact_zero_rule_counters_unknown")]
+    public void FrozenExactZeroRule_NamesAbsentCountersDistinctlyFromNonZeroOnes(
+        long input,
+        long? thought,
+        string expectedGap
+    )
+    {
+        var fixture = ExactZeroFixture();
+        var e = fixture.Events[0];
+        e = e with { Tokens = e.Tokens with { InputTokens = input, ThoughtTokens = thought } };
+        var result = new AuditVerifier().Verify(fixture with { Events = [e] });
+        result.Coverage.Gaps.Should().ContainSingle().Which.DiagnosticCode.Should().Be(expectedGap);
+    }
+
     [Fact]
     public async Task CatalogIdentityAcrossTwoSources_RemainsCanonicalIncompleteAndOfflineDeterministic()
     {
