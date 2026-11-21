@@ -347,8 +347,8 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
             (await harness.LoadActiveAsync(PricingSourceIds.OpenAi)).Should().BeNull();
 
             File.Copy(
-                Path.Combine(AppContext.BaseDirectory, "Pricing", "Bundled", "openai.json"),
-                Path.Combine(directory.Path, "Pricing", "Bundled", "openai.json"),
+                Path.Join(AppContext.BaseDirectory, "Pricing", "Bundled", "openai.json"),
+                Path.Join(directory.Path, "Pricing", "Bundled", "openai.json"),
                 overwrite: true
             );
             clock.Advance(Duration.FromHours(1));
