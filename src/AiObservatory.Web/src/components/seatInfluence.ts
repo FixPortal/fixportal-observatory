@@ -74,7 +74,7 @@ interface SeatAggregates extends FindingAggregates {
 
 const runKey = (runId: string, reviewer: string) => `${runId}\u0000${reviewer}`
 
-function isoWeekUtc(iso: string): string {
+export function isoWeekUtc(iso: string): string {
   const parsed = new Date(iso)
   // Whole days only: a time of day would push the fractional week count over a boundary.
   const instant = new Date(

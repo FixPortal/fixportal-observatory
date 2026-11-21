@@ -243,6 +243,23 @@ test('leaves influence unset for a week in which a seat had no runs, and keeps i
   expect(middle['seat-0-cost']).toBe(0)
 })
 
+test('adds a week no seat ran in, so the line breaks across it', async () => {
+  findingsData.findings = []
+  renderTab([
+    run({ id: 'a1', runId: 'A1', recordedAt: '2026-10-05T12:00:00Z' }),
+    run({ id: 'a2', runId: 'A2', recordedAt: '2026-10-19T12:00:00Z' }),
+  ])
+
+  const rows = JSON.parse((await screen.findByTestId('rows')).textContent) as Record<
+    string,
+    unknown
+  >[]
+  expect(rows.map((item) => item['week'])).toEqual(['2026-W41', '2026-W42', '2026-W43'])
+  const gap = rows.find((item) => item['week'] === '2026-W42')!
+  expect(gap['seat-0']).toBeNull()
+  expect(gap['seat-0-cost']).toBe(0)
+})
+
 // C9-AR-6: the drill-down uses the same date window as the metrics above it.
 test('leaves a run older than the findings window out of the drill-down as well', () => {
   findingsData.since = '2026-10-20'
