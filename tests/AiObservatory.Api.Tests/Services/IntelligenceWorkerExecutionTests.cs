@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using AiObservatory.Api.Services;
 using AiObservatory.Api.Services.Intelligence;
 using AiObservatory.Data.Repositories;
@@ -22,6 +23,44 @@ public class IntelligenceWorkerExecutionTests
         var sanitized = IntelligenceWorkerService.SanitizeError(error);
 
         sanitized.Should().HaveLength(500).And.NotContain("secret").And.NotContain("\r").And.NotContain("\n");
+    }
+
+    // The worker's post-budget arms keep logging while a test reads Messages, so reading must
+    // be safe against concurrent writes. Ends on the writer's completion, not on a timer.
+    [Fact]
+    public async Task CapturingLogger_CanBeReadWhileTheWorkerIsStillLogging()
+    {
+        var logger = new CapturingLogger();
+        using var readerStarted = new ManualResetEventSlim();
+        var writer = Task.Run(
+            () =>
+            {
+                readerStarted.Wait(TestContext.Current.CancellationToken);
+                for (var i = 0; i < 200_000; i++)
+                {
+                    logger.Log(LogLevel.Information, default, i, null, (state, _) => "message");
+                }
+            },
+            TestContext.Current.CancellationToken
+        );
+
+        var read = () =>
+        {
+            readerStarted.Set();
+            while (!writer.IsCompleted)
+            {
+                using var messages = logger.Messages.GetEnumerator();
+                var seen = 0;
+                while (messages.MoveNext())
+                {
+                    seen++;
+                }
+                seen.Should().BeGreaterThanOrEqualTo(0);
+            }
+        };
+
+        read.Should().NotThrow();
+        await writer;
     }
 
     [Fact]
@@ -189,7 +228,10 @@ public class IntelligenceWorkerExecutionTests
 
     private sealed class CapturingLogger : ILogger<IntelligenceWorkerService>
     {
-        public List<string> Messages { get; } = [];
+        private readonly ConcurrentQueue<string> _messages = new();
+
+        // A snapshot, so a caller enumerates a stable copy while the worker is still logging.
+        public IReadOnlyCollection<string> Messages => _messages.ToArray();
 
         public IDisposable BeginScope<TState>(TState state)
             where TState : notnull => NullScope.Instance;
@@ -202,7 +244,7 @@ public class IntelligenceWorkerExecutionTests
             TState state,
             Exception? exception,
             Func<TState, Exception?, string> formatter
-        ) => Messages.Add(formatter(state, exception));
+        ) => _messages.Enqueue(formatter(state, exception));
 
         private sealed class NullScope : IDisposable
         {
