@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NodaTime;
 using NodaTime.Serialization.SystemTextJson;
 using Npgsql;
+using NpgsqlTypes;
 using NSubstitute;
 
 namespace AiObservatory.Data.Tests.Pricing;
@@ -268,7 +269,7 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
             // The pass's FOR UPDATE row load waits on the gate's xact (XactLockTableWait),
             // surfacing as an ungranted transactionid lock — the tuple locktag is released
             // before the xact wait begins.
-            await WaitForBlockedLockAsync("transactionid", ct);
+            await WaitForBlockedLockAsync("transactionid", ct, gateConnection.ProcessID);
             pass.IsCompleted.Should().BeFalse();
 
             // A catalog activation takes the exclusive form of the same advisory lock; it can be
@@ -292,6 +293,52 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
         }
 
         (await _db.UsageEvents.AsNoTracking().SingleAsync(ct)).CostUsd.Should().Be(2m);
+    }
+
+    [Fact]
+    public async Task WaitForBlockedLockOnlyCountsWaitersBlockedByTheNamedSession()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _store.ActivateAsync(Candidate("old", 1m), ct);
+        await _repository.RecordEventAsync(Event("contended", CostBasis.ListPriceEstimate, 1m, 0m), ct);
+        var eventId = (await _db.UsageEvents.AsNoTracking().SingleAsync(ct)).Id;
+
+        // The holder parks on the row; a second session queues behind it (a transactionid wait).
+        await using var holder = new NpgsqlConnection(_connectionString);
+        await holder.OpenAsync(ct);
+        await using var holderTransaction = await holder.BeginTransactionAsync(ct);
+        await using (var hold = holder.CreateCommand())
+        {
+            hold.Transaction = holderTransaction;
+            hold.CommandText = """SELECT 1 FROM "UsageEvents" WHERE "Id" = @id FOR UPDATE""";
+            hold.Parameters.AddWithValue("id", eventId);
+            await hold.ExecuteNonQueryAsync(ct);
+        }
+
+        // An idle session that blocks nobody: a waiter it does not block must not satisfy the wait.
+        await using var bystander = new NpgsqlConnection(_connectionString);
+        await bystander.OpenAsync(ct);
+
+        await using var waiter = new NpgsqlConnection(_connectionString);
+        await waiter.OpenAsync(ct);
+        await using var waiterCommand = waiter.CreateCommand();
+        waiterCommand.CommandText = """UPDATE "UsageEvents" SET "Model" = "Model" WHERE "Id" = @id""";
+        waiterCommand.Parameters.AddWithValue("id", eventId);
+        var blockedUpdate = waiterCommand.ExecuteNonQueryAsync(ct);
+        try
+        {
+            await WaitForBlockedLockAsync("transactionid", ct, holder.ProcessID);
+
+            using var shortWait = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            shortWait.CancelAfter(TimeSpan.FromSeconds(2));
+            var act = () => WaitForBlockedLockAsync("transactionid", shortWait.Token, bystander.ProcessID);
+            await act.Should().ThrowAsync<OperationCanceledException>();
+        }
+        finally
+        {
+            await holderTransaction.RollbackAsync(CancellationToken.None);
+            await blockedUpdate;
+        }
     }
 
     [Fact]
@@ -541,7 +588,7 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
         var writeResolver = Resolver(writeStore);
         var writer = new UsageRepository(writeDb, writeStore, writeResolver);
         var record = writer.RecordEstimatedEventAsync(Event("overlap", CostBasis.ListPriceEstimate, 99m, 99m), ct);
-        await WaitForBlockedLockAsync("relation", ct);
+        await WaitForBlockedLockAsync("relation", ct, gateConnection.ProcessID);
         record.IsCompleted.Should().BeFalse();
 
         await using var activationDb = CreateContext();
@@ -647,7 +694,11 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
     private static UsagePriceResolver Resolver(PricingSnapshotStore store) =>
         new(store, [new OpenAiPriceCalculator()], NullLogger<UsagePriceResolver>.Instance);
 
-    private async Task WaitForBlockedLockAsync(string lockType, CancellationToken cancellationToken)
+    private async Task WaitForBlockedLockAsync(
+        string lockType,
+        CancellationToken cancellationToken,
+        int? blockerPid = null
+    )
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(30));
@@ -663,8 +714,12 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
                   AND NOT granted
                   AND (database IS NULL OR database = (SELECT oid FROM pg_database WHERE datname = current_database()))
                   AND (@lockType <> 'relation' OR relation = '"DailyAggregates"'::regclass)
+                  AND (@blockerPid::int IS NULL OR @blockerPid::int = ANY(pg_blocking_pids(pid)))
                 """;
             command.Parameters.AddWithValue("lockType", lockType);
+            command.Parameters.Add(
+                new NpgsqlParameter("blockerPid", NpgsqlDbType.Integer) { Value = (object?)blockerPid ?? DBNull.Value }
+            );
             if (Convert.ToInt32(await command.ExecuteScalarAsync(timeout.Token)) > 0)
             {
                 return;

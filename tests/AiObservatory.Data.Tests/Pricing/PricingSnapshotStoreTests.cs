@@ -929,7 +929,13 @@ public sealed class PricingSnapshotStoreTests : IAsyncLifetime
         while (true)
         {
             await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted";
+            command.CommandText = """
+                SELECT count(*)
+                FROM pg_locks
+                WHERE locktype = 'advisory'
+                  AND NOT granted
+                  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                """;
             if (Convert.ToInt32(await command.ExecuteScalarAsync(timeout.Token)) > 0)
             {
                 return;
