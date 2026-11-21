@@ -136,6 +136,28 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RepricingKeepsAKnownCacheSavingsFigureWhenTheCostIsUnknownAndNoSnapshotCoversTheEvent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _store.ActivateAsync(Candidate("old", 1m), ct);
+        var historic = Event(
+            "savings-only",
+            CostBasis.ListPriceEstimate,
+            cost: null,
+            savings: 1m,
+            occurredAt: Instant.FromUtc(2026, 7, 1, 0, 0)
+        );
+        await _repository.RecordEventAsync(historic, ct);
+
+        await _store.ActivateAsync(Candidate("new", 2m), ct);
+        await _repricing.RepriceProviderAsync(Provider.OpenAI, ct);
+
+        var saved = await _db.UsageEvents.AsNoTracking().SingleAsync(ct);
+        saved.CostUsd.Should().BeNull();
+        saved.CacheSavingsUsd.Should().Be(1m);
+    }
+
+    [Fact]
     public async Task RepricingSkipsAnEventCorrectedAfterItsQuoteWasCalculated()
     {
         var ct = TestContext.Current.CancellationToken;
