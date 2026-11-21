@@ -106,6 +106,45 @@ public sealed class ActivityByProjectEndpointsWafTests(AiObservatoryApiFactory f
         rows.GetArrayLength().Should().Be(0);
     }
 
+    [Theory]
+    [InlineData("2026-07-04", 3600)]
+    [InlineData("2026-07-05", 3600)]
+    public async Task By_project_prorates_a_session_across_midnight_as_daily_does(string day, long seconds)
+    {
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        operation.CancelAfter(TimeSpan.FromSeconds(30));
+        var ct = operation.Token;
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+        if (!await db.ClaudeActivitySessions.AnyAsync(s => s.SessionId == "ar4-midnight", ct))
+        {
+            var start = Instant.FromUtc(2026, 7, 4, 23, 0);
+            db.ClaudeActivitySessions.Add(
+                new ClaudeActivitySession
+                {
+                    SessionId = "ar4-midnight",
+                    Project = "FixPortal/ar4-midnight",
+                    StartedAt = start,
+                    LastSeenAt = start + Duration.FromHours(2),
+                    ActiveSeconds = 7200,
+                    IngestedAt = start,
+                }
+            );
+            await db.SaveChangesAsync(ct);
+        }
+        using var client = factory.CreateAdminClient();
+
+        using var byProject = await client.GetAsync($"/api/activity/by-project?from={day}&to={day}", ct);
+        using var daily = await client.GetAsync($"/api/activity/daily?from={day}&to={day}", ct);
+
+        var project = (await byProject.Content.ReadFromJsonAsync<JsonElement>(ct))
+            .EnumerateArray()
+            .Single(row => row.GetProperty("project").GetString() == "FixPortal/ar4-midnight");
+        AssertProject(project, sessions: 1, seconds: seconds, share: 100);
+        var dailyRow = (await daily.Content.ReadFromJsonAsync<JsonElement>(ct)).EnumerateArray().Single();
+        dailyRow.GetProperty("activeSeconds").GetInt64().Should().Be(seconds, "both endpoints prorate the same way");
+    }
+
     private static void AssertProject(JsonElement row, int sessions, long seconds, double share)
     {
         row.GetProperty("sessionCount").GetInt32().Should().Be(sessions);
