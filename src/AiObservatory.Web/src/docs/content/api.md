@@ -183,7 +183,7 @@ Create and replace take `provider`, `name` (required, up to 200 characters), `co
 | `POST`   | `/api/insights/generate`         | Admin | Generate insights now for the current UTC date. |
 | `POST`   | `/api/insights/{id}/acknowledge` | Admin | Mark an insight acknowledged (204).             |
 | `POST`   | `/api/insights/{id}/explain`     | Admin | Ask the model for implementation guidance.      |
-| `DELETE` | `/api/insights`                  | Admin | Delete all insights and budget-alert claims.    |
+| `DELETE` | `/api/insights`                  | Admin | Delete all insights; alert records stay.        |
 | `GET`    | `/api/suggestions`               | Read  | Suggestions in one state, with evidence.        |
 | `POST`   | `/api/suggestions/{id}/dismiss`  | Admin | Dismiss.                                        |
 | `POST`   | `/api/suggestions/{id}/snooze`   | Admin | Snooze.                                         |

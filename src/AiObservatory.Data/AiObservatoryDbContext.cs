@@ -479,7 +479,7 @@ public class AiObservatoryDbContext(DbContextOptions<AiObservatoryDbContext> opt
                 .WithMany()
                 .HasForeignKey(claim => claim.BudgetRuleId)
                 .OnDelete(DeleteBehavior.Cascade);
-            b.HasOne<Insight>().WithMany().HasForeignKey(claim => claim.InsightId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<Insight>().WithMany().HasForeignKey(claim => claim.InsightId).OnDelete(DeleteBehavior.SetNull);
             b.ToTable(table =>
             {
                 table.HasCheckConstraint("CK_BudgetAlertClaim_Period", "\"PeriodEnd\" >= \"PeriodStart\"");
