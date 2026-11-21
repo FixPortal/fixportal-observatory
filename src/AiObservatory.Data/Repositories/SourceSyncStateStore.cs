@@ -192,6 +192,26 @@ public sealed class SourceSyncStateStore(AiObservatoryDbContext db)
             .SingleAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Records a sweep's held-file total on its row, only when the attempt at <paramref name="attemptedAt"/>
+    /// is still the row's latest, so a delayed older report cannot overwrite a newer one. Call it
+    /// after the Mark* write for the same attempt, which leaves LastAttemptAt at or after it.
+    /// </summary>
+    public Task<int> SetHeldFilesAsync(
+        string sourceId,
+        Instant attemptedAt,
+        int? heldFiles,
+        CancellationToken cancellationToken
+    )
+    {
+        // Postgres keeps microseconds, so the stored attempt can sit just below attemptedAt; only a
+        // strictly later attempt reaches the next microsecond.
+        var newerThanThis = attemptedAt + Duration.FromTicks(NodaConstants.TicksPerMillisecond / 1000);
+        return db
+            .SourceSyncStates.Where(state => state.SourceId == sourceId && state.LastAttemptAt < newerThanThis)
+            .ExecuteUpdateAsync(s => s.SetProperty(state => state.HeldFiles, heldFiles), cancellationToken);
+    }
+
     private static long ExpectedSeconds(Duration expectedRefreshInterval) =>
         checked((long)expectedRefreshInterval.TotalSeconds);
 }

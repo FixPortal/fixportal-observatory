@@ -42,15 +42,24 @@ public static partial class SweepStatusEndpoints
 
         var now = clock.GetCurrentInstant();
         var sourceId = SourceIdPrefix + req.Machine;
-        if (req.Unplaced.Count == 0)
+        var held = req.HeldFiles is > 0;
+        if (req.Unplaced.Count == 0 && !held)
         {
             await states.MarkSuccessAsync(sourceId, ExpectedRefreshInterval, now, null, ct);
         }
         else
         {
-            // Unavailable surfaces in the panel and the daily digest until a sweep places everything.
-            await states.MarkUnavailableAsync(sourceId, ExpectedRefreshInterval, now, Describe(req.Unplaced), ct);
+            // Unavailable surfaces in the panel and the daily digest until a sweep places everything
+            // and holds nothing back: held files were not posted, so their spend is invisible too.
+            await states.MarkUnavailableAsync(
+                sourceId,
+                ExpectedRefreshInterval,
+                now,
+                Describe(req.Unplaced, req.HeldFiles ?? 0),
+                ct
+            );
         }
+        await states.SetHeldFilesAsync(sourceId, now, req.HeldFiles, ct);
 
         return Results.NoContent();
     }
@@ -70,6 +79,10 @@ public static partial class SweepStatusEndpoints
         {
             return $"unplaced must have at most {MaxEntries} entries";
         }
+        if (req.HeldFiles is < 0)
+        {
+            return "heldFiles must not be negative";
+        }
         if (req.Unplaced.Any(u => u is null || u.Count <= 0))
         {
             return "count must be positive";
@@ -88,9 +101,21 @@ public static partial class SweepStatusEndpoints
 
     private const int LastErrorMaxLength = 500;
 
-    /// <summary>Counts only, e.g. "5 sessions unplaced: codex gpt-x (3), codex unknown (2)".</summary>
-    internal static string Describe(IReadOnlyCollection<SweepUnplaced> unplaced)
+    /// <summary>
+    /// Counts only, e.g. "5 sessions unplaced: codex gpt-x (3), codex unknown (2)", led by
+    /// "N files held: not posted this sweep" when the sweep held files back.
+    /// </summary>
+    internal static string Describe(IReadOnlyCollection<SweepUnplaced> unplaced, int heldFiles = 0)
     {
+        string? heldText = null;
+        if (heldFiles > 0)
+        {
+            heldText = $"{heldFiles} {(heldFiles == 1 ? "file" : "files")} held: not posted this sweep";
+        }
+        if (unplaced.Count == 0)
+        {
+            return heldText ?? "";
+        }
         var total = unplaced.Sum(u => u.Count);
         var parts = unplaced
             .OrderByDescending(u => u.Count)
@@ -99,7 +124,9 @@ public static partial class SweepStatusEndpoints
             .Take(5)
             .Select(u => $"{u.Tool} {u.Model} ({u.Count})");
         var more = unplaced.Count > 5 ? $", +{unplaced.Count - 5} more" : "";
-        var text = $"{total} {(total == 1 ? "session" : "sessions")} unplaced: {string.Join(", ", parts)}{more}";
+        var text =
+            (heldText is null ? "" : heldText + "; ")
+            + $"{total} {(total == 1 ? "session" : "sessions")} unplaced: {string.Join(", ", parts)}{more}";
         // LastError is varchar(500); the total leads, so cutting the tail keeps the part that matters.
         return text.Length <= LastErrorMaxLength ? text : text[..(LastErrorMaxLength - 3)] + "...";
     }
@@ -114,6 +141,7 @@ public static partial class SweepStatusEndpoints
     private static partial Regex ModelPattern();
 }
 
-public sealed record SweepStatusRequest(string Machine, IReadOnlyList<SweepUnplaced> Unplaced);
+/// <param name="HeldFiles">Optional, the machine-wide total of files the sweep held back; omitted by older clients.</param>
+public sealed record SweepStatusRequest(string Machine, IReadOnlyList<SweepUnplaced> Unplaced, int? HeldFiles = null);
 
 public sealed record SweepUnplaced(string Tool, string Model, int Count);

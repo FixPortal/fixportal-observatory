@@ -38,6 +38,7 @@ const missingStatus = (sourceId: string): SourceStatusResponse => ({
   latestObservationAt: null,
   consecutiveFailureCount: 0,
   lastError: null,
+  heldFiles: null,
 })
 
 const timeOf = (value: string | null) => {

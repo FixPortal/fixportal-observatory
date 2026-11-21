@@ -38,7 +38,8 @@ public static class SourceStatusEndpoints
                 state.LastSuccessAt,
                 state.LatestObservationAt,
                 state.ConsecutiveFailureCount,
-                state.LastError
+                state.LastError,
+                state.HeldFiles
             ))
             .ToListAsync(ct);
 
@@ -54,5 +55,6 @@ public sealed record SourceStatusResponse(
     Instant? LastSuccessAt,
     Instant? LatestObservationAt,
     int ConsecutiveFailureCount,
-    string? LastError
+    string? LastError,
+    int? HeldFiles
 );

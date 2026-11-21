@@ -71,7 +71,48 @@ public class SweepStatusWafTests(AiObservatoryApiFactory factory) : IClassFixtur
         row.LastError.Should().NotBeNull().And.Subject.Length.Should().BeLessThanOrEqualTo(500);
     }
 
+    [Fact]
+    public async Task Held_files_are_stored_with_the_sweep_status_warned_on_and_cleared_by_an_old_client()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = factory.CreateAdminClient();
+
+        (
+            await client.PostAsJsonAsync(
+                Route,
+                new
+                {
+                    machine = "test-box",
+                    unplaced = Array.Empty<object>(),
+                    heldFiles = 3,
+                },
+                ct
+            )
+        ).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var held = await StatusRowAsync(client);
+        held.TryGetProperty("heldFiles", out var heldFiles).Should().BeTrue("the status row carries heldFiles");
+        heldFiles.GetInt32().Should().Be(3);
+        held.GetProperty("status").GetString().Should().Be("unavailable");
+        held.GetProperty("lastError").GetString().Should().Be("3 files held: not posted this sweep");
+
+        // An older client sends no heldFiles: null, and a clean report is fresh again.
+        (await client.PostAsJsonAsync(Route, Body(), ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var cleared = await StatusRowAsync(client);
+        cleared.GetProperty("heldFiles").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+        cleared.GetProperty("status").GetString().Should().Be("fresh");
+    }
+
+    private static async Task<System.Text.Json.JsonElement> StatusRowAsync(HttpClient client)
+    {
+        var rows = await client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            "/api/sources/status",
+            TestContext.Current.CancellationToken
+        );
+        return rows.EnumerateArray().Single(r => r.GetProperty("sourceId").GetString() == SourceId);
+    }
+
     [Theory]
+    [InlineData("""{"machine":"test-box","unplaced":[],"heldFiles":-1}""")]
     [InlineData("""{"machine":"Bad Box","unplaced":[]}""")]
     [InlineData("""{"machine":"test-box","unplaced":[{"tool":"codex","model":"has space","count":1}]}""")]
     [InlineData("""{"machine":"test-box","unplaced":[{"tool":"codex","model":"m","count":0}]}""")]
