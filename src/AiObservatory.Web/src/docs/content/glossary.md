@@ -31,7 +31,7 @@ Short definitions of the terms used across these pages, in alphabetical order. E
 - **Comparison period.** The second range that Reporting, Spend, Activity and GitHub set beside the selected range. It is the previous period unless you edit it. [Reporting](/docs/reporting#comparison-period)
 - **Complete (run).** A panel run with a reviewer row for each of the five active vendors and a judge row. Otherwise it is incomplete. [Adversarial Review](/docs/adversarial-review#completeness-and-validity)
 - **Configured.** A source state: set up, but no collection has yet succeeded. [Data sources](/docs/data-sources#the-six-states)
-- **Corroborated catch.** An accepted finding that more than one reviewer raised. [Adversarial Review](/docs/adversarial-review#finding-outcomes-and-the-seat-counters)
+- **Corroborated catch.** An accepted finding that more than one reviewer vendor raised. [Adversarial Review](/docs/adversarial-review#finding-outcomes-and-the-seat-counters)
 - **Cost basis.** See Basis.
 - **Cost / 1M.** Cost divided by observed tokens, times one million. Shown only when every request in the row has a cost. [Usage and insights](/docs/usage-insights#how-cost-and-cost-1m-are-computed)
 - **Cost per finding.** A reviewer's cost divided by its accepted issues. Aggregated as a ratio of sums. [Adversarial Review](/docs/adversarial-review#stats-by-reviewer-model)
@@ -140,7 +140,7 @@ Short definitions of the terms used across these pages, in alphabetical order. E
 ## U
 
 - **Unavailable.** A source state: the source says it cannot supply data. It outranks failing. [Data sources](/docs/data-sources#unavailable)
-- **Unique catch.** An accepted finding that exactly one reviewer raised. [Adversarial Review](/docs/adversarial-review#finding-outcomes-and-the-seat-counters)
+- **Unique catch.** An accepted finding that exactly one reviewer vendor raised. [Adversarial Review](/docs/adversarial-review#finding-outcomes-and-the-seat-counters)
 - **Unknown cost (review).** A panel run whose cost could not be established. It is stored with a zero placeholder and excluded from averages. [Adversarial Review](/docs/adversarial-review#unknown-cost)
 - **Unknown price.** An event with no computed cost because no calculator, catalog entry, model match, dimension or rate was available. It reads `Not reported`. [Pricing](/docs/pricing#unknown-prices)
 - **Unplaced.** A local session that the sweeper could not assign to a provider and so did not post. [Local producers](/docs/local-producers#sessions-that-cannot-be-placed)

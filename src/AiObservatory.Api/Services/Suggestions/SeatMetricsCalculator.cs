@@ -96,6 +96,9 @@ public static class SeatMetricsCalculator
         foreach (var finding in findings)
         {
             var raisers = finding.Participants.Where(p => p.Kind == "raiser").ToList();
+            // One seat per vendor: two models of one vendor raising a finding is one raiser, so the
+            // catch is unique. Mirrors raisingVendors in seatInfluence.ts.
+            var raisingVendors = raisers.Select(r => r.Reviewer).Distinct(StringComparer.Ordinal).Count();
             var targets = new Dictionary<string, (AdversarialReviewRun Row, HashSet<string> Reviewers)>(
                 StringComparer.Ordinal
             );
@@ -118,8 +121,8 @@ public static class SeatMetricsCalculator
             foreach (var (model, target) in targets)
             {
                 var seat = SeatFor(model);
-                AccumulateSeatFinding(seat, finding, raisers.Count, target.Row, target.Reviewers);
-                AccumulateFinding(WeekFor(seat, target.Row.RecordedAt), finding, raisers.Count);
+                AccumulateSeatFinding(seat, finding, raisingVendors, target.Row, target.Reviewers);
+                AccumulateFinding(WeekFor(seat, target.Row.RecordedAt), finding, raisingVendors);
             }
         }
 
@@ -187,14 +190,14 @@ public static class SeatMetricsCalculator
     private static void AccumulateSeatFinding(
         SeatTally seat,
         AdversarialReviewFinding finding,
-        int raiserCount,
+        int raisingVendors,
         AdversarialReviewRun row,
         HashSet<string> seatReviewers
     )
     {
-        AccumulateFinding(seat, finding, raiserCount);
+        AccumulateFinding(seat, finding, raisingVendors);
         // Pairs with DetailedKnownCostUsd: a unique catch from an unknown-cost run has no cost in the numerator.
-        if (finding.Outcome == "accepted" && raiserCount == 1 && !row.CostUnknown)
+        if (finding.Outcome == "accepted" && raisingVendors == 1 && !row.CostUnknown)
         {
             seat.KnownCostUnique++;
         }
@@ -203,14 +206,14 @@ public static class SeatMetricsCalculator
         );
     }
 
-    private static void AccumulateFinding(Tally target, AdversarialReviewFinding finding, int raiserCount)
+    private static void AccumulateFinding(Tally target, AdversarialReviewFinding finding, int raisingVendors)
     {
         target.Raised++;
         switch (finding.Outcome)
         {
             case "accepted":
                 target.Accepted++;
-                if (raiserCount == 1)
+                if (raisingVendors == 1)
                 {
                     target.Unique++;
                 }

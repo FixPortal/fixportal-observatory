@@ -179,11 +179,16 @@ function accumulateRun(seat: SeatAggregates, row: RunRow, detailedRunIds: Set<st
   if (!row.costUnknown) week.costUsd += row.costUsd
 }
 
+// One seat per vendor: two models of one vendor raising a finding is still one raiser, so the
+// catch is unique. Mirrors SeatMetricsCalculator.RaisingVendors.
+const raisingVendors = (finding: FindingRow) =>
+  new Set(finding.raisedBy.map((raiser) => raiser.reviewer)).size
+
 function accumulateFinding(target: FindingAggregates, finding: FindingRow): void {
   target.raised += 1
   if (finding.outcome === 'accepted') {
     target.accepted += 1
-    if (finding.raisedBy.length === 1) target.unique += 1
+    if (raisingVendors(finding) === 1) target.unique += 1
     else target.corroborated += 1
     return
   }
@@ -229,7 +234,7 @@ function accumulateFindingForSeat(
   target: FindingTarget,
 ): void {
   accumulateFinding(seat, finding)
-  if (finding.outcome === 'accepted' && finding.raisedBy.length === 1 && !target.row.costUnknown) {
+  if (finding.outcome === 'accepted' && raisingVendors(finding) === 1 && !target.row.costUnknown) {
     seat.knownCostUnique += 1
   }
   seat.peerAgreement += peerAgreementReceived(finding, target.reviewers)

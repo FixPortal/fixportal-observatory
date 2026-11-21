@@ -166,14 +166,14 @@ For each seat, every finding that one of its reviewers raised is counted once:
 | -------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | Raised         | Findings the seat raised, plus raised counts from runs that have no finding detail.                                         |
 | Accepted       | Findings with outcome `accepted`, plus accepted counts from runs with no finding detail.                                    |
-| Unique         | Accepted findings raised by exactly one reviewer. A unique catch is something no other reviewer raised.                     |
-| Corroborated   | Accepted findings raised by more than one reviewer.                                                                         |
+| Unique         | Accepted findings raised by exactly one reviewer vendor. A unique catch is something no other vendor raised.                |
+| Corroborated   | Accepted findings raised by more than one reviewer vendor.                                                                  |
 | Refuted        | Findings with outcome `refuted`.                                                                                            |
 | Dropped        | Findings with outcome `dropped`.                                                                                            |
 | Indeterminate  | Findings with outcome `indeterminate`.                                                                                      |
 | Peer agreement | Count of `agree` assessments on the seat's findings from participants who are not the seat's own reviewers on that finding. |
 
-Uniqueness is decided by the number of reviewers listed on the finding, not by the number of seats. Two reviewers using the same model count as two raisers, so such a finding is corroborated.
+Uniqueness is decided by the number of distinct reviewer vendors listed on the finding, one seat per vendor. A finding raised only by two models of one vendor counts as one raiser, so it is unique; a finding raised by two vendors is corroborated.
 
 ### Derived measures
 

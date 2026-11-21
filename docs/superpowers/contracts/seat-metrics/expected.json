@@ -108,26 +108,26 @@
     "label": "mixed: claude-sonnet-5-5+claude-opus-5-5",
     "mixed": true,
     "runs": 2,
-    "raised": 2,
-    "accepted": 1,
-    "unique": 1,
+    "raised": 3,
+    "accepted": 2,
+    "unique": 2,
     "corroborated": 0,
     "peerAgreement": 0,
     "refuted": 0,
     "dropped": 1,
     "indeterminate": 0,
     "falsePositiveRate": 0,
-    "acceptanceRate": 0.5,
+    "acceptanceRate": 0.6666666666666666,
     "knownCostUsd": 9,
     "unknownCostRuns": 0,
-    "costPerUnique": 9,
+    "costPerUnique": 4.5,
     "countsOnlyRuns": 0,
     "smallSample": true,
     "byWeek": [
       {
         "week": "2026-W42",
         "costUsd": 4,
-        "influence": 0
+        "influence": 1
       },
       {
         "week": "2026-W43",
