@@ -3632,3 +3632,28 @@ test('an orphan Antigravity database caches its hold, which ends at the database
     })
   } finally { await removeTemp(root) }
 })
+
+// C3-P7
+test('a held scan still posts its sweep status, carrying the held file count', async () => {
+  const root = await makeTemp('observatory-status-held-')
+  const sessions = join(root, 'codex', 'sessions')
+  await mkdir(sessions, { recursive: true })
+  await writeHeldFinishedCodex(sessions)
+  const recording = recordingServer()
+  try {
+    await withRecordingServer(recording, async () => {
+      await runMainWith({ root, statePath: join(root, 'state', 'sweep.json'), server: recording.server })
+    })
+    assert.deepEqual(recording.statuses.map(body => body.heldFiles), [1])
+  } finally { await removeTemp(root) }
+})
+
+// C3-P7
+test('a file whose Claude records carry invalid counters counts as held', async () => {
+  const result = await updateFileCache(
+    [{ path: 'a', mtimeMs: 1 }], {},
+    () => [{ tool: 'claude', date: '2026-10-22', claudeInvalidCounters: true }],
+    async path => path,
+  )
+  assert.equal(result.heldFiles, 1)
+})
