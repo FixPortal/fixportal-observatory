@@ -113,6 +113,39 @@ public sealed class KimiPricingSourceTests
     }
 
     [Fact]
+    public async Task AnEditToTheDocsIndexThatLeavesThePricingPagesAloneDoesNotChangeTheSnapshotIdentity()
+    {
+        var fixtures = Fixtures();
+        var index = Fixture("kimi-llms.txt");
+        async Task<PricingSnapshotCandidate?> FetchWithIndexAsync(string indexContent)
+        {
+            var pages = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["https://platform.kimi.ai/docs/llms.txt"] = indexContent,
+                ["https://platform.kimi.ai/docs/pricing/chat.md"] = fixtures.Chat,
+                ["https://platform.kimi.ai/docs/pricing/batch.md"] = fixtures.Batch,
+            };
+            var handler = new FirstPartyDocumentFetcherTests.RecordingHandler(
+                (request, _) =>
+                    new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(pages[request.RequestUri!.AbsoluteUri]),
+                    }
+            );
+            return await new KimiPricingSource(new FakeClock(RetrievedAt), handler).FetchAsync(
+                TestContext.Current.CancellationToken
+            );
+        }
+
+        var before = await FetchWithIndexAsync(index);
+        var after = await FetchWithIndexAsync(
+            index + "\n- [An unrelated guide](https://platform.kimi.ai/docs/guide/unrelated.md): not a price page.\n"
+        );
+
+        after!.ContentHash.Should().Be(before!.ContentHash);
+    }
+
+    [Fact]
     public async Task FetchRejectsAnIndexThatNoLongerNamesEveryRequiredFirstPartyPage()
     {
         var handler = new FirstPartyDocumentFetcherTests.RecordingHandler(
