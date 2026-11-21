@@ -60,9 +60,12 @@ public sealed class PricingRefreshWorkerService(
         // The hourly tick only decides what is due. Loading the bundles reprices every provider whose
         // bundle is unchanged, so it stays on the daily cadence it had before the tick moved to an hour.
         var loadNow = clock.GetCurrentInstant();
-        if (_bundlesLoadedAt is not { } loadedAt || loadedAt <= loadNow - RefreshInterval)
+        // Stamped only on a clean load: a failed provider is retried on the next hourly pass.
+        if (
+            (_bundlesLoadedAt is not { } loadedAt || loadedAt <= loadNow - RefreshInterval)
+            && await services.GetRequiredService<BundledPricingCatalogLoader>().LoadAsync(cancellationToken)
+        )
         {
-            await services.GetRequiredService<BundledPricingCatalogLoader>().LoadAsync(cancellationToken);
             _bundlesLoadedAt = loadNow;
         }
 
