@@ -46,7 +46,7 @@ public class ActivityEndpointDataTests : IAsyncLifetime
             )
         )
         {
-            await System.Console.Error.WriteLineAsync($"Dropping owned test database '{_ownedDatabase}'.");
+            await Console.Error.WriteLineAsync($"Dropping owned test database '{_ownedDatabase}'.");
             await _ctx.Database.EnsureDeletedAsync();
         }
         if (_ctx is not null)

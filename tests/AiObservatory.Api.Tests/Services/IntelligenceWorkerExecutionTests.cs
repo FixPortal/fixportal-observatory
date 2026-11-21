@@ -38,7 +38,7 @@ public class IntelligenceWorkerExecutionTests
                 readerStarted.Wait(TestContext.Current.CancellationToken);
                 for (var i = 0; i < 200_000; i++)
                 {
-                    logger.Log(LogLevel.Information, default, i, null, (state, _) => "message");
+                    logger.Log(LogLevel.Information, default, i, null, (_, _) => "message");
                 }
             },
             TestContext.Current.CancellationToken

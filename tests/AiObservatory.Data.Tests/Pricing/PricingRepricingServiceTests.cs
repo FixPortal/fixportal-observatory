@@ -760,9 +760,9 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
         public Provider Provider => Provider.OpenAI;
 
         public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog) =>
-            CalculateWithEvidence(usage, normalizedCatalog)?.Quote;
+            CalculateWithEvidence(usage, normalizedCatalog).Quote;
 
-        public CalculatedPrice? CalculateWithEvidence(UsageEvent usage, string normalizedCatalog)
+        public CalculatedPrice CalculateWithEvidence(UsageEvent usage, string normalizedCatalog)
         {
             cancellation.Cancel();
             throw new InvalidOperationException("calculator failed");
