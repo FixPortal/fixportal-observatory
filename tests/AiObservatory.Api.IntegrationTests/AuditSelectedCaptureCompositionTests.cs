@@ -9,6 +9,7 @@ using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
 using AiObservatory.Data;
 using AiObservatory.Data.Audit;
+using AiObservatory.Testing;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -39,12 +40,16 @@ public sealed class AuditSelectedCaptureCompositionTests
         var ct = TestContext.Current.CancellationToken;
         var repository = RepositoryRoot();
         var node = NodeExecutable();
-        var directory = Directory.CreateTempSubdirectory("aiobs-selected-composition-").FullName;
+        var owned = OwnedTempDirectory.Create("aiobs-selected-composition-");
+        var directory = owned.Path;
         var connection = OwnedConnection();
         var options = new DbContextOptionsBuilder<AiObservatoryDbContext>()
             .UseNpgsql(connection, o => o.UseNodaTime())
             .Options;
         await using var owner = new AiObservatoryDbContext(options);
+        // Both hosts and the normally exited child have settled before the owned database/files are removed. The
+        // directory holds the machine key, so it goes even if the database drop throws.
+        Task Teardown() => owned.DisposeAfterAsync(() => owner.Database.EnsureDeletedAsync(CancellationToken.None));
         try
         {
             MakePrivate(directory);
@@ -97,12 +102,19 @@ public sealed class AuditSelectedCaptureCompositionTests
             await AssertCaptureAsync(server.Services, fixture, limited, ct);
             Directory.GetFiles(identity).Select(Path.GetFileName).Should().Equal("identity.json");
         }
-        finally
+        catch (Exception)
         {
-            // Both hosts and the normally exited child have settled before the owned database/files are removed.
-            await owner.Database.EnsureDeletedAsync(CancellationToken.None);
-            Directory.Delete(directory, recursive: true);
+            try
+            {
+                await Teardown();
+            }
+            catch (Exception)
+            {
+                // The test's own failure is the one to report.
+            }
+            throw;
         }
+        await Teardown();
     }
 
     private static AiObservatoryApiFactory Factory(string connection)

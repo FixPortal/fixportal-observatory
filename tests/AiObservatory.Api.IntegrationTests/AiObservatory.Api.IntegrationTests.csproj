@@ -41,6 +41,7 @@
          the unit project any more: it is an assembly fixture, so it runs whatever the test
          filter says, and the unit lane must stay database-free. -->
     <Compile Include="..\PostgresTestAssemblyFixture.cs" Link="PostgresTestAssemblyFixture.cs" />
+    <Compile Include="..\OwnedTempDirectory.cs" Link="OwnedTempDirectory.cs" />
     <!-- Shared with the unit project, which owns it (FxRateProvider and GitHubBillingClient
          tests use it too). Linked rather than duplicated. -->
     <Compile Include="..\AiObservatory.Api.Tests\Services\StubHttpMessageHandler.cs"

@@ -3,6 +3,7 @@ using System.Text;
 using AiObservatory.Audit.Bundles;
 using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
+using AiObservatory.Testing;
 using AwesomeAssertions;
 
 namespace AiObservatory.Audit.Tests.Serialization;
@@ -13,7 +14,9 @@ public sealed class NodeCaptureTests
     [Fact]
     public async Task NodeCapture_CanonicalRecordsAndManifest_RoundtripThroughBundle()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "audit-node-synthetic-" + Guid.NewGuid().ToString("N"));
+        var owned = OwnedTempDirectory.Create("audit-node-synthetic-");
+        // The generator creates its output directory itself, so it gets a child of the marked directory.
+        var directory = Path.Combine(owned.Path, "capture");
         try
         {
             await Generate(directory);
@@ -81,10 +84,7 @@ public sealed class NodeCaptureTests
         }
         finally
         {
-            if (Directory.Exists(directory))
-            {
-                Directory.Delete(directory, true);
-            }
+            owned.Delete();
         }
     }
 
