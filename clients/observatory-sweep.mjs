@@ -1036,7 +1036,10 @@ export function buildDailySnapshots(records, machine) {
   // Kept outside each HTTP snapshot. A malformed unselected streaming copy is
   // still unsafe evidence, so inspect the original records before deduplication.
   const holds = new Map()
-  const holdSource = (sourceId, from, through) => holds.set(sourceId, [...(holds.get(sourceId) ?? []), { from, through }])
+  const holdSource = (sourceId, from, through) => {
+    if (!holds.has(sourceId)) { holds.set(sourceId, []) }
+    holds.get(sourceId).push({ from, through })
+  }
   if (records.incomplete) {
     // The flag belongs to the tool whose parser set it; an untagged array holds every tool it carries.
     const tools = records.incompleteTool ? [records.incompleteTool] : [...new Set(records.map(record => record.tool))]
@@ -1154,7 +1157,10 @@ export function buildDailySnapshots(records, machine) {
 export function mergeHolds(...maps) {
   const merged = new Map()
   for (const map of maps) {
-    for (const [key, ranges] of map) { merged.set(key, [...(merged.get(key) ?? []), ...ranges]) }
+    for (const [key, ranges] of map) {
+      if (!merged.has(key)) { merged.set(key, []) }
+      merged.get(key).push(...ranges)
+    }
   }
   return merged
 }
