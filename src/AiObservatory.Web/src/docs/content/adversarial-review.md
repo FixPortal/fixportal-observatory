@@ -61,7 +61,7 @@ Empty and error states: `Loading review stats...`, `Couldn’t load review stats
 
 ### Recent runs
 
-One collapsible panel per run, newest first by default. Expand a run to see its participant table.
+One collapsible panel per run recorded in the last 180 days, the same window the Seats view uses, newest first by default. Expand a run to see its participant table. Older runs still count in **Stats by reviewer & model**.
 
 #### Run header
 
@@ -214,7 +214,7 @@ All review data enters through the HTTP API; nothing is read from the review too
 | Method and route                              | Purpose                                                                                                                                                               | Access                       |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
 | `POST /api/adversarial-review/runs`           | Record or correct one participant row.                                                                                                                                | Admin key or signed-in user. |
-| `GET /api/adversarial-review/runs`            | List all participant rows, newest first. Optional `runId` filter.                                                                                                     | Read key or above.           |
+| `GET /api/adversarial-review/runs`            | List participant rows, newest first. Optional `runId` filter, and optional `since` (a UTC date); without `since` every row is returned.                               | Read key or above.           |
 | `POST /api/adversarial-review/findings`       | Replace the whole finding set of one run.                                                                                                                             | Admin key or signed-in user. |
 | `GET /api/adversarial-review/findings`        | List findings with their raisers and assessments. `runId` returns that run whole; otherwise only findings recorded since `since` (a UTC date, default 180 days back). | Read key or above.           |
 | `GET /api/adversarial-review/stats`           | The grouped figures behind the Stats table.                                                                                                                           | Read key or above.           |

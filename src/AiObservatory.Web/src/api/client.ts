@@ -350,8 +350,9 @@ export interface AdversarialReviewStats {
   unknownCostRuns: number
 }
 
-export const getAdversarialReviewRuns = () =>
-  getJson<AdversarialReviewRun[]>('/adversarial-review/runs')
+/** `since` is a UTC date (YYYY-MM-DD); only rows recorded on or after it are returned. */
+export const getAdversarialReviewRuns = (since: string) =>
+  getJson<AdversarialReviewRun[]>('/adversarial-review/runs', { since })
 
 export const getAdversarialReviewStats = () =>
   getJson<AdversarialReviewStats[]>('/adversarial-review/stats')

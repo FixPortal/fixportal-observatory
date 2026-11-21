@@ -12,6 +12,7 @@ vi.mock('../auth/msal', () => msalMock)
 
 import {
   getAggregates,
+  getAdversarialReviewRuns,
   getSourceStatuses,
   ApiError,
   getBilledReporting,
@@ -197,6 +198,14 @@ test('gets the authoritative billed-reporting projection for the complete date r
 
   await expect(getBilledReporting('2026-08-01', '2026-08-02')).resolves.toEqual(response)
   expect(fetchMock.mock.calls[0]![0]).toContain('/spend/reporting?from=2026-08-01&to=2026-08-02')
+})
+
+test('bounds the adversarial-review runs list to the window it is given', async () => {
+  const fetchMock = mockFetchOnce(200, [])
+
+  await getAdversarialReviewRuns('2026-05-25')
+
+  expect(fetchMock.mock.calls[0]![0]).toContain('/adversarial-review/runs?since=2026-05-25')
 })
 
 test('passes filters to spend entries before the server-side cap', async () => {

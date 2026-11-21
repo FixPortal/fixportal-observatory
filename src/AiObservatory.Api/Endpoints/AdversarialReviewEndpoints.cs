@@ -6,8 +6,8 @@ namespace AiObservatory.Api.Endpoints;
 
 public static class AdversarialReviewEndpoints
 {
-    // Used only when a caller sends no `since`. The Seats tab sends its own explicit `since` and
-    // applies the same date to the runs list, which this endpoint pair does not window by itself.
+    // Used only when a findings caller sends no `since`. The runs list takes an optional `since`
+    // too but has no default window: omitted, it returns every row, as it always has.
     private const int DefaultFindingsWindowDays = 180;
 
     // Returning the builder is the standard fluent endpoint-mapping convention.
@@ -23,9 +23,13 @@ public static class AdversarialReviewEndpoints
 
         app.MapGet(
             "/adversarial-review/runs",
-            async (string? runId, IAdversarialReviewRepository repo, HttpContext ctx) =>
+            async (string? runId, DateOnly? since, IAdversarialReviewRepository repo, HttpContext ctx) =>
             {
-                var runs = await repo.GetRunsAsync(runId, ctx.RequestAborted);
+                // Same `since` convention as the findings list: a UTC date, from its midnight on.
+                Instant? floor = since is { } day
+                    ? new LocalDate(day.Year, day.Month, day.Day).AtMidnight().InUtc().ToInstant()
+                    : null;
+                var runs = await repo.GetRunsAsync(runId, ctx.RequestAborted, floor);
                 return Results.Ok(
                     runs.Select(r => new
                     {

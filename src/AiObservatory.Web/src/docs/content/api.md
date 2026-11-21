@@ -236,15 +236,15 @@ The activity and GitHub reads all take `from` and `to`, and are filtered by `Act
 
 ## Adversarial review
 
-| Method   | Route                                  | Auth  | Purpose                                          |
-| -------- | -------------------------------------- | ----- | ------------------------------------------------ |
-| `POST`   | `/api/adversarial-review/runs`         | Admin | Record one participant's run.                    |
-| `GET`    | `/api/adversarial-review/runs`         | Read  | List participant rows (`runId` optional filter). |
-| `POST`   | `/api/adversarial-review/findings`     | Admin | Replace the findings of a run.                   |
-| `GET`    | `/api/adversarial-review/findings`     | Read  | List findings (`runId`, `since=YYYY-MM-DD`).     |
-| `GET`    | `/api/adversarial-review/stats`        | Read  | Per reviewer and model statistics.               |
-| `DELETE` | `/api/adversarial-review/runs`         | Admin | Delete all runs.                                 |
-| `DELETE` | `/api/adversarial-review/runs/{runId}` | Admin | Delete one sweep.                                |
+| Method   | Route                                  | Auth  | Purpose                                              |
+| -------- | -------------------------------------- | ----- | ---------------------------------------------------- |
+| `POST`   | `/api/adversarial-review/runs`         | Admin | Record one participant's run.                        |
+| `GET`    | `/api/adversarial-review/runs`         | Read  | List participant rows (`runId`, `since=YYYY-MM-DD`). |
+| `POST`   | `/api/adversarial-review/findings`     | Admin | Replace the findings of a run.                       |
+| `GET`    | `/api/adversarial-review/findings`     | Read  | List findings (`runId`, `since=YYYY-MM-DD`).         |
+| `GET`    | `/api/adversarial-review/stats`        | Read  | Per reviewer and model statistics.                   |
+| `DELETE` | `/api/adversarial-review/runs`         | Admin | Delete all runs.                                     |
+| `DELETE` | `/api/adversarial-review/runs/{runId}` | Admin | Delete one sweep.                                    |
 
 A run row has these fields on `POST`: `reviewer` (a slug: a lower-case letter then lower-case letters, digits or hyphens, up to 100 characters), `model` (up to 200), `runId` (up to 200), `role` (`reviewer` or `judge`), `inputTokens`, `outputTokens`, `costUsd`, `reviewDurationMs`, `issuesRaised`, `issuesAccepted` (all non-negative), and optional `repo` (up to 200), `summary` (trimmed, cut to 80 characters), `chunkCount` (positive) and `costUnknown`. Judge rows must have zero issue counts. A cost of zero is treated as unknown rather than free, and an unknown cost is stored as 0 with `costUnknown` true. Cost per accepted finding is `costUsd / issuesAccepted` when the cost is known and at least one finding was accepted. Posting an existing participant row corrects it in place: `201` with `{ id }` for new, `200` with `{ id, updated: true }` for an update.
 
@@ -259,7 +259,7 @@ A findings request is `{ runId, repo?, findings: [{ chunkId, findingId, severity
 
 The call replaces all stored findings for the run and returns `{ findings: <count> }`. `DELETE /api/adversarial-review/runs` returns `{ deleted }`; `DELETE /api/adversarial-review/runs/{runId}` returns `{ deleted }`, or 404 when no row has that run id.
 
-`GET .../runs` returns `id`, `reviewer`, `model`, `role`, `repo`, `summary`, `inputTokens`, `outputTokens`, `costUsd`, `costUnknown`, `reviewDurationMs`, `issuesRaised`, `issuesAccepted`, `costPerAcceptedFinding`, `chunkCount`, `runId`, `recordedAt`. `GET .../findings` returns `runId`, `repo`, `chunkId`, `findingId`, `severity`, `outcome`, `raisedBy` and `assessments`. `GET .../stats` returns per reviewer, model and role: `runCount`, `avgCostPerRun`, `avgIssuesRaised`, `avgIssuesAccepted`, `avgCostPerAcceptedFinding`, `avgDurationMs`, `unknownCostRuns`. See [Adversarial Review](/docs/adversarial-review).
+`GET .../runs` returns `id`, `reviewer`, `model`, `role`, `repo`, `summary`, `inputTokens`, `outputTokens`, `costUsd`, `costUnknown`, `reviewDurationMs`, `issuesRaised`, `issuesAccepted`, `costPerAcceptedFinding`, `chunkCount`, `runId`, `recordedAt`, newest first. Without `since` it returns every row; with `since` (a UTC date) only rows recorded on or after that date's midnight. `GET .../findings` returns `runId`, `repo`, `chunkId`, `findingId`, `severity`, `outcome`, `raisedBy` and `assessments`. `GET .../stats` returns per reviewer, model and role: `runCount`, `avgCostPerRun`, `avgIssuesRaised`, `avgIssuesAccepted`, `avgCostPerAcceptedFinding`, `avgDurationMs`, `unknownCostRuns`. See [Adversarial Review](/docs/adversarial-review).
 
 ## IDE integration
 
