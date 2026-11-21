@@ -1250,7 +1250,8 @@ async function loadState(path) {
   let text
   try { text = await readFile(path, 'utf8') }
   catch (error) {
-    if (error?.code === 'ENOENT') { return {} }
+    // ENOTDIR is POSIX's "missing" when a parent of the path is a file; Windows reports ENOENT.
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') { return {} }
     throw error
   }
   try { return JSON.parse(text) }
