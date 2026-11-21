@@ -831,7 +831,6 @@ export async function parseAntigravityDatabase(path, transcriptContent, report =
   // Without transcript meters, a decoder shortfall (rows it rejected, or step rows that decode to
   // nothing) is a fault, not an empty conversation: hold the conversation's day.
   // A malformed planner meter also holds: it switched the transcript meters off for this conversation.
-  // A malformed planner meter also holds: it switched the transcript meters off for this conversation.
   const shortfall = planner.invalid || (!fromTranscript && (rejected > 0 || (rows.length > 0 && decoded === 0)))
   const withShortfall = records => shortfall ? withHold(records, 'antigravity', day) : records
   if (!fromTranscript && decoded === 0) { return withShortfall([]) }
