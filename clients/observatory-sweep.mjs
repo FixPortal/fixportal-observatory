@@ -830,7 +830,9 @@ export async function parseAntigravityDatabase(path, transcriptContent, report =
   const fromTranscript = !planner.invalid && planner.input + planner.output + planner.cacheRead > 0
   // Without transcript meters, a decoder shortfall (rows it rejected, or step rows that decode to
   // nothing) is a fault, not an empty conversation: hold the conversation's day.
-  const shortfall = !fromTranscript && (rejected > 0 || (rows.length > 0 && decoded === 0))
+  // A malformed planner meter also holds: it switched the transcript meters off for this conversation.
+  // A malformed planner meter also holds: it switched the transcript meters off for this conversation.
+  const shortfall = planner.invalid || (!fromTranscript && (rejected > 0 || (rows.length > 0 && decoded === 0)))
   const withShortfall = records => shortfall ? withHold(records, 'antigravity', day) : records
   if (!fromTranscript && decoded === 0) { return withShortfall([]) }
   return withShortfall([{
@@ -975,11 +977,25 @@ function deduplicateClaudeRecords(records) {
     // copy observed. shortcut: a real zero beside a non-zero copy of the same message is not told
     // apart from a missing counter; streaming copies only grow, so the non-zero one is the better evidence.
     const counters = {}
-    for (const key of ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens']) {
+    for (const key of ['inputTokens', 'outputTokens', 'cacheReadTokens']) {
       const best = Math.max(...messages.map(message => message[key]))
       if (chosen[key] === 0 && best > 0) { counters[key] = best }
     }
-    deduplicated[index] = { ...chosen, ...counters, claudePromptContext: claudePromptContext(messages) }
+    let result = { ...chosen, ...counters, claudePromptContext: claudePromptContext(messages) }
+    if (chosen.cacheWriteTokens === 0) {
+      // The cache-write total and its 5m/1h split come from one copy, so the snapshot's breakdown always sums to its total.
+      const donor = messages.reduce((a, b) => b.cacheWriteTokens > a.cacheWriteTokens ? b : a)
+      if (donor.cacheWriteTokens > 0) {
+        const { cacheWrite1hTokens: _1h, cacheWrite5mTokens: _5m, ...rest } = result
+        result = {
+          ...rest,
+          cacheWriteTokens: donor.cacheWriteTokens,
+          ...(Object.hasOwn(donor, 'cacheWrite1hTokens') ? { cacheWrite1hTokens: donor.cacheWrite1hTokens } : {}),
+          ...(Object.hasOwn(donor, 'cacheWrite5mTokens') ? { cacheWrite5mTokens: donor.cacheWrite5mTokens } : {}),
+        }
+      }
+    }
+    deduplicated[index] = result
   }
   return deduplicated
 }

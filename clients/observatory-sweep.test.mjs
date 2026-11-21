@@ -3337,6 +3337,35 @@ test('Claude deduplication never replaces an observed counter with the other cop
   }
 })
 
+// S1
+test('Claude deduplication takes the cache-write total and its split from the same copy', () => {
+  const zeroed = claudePromptRow(
+    { input_tokens: 10, output_tokens: 5, service_tier: 'standard', speed: 'standard', inference_geo: 'us', cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0 } },
+    { id: 'dup', model: 'claude-opus-5' }, '2026-10-22T00:00:00Z',
+  )
+  const written = claudePromptRow(
+    { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 7, cache_creation: { ephemeral_5m_input_tokens: 7, ephemeral_1h_input_tokens: 0 } },
+    { id: 'dup', model: 'claude-opus-5' }, '2026-10-22T00:00:05Z',
+  )
+  for (const content of [`${zeroed}\n${written}`, `${written}\n${zeroed}`]) {
+    const [snapshot] = buildDailySnapshots(parseClaude(content), TEST_MACHINE)
+    assert.equal(snapshot.cacheWriteTokens, 7)
+    assert.deepEqual(JSON.parse(snapshot.rawPayload).cache_creation, { ephemeral_5m_input_tokens: 7, ephemeral_1h_input_tokens: 0 })
+  }
+})
+
+// S2
+test('Antigravity holds the day when a planner meter is malformed even though every step row decodes', async () => {
+  const root = await makeTemp('observatory-agy-invalid-planner-')
+  try {
+    const dbPath = await agyDatabase(root, [antigravityPayload(100, 20, 5)])
+    const transcript = plannerRow({ model: 'gemini-3.8-flash-high', input_tokens: 'abc', cache_read_tokens: 4000, output_tokens: 20 })
+    const records = await sweep.parseAntigravityDatabase(dbPath, transcript, () => {})
+    assert.equal(records.incomplete, true)
+    assert.equal(records.holdFrom, '2026-08-24')
+  } finally { await removeTemp(root) }
+})
+
 // C3-C7
 test('five parsers hold the day of a row whose counter is present but invalid', () => {
   const cases = [
