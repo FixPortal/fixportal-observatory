@@ -759,7 +759,7 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
     {
         public Provider Provider => Provider.OpenAI;
 
-        public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog) =>
+        public UsagePriceQuote Calculate(UsageEvent usage, string normalizedCatalog) =>
             CalculateWithEvidence(usage, normalizedCatalog).Quote;
 
         public CalculatedPrice CalculateWithEvidence(UsageEvent usage, string normalizedCatalog)
