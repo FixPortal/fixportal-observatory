@@ -94,6 +94,46 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
     }
 
     [Fact]
+    public async Task ExecuteAsync_WaitsNoLongerThanAnHourBetweenDueChecks()
+    {
+        // A day-long sleep after an unconditional due check let a restart defer a price change
+        // by up to two days: the check must run again well inside the refresh interval.
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        scopeFactory.CreateScope().Returns(_ => throw new InvalidOperationException("database unreachable"));
+        var timeProvider = new DelayRecordingTimeProvider();
+        var worker = new PricingRefreshWorkerService(
+            scopeFactory,
+            new FakeClock(Now),
+            NullLogger<PricingRefreshWorkerService>.Instance,
+            timeProvider
+        );
+
+        await worker.StartAsync(TestContext.Current.CancellationToken);
+        var delay = await timeProvider.FirstDelay.Task.WaitAsync(
+            TimeSpan.FromSeconds(30),
+            TestContext.Current.CancellationToken
+        );
+        await worker.StopAsync(CancellationToken.None);
+
+        delay.Should().BeLessThanOrEqualTo(TimeSpan.FromHours(1));
+    }
+
+    [Theory]
+    [InlineData(30, false)]
+    [InlineData(7 * 60, true)]
+    public async Task RetriesAFailingSourceOnlyOnceItsLastAttemptIsOldEnough(int attemptAgeMinutes, bool fetched)
+    {
+        var source = Source(PricingSourceIds.OpenAi, null);
+        await using var harness = await CreateHarnessAsync([source], [Definition(PricingSourceIds.OpenAi)]);
+        await harness.MarkSuccessAsync(PricingSourceIds.OpenAi, Now - Duration.FromHours(25));
+        await harness.MarkAttemptAsync(PricingSourceIds.OpenAi, Now - Duration.FromMinutes(attemptAgeMinutes));
+
+        await harness.Worker.RunOnceAsync(TestContext.Current.CancellationToken);
+
+        await source.Received(fetched ? 1 : 0).FetchAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task LoadsBundlesBeforeFetchingRemoteSources()
     {
         var source = Substitute.For<IPricingSource>();
@@ -473,6 +513,14 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
                 .MarkSuccessAsync(sourceId, Duration.FromDays(1), at, at, TestContext.Current.CancellationToken);
         }
 
+        public async Task MarkAttemptAsync(string sourceId, Instant at)
+        {
+            await using var scope = services.CreateAsyncScope();
+            await scope
+                .ServiceProvider.GetRequiredService<SourceSyncStateStore>()
+                .MarkAttemptAsync(sourceId, Duration.FromDays(1), at, TestContext.Current.CancellationToken);
+        }
+
         public async Task DeleteStateAsync(string sourceId)
         {
             await using var scope = services.CreateAsyncScope();
@@ -489,6 +537,28 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
         }
 
         public ValueTask DisposeAsync() => services.DisposeAsync();
+    }
+
+    // Records the first delay the worker asks for and never fires, so the loop parks there.
+    private sealed class DelayRecordingTimeProvider : TimeProvider
+    {
+        public TaskCompletionSource<TimeSpan> FirstDelay { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            FirstDelay.TrySetResult(dueTime);
+            return new InertTimer();
+        }
+
+        private sealed class InertTimer : ITimer
+        {
+            public bool Change(TimeSpan dueTime, TimeSpan period) => true;
+
+            public void Dispose() { }
+
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
     }
 
     private sealed class CapturingLogger<T> : ILogger<T>

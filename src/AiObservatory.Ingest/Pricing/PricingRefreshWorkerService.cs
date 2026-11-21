@@ -8,10 +8,18 @@ namespace AiObservatory.Ingest.Pricing;
 public sealed class PricingRefreshWorkerService(
     IServiceScopeFactory scopeFactory,
     IClock clock,
-    ILogger<PricingRefreshWorkerService> logger
+    ILogger<PricingRefreshWorkerService> logger,
+    TimeProvider? timeProvider = null
 ) : BackgroundService
 {
     private static readonly Duration RefreshInterval = Duration.FromDays(1);
+
+    // The pass checks what is due every tick, not once a day: a restart then defers a refresh by
+    // at most a tick instead of a whole interval. A failing source is held back by its last
+    // attempt, so the hourly tick does not become an hourly retry.
+    private static readonly TimeSpan TickInterval = TimeSpan.FromHours(1);
+    private static readonly Duration RetryInterval = Duration.FromHours(6);
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -19,7 +27,7 @@ public sealed class PricingRefreshWorkerService(
         {
             // One transient fault (a catalog read, a DI resolution, a state read between the
             // guarded paths) must not take the host down — BackgroundServiceExceptionBehavior
-            // defaults to StopHost. A failed pass retries on the next daily tick.
+            // defaults to StopHost. A failed pass retries on the next tick.
             try
             {
                 await RunOnceAsync(stoppingToken);
@@ -32,7 +40,7 @@ public sealed class PricingRefreshWorkerService(
             {
                 LogRefreshPassFailure(exception);
             }
-            await Task.Delay(TimeSpan.FromDays(1), stoppingToken);
+            await Task.Delay(TickInterval, _timeProvider, stoppingToken);
         }
     }
 
@@ -66,7 +74,7 @@ public sealed class PricingRefreshWorkerService(
             }
 
             var state = await states.GetAsync(source.SourceId, cancellationToken);
-            if (state?.LastSuccessAt > now - RefreshInterval)
+            if (state?.LastSuccessAt > now - RefreshInterval || state?.LastAttemptAt > now - RetryInterval)
             {
                 continue;
             }
