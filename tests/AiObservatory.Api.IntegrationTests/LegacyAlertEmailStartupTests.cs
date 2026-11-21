@@ -36,18 +36,20 @@ public sealed class LegacyAlertEmailStartupTests
     public async Task KeepsAnOperatorConfiguredRecipientWhenALegacyValueIsStillSet()
     {
         var connectionString = DatabaseConnectionString();
-        await using (var first = new AiObservatoryApiFactory())
-        {
-            // The first boot creates and migrates the database; its row is what the restart finds.
-            first.SetDbConnection(connectionString);
-            await SeedOperatorRowAsync(first);
-        }
-
-        await using var second = new AiObservatoryApiFactory();
-        second.SetDbConnection(connectionString);
-        second.ConfigurationOverrides["BUDGET_ALERT_EMAIL_TO"] = LegacyEmail;
+        // The try covers BOTH boots: the first one creates the custom database, so a failure
+        // while it starts must still drop it.
         try
         {
+            await using (var first = new AiObservatoryApiFactory())
+            {
+                // The first boot creates and migrates the database; its row is what the restart finds.
+                first.SetDbConnection(connectionString);
+                await SeedOperatorRowAsync(first);
+            }
+
+            await using var second = new AiObservatoryApiFactory();
+            second.SetDbConnection(connectionString);
+            second.ConfigurationOverrides["BUDGET_ALERT_EMAIL_TO"] = LegacyEmail;
             var row = await ReadSettingsAsync(second);
 
             row.Should().NotBeNull();
