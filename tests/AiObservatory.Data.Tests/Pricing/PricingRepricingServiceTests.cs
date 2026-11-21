@@ -730,6 +730,46 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ARollbackThatThrowsStillClearsTheChangeTracker()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _store.ActivateAsync(Candidate("catalog", 2m), ct);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var resolver = new UsagePriceResolver(
+            _store,
+            [new CancelThenThrowCalculator(cancellation)],
+            NullLogger<UsagePriceResolver>.Instance
+        );
+        var repository = new UsageRepository(_db, _store, resolver);
+        // The caller's token is cancelled while the write is in flight, so a rollback issued with
+        // that token throws and, without a finally, skips the Clear the stale entities depend on.
+        _db.UsageEvents.Attach(Event("stale", CostBasis.ListPriceEstimate, 1m, 0m));
+
+        var act = () =>
+            repository.RecordEstimatedEventAsync(
+                Event("interrupted", CostBasis.ListPriceEstimate, null, null),
+                cancellation.Token
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>("the rollback's own failure must not replace it");
+        _db.ChangeTracker.Entries().Should().BeEmpty();
+    }
+
+    private sealed class CancelThenThrowCalculator(CancellationTokenSource cancellation) : IProviderPriceCalculator
+    {
+        public Provider Provider => Provider.OpenAI;
+
+        public UsagePriceQuote? Calculate(UsageEvent usage, string normalizedCatalog) =>
+            CalculateWithEvidence(usage, normalizedCatalog)?.Quote;
+
+        public CalculatedPrice? CalculateWithEvidence(UsageEvent usage, string normalizedCatalog)
+        {
+            cancellation.Cancel();
+            throw new InvalidOperationException("calculator failed");
+        }
+    }
+
+    [Fact]
     public async Task CostlessEstimatedReplayPreservesAnOperatorCorrection()
     {
         var ct = TestContext.Current.CancellationToken;
