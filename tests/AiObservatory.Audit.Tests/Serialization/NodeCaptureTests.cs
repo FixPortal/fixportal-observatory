@@ -16,7 +16,7 @@ public sealed class NodeCaptureTests
     {
         var owned = OwnedTempDirectory.Create("audit-node-synthetic-");
         // The generator creates its output directory itself, so it gets a child of the marked directory.
-        var directory = Path.Combine(owned.Path, "capture");
+        var directory = Path.Join(owned.Path, "capture");
         try
         {
             await Generate(directory);

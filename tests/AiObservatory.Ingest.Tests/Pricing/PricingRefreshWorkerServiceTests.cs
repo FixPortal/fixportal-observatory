@@ -432,7 +432,7 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
 
     private static async Task CopyBundlesWithBrokenOpenAiAsync(string directory, string failure)
     {
-        var bundleDirectory = Directory.CreateDirectory(Path.Combine(directory, "Pricing", "Bundled"));
+        var bundleDirectory = Directory.CreateDirectory(Path.Join(directory, "Pricing", "Bundled"));
         foreach (
             var fileName in new[]
             {

@@ -225,7 +225,7 @@ public sealed class BundledPricingCatalogLoaderTests(ProviderPollingDatabase dat
         var directory = OwnedTempDirectory.Create("bundled-pricing-");
         try
         {
-            var bundleDirectory = Directory.CreateDirectory(Path.Combine(directory.Path, "Pricing", "Bundled"));
+            var bundleDirectory = Directory.CreateDirectory(Path.Join(directory.Path, "Pricing", "Bundled"));
             await File.WriteAllTextAsync(
                 Path.Combine(bundleDirectory.FullName, "openai.json"),
                 """
