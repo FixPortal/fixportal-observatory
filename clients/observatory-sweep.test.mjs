@@ -278,7 +278,7 @@ test('Claude prompt version-6 cache is reparsed even at the same mtime and lost 
     await writeFile(path, claudePromptRow(COMPLETE_CLAUDE_PROMPT))
     const state = oldState()
     const scan = await scanRecords({ claudeHome: root }, state, new Set(['claude']), async () => files)
-    assert.equal(state.parseCacheVersion, 10)
+    assert.equal(state.parseCacheVersion, 11)
     assert.equal(scan.records[0].inputTokens, 100000)
     assert.equal(JSON.parse(buildDailySnapshots(scan.records, TEST_MACHINE)[0].rawPayload).context, 'prompt_le_100000')
     const missing = await scanRecords({ claudeHome: root }, oldState(), new Set(['claude']), async () => [{ path: join(root, 'unavailable.jsonl'), mtimeMs: 123 }])
@@ -474,7 +474,7 @@ for (const [name, unsafe, invalidCounters] of CLAUDE_SAFETY_CASES) {
           assert.equal(warnings[0].warning.includes(root), false)
           assert.ok(activity.indexOf(warnings[0]) < activity.findIndex(item => item.url))
           const state = JSON.parse(await readFile(statePath, 'utf8'))
-          assert.equal(state.parseCacheVersion, 10)
+          assert.equal(state.parseCacheVersion, 11)
           assert.equal(state.files.claude[path].records[0].inputTokens, 100000, 'old version7/8 same-mtime false-1970 usage must be reparsed')
           assert.equal(state.files.claude[path].records[0].date, '2026-10-22')
           if (invalidCounters) { assert.ok(state.files.claude[path].records.some(row => row.claudeInvalidCounters)) }
@@ -1285,7 +1285,7 @@ test('scanRecords rebuilds an unversioned matching-mtime cache instead of reusin
     const { records } = await scanRecords(cfg, state, new Set(['codex']))
 
     assert.deepEqual(records, [])
-    assert.equal(state.parseCacheVersion, 10)
+    assert.equal(state.parseCacheVersion, 11)
     assert.deepEqual(Array.from(state.files.codex[path].records), [])
     assert.equal(state.files.codex[path].incomplete, true)
   } finally {
@@ -1347,7 +1347,7 @@ test('scanRecords handles transcript histories larger than the engine argument l
   }
   const files = Array.from({ length: 200 }, (_, index) => ({ path: `claude-${index}.jsonl`, mtimeMs: 1 }))
   const state = {
-    parseCacheVersion: 10,
+    parseCacheVersion: 11,
     files: {
       claude: Object.fromEntries(files.map(file => [file.path, {
         mtimeMs: file.mtimeMs,
@@ -1891,8 +1891,7 @@ test('parseGrok converts cost ticks to USD and posts it as a measured cost', () 
   assert.equal(flagship.sourceId, `grok-local@${TEST_MACHINE}`)
 })
 
-test('parseGrok returns nothing for a malformed or turnless usage file', () => {
-  assert.deepEqual(parseGrok('not json'), [])
+test('parseGrok returns nothing for a turnless usage file', () => {
   assert.deepEqual(parseGrok(JSON.stringify({ sessionId: 'x' })), [])
   assert.deepEqual(parseGrok(JSON.stringify({ turns: [{ endedAt: 'nonsense', modelUsage: { 'grok-4.6': {} } }] })), [])
 })
@@ -2031,7 +2030,7 @@ test('scanRecords reparses a version-2 cache instead of reusing its stale record
 
     assert.deepEqual(records, [])
     assert.deepEqual([...incompleteSources], ['codex'])
-    assert.equal(state.parseCacheVersion, 10)
+    assert.equal(state.parseCacheVersion, 11)
     assert.deepEqual(Array.from(state.files.codex[path].records), [])
     assert.equal(state.files.codex[path].incomplete, true)
   } finally {
@@ -3190,4 +3189,302 @@ test('one bad Codex row holds later days while earlier days keep posting (R-F3 t
     const plan = planSnapshotSubmissions(snapshots, [], holds)
     assert.deepEqual(plan.map(item => item.snapshot.eventKey.split(':')[1]), ['2026-10-22'])
   } finally { await removeTemp(root) }
+})
+
+// --- Remediation batch69, lane S (C3 findings) -------------------------------
+
+function plannerRow(fields) {
+  return JSON.stringify({
+    step_index: 1, source: 'MODEL', type: 'PLANNER_RESPONSE', status: 'DONE',
+    created_at: '2026-08-24T12:00:00Z', ...fields,
+  })
+}
+
+async function agyDatabase(root, payloads) {
+  const dbPath = join(root, 'session-id.db')
+  const db = new DatabaseSync(dbPath)
+  db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB)')
+  const insert = db.prepare('INSERT INTO steps VALUES (?, ?, ?)')
+  payloads.forEach((payload, index) => insert.run(index + 1, 23, payload))
+  db.close()
+  return dbPath
+}
+
+const UNDECODABLE_STEP = Buffer.from([0x2a, 0x02, 0x08, 0x01])
+
+// C3-C1
+test('Antigravity step rows that decode to nothing hold the conversation day instead of caching a clean empty', async () => {
+  const root = await makeTemp('observatory-agy-undecodable-')
+  try {
+    const dbPath = await agyDatabase(root, [UNDECODABLE_STEP])
+    const records = await sweep.parseAntigravityDatabase(
+      dbPath, JSON.stringify({ created_at: '2026-08-24T12:00:00Z', content: 'hello' }), () => {},
+    )
+    assert.equal(records.incomplete, true)
+    assert.equal(records.holdFrom, '2026-08-24')
+  } finally { await removeTemp(root) }
+})
+
+// C3-C1
+test('Antigravity rejected rows hold the conversation day while valid totals are kept', async () => {
+  const root = await makeTemp('observatory-agy-partial-')
+  try {
+    const dbPath = await agyDatabase(root, [antigravityPayload(100, 20, 5), antigravityPayload(100_000_000, 20, 5)])
+    const records = await sweep.parseAntigravityDatabase(
+      dbPath, JSON.stringify({ created_at: '2026-08-24T12:00:00Z', content: 'hello' }), () => {},
+    )
+    assert.equal(records.length, 1)
+    assert.equal(records.incomplete, true)
+    assert.equal(records.holdFrom, '2026-08-24')
+  } finally { await removeTemp(root) }
+})
+
+// C3-C1
+test('an undecodable Antigravity conversation is not a verified-empty source', async () => {
+  const root = await makeTemp('observatory-agy-undecodable-scan-')
+  try {
+    const { cfg } = await antigravityFixture(root)
+    const db = new DatabaseSync(join(cfg.geminiHome, 'antigravity-cli', 'conversations', 'agy-session.db'))
+    db.exec('DELETE FROM steps')
+    db.prepare('INSERT INTO steps VALUES (?, ?, ?)').run(1, 23, UNDECODABLE_STEP)
+    db.close()
+    const scan = await scanRecords(cfg, {}, new Set(['antigravity']))
+    assert.equal(scan.incompleteSources.has('antigravity'), true)
+    assert.equal(scan.emptySources.has('antigravity'), false)
+    assert.equal(scan.heldFrom.get('antigravity'), '2026-08-24')
+  } finally { await removeTemp(root) }
+})
+
+// C3-C1 + C3-C2
+test('Antigravity takes model, tokens and cache reads from the transcript PLANNER_RESPONSE rows', async () => {
+  const root = await makeTemp('observatory-agy-planner-')
+  try {
+    const dbPath = await agyDatabase(root, [UNDECODABLE_STEP])
+    const transcript = [
+      JSON.stringify({ created_at: '2026-08-24T11:00:00Z', content: 'The user changed setting `Model Selection` from None to Gemini 3.8 Flash (High).' }),
+      plannerRow({ created_at: '2026-08-24T12:00:00Z', model: 'gemini-3.8-flash-high', input_tokens: 100, cache_read_tokens: 4000, output_tokens: 20 }),
+      plannerRow({ created_at: '2026-08-24T12:05:00Z', model: 'gemini-3.8-flash-high', input_tokens: 50, cache_read_tokens: 6000, output_tokens: 10 }),
+    ].join('\n')
+    const records = await sweep.parseAntigravityDatabase(dbPath, transcript, () => {})
+    assert.equal(records.incomplete, undefined)
+    assert.equal(records.length, 1)
+    assert.equal(records[0].model, 'gemini-3.8-flash-high')
+    assert.equal(records[0].inputTokens, 150)
+    assert.equal(records[0].outputTokens, 30)
+    assert.equal(records[0].cacheReadTokens, 10000)
+    assert.equal(records[0].occurredAtUtc, '2026-08-24T12:05:00.000Z')
+  } finally { await removeTemp(root) }
+})
+
+// C3-C2
+test('a record whose model never resolved is counted as unplaced', () => {
+  const unplaced = sweep.countUnplaced([
+    { tool: 'antigravity', date: '2026-08-24', model: 'unknown', inputTokens: 1 },
+  ], TEST_MACHINE)
+  assert.deepEqual(unplaced, [{ tool: 'antigravity', model: 'unknown', count: 1 }])
+})
+
+// C3-P4
+test('Antigravity settings sentence selects the destination model, not the source', async () => {
+  const root = await makeTemp('observatory-agy-settings-')
+  try {
+    const dbPath = await agyDatabase(root, [antigravityPayload(10, 2)])
+    const transcript = [
+      JSON.stringify({ created_at: '2026-08-24T11:00:00Z', content: 'The user changed setting `Model Selection` from Gemini 3.1 Pro (High) to Gemini 2.5 Flash.' }),
+      JSON.stringify({ created_at: '2026-08-24T11:30:00Z', content: 'Earlier I read: "changed setting `Model Selection` from None to Gemini 2.5 Pro" in the docs.' }),
+    ].join('\n')
+    const [record] = await sweep.parseAntigravityDatabase(dbPath, transcript, () => {})
+    assert.equal(record.model, 'gemini-2.5-flash')
+  } finally { await removeTemp(root) }
+})
+
+// C3-C8
+test('Codex timestamps with up to nine fractional digits are accepted', () => {
+  const content = [
+    JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-6-luna' } }),
+    codexUsageRow('2026-10-01T00:00:00.123456789Z', 10, 5),
+  ].join('\n')
+  const records = sweep.parseCodexRecords(content)
+  assert.equal(records.incomplete, undefined)
+  assert.equal(records.length, 1)
+})
+
+// C3-C6
+test('Claude deduplication keeps the copy that carries the native counters regardless of order', () => {
+  const partial = claudePromptRow({ input_tokens: 10, output_tokens: 5 }, { id: 'dup', model: 'claude-opus-5' }, '2026-10-22T00:00:00Z')
+  const complete = claudePromptRow(
+    { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 500, cache_creation_input_tokens: 7 },
+    { id: 'dup', model: 'claude-opus-5' }, '2026-10-22T00:00:05Z',
+  )
+  for (const content of [`${partial}\n${complete}`, `${complete}\n${partial}`]) {
+    const [snapshot] = buildDailySnapshots(parseClaude(content), TEST_MACHINE)
+    assert.equal(snapshot.cacheReadTokens, 500)
+    assert.equal(snapshot.cacheWriteTokens, 7)
+  }
+})
+
+// C3-C7
+test('five parsers hold the day of a row whose counter is present but invalid', () => {
+  const cases = [
+    ['kimi', sweep.parseKimi, JSON.stringify({ type: 'usage.record', time: '2026-10-22T00:00:00Z', model: 'm', usage: { inputOther: -5, output: 1 } })],
+    ['grok', sweep.parseGrok, JSON.stringify({ turns: [{ endedAt: '2026-10-22T00:00:00Z', modelUsage: { g: { inputTokens: 1.5, outputTokens: 1 } } }] })],
+    ['pi', sweep.parsePi, JSON.stringify({ type: 'message', timestamp: '2026-10-22T00:00:00Z', message: { role: 'assistant', model: 'meta/x', usage: { input: 'abc', output: 1 } } })],
+    ['gemini-review', sweep.parseGeminiReview, JSON.stringify({ type: 'gemini', timestamp: '2026-10-22T00:00:00Z', model: 'g', tokens: { input: 1, output: -2 } })],
+  ]
+  for (const [name, parse, content] of cases) {
+    const records = parse(content)
+    assert.equal(records.incomplete, true, name)
+    assert.equal(records.holdFrom, '2026-10-22', name)
+  }
+  const copilot = sweep.parseCopilot(JSON.stringify({
+    type: 'session.shutdown', timestamp: '2026-10-22T00:00:00Z',
+    data: { modelMetrics: { m: { usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: -1 } } } },
+  }))
+  assert.equal(copilot.incomplete, true)
+})
+
+// C3-P8
+test('a Grok usage.json that does not parse holds the whole source', () => {
+  const records = parseGrok('not json')
+  assert.deepEqual([...records], [])
+  assert.equal(records.incomplete, true)
+  assert.equal(records.holdFrom, '')
+})
+
+// C3-C5
+test('a Gemini tmp root with no review directory is not a verified-empty source', async () => {
+  const root = await makeTemp('observatory-gemini-root-')
+  try {
+    const geminiHome = join(root, 'gemini')
+    await mkdir(join(geminiHome, 'tmp', 'unrelated-project'), { recursive: true })
+    const cfg = { codexHome: join(root, 'c'), copilotHome: join(root, 'p'), claudeHome: join(root, 'cl'), kimiHome: join(root, 'k'), geminiHome }
+    const scan = await scanRecords(cfg, {}, new Set(['gemini']))
+    assert.equal(scan.emptySources.has('gemini'), false)
+    await mkdir(join(geminiHome, 'tmp', 'gem-review-x', 'chats'), { recursive: true })
+    const reviewed = await scanRecords(cfg, {}, new Set(['gemini']))
+    assert.equal(reviewed.emptySources.has('gemini'), true)
+  } finally { await removeTemp(root) }
+})
+
+async function runMainWith({ root, statePath, server, sources = 'codex' }) {
+  const envKeys = [
+    'OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES',
+    'OBSERVATORY_MACHINE', 'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME', 'GEMINI_HOME',
+  ]
+  const prior = Object.fromEntries(envKeys.map(key => [key, process.env[key]]))
+  Object.assign(process.env, {
+    OBSERVATORY_URL: `http://127.0.0.1:${server.address().port}`, OBSERVATORY_API_KEY: 'test-key',
+    OBSERVATORY_STATE: statePath, OBSERVATORY_LOCAL_SOURCES: sources, OBSERVATORY_MACHINE: 'test-machine',
+    CODEX_HOME: join(root, 'codex'), COPILOT_HOME: join(root, 'copilot'), CLAUDE_HOME: join(root, 'claude'),
+    KIMI_HOME: join(root, 'kimi'), GEMINI_HOME: join(root, 'gemini'),
+  })
+  const errors = []
+  const realError = console.error
+  console.error = (...args) => { errors.push(args.join(' ')) }
+  try { await sweep.main() }
+  finally {
+    console.error = realError
+    for (const key of envKeys) {
+      if (prior[key] === undefined) { delete process.env[key] } else { process.env[key] = prior[key] }
+    }
+  }
+  return errors
+}
+
+function recordingServer(legacyKeys = []) {
+  const posts = []
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://127.0.0.1')
+    if (request.method === 'GET' && url.pathname === '/api/events/local-snapshots') {
+      const body = url.searchParams.get('sourceId') === 'codex-local'
+        ? legacyKeys.map(eventKey => ({
+          provider: 'openai', occurredAtUtc: '2026-08-10T12:00:00Z', model: 'gpt-5.5', inputTokens: 40,
+          outputTokens: 9, costUsd: null, runtime: 'codex', sourceId: 'codex-local',
+          sourceKind: 'localTelemetry', usageScope: 'subscription', costBasis: 'notional', eventKey,
+        }))
+        : []
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(body))
+      return
+    }
+    if (request.method === 'POST' && url.pathname === '/api/events') {
+      let body = ''
+      for await (const chunk of request) { body += chunk }
+      posts.push(JSON.parse(body))
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end('{}')
+      return
+    }
+    response.writeHead(200).end('{}')
+  })
+  return { server, posts }
+}
+
+// C3-P1
+test('main does not zero the legacy namespace for a source that still holds days', async () => {
+  const root = await makeTemp('observatory-legacy-held-')
+  const sessions = join(root, 'codex', 'sessions')
+  await mkdir(sessions, { recursive: true })
+  await writeFile(join(sessions, 'rollout.jsonl'), [
+    JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }),
+    codexUsageRow('2026-08-23T12:00:00Z', 10, 5),
+    codexUsageRow('2026-08-24T12:00:00Z', 20, 8),
+    codexUsageRow('2026-08-25T12:00:00Z', 5, 8),
+  ].join('\n'))
+  const { server, posts } = recordingServer(['codex:2026-08-24:gpt-5.5'])
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const statePath = join(root, 'state', 'sweep.json')
+  try {
+    await runMainWith({ root, statePath, server })
+    assert.equal(posts.some(body => body.sourceId === 'codex-local@test-machine' && body.eventKey === 'codex:2026-08-23:gpt-5.5'), true)
+    assert.deepEqual(posts.filter(body => body.sourceId === 'codex-local'), [])
+    const state = JSON.parse(await readFile(statePath, 'utf8'))
+    assert.equal(state.legacySourceMigration?.codex, undefined)
+  } finally {
+    await new Promise(resolve => server.close(resolve))
+    await removeTemp(root)
+  }
+})
+
+async function writeCodexRollout(root) {
+  const sessions = join(root, 'codex', 'sessions')
+  await mkdir(sessions, { recursive: true })
+  await writeFile(join(sessions, 'rollout.jsonl'), [
+    JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }),
+    codexUsageRow('2026-08-24T12:00:00Z', 10, 5),
+  ].join('\n'))
+}
+
+// C3-P3
+test('a failed state save is reported but does not stop the sweep from posting', async () => {
+  const root = await makeTemp('observatory-state-save-fail-')
+  await writeCodexRollout(root)
+  const blocker = join(root, 'blocker')
+  await writeFile(blocker, 'not a directory')
+  const { server, posts } = recordingServer()
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const errors = await runMainWith({ root, statePath: join(blocker, 'sweep.json'), server })
+    assert.equal(posts.some(body => body.sourceId === 'codex-local@test-machine'), true)
+    assert.equal(errors.some(line => /state file/i.test(line)), true)
+  } finally {
+    await new Promise(resolve => server.close(resolve))
+    await removeTemp(root)
+  }
+})
+
+// C3-P3
+test('an unparseable state file is reported rather than silently treated as empty', async () => {
+  const root = await makeTemp('observatory-state-corrupt-')
+  await writeCodexRollout(root)
+  const statePath = join(root, 'state', 'sweep.json')
+  await mkdir(join(root, 'state'), { recursive: true })
+  await writeFile(statePath, '{"files": ')
+  const { server } = recordingServer()
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const errors = await runMainWith({ root, statePath, server })
+    assert.equal(errors.some(line => /state file/i.test(line) && /unreadable|parse|corrupt/i.test(line)), true)
+  } finally {
+    await new Promise(resolve => server.close(resolve))
+    await removeTemp(root)
+  }
 })
