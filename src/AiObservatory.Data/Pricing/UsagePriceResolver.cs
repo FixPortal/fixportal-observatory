@@ -252,9 +252,7 @@ public sealed class UsagePriceResolver
     internal static string SanitizeModelForLog(string model)
     {
         var sanitized = model.Replace('\r', ' ').Replace('\n', ' ');
-        return sanitized.Length > MaximumLoggedModelLength
-            ? sanitized[..MaximumLoggedModelLength] + "..."
-            : sanitized;
+        return sanitized.Length > MaximumLoggedModelLength ? sanitized[..MaximumLoggedModelLength] + "..." : sanitized;
     }
 
     private static bool TryMarkReported(Provider provider, string modelFingerprint, string missing)
