@@ -30,9 +30,13 @@ public class AnthropicIntelligenceClient
         var apiKey = configuration["ANTHROPIC_API_KEY"];
         // Whitespace/empty key means "disabled", same as unset — otherwise an empty-string
         // env var makes IsConfigured true and every worker cycle calls the API and 401s.
-        _client = !string.IsNullOrWhiteSpace(apiKey)
-            ? new AnthropicClient(new APIAuthentication(apiKey), httpClient)
-            : null;
+        // An unresolved Key Vault reference arrives as the literal "@Microsoft.KeyVault(...)" string,
+        // so it is rejected the way every sibling credential gate does.
+        _client =
+            !string.IsNullOrWhiteSpace(apiKey)
+            && !apiKey.StartsWith("@Microsoft.KeyVault(", StringComparison.OrdinalIgnoreCase)
+                ? new AnthropicClient(new APIAuthentication(apiKey), httpClient)
+                : null;
         _logger = logger;
         if (!IsConfigured)
         {

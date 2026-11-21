@@ -14,6 +14,9 @@ public class AnthropicIntelligenceClientTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
+    // An App Service Key Vault reference that did not resolve stays as this literal string.
+    [InlineData("@Microsoft.KeyVault(VaultName=v;SecretName=anthropic-api-key)")]
+    [InlineData("@microsoft.keyvault(VaultName=v;SecretName=anthropic-api-key)")]
     public async Task BlankApiKeyLeavesTheClientDisabled(string? apiKey)
     {
         var configuration = new ConfigurationBuilder()
