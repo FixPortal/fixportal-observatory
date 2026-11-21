@@ -583,7 +583,24 @@ public static class SpendEntriesEndpoints
             return Results.BadRequest(fxError);
         }
 
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Another request changed or deleted the row after it was read; this write was
+            // computed from stale values (the GBP figure especially), so it must not land.
+            return Results.Conflict("The entry was changed by another request; reload it and retry");
+        }
+        catch (DbUpdateException ex)
+            when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.CheckViolation })
+        {
+            // A check constraint (for example a sign flip against the stored GBP figure) is a
+            // rejectable edit, not a server fault.
+            return Results.BadRequest("The change violates a ledger constraint");
+        }
+
         // Same wire shape as the GET: the entity carries RawPayload (the provider billing
         // response verbatim and unredacted), which must not go back on the wire — the GET's
         // inline projection can't be reused here because EF needs it as an expression, so the

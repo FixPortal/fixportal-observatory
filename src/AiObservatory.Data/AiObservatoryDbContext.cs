@@ -386,6 +386,13 @@ public class AiObservatoryDbContext(DbContextOptions<AiObservatoryDbContext> opt
             b.HasIndex(e => e.VendorId);
             b.HasIndex(e => e.CategoryId);
 
+            // PostgreSQL's xmin system column as the row version: two PATCHes that read the row,
+            // each re-resolve FX, and write different fields would otherwise interleave into an
+            // AmountGbp that disagrees with the row's own Amount and FxRate. A shadow property, so
+            // the entity and its wire shape are unchanged; the stale writer gets a
+            // DbUpdateConcurrencyException.
+            b.Property<uint>("xmin").IsRowVersion();
+
             // Idempotency, scoped per source. Filtered so manual rows (EntryKey null) are
             // exempt — PostgreSQL would allow repeated NULLs anyway, but the filter makes
             // the intent explicit and keeps the index small.
