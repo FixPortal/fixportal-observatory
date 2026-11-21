@@ -15,7 +15,7 @@ Keys are compared in constant time. A key of a different length than the expecte
 
 ## Which routes need which credential
 
-All routes live under `/api`, except the ingest worker's `/healthz`, which has no authentication and reports only worker liveness, and the OpenAPI document, which is served without authentication in `Development` only.
+All routes live under `/api`, except the API's `/version`, which has no authentication and reports only the build's git commit, the ingest worker's `/healthz`, which has no authentication and reports only worker liveness, and the OpenAPI document, which is served without authentication in `Development` only.
 
 ### The standard rule for `/api`
 

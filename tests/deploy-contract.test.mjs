@@ -119,6 +119,28 @@ test('ensure-ingest-running is wired with always()', async () => {
   assert.match(ensure, /^ {4}if:.*\balways\(\)/m, "ensure-ingest-running must carry `always()` in its `if:` -- without it a failed deploy skips the restart and leaves the ingest worker stopped")
 })
 
+function stepBlock(text, name) {
+  const start = text.indexOf(`- name: ${name}`)
+  assert.notEqual(start, -1, `missing the '${name}' step`)
+  const rest = text.slice(start + 1)
+  const next = rest.search(/^ {6}- |^ {2}[A-Za-z_][\w-]*:$/m)
+  return next === -1 ? rest : rest.slice(0, next)
+}
+
+// The previous build answers an unauthenticated /api call with the same 401 as the new one, so
+// only the build's own commit identity proves the deployed package is the one serving.
+test('the API probe waits until the deployed build reports this commit', async () => {
+  for (const workflow of ['deploy.yml', 'deploy-demo.yml']) {
+    const probe = stepBlock(await read(`.github/workflows/${workflow}`), 'Verify the API is serving')
+    assert.match(probe, /EXPECTED_SHA: \$\{\{ github\.sha \}\}/, `${workflow}: the probe must be told the commit it deploys`)
+    assert.match(probe, /\/version/, `${workflow}: the probe must read the build identity endpoint`)
+    assert.match(probe, /"\$EXPECTED_SHA"/, `${workflow}: the probe must compare the served commit with the deployed one`)
+    assert.doesNotMatch(probe, /401\)/, `${workflow}: a 401 is served by the old build too and proves nothing`)
+    assert.match(probe, /deadline=/, `${workflow}: the probe must stay bounded by a deadline`)
+    assert.doesNotMatch(probe, /X-Observatory-Key|secrets\./, `${workflow}: the probe must not carry an API key`)
+  }
+})
+
 // The deploy workflows are NORMAL by decision (workflow edits are asserted by the review-policy
 // guard instead), so the policy's own commentary must not describe them as high-risk paths.
 test('the review policy keeps the deploy workflows NORMAL and does not call them high-risk', async () => {

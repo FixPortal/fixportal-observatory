@@ -48,29 +48,29 @@ jobs:
           app-name: fpaiodemo-api
           package: ./publish/api
 
-      # Exactly 401 proves the app is serving: every /api route sits behind the API-key
-      # filter, so an unauthenticated probe gets 401 from a healthy app. Anything else
-      # (5xx, 000, 200, 3xx, 404, 403) is a failed deploy. Same loop as deploy.yml.
+      # Only this build reporting this commit on the unauthenticated GET /version proves
+      # the deploy landed; the replaced build would answer a 401 from /api too. Anything
+      # else by the deadline is a failed deploy. Same loop as deploy.yml.
       - name: Verify the API is serving
         env:
           DEMO_API_URL: ${{ vars.DEMO_API_URL }}
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
           # Bounded by a wall-clock DEADLINE, not an attempt count (see deploy.yml).
           deadline=$(( $(date +%s) + 600 ))
           while :; do
-            # Assign, then fall back on curl's EXIT STATUS; `$(curl ... || echo 000)`
-            # yields "000000" on a transport failure (see deploy.yml).
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
-              "$DEMO_API_URL/api/aggregates") || code=000
-            echo "probe -> HTTP $code"
-            case "$code" in
-              401) echo "API is serving (HTTP $code)"; exit 0 ;;
-              *) : ;;
-            esac
+            # Assign, then fall back on the pipeline's EXIT STATUS (see deploy.yml).
+            served=$(curl -sf --max-time 15 "$DEMO_API_URL/version" \
+              | jq -r '.commit // empty') || served=""
+            echo "probe -> commit ${served:-none}"
+            if [ "$served" = "$EXPECTED_SHA" ]; then
+              echo "API is serving commit $served"
+              exit 0
+            fi
             [ "$(date +%s)" -lt "$deadline" ] || break
             sleep 15
           done
-          echo "::error::Demo API never returned the expected 401 after deploy."
+          echo "::error::Demo API never reported commit $EXPECTED_SHA after deploy."
           exit 1
 
   deploy-web:
