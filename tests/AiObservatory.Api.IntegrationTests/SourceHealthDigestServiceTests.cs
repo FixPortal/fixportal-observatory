@@ -26,6 +26,7 @@ namespace AiObservatory.Api.IntegrationTests;
 /// claim they assert on.
 /// </para>
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class SourceHealthDigestServiceTests : IAsyncLifetime
 {
     private static readonly Instant Now = Instant.FromUtc(2026, 9, 15, 12, 0);
