@@ -4,14 +4,24 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using AwesomeAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using NodaTime;
 
 namespace AiObservatory.Api.IntegrationTests;
 
 [Trait("Category", "Integration")]
-[Collection("ApiFactory")]
-public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
+[Collection("FixedClockApiFactory")]
+public class AdversarialReviewFindingsWafTests(FixedClockApiFactory fixture)
 {
     private const string FindingsRoute = "/api/adversarial-review/findings";
+
+    private AiObservatoryApiFactory Factory => fixture.Factory;
+
+    [Fact]
+    public void The_host_runs_on_the_fixed_clock_so_the_window_maths_cannot_straddle_midnight()
+    {
+        Factory.Services.GetRequiredService<IClock>().GetCurrentInstant().Should().Be(FixedClockApiFactory.Now);
+    }
 
     private static string FixtureDir()
     {
@@ -78,7 +88,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     public async Task Posted_findings_come_back_with_their_raisers_and_assessors()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var runId = $"findings-{Guid.NewGuid():N}";
         await SeedRunAsync(client, runId);
 
@@ -99,8 +109,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
 
     // The window floor is a UTC midnight, so "tomorrow" is always after a row recorded now,
     // "yesterday" always before it, and today's own date (offset 0) opens the window at or before it.
-    // The date is taken before the post: taken after, a run across UTC midnight would turn "today"
-    // into a date after the row.
+    // The host runs on a fixed clock, so "now" cannot cross UTC midnight between the date and the post.
     [Theory]
     [InlineData(1, false)]
     [InlineData(0, true)]
@@ -108,11 +117,11 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     public async Task The_since_window_keeps_only_findings_recorded_on_or_after_it(int dayOffset, bool expectedPresent)
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var runId = $"since-{Guid.NewGuid():N}";
-        var since = DateOnly
-            .FromDateTime(DateTime.UtcNow)
-            .AddDays(dayOffset)
+        var since = FixedClockApiFactory
+            .Now.InUtc()
+            .Date.PlusDays(dayOffset)
             .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         await SeedRunAsync(client, runId);
         (await client.PostAsJsonAsync(FindingsRoute, ValidBody(runId), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
@@ -126,13 +135,13 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     public async Task A_named_run_is_returned_whole_whatever_the_window()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var runId = $"named-{Guid.NewGuid():N}";
         await SeedRunAsync(client, runId);
         (await client.PostAsJsonAsync(FindingsRoute, ValidBody(runId), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
-        var tomorrow = DateOnly
-            .FromDateTime(DateTime.UtcNow)
-            .AddDays(1)
+        var tomorrow = FixedClockApiFactory
+            .Now.InUtc()
+            .Date.PlusDays(1)
             .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
         var rows = await client.GetFromJsonAsync<JsonElement>($"{FindingsRoute}?runId={runId}&since={tomorrow}", ct);
@@ -143,7 +152,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task A_malformed_since_is_a_400()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
 
         var response = await client.GetAsync($"{FindingsRoute}?since=last-week", TestContext.Current.CancellationToken);
 
@@ -154,7 +163,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     public async Task A_repost_replaces_the_set_and_leaves_no_stale_findings()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var runId = $"replace-{Guid.NewGuid():N}";
         await SeedRunAsync(client, runId);
         (await client.PostAsJsonAsync(FindingsRoute, ValidBody(runId), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
@@ -173,7 +182,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     public async Task Concurrent_posts_for_one_run_all_succeed_and_leave_one_consistent_set()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var runId = $"concurrent-{Guid.NewGuid():N}";
         await SeedRunAsync(client, runId);
 
@@ -191,7 +200,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     public async Task Invalid_bodies_are_a_400_that_never_echoes_input(string name)
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var runId = $"invalid-{Guid.NewGuid():N}";
         await SeedRunAsync(client, runId, "x");
         var cases = JsonNode
@@ -210,7 +219,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     public async Task A_model_over_200_characters_is_a_400()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var runId = $"longmodel-{Guid.NewGuid():N}";
         await SeedRunAsync(client, runId);
         var body = ValidBody(runId);
@@ -223,7 +232,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     public async Task A_repeated_assessor_is_a_400_so_one_assessor_cannot_count_twice()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var runId = $"dupassess-{Guid.NewGuid():N}";
         await SeedRunAsync(client, runId);
         var body = ValidBody(runId);
@@ -237,7 +246,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     public async Task More_than_2000_findings_is_a_400()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var runId = $"toomany-{Guid.NewGuid():N}";
         await SeedRunAsync(client, runId);
         var findings = new JsonArray();
@@ -262,7 +271,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     [Fact]
     public async Task A_run_with_no_run_rows_is_a_404()
     {
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
 
         var response = await client.PostAsJsonAsync(
             FindingsRoute,
@@ -277,7 +286,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     public async Task A_repo_that_differs_from_the_run_rows_is_a_400()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var runId = $"repo-{Guid.NewGuid():N}";
         await SeedRunAsync(client, runId, "example-app");
 
@@ -290,7 +299,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     public async Task Run_rows_that_disagree_on_repo_reject_a_post_matching_only_one()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var runId = $"splitrepo-{Guid.NewGuid():N}";
         await SeedRunAsync(client, runId, "repo-a", "zai");
         await SeedRunAsync(client, runId, "repo-b", "openai");
@@ -304,7 +313,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     public async Task A_mixed_case_reviewer_is_accepted_and_stored_lowercase()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var runId = $"case-{Guid.NewGuid():N}";
         await SeedRunAsync(client, runId, reviewer: "OpenAI");
         var body = ValidBody(runId);
@@ -326,7 +335,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     public async Task One_vendor_with_two_models_is_two_independent_raisers()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var runId = $"twoseats-{Guid.NewGuid():N}";
         await SeedRunAsync(client, runId);
         var body = ValidBody(runId);
@@ -343,7 +352,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     public async Task Deleting_the_run_removes_its_findings()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = factory.CreateAdminClient();
+        using var client = Factory.CreateAdminClient();
         var runId = $"delete-{Guid.NewGuid():N}";
         await SeedRunAsync(client, runId);
         (await client.PostAsJsonAsync(FindingsRoute, ValidBody(runId), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
@@ -361,7 +370,7 @@ public class AdversarialReviewFindingsWafTests(AiObservatoryApiFactory factory)
     {
         using var body = new StringContent("{}", Encoding.UTF8, "application/json");
 
-        var response = await factory
+        var response = await Factory
             .CreateReadOnlyClient()
             .PostAsync(FindingsRoute, body, TestContext.Current.CancellationToken);
 
