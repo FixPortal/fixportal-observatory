@@ -14,6 +14,7 @@ namespace AiObservatory.Api.IntegrationTests;
 /// Program's top-level startup code and the unique-violation swallow needs a real PostgreSQL
 /// conflict: neither is reachable by calling the seed method directly.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class LegacyAlertEmailStartupTests
 {
     private const string LegacyEmail = "legacy@example.test";
