@@ -130,7 +130,7 @@ Snapshots posted by older versions, before the suffix existed, sit under the bar
 
 ### Sessions that cannot be placed
 
-When the script cannot assign a session to a provider, it does not post it. It prints `UNPLACED <tool> model=<model> sessions=<n>` to standard error and still exits with code 0. The number counts parsed usage records, which is one per session for Codex but one per message for Claude. After a complete scan it also posts the counts, never paths or content, to `POST /api/sources/sweep-status`. The server shows the machine as an unavailable source named `sweep-placement@<machine>`, with a message such as `5 sessions unplaced: codex gpt-x (3), codex unknown (2)`. It turns healthy again when a sweep places everything. If the scan was incomplete, the previous report stands.
+When the script cannot assign a session to a provider, it does not post it. It prints `UNPLACED <tool> model=<model> sessions=<n>` to standard error and still exits with code 0. The number counts parsed usage records, which is one per session for Codex but one per message for Claude. Every run except a dry run also posts the counts, never paths or content, to `POST /api/sources/sweep-status`, together with `heldFiles`: the number of files whose days are currently held. A held scan therefore still reports, and is not reported as clean. The server shows the machine as an unavailable source named `sweep-placement@<machine>`, with a message such as `5 sessions unplaced: codex gpt-x (3), codex unknown (2)`. It turns healthy again when a sweep places everything.
 
 A session that was posted earlier and can no longer be placed is zeroed on the next fully successful run, and its history leaves the dashboard.
 

@@ -1222,6 +1222,11 @@ export async function updateFileCache(files, cache, parse, read = path => readFi
     heldFiles++
     holds.push({ from, through: fileHoldThrough(file, fileRecords, from) })
   }
+  // Invalid Claude counters hold their own day later (buildDailySnapshots); the file counts as held.
+  const noteHeld = (file, entry) => {
+    if (entry.incomplete) { holdFile(file, entry.holdFrom ?? '', entry.records) }
+    else if (entry.records.some(record => record.claudeInvalidCounters)) { heldFiles++ }
+  }
   for (const file of files) {
     const cached = cache?.[file.path]
     const unchanged = file.cacheKey === undefined
@@ -1243,7 +1248,7 @@ export async function updateFileCache(files, cache, parse, read = path => readFi
           reusedFiles++
           console.error(`Read failed for ${file.path}; reusing cached records (${reusedFiles} reused this scan): ${error.message}`)
           next[file.path] = cached
-          if (cached.incomplete) { holdFile(file, cached.holdFrom ?? '', cached.records) }
+          noteHeld(file, cached)
           for (const record of cached.records) { records.push(record) }
         } else {
           // Unreadable with no cached records. "Nothing was ever posted from this
@@ -1268,7 +1273,7 @@ export async function updateFileCache(files, cache, parse, read = path => readFi
         ...(parsed?.incomplete ? { incomplete: true, holdFrom: parsed.holdFrom ?? '' } : {}),
       }
     }
-    if (next[file.path].incomplete) { holdFile(file, next[file.path].holdFrom ?? '', next[file.path].records) }
+    noteHeld(file, next[file.path])
     for (const record of next[file.path].records) { records.push(record) }
   }
   return { cache: next, records, incomplete, holds, heldFiles, reusedFiles }
@@ -1516,10 +1521,10 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
   const holds = new Map()
   const heldFiles = new Map()
   const noteScan = async (tool, root, result, accept) => {
+    if (result.heldFiles > 0) { heldFiles.set(tool, result.heldFiles) }
     if (result.incomplete) {
       incompleteSources.add(tool)
       holds.set(tool, result.holds)
-      heldFiles.set(tool, result.heldFiles)
     }
     else if (result.records.length === 0 && await discoveryRootPopulated(root, accept)) { emptySources.add(tool) }
   }
@@ -1665,7 +1670,7 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   const { inventory, failedSources } = DRY_RUN
     ? { inventory: [], failedSources: new Set() }
     : await fetchSnapshotInventory(url, apiKey, enabled, machine)
-  const { records, incompleteSources, emptySources, holds: scanHolds, heldFiles } = await scanRecords(cfg, state, enabled, discover)
+  const { records, emptySources, holds: scanHolds, heldFiles } = await scanRecords(cfg, state, enabled, discover)
   const snapshots = buildDailySnapshots(records, machine)
   const unplaced = countUnplaced(records, machine)
   for (const { tool, model, count } of unplaced) {
@@ -1682,11 +1687,8 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     console.error(`Scan incomplete for ${sourceId} (possible causes: unreadable file, malformed JSONL, malformed assistant usage or timestamp, or invalid or overflowed counters); keys for ${scope} are held until the affected file(s) parse cleanly or are deleted, which can be many runs; keys for other days are unaffected.`)
   }
   const heldFileCount = [...heldFiles.values()].reduce((sum, count) => sum + count, 0)
-  // A held scan may be missing the very records that were unplaced; a clean report then would
-  // clear a real warning, so a held scan only posts when it still has something to warn about.
-  if (!DRY_RUN && (incompleteSources.size === 0 || unplaced.length > 0)) {
-    await postSweepStatus(url, apiKey, machine, unplaced, heldFileCount)
-  }
+  // Always posted: a held scan reports its held file count, so it never reads as a clean sweep.
+  if (!DRY_RUN) { await postSweepStatus(url, apiKey, machine, unplaced, heldFileCount) }
   const submissions = planSnapshotSubmissions(snapshots, inventory, holds)
   await saveState(statePath, state)
 
