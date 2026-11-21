@@ -115,16 +115,24 @@ public sealed class PricingArithmeticCheck
             return false;
         }
         var counters = e.Tokens;
-        if (
-            counters.InputTokens != 0
-            || counters.OutputTokens != 0
-            || counters.CacheReadTokens != 0
-            || counters.CacheWriteTokens != 0
-            || counters.CacheWrite1hTokens != 0
-            || counters.ThoughtTokens != 0
-        )
+        long?[] values =
+        [
+            counters.InputTokens,
+            counters.OutputTokens,
+            counters.CacheReadTokens,
+            counters.CacheWriteTokens,
+            counters.CacheWrite1hTokens,
+            counters.ThoughtTokens,
+        ];
+        if (values.Any(v => v is not null and not 0))
         {
             gap("exact_zero_rule_counters_not_zero");
+            return false;
+        }
+        if (values.Any(v => v is null))
+        {
+            // An unreported counter cannot prove exact zero; it is unknown, not non-zero.
+            gap("exact_zero_rule_counters_unknown");
             return false;
         }
         var costCompared = CompareExactZeroValue(input, e, "costUsd", e.CostUsd, gap, findings);
