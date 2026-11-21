@@ -3323,6 +3323,20 @@ test('Claude deduplication keeps the copy that carries the native counters regar
   }
 })
 
+test('Claude deduplication never replaces an observed counter with the other copy zero default', () => {
+  const earlier = claudePromptRow({ input_tokens: 10, output_tokens: 5 }, { id: 'dup', model: 'claude-opus-5' }, '2026-10-22T00:00:00Z')
+  const later = claudePromptRow(
+    { input_tokens: 10, cache_read_input_tokens: 500, cache_creation_input_tokens: 7 },
+    { id: 'dup', model: 'claude-opus-5' }, '2026-10-22T00:00:05Z',
+  )
+  for (const content of [`${earlier}\n${later}`, `${later}\n${earlier}`]) {
+    const [snapshot] = buildDailySnapshots(parseClaude(content), TEST_MACHINE)
+    assert.equal(snapshot.outputTokens, 5)
+    assert.equal(snapshot.cacheReadTokens, 500)
+    assert.equal(snapshot.cacheWriteTokens, 7)
+  }
+})
+
 // C3-C7
 test('five parsers hold the day of a row whose counter is present but invalid', () => {
   const cases = [

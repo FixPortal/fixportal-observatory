@@ -970,7 +970,16 @@ function deduplicateClaudeRecords(records) {
   }
   for (const [identity, messages] of copies) {
     const index = indexes.get(identity)
-    deduplicated[index] = { ...deduplicated[index], claudePromptContext: claudePromptContext(messages) }
+    const chosen = deduplicated[index]
+    // A counter the chosen copy lacks reads as its zero default, so take the larger value another
+    // copy observed. shortcut: a real zero beside a non-zero copy of the same message is not told
+    // apart from a missing counter; streaming copies only grow, so the non-zero one is the better evidence.
+    const counters = {}
+    for (const key of ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens']) {
+      const best = Math.max(...messages.map(message => message[key] ?? 0))
+      if (chosen[key] === 0 && best > 0) { counters[key] = best }
+    }
+    deduplicated[index] = { ...chosen, ...counters, claudePromptContext: claudePromptContext(messages) }
   }
   return deduplicated
 }
