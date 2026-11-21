@@ -116,14 +116,16 @@ jobs:
       # that deploy AND the next one reported success. Production was down for ~25 minutes
       # with nothing red anywhere. This step is what turns that into a failed deploy.
       #
-      # Exactly 401 proves the app is serving: every /api route sits behind
-      # ApiKeyEndpointFilter, so an unauthenticated probe gets 401 from a HEALTHY app.
-      # That is deliberate — it avoids putting the API key in this workflow just to
-      # health-check it. Everything else is a failure: 5xx and 000 (connection refused /
-      # DNS / TLS), but also 200 (a placeholder page on a misnamed or empty package),
-      # 3xx (a redirect), 404 (a misrouted deployment), and 403 (a stopped site) —
-      # none of which come from our code.
+      # Only THIS build reporting THIS commit proves the deploy landed. The probe used to
+      # accept a 401 from /api, but the build it replaced answers that too, so a package
+      # that could not start would pass while the old one kept serving. GET /version is
+      # unauthenticated and returns the commit the SDK stamped into the assembly from this
+      # checkout, so no API key goes into this workflow. Anything else -- 5xx, 000, a
+      # placeholder page, a redirect, a 404, a stopped site, or the previous commit -- is
+      # a failure once the deadline passes.
       - name: Verify the API is serving
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
           # Bounded by a wall-clock DEADLINE, not an attempt count. With a per-request
           # timeout the two multiply: 30 attempts x 30s + 29 sleeps x 20s is ~24m40s,
@@ -131,22 +133,19 @@ jobs:
           # minutes is its own availability problem.
           deadline=$(( $(date +%s) + 600 ))
           while :; do
-            # Assign, then fall back on curl's EXIT STATUS. Do NOT write
-            # `$(curl ... || echo 000)`: on a transport failure curl prints 000 to
-            # stdout AND exits non-zero, so that form yields the string "000000",
-            # which matches neither arm of the case below and is read as HEALTHY —
-            # exactly inverting this step's purpose.
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
-              https://fpaiobs-api.azurewebsites.net/api/aggregates) || code=000
-            echo "probe -> HTTP $code"
-            case "$code" in
-              401) echo "API is serving (HTTP $code)"; exit 0 ;;
-              *) : ;;
-            esac
+            # Assign, then fall back on the pipeline's EXIT STATUS: -f fails on any non-2xx,
+            # and jq fails on a body that is not our JSON, so either leaves `served` empty.
+            served=$(curl -sf --max-time 15 https://fpaiobs-api.azurewebsites.net/version \
+              | jq -r '.commit // empty') || served=""
+            echo "probe -> commit ${served:-none}"
+            if [ "$served" = "$EXPECTED_SHA" ]; then
+              echo "API is serving commit $served"
+              exit 0
+            fi
             [ "$(date +%s)" -lt "$deadline" ] || break
             sleep 15
           done
-          echo "::error::API never returned the expected 401 after deploy — it is not serving our app."
+          echo "::error::API never reported commit $EXPECTED_SHA after deploy -- the new build is not serving."
           exit 1
 
   deploy-ingest:

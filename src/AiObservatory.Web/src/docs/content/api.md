@@ -279,6 +279,10 @@ The snapshot carries an `ETag`; send `If-None-Match` to get `304` when it has no
 
 Seeding is idempotent: if any table the seed writes already holds data, it answers `Already seeded` and changes nothing. In `Development` the OpenAPI document is also served.
 
+## Build identity
+
+`GET /version` sits outside `/api` and needs no key. It returns `{ commit }`, the git commit the running API was built from, or `null` for a build made without a git checkout. It shares the `/api` rate limit. The repository's deploy workflows poll it after a deploy until it reports the deployed commit.
+
 ## Ingest worker
 
 The ingest worker is not part of `/api`. It serves only `GET /healthz` with no authentication: 200 with `status`, `service`, `workerRunning`, `cyclesCompleted`, `lastCycleCompletedAt` while the polling loop runs, and 503 when it has stopped.

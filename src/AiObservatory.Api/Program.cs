@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Threading.RateLimiting;
 using AiObservatory.Api;
 using AiObservatory.Api.Audit;
@@ -233,6 +234,10 @@ if (authEnabled)
 }
 
 var api = app.MapGroup("/api").AddEndpointFilter<ApiKeyEndpointFilter>().RequireRateLimiting("api");
+
+// Unauthenticated build identity: the deploy probe polls it until the new build reports the
+// commit it deployed, which a 401 from /api cannot show (the old build answers that too).
+app.MapGet("/version", () => Results.Ok(new { commit = Program.BuildCommit })).RequireRateLimiting("api");
 app.MapOperationalInventoryEndpoint();
 app.MapAuditSelectedInvocationEndpoints();
 if (app.Services.GetRequiredService<IOptions<AuditOptions>>().Value.Enabled)
@@ -309,6 +314,12 @@ await app.RunAsync();
 public partial class Program
 {
     internal const string AuditInstanceId = "default";
+
+    // The SDK stamps "<version>+<git commit>" from the checkout it builds; null when built without git.
+    internal static readonly string? BuildCommit = typeof(Program)
+        .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+        ?.InformationalVersion.Split('+')
+        .ElementAtOrDefault(1);
 
     protected Program() { }
 

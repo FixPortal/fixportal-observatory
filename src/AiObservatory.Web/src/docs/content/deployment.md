@@ -108,15 +108,16 @@ If you serve the web app from a different origin than the API (as the Azure Stat
 
 ## Verifying a deployment
 
-| Check                                                                             | Expected                                                                                                                                                                                    |
-| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET <api>/api/aggregates` with no key                                            | 401 from a healthy app that has an API key configured. The repository's pipeline uses exactly this probe, so that no key is needed for a health check. A 200, 3xx, 404 or 5xx is a failure. |
-| `GET <api>/api/aggregates` with the read-only or admin key in `X-Observatory-Key` | 200                                                                                                                                                                                         |
-| `GET <web>/docs/introduction`                                                     | 200 with the app's `index.html`. A 404 from the platform means the client-side route fallback is missing (see [Web server and proxy](#web-server-and-proxy)).                               |
-| `GET <ingest>/healthz`                                                            | 200 with `workerRunning: true`                                                                                                                                                              |
-| `GET <api>/api/sources/status`                                                    | One row per source; a source you configured should leave `notConfigured`. See [Data sources](/docs/data-sources).                                                                           |
-| Worker log line beginning `Intelligence worker arms`                              | Names the alert channels that can deliver and whether GitHub billing is enabled.                                                                                                            |
-| Ingest log line beginning `Provider polling arms`                                 | One line listing each source as `enabled` or `NOT CONFIGURED`.                                                                                                                              |
+| Check                                                                             | Expected                                                                                                                                                               |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET <api>/version`                                                               | 200 with `commit` set to the commit you deployed. The repository's pipeline polls this, with no key, because the build it replaced would answer the 401 below as well. |
+| `GET <api>/api/aggregates` with no key                                            | 401 from a healthy app that has an API key configured. A 200, 3xx, 404 or 5xx is a failure.                                                                            |
+| `GET <api>/api/aggregates` with the read-only or admin key in `X-Observatory-Key` | 200                                                                                                                                                                    |
+| `GET <web>/docs/introduction`                                                     | 200 with the app's `index.html`. A 404 from the platform means the client-side route fallback is missing (see [Web server and proxy](#web-server-and-proxy)).          |
+| `GET <ingest>/healthz`                                                            | 200 with `workerRunning: true`                                                                                                                                         |
+| `GET <api>/api/sources/status`                                                    | One row per source; a source you configured should leave `notConfigured`. See [Data sources](/docs/data-sources).                                                      |
+| Worker log line beginning `Intelligence worker arms`                              | Names the alert channels that can deliver and whether GitHub billing is enabled.                                                                                       |
+| Ingest log line beginning `Provider polling arms`                                 | One line listing each source as `enabled` or `NOT CONFIGURED`.                                                                                                         |
 
 ## Azure infrastructure
 
@@ -177,7 +178,7 @@ For reference, the repository's own GitHub Actions flow is:
 
 1. CI builds and tests. A push to `main` that passes the CI gate calls the deploy workflow; a manual dispatch from `main` is also possible and skips the CI gate.
 2. Azure sign-in uses OIDC federated credentials, with no stored Azure secret. Jobs run in a protected `production` environment.
-3. **API job:** checks that the IDE key's Key Vault reference is resolved, stops the ingest app, publishes and deploys the API, then probes `/api/aggregates` until it answers exactly 401 (up to 10 minutes).
+3. **API job:** checks that the IDE key's Key Vault reference is resolved, stops the ingest app, publishes and deploys the API, then polls `/version` until it reports the commit being deployed (up to 10 minutes).
 4. **Ingest job:** publishes and deploys the worker.
 5. **Ensure-ingest job:** runs even if a deploy failed, starts the ingest app (three attempts) and probes `/healthz` until it answers 200.
 6. **Web job:** builds the app with the `VITE_*` variables and uploads it to the Static Web App with its deployment token. This is the one remaining stored deploy credential.
