@@ -75,21 +75,30 @@ public static class ActivityEndpoints
                     var startInstant = start.AtStartOfDayInZone(DateTimeZone.Utc).ToInstant();
                     var endInstant = end.PlusDays(1).AtStartOfDayInZone(DateTimeZone.Utc).ToInstant();
 
+                    // Same overlap filter and proration as /daily, so the two agree at the range edges.
                     var sessions = await db
                         .ClaudeActivitySessions.AsNoTracking()
-                        .Where(s => s.StartedAt >= startInstant && s.StartedAt < endInstant)
+                        .Where(s => s.LastSeenAt > startInstant && s.StartedAt < endInstant)
                         .Where(AllowedProjectPredicate(activityOptions.Value.ProjectOwners))
                         .Select(s => new
                         {
                             s.SessionId,
-                            s.Project,
-                            s.ActiveSeconds,
+                            Slice = new ActivitySessionSlice(s.Project, s.StartedAt, s.LastSeenAt, s.ActiveSeconds),
                         })
                         .ToListAsync(ct);
 
-                    var totalSeconds = sessions.Sum(s => s.ActiveSeconds);
+                    var prorated = sessions
+                        .Select(s => new
+                        {
+                            s.SessionId,
+                            s.Slice.Project,
+                            ActiveSeconds = ApportionSession(s.Slice, startInstant, endInstant)
+                                .Sum(f => f.ActiveSeconds),
+                        })
+                        .ToList();
+                    var totalSeconds = prorated.Sum(s => s.ActiveSeconds);
 
-                    var byProject = sessions
+                    var byProject = prorated
                         .GroupBy(s => s.Project)
                         .Select(g => new ProjectActivityResponse(
                             g.Key,
@@ -358,49 +367,9 @@ public static class ActivityEndpoints
     {
         var startInstant = start.AtStartOfDayInZone(DateTimeZone.Utc).ToInstant();
         var endInstant = end.PlusDays(1).AtStartOfDayInZone(DateTimeZone.Utc).ToInstant();
-        var slices = new List<(LocalDate Date, Instant Start, Instant End, long ActiveSeconds)>();
-
-        foreach (var session in sessions.Where(s => IsAllowedProject(s.Project, owners) && s.LastSeenAt > s.StartedAt))
-        {
-            var clippedStart = Max(session.StartedAt, startInstant);
-            var clippedEnd = Min(session.LastSeenAt, endInstant);
-            if (clippedEnd <= clippedStart)
-            {
-                continue;
-            }
-
-            var totalSeconds = (session.LastSeenAt - session.StartedAt).TotalSeconds;
-            var fragments = new List<(LocalDate Date, Instant Start, Instant End, double Exact)>();
-            var cursor = clippedStart;
-            while (cursor < clippedEnd)
-            {
-                var date = cursor.InUtc().Date;
-                var nextMidnight = date.PlusDays(1).AtStartOfDayInZone(DateTimeZone.Utc).ToInstant();
-                var fragmentEnd = Min(clippedEnd, nextMidnight);
-                var fragmentSeconds = (fragmentEnd - cursor).TotalSeconds;
-                fragments.Add((date, cursor, fragmentEnd, session.ActiveSeconds * fragmentSeconds / totalSeconds));
-                cursor = fragmentEnd;
-            }
-
-            // Largest-remainder apportionment: whole-second shares that sum to the rounded total,
-            // so a session split at midnight is never reported as more seconds than it holds.
-            var floors = fragments.Select(f => (long)Math.Floor(f.Exact)).ToArray();
-            var remaining = (long)Math.Round(fragments.Sum(f => f.Exact), MidpointRounding.AwayFromZero) - floors.Sum();
-            var byRemainder = Enumerable
-                .Range(0, fragments.Count)
-                .OrderByDescending(i => fragments[i].Exact - floors[i])
-                .ThenBy(i => i)
-                .Take((int)Math.Max(0, remaining));
-            foreach (var i in byRemainder)
-            {
-                floors[i]++;
-            }
-
-            for (var i = 0; i < fragments.Count; i++)
-            {
-                slices.Add((fragments[i].Date, fragments[i].Start, fragments[i].End, floors[i]));
-            }
-        }
+        var slices = sessions
+            .Where(s => IsAllowedProject(s.Project, owners))
+            .SelectMany(s => ApportionSession(s, startInstant, endInstant));
 
         return slices
             .GroupBy(s => s.Date)
@@ -411,6 +380,51 @@ public static class ActivityEndpoints
             ))
             .OrderBy(d => d.Date, StringComparer.Ordinal)
             .ToList();
+    }
+
+    // A session's active seconds inside [startInstant, endInstant), split at each UTC midnight in
+    // proportion to elapsed time. Shared by /daily and /by-project so they prorate identically.
+    private static List<(LocalDate Date, Instant Start, Instant End, long ActiveSeconds)> ApportionSession(
+        ActivitySessionSlice session,
+        Instant startInstant,
+        Instant endInstant
+    )
+    {
+        var clippedStart = Max(session.StartedAt, startInstant);
+        var clippedEnd = Min(session.LastSeenAt, endInstant);
+        if (session.LastSeenAt <= session.StartedAt || clippedEnd <= clippedStart)
+        {
+            return [];
+        }
+
+        var totalSeconds = (session.LastSeenAt - session.StartedAt).TotalSeconds;
+        var fragments = new List<(LocalDate Date, Instant Start, Instant End, double Exact)>();
+        var cursor = clippedStart;
+        while (cursor < clippedEnd)
+        {
+            var date = cursor.InUtc().Date;
+            var nextMidnight = date.PlusDays(1).AtStartOfDayInZone(DateTimeZone.Utc).ToInstant();
+            var fragmentEnd = Min(clippedEnd, nextMidnight);
+            var fragmentSeconds = (fragmentEnd - cursor).TotalSeconds;
+            fragments.Add((date, cursor, fragmentEnd, session.ActiveSeconds * fragmentSeconds / totalSeconds));
+            cursor = fragmentEnd;
+        }
+
+        // Largest-remainder apportionment: whole-second shares that sum to the rounded total,
+        // so a session split at midnight is never reported as more seconds than it holds.
+        var floors = fragments.Select(f => (long)Math.Floor(f.Exact)).ToArray();
+        var remaining = (long)Math.Round(fragments.Sum(f => f.Exact), MidpointRounding.AwayFromZero) - floors.Sum();
+        var byRemainder = Enumerable
+            .Range(0, fragments.Count)
+            .OrderByDescending(i => fragments[i].Exact - floors[i])
+            .ThenBy(i => i)
+            .Take((int)Math.Max(0, remaining));
+        foreach (var i in byRemainder)
+        {
+            floors[i]++;
+        }
+
+        return [.. fragments.Select((f, i) => (f.Date, f.Start, f.End, floors[i]))];
     }
 
     // Wall-clock time actually spent: merges overlapping session spans instead of

@@ -53,14 +53,14 @@ The treemap sizes each block by active seconds in the selected period.
 
 ## Time by project table
 
-| Column            | Meaning                                                                                                                                                                                                  |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Project`         | The project name as stored. Select it to filter to that project.                                                                                                                                         |
-| `Sessions`        | The number of distinct session ids for the project in the selected period.                                                                                                                               |
-| `Active time`     | The sum of the sessions' active seconds, as hours and minutes.                                                                                                                                           |
-| `Previous active` | The same project's active time in the comparison period. A project with none shows `0m`.                                                                                                                 |
-| `Change`          | The change in active time from the comparison period: a rounded percentage with a sign (`+12%`, `-30%`), `New` when the comparison period has none and this period has some, and `—` when both are zero. |
-| `Share`           | The project's percentage of the period's total active time, rounded to a whole number. The bar is scaled to the longest project in the period, not to 100%.                                              |
+| Column            | Meaning                                                                                                                                                                                                         |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Project`         | The project name as stored. Select it to filter to that project.                                                                                                                                                |
+| `Sessions`        | The number of distinct session ids for the project that overlap the selected period.                                                                                                                            |
+| `Active time`     | The sessions' active seconds inside the selected period, as hours and minutes. A session that crosses the period's edge is prorated as in [How a day's figures are computed](#how-a-days-figures-are-computed). |
+| `Previous active` | The same project's active time in the comparison period. A project with none shows `0m`.                                                                                                                        |
+| `Change`          | The change in active time from the comparison period: a rounded percentage with a sign (`+12%`, `-30%`), `New` when the comparison period has none and this period has some, and `—` when both are zero.        |
+| `Share`           | The project's percentage of the period's total active time, rounded to a whole number. The bar is scaled to the longest project in the period, not to 100%.                                                     |
 
 A project that appears only in the comparison period is listed with zero sessions and zero active time, so its drop is visible as `-100%`.
 
