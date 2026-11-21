@@ -43,6 +43,31 @@ public sealed class ClaudePricingSourceTests
     }
 
     [Fact]
+    public void VersionFirstModelNameDoesNotReadItsMinorVersionAsTheMajorOne()
+    {
+        // "Claude 3.5 Sonnet" normalizes to claude-3-5-sonnet; segment [2] is the minor version.
+        var document = Fixture()
+            .Replace(
+                "| Claude Sonnet 5 | $2 / MTok | $2.50 / MTok | $4 / MTok | $0.20 / MTok | $10 / MTok |",
+                "| Claude Sonnet 5 | $2 / MTok | $2.50 / MTok | $4 / MTok | $0.20 / MTok | $10 / MTok |\n"
+                    + "| Claude 3.5 Sonnet | $2 / MTok | $2.50 / MTok | $4 / MTok | $0.20 / MTok | $10 / MTok |",
+                StringComparison.Ordinal
+            )
+            .Replace(
+                "| Claude Sonnet 5 | $1 / MTok | $5 / MTok |",
+                "| Claude Sonnet 5 | $1 / MTok | $5 / MTok |\n| Claude 3.5 Sonnet | $1 / MTok | $5 / MTok |",
+                StringComparison.Ordinal
+            );
+
+        var catalog = ClaudePricingSource.Parse(document, RetrievedAt);
+
+        catalog
+            .Entries.Single(entry => entry.ModelPrefix == "claude-3-5-sonnet")
+            .UsInferenceMultiplier.Should()
+            .BeNull();
+    }
+
+    [Fact]
     public void ParserKeepsSonnetFiveAtItsDeclaredCurrentStandardPriceWithoutInventingAnIncrease()
     {
         var catalog = ClaudePricingSource.Parse(Fixture(), RetrievedAt);

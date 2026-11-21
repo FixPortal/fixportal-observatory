@@ -245,7 +245,13 @@ public sealed class ClaudePricingSource : IPricingSource, IDisposable
     private static bool SupportsUsInference(string model)
     {
         var parts = model.Split('-');
-        if (parts.Length is < 3 or > 4 || !int.TryParse(parts[2], CultureInfo.InvariantCulture, out var major))
+        // A version-first name (claude-3-5-sonnet) puts the major at [1] and the minor at [2]; none of
+        // those reaches 4.6, so refuse before segment [2] is misread as the major.
+        if (
+            parts.Length is < 3 or > 4
+            || int.TryParse(parts[1], CultureInfo.InvariantCulture, out _)
+            || !int.TryParse(parts[2], CultureInfo.InvariantCulture, out var major)
+        )
         {
             return false;
         }
