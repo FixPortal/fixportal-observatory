@@ -9,7 +9,12 @@ public interface IAuditOperationalInventoryReader
     Task<AuditOperationalInventory> ReadAsync(CancellationToken cancellationToken);
 }
 
-/// <summary>Fixed aggregate projections; never loads evidence or initializes retention policy.</summary>
+/// <summary>
+/// Fixed aggregate projections; never loads evidence or initializes retention policy.
+/// Policy, run and export-lease counts are scoped to the instance. The capture-request, capture, credential and
+/// machine tables carry no <c>InstanceId</c> column, so their counts are instance-global; the shipped app binds one
+/// constant instance, so the two agree. Add <c>InstanceId</c> to those tables before any multi-instance deployment.
+/// </summary>
 public sealed class AuditOperationalInventoryReader(AiObservatoryDbContext db, string instanceId)
     : IAuditOperationalInventoryReader
 {
