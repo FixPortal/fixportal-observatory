@@ -149,8 +149,7 @@ public class GitHubIngestionService(
                     await repository.UpsertCommitAsync(commit, now, cancellationToken);
                     latest = Latest(latest, commit.CommittedAt);
                 }
-                // An empty repository yields no commits; completing then would shrink the next
-                // poll to the rolling window and drop history pushed later.
+                // No commits yet (an empty repository): completing now would skip history pushed later.
                 if (!status.HasCommits && commits.Count > 0)
                 {
                     await repository.MarkBackfillCompletedAsync(repo, GitHubActivityKind.Commits, cancellationToken);
