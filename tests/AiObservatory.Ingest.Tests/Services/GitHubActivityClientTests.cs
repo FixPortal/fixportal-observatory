@@ -635,6 +635,22 @@ public sealed class GitHubActivityClientTests : IDisposable
     }
 
     [Fact]
+    public async Task GetCommitsAsync_TreatsAnEmptyRepositoryConflictAsNoCommits()
+    {
+        // GitHub answers 409 "Git Repository is empty." for the commits list of a repo with no commits.
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.Conflict));
+        var sut = CreateSut(handler);
+
+        var result = await sut.GetCommitsAsync(
+            "fix-portal/empty",
+            new LocalDate(2026, 7, 1),
+            TestContext.Current.CancellationToken
+        );
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetCommitsAsync_RejectsANullCommitPage()
     {
         var sut = CreateSut(new StubHandler(_ => JsonResponse("null")));
