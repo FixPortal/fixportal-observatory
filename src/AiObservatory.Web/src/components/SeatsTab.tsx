@@ -3,6 +3,7 @@ import { useAdversarialFindings } from '../api/useAdversarialFindings'
 import { participantColor } from '../theme/providerColors'
 import {
   computeSeatMetrics,
+  isoWeekUtc,
   type FindingRow,
   type Pivot,
   type RunRow,
@@ -93,6 +94,28 @@ function primaryReviewerByKey(runs: RunRow[]): Map<string, string> {
   return reviewers
 }
 
+// Every consecutive ISO week from the first observed to the last, so a week no seat ran in still
+// gets a row and the influence line breaks there instead of connecting across it.
+function weekRange(observed: string[]): string[] {
+  const sorted = [...new Set(observed)].toSorted((a, b) => a.localeCompare(b))
+  const first = sorted[0]
+  const last = sorted.at(-1)
+  if (first === undefined || last === undefined) return []
+  let label = first
+  const [year = 0, week = 1] = label.split('-W').map(Number)
+  const january4 = new Date(Date.UTC(year, 0, 4))
+  const monday = new Date(january4)
+  monday.setUTCDate(january4.getUTCDate() - ((january4.getUTCDay() || 7) - 1) + (week - 1) * 7)
+  const range = [label]
+  // Consecutive weeks reach `last` exactly, since it is one of the observed labels.
+  while (label !== last) {
+    monday.setUTCDate(monday.getUTCDate() + 7)
+    label = isoWeekUtc(monday.toISOString())
+    range.push(label)
+  }
+  return range
+}
+
 function buildChartData(metrics: SeatMetrics[], runs: RunRow[], pivot: Pivot): ChartData {
   const reviewers = primaryReviewerByKey(runs)
   const points = metrics.flatMap((seat) => {
@@ -109,7 +132,7 @@ function buildChartData(metrics: SeatMetrics[], runs: RunRow[], pivot: Pivot): C
     }
   })
 
-  const weeks = new Set(metrics.flatMap((seat) => seat.byWeek.map((week) => week.week)))
+  const weeks = weekRange(metrics.flatMap((seat) => seat.byWeek.map((week) => week.week)))
   const series = metrics.map((seat, index) => ({
     key: `seat-${index}`,
     seatKey: seat.key,
@@ -120,21 +143,19 @@ function buildChartData(metrics: SeatMetrics[], runs: RunRow[], pivot: Pivot): C
   const weeksBySeat = new Map(
     metrics.map((seat) => [seat.key, new Map(seat.byWeek.map((item) => [item.week, item]))]),
   )
-  const rows = [...weeks]
-    .toSorted((a, b) => a.localeCompare(b))
-    .map((week) => {
-      const row: TrendRow = { week }
-      for (const seat of metrics) {
-        const values = weeksBySeat.get(seat.key)?.get(week)
-        const seriesKey = seriesKeyBySeat.get(seat.key)
-        if (seriesKey) {
-          // Unset, not 0: a week without runs breaks the line instead of plotting a drop to zero.
-          row[seriesKey] = values?.influence ?? null
-          row[`${seriesKey}-cost`] = values?.costUsd ?? 0
-        }
+  const rows = weeks.map((week) => {
+    const row: TrendRow = { week }
+    for (const seat of metrics) {
+      const values = weeksBySeat.get(seat.key)?.get(week)
+      const seriesKey = seriesKeyBySeat.get(seat.key)
+      if (seriesKey) {
+        // Unset, not 0: a week without runs breaks the line instead of plotting a drop to zero.
+        row[seriesKey] = values?.influence ?? null
+        row[`${seriesKey}-cost`] = values?.costUsd ?? 0
       }
-      return row
-    })
+    }
+    return row
+  })
 
   return {
     points,
