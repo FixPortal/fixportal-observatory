@@ -118,17 +118,6 @@ public sealed class MetaPricingSourceTests
     }
 
     [Fact]
-    public async Task FetchReturnsTheSameCandidateInstanceWhenTheCatalogueHasNotChanged()
-    {
-        using var source = new MetaPricingSource(new FakeClock(RetrievedAt), new StubHandler(Fixture()));
-
-        var first = await source.FetchAsync(TestContext.Current.CancellationToken);
-        var second = await source.FetchAsync(TestContext.Current.CancellationToken);
-
-        second.Should().BeSameAs(first);
-    }
-
-    [Fact]
     public void BundledCatalogMatchesTheRatesOpenRouterPublishes()
     {
         var (parsed, _) = MetaPricingSource.Parse(Fixture(), RetrievedAt);

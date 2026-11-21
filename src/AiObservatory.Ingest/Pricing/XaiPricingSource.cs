@@ -47,7 +47,6 @@ public sealed class XaiPricingSource : IPricingSource, IDisposable
     ];
     private readonly IClock _clock;
     private readonly FirstPartyDocumentFetcher _fetcher;
-    private PricingSnapshotCandidate? _lastCandidate;
 
     public XaiPricingSource(IClock clock, IHttpClientFactory httpClientFactory)
     {
@@ -82,12 +81,7 @@ public sealed class XaiPricingSource : IPricingSource, IDisposable
             rawEvidence,
             Parse(page.Content, retrievedAt)
         );
-        if (_lastCandidate?.ContentHash == candidate.ContentHash)
-        {
-            return _lastCandidate;
-        }
-
-        return _lastCandidate = candidate;
+        return candidate;
     }
 
     public static XaiPriceCatalog Parse(string document, Instant retrievedAt)

@@ -24,7 +24,6 @@ public sealed class MetaPricingSource : IPricingSource, IDisposable
     private const string ModelPrefix = "meta/";
     private readonly IClock _clock;
     private readonly FirstPartyDocumentFetcher _fetcher;
-    private PricingSnapshotCandidate? _lastCandidate;
 
     public MetaPricingSource(IClock clock, IHttpClientFactory httpClientFactory)
     {
@@ -59,12 +58,7 @@ public sealed class MetaPricingSource : IPricingSource, IDisposable
             $"{page.FinalUri.AbsoluteUri}\n{evidence}",
             catalog
         );
-        if (_lastCandidate?.ContentHash == candidate.ContentHash)
-        {
-            return _lastCandidate;
-        }
-
-        return _lastCandidate = candidate;
+        return candidate;
     }
 
     public static (MetaPriceCatalog Catalog, string Evidence) Parse(string document, Instant retrievedAt)

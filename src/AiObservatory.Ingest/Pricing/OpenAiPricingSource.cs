@@ -58,7 +58,6 @@ public sealed class OpenAiPricingSource : IPricingSource, IDisposable
     ];
     private readonly IClock _clock;
     private readonly FirstPartyDocumentFetcher _fetcher;
-    private PricingSnapshotCandidate? _lastCandidate;
 
     public OpenAiPricingSource(IClock clock, IHttpClientFactory httpClientFactory)
     {
@@ -94,12 +93,7 @@ public sealed class OpenAiPricingSource : IPricingSource, IDisposable
             raw,
             Parse(raw, retrievedAt)
         );
-        if (_lastCandidate?.ContentHash == candidate.ContentHash)
-        {
-            return _lastCandidate;
-        }
-
-        return _lastCandidate = candidate;
+        return candidate;
     }
 
     public static OpenAiPriceCatalog Parse(string document, Instant retrievedAt)

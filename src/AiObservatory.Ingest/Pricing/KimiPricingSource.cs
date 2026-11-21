@@ -46,7 +46,6 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
     private readonly IClock _clock;
     private readonly FirstPartyDocumentFetcher _indexFetcher;
     private readonly IReadOnlyList<(Uri Uri, FirstPartyDocumentFetcher Fetcher)> _pageFetchers;
-    private PricingSnapshotCandidate? _lastCandidate;
 
     public KimiPricingSource(IClock clock, IHttpClientFactory httpClientFactory)
     {
@@ -99,12 +98,7 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
             rawEvidence,
             Parse(pages[1].Content, pages[2].Content, retrievedAt)
         );
-        if (_lastCandidate?.ContentHash == candidate.ContentHash)
-        {
-            return _lastCandidate;
-        }
-
-        return _lastCandidate = candidate;
+        return candidate;
     }
 
     public static KimiPriceCatalog Parse(string chat, string batch, Instant retrievedAt)
