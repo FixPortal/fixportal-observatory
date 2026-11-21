@@ -20,6 +20,7 @@ public sealed class PricingRefreshWorkerService(
     private static readonly TimeSpan TickInterval = TimeSpan.FromHours(1);
     private static readonly Duration RetryInterval = Duration.FromHours(6);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private Instant? _bundlesLoadedAt;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -56,17 +57,26 @@ public sealed class PricingRefreshWorkerService(
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var services = scope.ServiceProvider;
-        await services.GetRequiredService<BundledPricingCatalogLoader>().LoadAsync(cancellationToken);
+        // The hourly tick only decides what is due. Loading the bundles reprices every provider whose
+        // bundle is unchanged, so it stays on the daily cadence it had before the tick moved to an hour.
+        var loadNow = clock.GetCurrentInstant();
+        if (_bundlesLoadedAt is not { } loadedAt || loadedAt <= loadNow - RefreshInterval)
+        {
+            await services.GetRequiredService<BundledPricingCatalogLoader>().LoadAsync(cancellationToken);
+            _bundlesLoadedAt = loadNow;
+        }
 
         var sources = services.GetServices<IPricingSource>().ToDictionary(source => source.SourceId);
         var definitions = services.GetServices<PricingSourceDefinition>().ToList();
         var states = services.GetRequiredService<SourceSyncStateStore>();
         var store = services.GetRequiredService<PricingSnapshotStore>();
         var repricing = services.GetRequiredService<PricingRepricingService>();
-        var now = clock.GetCurrentInstant();
 
         foreach (var definition in definitions)
         {
+            // Read per source: an earlier source can run long, and the retry floor is measured
+            // from the persisted attempt time.
+            var now = clock.GetCurrentInstant();
             if (!definition.IsConfigured || !sources.TryGetValue(definition.SourceId, out var source))
             {
                 await MarkUnconfiguredAsync(definition, states, now, cancellationToken);
