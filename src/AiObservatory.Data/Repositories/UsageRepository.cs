@@ -105,13 +105,11 @@ public class UsageRepository(
                     && ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation }
                 )
             {
-                await tx.RollbackAsync(ct);
-                ctx.ChangeTracker.Clear();
+                await RollbackAndClearAsync(tx);
             }
             catch
             {
-                await tx.RollbackAsync(ct);
-                ctx.ChangeTracker.Clear();
+                await RollbackAndClearAsync(tx);
                 throw;
             }
 
@@ -977,9 +975,23 @@ public class UsageRepository(
         }
         catch
         {
-            await tx.RollbackAsync(ct);
-            ctx.ChangeTracker.Clear();
+            await RollbackAndClearAsync(tx);
             throw;
+        }
+    }
+
+    // Roll back with CancellationToken.None and clear in a finally: a throwing rollback (cancelled
+    // caller token, broken connection) must not skip the Clear, or the tracked entities outlive
+    // their rolled-back aggregate delta on a shared context.
+    private async Task RollbackAndClearAsync(IDbContextTransaction tx)
+    {
+        try
+        {
+            await tx.RollbackAsync(CancellationToken.None);
+        }
+        finally
+        {
+            ctx.ChangeTracker.Clear();
         }
     }
 
