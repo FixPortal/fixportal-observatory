@@ -177,17 +177,17 @@ Create and replace take `provider`, `name` (required, up to 200 characters), `co
 
 ## Insights and suggestions
 
-| Method   | Route                            | Auth  | Purpose                                         |
-| -------- | -------------------------------- | ----- | ----------------------------------------------- |
-| `GET`    | `/api/insights`                  | Read  | The 50 newest insights plus every unread one.   |
-| `POST`   | `/api/insights/generate`         | Admin | Generate insights now for yesterday (UTC).      |
-| `POST`   | `/api/insights/{id}/acknowledge` | Admin | Mark an insight acknowledged (204).             |
-| `POST`   | `/api/insights/{id}/explain`     | Admin | Ask the model for implementation guidance.      |
-| `DELETE` | `/api/insights`                  | Admin | Delete all insights; alert records stay.        |
-| `GET`    | `/api/suggestions`               | Read  | Suggestions in one state, with evidence.        |
-| `POST`   | `/api/suggestions/{id}/dismiss`  | Admin | Dismiss.                                        |
-| `POST`   | `/api/suggestions/{id}/snooze`   | Admin | Snooze.                                         |
-| `POST`   | `/api/suggestions/refresh`       | Admin | Run every rule now.                             |
+| Method   | Route                            | Auth  | Purpose                                       |
+| -------- | -------------------------------- | ----- | --------------------------------------------- |
+| `GET`    | `/api/insights`                  | Read  | The 50 newest insights plus every unread one. |
+| `POST`   | `/api/insights/generate`         | Admin | Generate insights now for yesterday (UTC).    |
+| `POST`   | `/api/insights/{id}/acknowledge` | Admin | Mark an insight acknowledged (204).           |
+| `POST`   | `/api/insights/{id}/explain`     | Admin | Ask the model for implementation guidance.    |
+| `DELETE` | `/api/insights`                  | Admin | Delete all insights; alert records stay.      |
+| `GET`    | `/api/suggestions`               | Read  | Suggestions in one state, with evidence.      |
+| `POST`   | `/api/suggestions/{id}/dismiss`  | Admin | Dismiss.                                      |
+| `POST`   | `/api/suggestions/{id}/snooze`   | Admin | Snooze.                                       |
+| `POST`   | `/api/suggestions/refresh`       | Admin | Run every rule now.                           |
 
 An insight has `id`, `generatedAt`, `insightType` (`summary`, `efficiency`, `anomaly`, `recommendation` or `budgetalert`), `title`, `body`, `data` and `acknowledged`. `GET /api/insights` returns them newest first: the 50 newest rows plus every unread one, at most 500 in all. `POST .../generate` returns `{ generated }`, the number persisted. `POST .../explain` returns `{ explanation }`, 404 for an unknown id, or 503 if `ANTHROPIC_API_KEY` is not configured. `DELETE /api/insights` answers 409 while a budget-alert email delivery is in progress (retry after its lease expires) and otherwise returns `{ deleted }`. See [Usage and insights](/docs/usage-insights).
 
