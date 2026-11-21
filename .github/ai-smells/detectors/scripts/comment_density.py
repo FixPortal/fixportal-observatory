@@ -16,10 +16,29 @@ SOURCE = (".cs", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".ps1", ".
           ".go", ".java", ".rs", ".rb", ".kt", ".swift", ".cpp", ".c")
 THRESHOLD, MIN_LINES = 0.45, 20
 
-def comment_count(lines, pattern):
-    count, in_block = 0, False
+def split_lines(text):
+    """Lines as git counts them: only \\n ends one (a CR before it is dropped). str.splitlines()
+    also breaks on \\v, \\f, \\x1c-\\x1e, NEL, U+2028/9 and a lone CR, which would shift every
+    reported line number away from the PR diff's."""
+    lines = [l[:-1] if l.endswith("\r") else l for l in text.split("\n")]
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+def comment_count(lines, pattern, ps_blocks=False):
+    """ps_blocks: PowerShell `<# ... #>` blocks (comment-based help) count line by line."""
+    count, in_block, in_ps = 0, False, False
     for line in lines:
-        if in_block:
+        if in_ps:
+            count += 1
+            in_ps = "#>" not in line
+        elif ps_blocks and line.lstrip().startswith("<#"):
+            close = line.find("#>")
+            in_ps = close < 0
+            # `<# note #> $x = Do-Work` is a line of code that opens with a comment.
+            if close < 0 or not line[close + 2:].strip():
+                count += 1
+        elif in_block:
             count += 1
             in_block = "*/" not in line
         elif pattern.match(line):
@@ -46,12 +65,12 @@ def main():
         except OSError:
             unread.append(rel)
             continue
-        all_lines = text.splitlines()
+        all_lines = split_lines(text)
         lines = [l for l in all_lines if l.strip()]
         if len(lines) < MIN_LINES:
             continue
         comment = C_COMMENT if rel.lower().endswith(C_FAMILY) else COMMENT
-        ratio = comment_count(lines, comment) / len(lines)
+        ratio = comment_count(lines, comment, rel.lower().endswith((".ps1", ".psm1"))) / len(lines)
         if ratio > THRESHOLD:
             hits.append({"file": rel, "line": 1, "endLine": len(all_lines), "text": f"{ratio:.0%} of {len(lines)} non-blank lines are comments"})
     status, reason = ("not assessed", "could not read " + ", ".join(unread)) if unread else ("assessed", "")
