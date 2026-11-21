@@ -55,6 +55,13 @@ public static class SpendEntriesEndpoints
             return Results.BadRequest($"At most {MaxBatch} entries per request");
         }
 
+        // A JSON null element deserializes to null. Rows are saved one at a time, so dereferencing
+        // it mid-loop threw after earlier rows had committed and a retry re-inserted them.
+        if (requests.Any(request => request is null))
+        {
+            return Results.BadRequest("Entries must not be null");
+        }
+
         // Loaded once rather than per row: a CSV import is overwhelmingly the same handful
         // of vendors and categories repeated.
         var vendorIds = await db.SpendVendors.AsNoTracking().Select(v => v.Id).ToHashSetAsync(ct);
@@ -327,6 +334,9 @@ public static class SpendEntriesEndpoints
         // in the client contract declares or renders it. Every other column is retained.
         var rows = await q.OrderByDescending(e => e.OccurredOn)
             .ThenByDescending(e => e.RecordedAt)
+            // One POST stamps every row with the same RecordedAt, so Id breaks the remaining ties and
+            // the cap cuts the same rows on every call.
+            .ThenByDescending(e => e.Id)
             .Take(capped)
             .Select(e => new SpendEntryResponse(
                 e.Id,
