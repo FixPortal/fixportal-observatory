@@ -579,7 +579,7 @@ test('Claude prompt malformed discovery remains incomplete on serialized cache h
       return new Response('{}')
     }
     return new Response(JSON.stringify(new URL(url).searchParams.get('sourceId') === 'claude-local@test-machine'
-      ? [{ sourceId: 'claude-local@test-machine', runtime: 'claude', eventKey: 'prior-flat' }] : []))
+      ? [{ sourceId: 'claude-local@test-machine', runtime: 'claude', eventKey: 'claude:2026-10-22:prior-flat' }] : []))
   }
   try {
     await writeFile(path, `${claudePromptRow(COMPLETE_CLAUDE_PROMPT)}\n{"message":`)
@@ -596,7 +596,7 @@ test('Claude prompt malformed discovery remains incomplete on serialized cache h
     await sweep.main({ discover })
     assert.equal(posts.length, 2)
     assert.equal(posts[0].eventKey.endsWith(':prompt_le_100000'), true)
-    assert.equal(posts[1].eventKey, 'prior-flat')
+    assert.equal(posts[1].eventKey, 'claude:2026-10-22:prior-flat')
     assert.equal(posts[1].inputTokens, 0)
     assert.equal(JSON.parse(await readFile(statePath, 'utf8')).files.claude[path].incomplete, undefined)
   } finally {
@@ -1431,12 +1431,13 @@ test('touching and restoring a transcript cannot move usage to another day', asy
   }
 })
 
-test('server inventory clears a deleted final snapshot after local state loss', () => {
+test('server inventory clears a deleted final snapshot after local state loss while surviving files cover its day', () => {
   const prior = buildDailySnapshots([
     { tool: 'codex', date: '2026-08-24', model: 'gpt-5.4', occurredAtUtc: '2026-08-24T12:00:00Z', cum: { input: 30, output: 5, cacheRead: 3, cacheWrite: 0 } },
   ], TEST_MACHINE)[0]
 
-  const submissions = planSnapshotSubmissions([], [prior])
+  assert.deepEqual(planSnapshotSubmissions([], [prior]), [], 'no surviving file covers the day: frozen')
+  const submissions = planSnapshotSubmissions([], [prior], new Map(), new Map([[prior.sourceId, '2026-08-23']]))
 
   assert.equal(submissions.length, 1)
   assert.equal(submissions[0].active, false)
@@ -1465,7 +1466,7 @@ test('server inventory clears a disabled source after state loss and allows re-e
     { tool: 'kimi', date: '2026-08-24', model: 'kimi-code/kimi-for-coding', occurredAtUtc: '2026-08-24T12:00:00Z', inputTokens: 10, outputTokens: 2, cacheReadTokens: 20, cacheWriteTokens: 3 },
   ], TEST_MACHINE)[0]
   const disabledSnapshots = parseLocalSources('codex').has('kimi') ? [snapshot] : []
-  const [disabled] = planSnapshotSubmissions(disabledSnapshots, [snapshot])
+  const [disabled] = planSnapshotSubmissions(disabledSnapshots, [snapshot], new Map(), new Map([[snapshot.sourceId, '2026-08-24']]))
 
   const reenabledSnapshots = parseLocalSources('kimi').has('kimi') ? [snapshot] : []
   const [reenabled] = planSnapshotSubmissions(reenabledSnapshots, [])
@@ -1538,7 +1539,7 @@ test('replacement plans active snapshots before tombstones in both lexical key d
     sourceKind: 'localTelemetry', usageScope: 'subscription', costBasis: 'notional', eventKey,
   })
 
-  for (const [oldKey, newKey] of [['a-old', 'z-new'], ['z-old', 'a-new']]) {
+  for (const [oldKey, newKey] of [['codex:2026-08-24:a-old', 'codex:2026-08-24:z-new'], ['codex:2026-08-24:z-old', 'codex:2026-08-24:a-new']]) {
     const submissions = planSnapshotSubmissions(
       [snapshot('codex-local', newKey)],
       [snapshot('codex-local', oldKey)],
@@ -2155,7 +2156,7 @@ test('main fetches inventory only for enabled per-machine sources and never tomb
   }
 })
 
-test('main tombstones stale server keys for an enabled source whose transcripts were all deleted', async () => {
+test('main freezes stale server keys for an enabled source whose transcripts were all deleted', async () => {
   const root = await makeTemp('observatory-sweep-deleted-')
   // Deleting every transcript leaves the discovery root's directory skeleton
   // behind; only the .jsonl payloads are gone, so the empty scan is verified.
@@ -2204,17 +2205,10 @@ test('main tombstones stale server keys for an enabled source whose transcripts 
   try {
     await run(process.execPath, [fileURLToPath(new URL('./observatory-sweep.mjs', import.meta.url))], { env })
 
-    // The clean scan found nothing under a populated discovery root, so the
-    // empty local history is verified and the stale server key is zeroed.
-    assert.deepEqual(posts.map(body => ({
-      eventKey: body.eventKey,
-      sourceId: body.sourceId,
-      inputTokens: body.inputTokens,
-      outputTokens: body.outputTokens,
-    })), [
-      { eventKey: stale.eventKey, sourceId: 'codex-local@test-machine', inputTokens: 0, outputTokens: 0 },
-    ])
-    assert.equal(JSON.parse(posts[0].rawPayload).tombstone, true)
+    // The clean scan found nothing under a populated discovery root, so no surviving
+    // file covers any day: a vendor CLI's own retention could have removed the
+    // transcripts, and the stale server key is frozen rather than zeroed.
+    assert.deepEqual(posts, [])
   } finally {
     await new Promise(resolve => server.close(resolve))
     await removeTemp(root)
@@ -2236,11 +2230,11 @@ test('main retries a failed server-inventory tombstone from persisted state and 
   let tombstoneFailures = 3
   const activeKey = 'codex:2026-08-24:gpt-5.5'
   const prior = {
-    provider: 'openai', occurredAtUtc: '2026-08-23T12:00:00Z', model: 'gpt-5.5',
+    provider: 'openai', occurredAtUtc: '2026-08-25T12:00:00Z', model: 'gpt-5.5',
     inputTokens: 2, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0,
     cacheWrite1hTokens: 0, thoughtTokens: 0, costUsd: 0.01,
     runtime: 'codex', sourceId: 'codex-local@test-machine', sourceKind: 'localTelemetry',
-    usageScope: 'subscription', costBasis: 'notional', eventKey: 'codex:2026-08-23:gpt-5.5',
+    usageScope: 'subscription', costBasis: 'notional', eventKey: 'codex:2026-08-25:gpt-5.5',
   }
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1')
@@ -2344,9 +2338,9 @@ test('main withholds a source tombstone after its replacement exhausts retries b
     eventKey: 'claude:2026-08-24:claude-opus-5:standard:aaa:us',
   }
   const oldKimi = {
-    provider: 'moonshot', occurredAtUtc: '2026-08-23T12:00:00Z', model: 'kimi-code/kimi-for-coding',
+    provider: 'moonshot', occurredAtUtc: '2026-08-25T12:00:00Z', model: 'kimi-code/kimi-for-coding',
     costUsd: null, runtime: 'kimi', sourceId: 'kimi-local@test-machine', sourceKind: 'localTelemetry',
-    usageScope: 'subscription', costBasis: 'notional', eventKey: 'kimi:2026-08-23:kimi-code/kimi-for-coding',
+    usageScope: 'subscription', costBasis: 'notional', eventKey: 'kimi:2026-08-25:kimi-code/kimi-for-coding',
   }
   const currentKey = 'claude:2026-08-24:claude-opus-5:standard:zzz:us'
   const currentKimiKey = 'kimi:2026-08-24:kimi-code/kimi-for-coding'
@@ -2495,9 +2489,9 @@ test('main withholds corrections and tombstones for an incompletely scanned sour
     usageScope: 'subscription', costBasis: 'notional', eventKey: 'codex:2026-08-20:gpt-5.5',
   }
   const oldKimi = {
-    provider: 'moonshot', occurredAtUtc: '2026-08-23T12:00:00Z', model: 'kimi-code/kimi-for-coding',
+    provider: 'moonshot', occurredAtUtc: '2026-08-25T12:00:00Z', model: 'kimi-code/kimi-for-coding',
     costUsd: null, runtime: 'kimi', sourceId: 'kimi-local@test-machine', sourceKind: 'localTelemetry',
-    usageScope: 'subscription', costBasis: 'notional', eventKey: 'kimi:2026-08-23:kimi-code/kimi-for-coding',
+    usageScope: 'subscription', costBasis: 'notional', eventKey: 'kimi:2026-08-25:kimi-code/kimi-for-coding',
   }
   const currentKimiKey = 'kimi:2026-08-24:kimi-code/kimi-for-coding'
   const posts = []
@@ -3105,7 +3099,7 @@ test('planSnapshotSubmissions applies per-key holds to submissions and tombstone
   const snapshots = [snapshot('2026-10-22'), snapshot('2026-10-24')]
   const inventory = [snapshot('2026-10-20'), snapshot('2026-10-23'), snapshot('2026-10-24')]
   const holds = new Map([['claude-local@m', [{ from: '2026-10-23', through: undefined }]]])
-  const plan = planSnapshotSubmissions(snapshots, inventory, holds)
+  const plan = planSnapshotSubmissions(snapshots, inventory, holds, new Map([['claude-local@m', '2026-10-20']]))
   assert.deepEqual(
     plan.map(item => `${item.active ? 'post' : 'tombstone'} ${item.snapshot.eventKey.split(':')[1]}`),
     ['post 2026-10-22', 'tombstone 2026-10-20'],
@@ -3656,4 +3650,19 @@ test('a file whose Claude records carry invalid counters counts as held', async 
     async path => path,
   )
   assert.equal(result.heldFiles, 1)
+})
+
+// C3-P2
+test('main never zeroes a key older than the oldest day the local files still cover', async () => {
+  const root = await makeTemp('observatory-freeze-old-')
+  const sessions = join(root, 'codex', 'sessions')
+  await mkdir(sessions, { recursive: true })
+  await writeFile(join(sessions, 'rollout.jsonl'), [CODEX_GPT55, codexUsageRow('2026-10-10T12:00:00Z', 10, 5)].join('\n'))
+  const recording = recordingServer([], ['codex:2026-10-01:gpt-5.5', 'codex:2026-10-12:gpt-5.5'])
+  try {
+    await withRecordingServer(recording, async () => {
+      await runMainWith({ root, statePath: join(root, 'state', 'sweep.json'), server: recording.server })
+    })
+    assert.deepEqual(machinePosts(recording.posts).filter(isTombstone).map(body => body.eventKey), ['codex:2026-10-12:gpt-5.5'])
+  } finally { await removeTemp(root) }
 })
