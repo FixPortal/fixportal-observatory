@@ -75,7 +75,7 @@ public static class SeatMetricsCalculator
     {
         var seats = new Dictionary<string, SeatTally>(StringComparer.Ordinal);
         var reviewerRows = new Dictionary<(string RunId, string Reviewer), AdversarialReviewRun>();
-        var detailedRunIds = findings.Select(f => f.RunId).ToHashSet(StringComparer.Ordinal);
+        var detailedRunIds = DetailedRunIds(runs);
 
         SeatTally SeatFor(string model)
         {
@@ -128,6 +128,14 @@ public static class SeatMetricsCalculator
 
         return [.. seats.Values.OrderBy(s => Label(s.Model), StringComparer.Ordinal).Select(ToMetrics)];
     }
+
+    /// <summary>
+    /// Runs whose finding detail was captured, from the stored marker rather than from finding rows,
+    /// so a clean run posted as [] is detailed. Any row of a run carrying it marks the whole run.
+    /// Mirrors <c>detailedRunIds</c> in <c>seatInfluence.ts</c>.
+    /// </summary>
+    internal static HashSet<string> DetailedRunIds(IEnumerable<AdversarialReviewRun> runs) =>
+        runs.Where(r => r.FindingsCaptured).Select(r => r.RunId).ToHashSet(StringComparer.Ordinal);
 
     private static string Label(string model) => model.Contains('+') ? $"mixed: {model}" : model;
 

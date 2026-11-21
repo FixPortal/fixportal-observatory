@@ -3,8 +3,8 @@ using System.Globalization;
 namespace AiObservatory.Api.Services.Suggestions;
 
 /// <summary>
-/// Shared plumbing for the seat rules. Every seat rule is stated in detailed runs (runs that have
-/// finding rows) and finding-row catches only, so counts-only history can never satisfy a floor.
+/// Shared plumbing for the seat rules. Every seat rule is stated in detailed runs (runs whose finding
+/// detail was captured, an empty set included) and finding-row catches only, so counts-only history can never satisfy a floor.
 /// </summary>
 public abstract class SeatRuleBase : ISuggestionRule
 {
@@ -33,7 +33,7 @@ public abstract class SeatRuleBase : ISuggestionRule
         params SuggestionFigure[] figures
     )
     {
-        var detailedRunIds = inputs.Findings.Select(f => f.RunId).ToHashSet(StringComparer.Ordinal);
+        var detailedRunIds = SeatMetricsCalculator.DetailedRunIds(inputs.Runs);
         var runIds = inputs
             .Runs.Where(r => r.Role == "reviewer" && r.Model == seat.Key && detailedRunIds.Contains(r.RunId))
             .OrderByDescending(r => r.RecordedAt)

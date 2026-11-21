@@ -229,6 +229,10 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
         await ctx.AdversarialReviewFindings.Where(f => f.RunId == runId).ExecuteDeleteAsync(ct);
         ctx.AdversarialReviewFindings.AddRange(findings);
         await ctx.SaveChangesAsync(ct);
+        // Marks the run detailed even for an empty set: a clean run must not read as counts-only.
+        await ctx
+            .AdversarialReviewRuns.Where(r => r.RunId == runId)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.FindingsCaptured, true), ct);
         await tx.CommitAsync(ct);
         return true;
     }

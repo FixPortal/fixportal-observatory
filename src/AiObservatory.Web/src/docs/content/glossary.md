@@ -40,7 +40,7 @@ Short definitions of the terms used across these pages, in alphabetical order. E
 
 - **Daily digest.** An email or Slack message listing sources that are `Unavailable` or `Failing`, sent at most once per UTC day. [Data sources](/docs/data-sources#the-daily-digest)
 - **Demo mode.** A setting (`OBSERVATORY_DEMO_MODE`) that makes the API a read-only instance of synthetic data. [Authentication](/docs/authentication#demo-mode)
-- **Detailed run.** A panel run that has finding rows. Seat measures use detailed runs. [Adversarial Review](/docs/adversarial-review#pivot)
+- **Detailed run.** A panel run whose finding set was posted, even an empty one. Seat measures use detailed runs. [Adversarial Review](/docs/adversarial-review#pivot)
 - **Dismiss.** To hide an insight or a suggestion. A dismissed suggestion reopens only if its main figure moves enough or its sample doubles. [Suggestions](/docs/suggestions#dismissing)
 - **Dropped.** A finding outcome. Dropped findings are left out of the false-positive rate. [Adversarial Review](/docs/adversarial-review#derived-measures)
 

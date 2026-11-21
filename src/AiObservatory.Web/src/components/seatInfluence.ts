@@ -255,7 +255,9 @@ export function computeSeatMetrics(
   if (since !== undefined) runs = runs.filter((row) => row.recordedAt >= since)
   const seats = new Map<string, SeatAggregates>()
   const reviewerRows = new Map<string, RunRow>()
-  const detailedRunIds = new Set(findings.map((finding) => finding.runId))
+  // From the stored marker, not from finding rows, so a clean run posted as [] is detailed. Any row
+  // of a run carrying it marks the whole run. Mirrors SeatMetricsCalculator.DetailedRunIds.
+  const detailedRunIds = new Set(runs.filter((row) => row.findingsCaptured).map((row) => row.runId))
 
   const seatFor = (model: string): SeatAggregates => {
     const existing = seats.get(model)

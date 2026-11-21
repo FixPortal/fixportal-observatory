@@ -62,7 +62,7 @@ All windows end on the last complete UTC day, which is yesterday.
 
 ### Seat rules
 
-Seat rules read the panel runs recorded in the seat window. They use only runs that have finding rows. History that holds counts only never satisfies a minimum. A seat's counts come from findings:
+Seat rules read the panel runs recorded in the seat window. They use only detailed runs: runs whose finding set was posted, an empty set included. History that holds counts only never satisfies a minimum. A seat's counts come from findings:
 
 - **Unique catch:** an accepted finding that exactly one reviewer raised.
 - **Corroborated catch:** an accepted finding that more than one reviewer raised.
@@ -71,7 +71,7 @@ Seat rules read the panel runs recorded in the seat window. They use only runs t
 
 | Rule                       | Fires when                                                                                                               | Severity  | Figure used to reopen           |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------- | ------------------------------- |
-| `seat.no-unique-catch`     | The seat has at least `MinDetailedRuns` runs with finding rows and no unique catch                                       | Attention | `Detailed runs`                 |
+| `seat.no-unique-catch`     | The seat has at least `MinDetailedRuns` detailed runs and no unique catch                                                | Attention | `Detailed runs`                 |
 | `seat.high-false-positive` | The seat has at least `MinSettledFindings` settled findings and the refuted share is above `FalsePositiveThreshold`      | Attention | `False-positive rate`           |
 | `seat.confirmation-only`   | The seat has at least `MinCatchesForConfirmationOnly` accepted catches and every one was also raised by another reviewer | Info      | `Corroborated accepted catches` |
 | `seat.cost-outlier`        | The seat's cost per unique catch is more than `CostOutlierMultiple` times the median of its peers                        | Attention | `Cost per unique catch`         |
@@ -80,8 +80,8 @@ For `seat.high-false-positive`, the rate is refuted findings divided by settled 
 
 For `seat.cost-outlier`:
 
-- A seat takes part, as a subject or as a peer, only if it has at least `CostOutlierMinPeerRuns` runs with finding rows and a cost per unique catch.
-- Cost per unique catch is the known cost of the seat's runs with finding rows divided by its unique catches. A seat with no unique catches, or no known cost, has none.
+- A seat takes part, as a subject or as a peer, only if it has at least `CostOutlierMinPeerRuns` detailed runs and a cost per unique catch.
+- Cost per unique catch is the known cost of the seat's detailed runs divided by its unique catches. A seat with no unique catches, or no known cost, has none.
 - A seat is judged only when at least `CostOutlierMinPeers` other seats take part. The comparison value is the median of those peers.
 
 ### Plan rules
@@ -156,12 +156,12 @@ Set these in the `Suggestions` configuration section, or as environment variable
 | ------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------- |
 | `WorkerEnabled`                 | `true`  | Whether the daily worker runs. A refresh through the API still works when it is `false`.                    |
 | `SeatWindowDays`                | `60`    | Days of panel history the seat rules read, ending yesterday (UTC). Greater than zero.                       |
-| `MinDetailedRuns`               | `5`     | Runs with finding rows a seat needs before `seat.no-unique-catch` judges it. Greater than zero.             |
+| `MinDetailedRuns`               | `5`     | Detailed runs a seat needs before `seat.no-unique-catch` judges it. Greater than zero.                      |
 | `MinSettledFindings`            | `10`    | Settled findings a seat needs before `seat.high-false-positive` judges it. Greater than zero.               |
 | `FalsePositiveThreshold`        | `0.5`   | Refuted share above which a seat fires. Greater than 0 and at most 1.                                       |
 | `MinCatchesForConfirmationOnly` | `10`    | Accepted catches a seat needs before `seat.confirmation-only` judges it. Greater than zero.                 |
 | `CostOutlierMultiple`           | `3`     | Multiple of the peer median cost per unique catch that makes a seat an outlier. Greater than zero.          |
-| `CostOutlierMinPeerRuns`        | `3`     | Runs with finding rows a seat needs to take part in the cost comparison. Greater than zero.                 |
+| `CostOutlierMinPeerRuns`        | `3`     | Detailed runs a seat needs to take part in the cost comparison. Greater than zero.                          |
 | `CostOutlierMinPeers`           | `3`     | Peers needed to form a median. Greater than zero.                                                           |
 | `PlanWindowDays`                | `30`    | Days of usage the plan rules read, ending yesterday (UTC). Greater than zero.                               |
 | `PlanUsageRatio`                | `0.5`   | Usage-to-price ratio below which `plan.costs-more-than-use` fires. Greater than 0 and at most 1.            |

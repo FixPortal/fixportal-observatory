@@ -18,7 +18,7 @@ namespace AiObservatory.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.13")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -616,6 +616,11 @@ namespace AiObservatory.Data.Migrations
 
                     b.Property<decimal>("CostUsd")
                         .HasColumnType("numeric");
+
+                    b.Property<bool>("FindingsCaptured")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<long>("InputTokens")
                         .HasColumnType("bigint");

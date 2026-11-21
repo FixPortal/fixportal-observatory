@@ -17,8 +17,21 @@ public class SeatRulesTests
         decimal cost = 1m,
         bool unknown = false,
         int raised = 0,
-        int accepted = 0
-    ) => SeatMetricsCalculatorTests.ToRun(reviewer, model, "reviewer", cost, unknown, raised, accepted, runId, At);
+        int accepted = 0,
+        bool detailed = true
+    ) =>
+        SeatMetricsCalculatorTests.ToRun(
+            reviewer,
+            model,
+            "reviewer",
+            cost,
+            unknown,
+            raised,
+            accepted,
+            runId,
+            At,
+            findingsCaptured: detailed
+        );
 
     private static AdversarialReviewFinding Finding(string runId, string id, string outcome, params string[] raisers) =>
         SeatMetricsCalculatorTests.ToFinding(runId, id, outcome, raisers.Select(r => (r, ModelOf(r))));
@@ -80,7 +93,9 @@ public class SeatRulesTests
     public void Seat_rules_never_fire_from_counts_only_history()
     {
         // Ten older runs with accepted counts but no finding rows at all.
-        var runs = Enumerable.Range(1, 10).Select(i => Run("a", "model-a", $"OLD{i}", raised: 4, accepted: 3));
+        var runs = Enumerable
+            .Range(1, 10)
+            .Select(i => Run("a", "model-a", $"OLD{i}", raised: 4, accepted: 3, detailed: false));
         var inputs = Inputs(runs, []);
 
         new SeatNoUniqueCatchRule().Evaluate(inputs, Options).Evaluated.Should().BeFalse();
@@ -94,7 +109,7 @@ public class SeatRulesTests
         // Three counts-only runs plus three detailed ones: six runs, but only three are detailed.
         var runs = Enumerable
             .Range(1, 3)
-            .Select(i => Run("a", "model-a", $"OLD{i}", raised: 4, accepted: 3))
+            .Select(i => Run("a", "model-a", $"OLD{i}", raised: 4, accepted: 3, detailed: false))
             .Concat(Rows(3, "a", "b"));
         var findings = Enumerable.Range(1, 3).Select(i => Finding($"R{i}", "F1", "accepted", "a", "b"));
 
@@ -241,7 +256,7 @@ public class SeatRulesTests
     [Fact]
     public void Evidence_run_ids_list_only_detailed_runs()
     {
-        var runs = Rows(5, "a", "b").Append(Run("a", "model-a", "OLD1", raised: 4, accepted: 3));
+        var runs = Rows(5, "a", "b").Append(Run("a", "model-a", "OLD1", raised: 4, accepted: 3, detailed: false));
         var findings = Enumerable
             .Range(1, 5)
             .Select(i => Finding($"R{i}", "F1", "accepted", "a", "b"))

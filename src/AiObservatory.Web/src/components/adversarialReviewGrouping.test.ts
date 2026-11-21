@@ -19,6 +19,7 @@ function run(p: Partial<AdversarialReviewRun>): AdversarialReviewRun {
     costPerAcceptedFinding: null,
     costUnknown: false,
     chunkCount: null,
+    findingsCaptured: false,
     runId: 'R1',
     recordedAt: '2026-06-27T12:00:00Z',
     ...p,

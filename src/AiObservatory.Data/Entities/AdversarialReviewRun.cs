@@ -41,6 +41,12 @@ public sealed class AdversarialReviewRun
     public int? ChunkCount { get; init; }
 
     /// <summary>
+    /// True once a finding set was posted for this row's run, an empty set included. A run is
+    /// detailed when any of its rows carries it, so a clean run is not read as counts-only.
+    /// </summary>
+    public bool FindingsCaptured { get; init; }
+
+    /// <summary>
     /// Client-supplied utc-timestamp-slug used for idempotency.
     /// </summary>
     public string RunId { get; init; } = "";
