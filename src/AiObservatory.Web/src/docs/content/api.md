@@ -180,7 +180,7 @@ Create and replace take `provider`, `name` (required, up to 200 characters), `co
 | Method   | Route                            | Auth  | Purpose                                         |
 | -------- | -------------------------------- | ----- | ----------------------------------------------- |
 | `GET`    | `/api/insights`                  | Read  | The 50 newest insights plus every unread one.   |
-| `POST`   | `/api/insights/generate`         | Admin | Generate insights now for the current UTC date. |
+| `POST`   | `/api/insights/generate`         | Admin | Generate insights now for yesterday (UTC).      |
 | `POST`   | `/api/insights/{id}/acknowledge` | Admin | Mark an insight acknowledged (204).             |
 | `POST`   | `/api/insights/{id}/explain`     | Admin | Ask the model for implementation guidance.      |
 | `DELETE` | `/api/insights`                  | Admin | Delete all insights; alert records stay.        |

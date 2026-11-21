@@ -68,11 +68,13 @@ public static class InsightsEndpoints
             return Results.Ok(new { deleted });
         });
 
-        // Generate insights on demand for the current UTC date (same path the daily
-        // worker runs). Admin-key gated (POST). Returns how many were written.
+        // Generate insights on demand for yesterday (UTC), the same date the daily worker
+        // analyses. Today is partial, and analysing it would advance the daily watermark and
+        // make the next scheduled run skip that day. Admin-key gated (POST). Returns how many
+        // were written.
         app.MapPost("/insights/generate", async (IInsightGenerator generator, IClock clock, CancellationToken ct) =>
         {
-            var date = clock.GetCurrentInstant().InUtc().Date;
+            var date = clock.GetCurrentInstant().InUtc().Date.PlusDays(-1);
             var result = await generator.GenerateForDateAsync(date, ct);
             return Results.Ok(new { generated = result.Persisted });
         });
