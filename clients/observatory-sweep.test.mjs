@@ -2548,7 +2548,8 @@ test('main withholds corrections and tombstones for an incompletely scanned sour
     const discover = async dir => {
       const files = await listJsonl(dir)
       if (dir === join(codexHome, 'sessions')) {
-        files.push({ path: join(dir, 'vanished.jsonl'), mtimeMs: 1 })
+        // Its hold ends on its last-write day, so that day must cover the keys under test.
+        files.push({ path: join(dir, 'vanished.jsonl'), mtimeMs: Date.parse('2026-08-24T23:00:00Z') })
       }
       return files
     }
@@ -3072,18 +3073,19 @@ test('Codex increments combine per UTC date and model', () => {
 test('buildDailySnapshots attributes an array-level incomplete flag to its own tool', () => {
   const records = sweep.parseCodexRecords([CODEX_SOL, codexUsageRow('2026-10-25T12:00:00Z', -1, 0)].join('\n'))
   const snapshots = buildDailySnapshots(records, TEST_MACHINE)
-  assert.equal(snapshots.heldFrom.has(`codex-local@${TEST_MACHINE}`), true)
-  assert.equal(snapshots.heldFrom.has(`claude-local@${TEST_MACHINE}`), false)
+  assert.equal(snapshots.holds.has(`codex-local@${TEST_MACHINE}`), true)
+  assert.equal(snapshots.holds.has(`claude-local@${TEST_MACHINE}`), false)
 })
 
-test('Claude invalid counters hold only keys from that record day', () => {
+test('Claude invalid counters hold only the key of that record day', () => {
   const content = [
     claudePromptRow(COMPLETE_CLAUDE_PROMPT, { id: 'm1' }, '2026-10-22T12:00:00Z'),
     claudePromptRow({ ...COMPLETE_CLAUDE_PROMPT, input_tokens: -1 }, { id: 'm2' }, '2026-10-23T12:00:00Z'),
+    claudePromptRow(COMPLETE_CLAUDE_PROMPT, { id: 'm3' }, '2026-10-24T12:00:00Z'),
   ].join('\n')
   const snapshots = buildDailySnapshots(parseClaude(content), TEST_MACHINE)
-  assert.deepEqual(snapshots.map(snapshot => snapshot.eventKey.split(':')[1]), ['2026-10-22'])
-  assert.equal(snapshots.heldFrom.get(`claude-local@${TEST_MACHINE}`), '2026-10-23')
+  assert.deepEqual(snapshots.map(snapshot => snapshot.eventKey.split(':')[1]), ['2026-10-22', '2026-10-24'])
+  assert.deepEqual(snapshots.holds.get(`claude-local@${TEST_MACHINE}`), [{ from: '2026-10-23', through: '2026-10-23' }])
 })
 
 test('Claude truncated row holds from the preceding valid row day', () => {
@@ -3102,12 +3104,19 @@ test('planSnapshotSubmissions applies per-key holds to submissions and tombstone
   })
   const snapshots = [snapshot('2026-10-22'), snapshot('2026-10-24')]
   const inventory = [snapshot('2026-10-20'), snapshot('2026-10-23'), snapshot('2026-10-24')]
-  const holds = new Map([['claude-local@m', '2026-10-23']])
+  const holds = new Map([['claude-local@m', [{ from: '2026-10-23', through: undefined }]]])
   const plan = planSnapshotSubmissions(snapshots, inventory, holds)
   assert.deepEqual(
     plan.map(item => `${item.active ? 'post' : 'tombstone'} ${item.snapshot.eventKey.split(':')[1]}`),
     ['post 2026-10-22', 'tombstone 2026-10-20'],
   )
+})
+
+test('a hold range releases the days after its through-day', () => {
+  const snapshot = day => ({ sourceId: 'claude-local@m', eventKey: `claude:${day}:m:u:u:u`, runtime: 'claude', inputTokens: 1 })
+  const holds = new Map([['claude-local@m', [{ from: '', through: '2026-10-22' }, { from: '2026-10-24', through: '2026-10-24' }]]])
+  const plan = planSnapshotSubmissions(['2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25'].map(snapshot), [], holds)
+  assert.deepEqual(plan.map(item => item.snapshot.eventKey.split(':')[1]), ['2026-10-23', '2026-10-25'])
 })
 
 test('updateFileCache reports held files, the earliest hold and counted cache reuse', async () => {
@@ -3130,7 +3139,8 @@ test('updateFileCache reports held files, the earliest hold and counted cache re
     }, async path => { if (path === 'c') { throw new Error('locked') } return path })
   } finally { console.error = original }
   assert.equal(result.incomplete, true)
-  assert.equal(result.holdFrom, '2026-10-26')
+  // mtimeMs 2 is 1970-01-01, so the range is extended to the hold day itself rather than released.
+  assert.deepEqual(result.holds, [{ from: '2026-10-26', through: '2026-10-26' }])
   assert.equal(result.heldFiles, 1)
   assert.equal(result.reusedFiles, 1)
   assert.equal(lines.some(line => /reusing cached records/.test(line)), true)
@@ -3148,7 +3158,7 @@ test('scanRecords exposes per-tool hold dates and held file counts', async () =>
   try {
     const cfg = { codexHome: join(root, 'codex'), copilotHome: join(root, 'c'), claudeHome: join(root, 'cl'), kimiHome: join(root, 'k'), geminiHome: join(root, 'g') }
     const scan = await scanRecords(cfg, {}, new Set(['codex']))
-    assert.equal(scan.heldFrom.get('codex'), '2026-10-23')
+    assert.deepEqual(scan.holds.get('codex').map(hold => hold.from), ['2026-10-23'])
     assert.equal(scan.heldFiles.get('codex'), 1)
   } finally { await removeTemp(root) }
 })
@@ -3183,8 +3193,8 @@ test('one bad Codex row holds later days while earlier days keep posting (R-F3 t
     const scan = await scanRecords(cfg, {}, new Set(['codex']))
     const snapshots = buildDailySnapshots(scan.records, TEST_MACHINE)
     const holds = sweep.mergeHolds(
-      new Map([...scan.heldFrom].map(([tool, from]) => [`${tool}-local@${TEST_MACHINE}`, from])),
-      snapshots.heldFrom,
+      new Map([...scan.holds].map(([tool, ranges]) => [`${tool}-local@${TEST_MACHINE}`, ranges])),
+      snapshots.holds,
     )
     const plan = planSnapshotSubmissions(snapshots, [], holds)
     assert.deepEqual(plan.map(item => item.snapshot.eventKey.split(':')[1]), ['2026-10-22'])
@@ -3251,7 +3261,7 @@ test('an undecodable Antigravity conversation is not a verified-empty source', a
     const scan = await scanRecords(cfg, {}, new Set(['antigravity']))
     assert.equal(scan.incompleteSources.has('antigravity'), true)
     assert.equal(scan.emptySources.has('antigravity'), false)
-    assert.equal(scan.heldFrom.get('antigravity'), '2026-08-24')
+    assert.deepEqual(scan.holds.get('antigravity').map(hold => hold.from), ['2026-08-24'])
   } finally { await removeTemp(root) }
 })
 
@@ -3434,31 +3444,32 @@ async function runMainWith({ root, statePath, server, sources = 'codex' }) {
   return errors
 }
 
-function recordingServer(legacyKeys = []) {
+function recordingServer(legacyKeys = [], machineKeys = []) {
   const posts = []
+  const statuses = []
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1')
     if (request.method === 'GET' && url.pathname === '/api/events/local-snapshots') {
-      const body = url.searchParams.get('sourceId') === 'codex-local'
-        ? legacyKeys.map(eventKey => ({
-          provider: 'openai', occurredAtUtc: '2026-08-10T12:00:00Z', model: 'gpt-5.5', inputTokens: 40,
-          outputTokens: 9, costUsd: null, runtime: 'codex', sourceId: 'codex-local',
-          sourceKind: 'localTelemetry', usageScope: 'subscription', costBasis: 'notional', eventKey,
-        }))
-        : []
+      const sourceId = url.searchParams.get('sourceId')
+      const keys = sourceId === 'codex-local' ? legacyKeys : sourceId === 'codex-local@test-machine' ? machineKeys : []
+      const body = keys.map(eventKey => ({
+        provider: 'openai', occurredAtUtc: '2026-08-10T12:00:00Z', model: eventKey.split(':')[2], inputTokens: 40,
+        outputTokens: 9, costUsd: null, runtime: 'codex', sourceId,
+        sourceKind: 'localTelemetry', usageScope: 'subscription', costBasis: 'notional', eventKey,
+      }))
       response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(body))
       return
     }
-    if (request.method === 'POST' && url.pathname === '/api/events') {
+    if (request.method === 'POST' && (url.pathname === '/api/events' || url.pathname === '/api/sources/sweep-status')) {
       let body = ''
       for await (const chunk of request) { body += chunk }
-      posts.push(JSON.parse(body))
+      ;(url.pathname === '/api/events' ? posts : statuses).push(JSON.parse(body))
       response.writeHead(200, { 'Content-Type': 'application/json' }).end('{}')
       return
     }
     response.writeHead(200).end('{}')
   })
-  return { server, posts }
+  return { server, posts, statuses }
 }
 
 // C3-P1
@@ -3531,3 +3542,58 @@ test('an unparseable state file is reported rather than silently treated as empt
     await removeTemp(root)
   }
 })
+
+// --- Remediation batch70, lane S --------------------------------------------
+
+const CODEX_GPT55 = JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } })
+
+// A finished Codex file whose counter regresses on 2026-10-01 and was last written that day.
+async function writeHeldFinishedCodex(sessions) {
+  const finished = join(sessions, 'finished.jsonl')
+  await writeFile(finished, [
+    CODEX_GPT55,
+    codexUsageRow('2026-10-01T12:00:00Z', 100, 10),
+    codexUsageRow('2026-10-01T13:00:00Z', 50, 5),
+  ].join('\n'))
+  await utimes(finished, new Date('2026-10-01T20:00:00Z'), new Date('2026-10-01T20:00:00Z'))
+}
+
+async function withRecordingServer(recording, run) {
+  await new Promise(resolve => recording.server.listen(0, '127.0.0.1', resolve))
+  try { await run() } finally { await new Promise(resolve => recording.server.close(resolve)) }
+}
+
+const machinePosts = (posts, sourceId = 'codex-local@test-machine') => posts.filter(body => body.sourceId === sourceId)
+const isTombstone = body => JSON.parse(body.rawPayload).tombstone === true
+
+// C3-C3
+test('a held finished file stops holding at its own last-write day, parsed or cached', async () => {
+  const root = await makeTemp('observatory-hold-range-')
+  const sessions = join(root, 'codex', 'sessions')
+  await mkdir(sessions, { recursive: true })
+  await writeHeldFinishedCodex(sessions)
+  await writeFile(join(sessions, 'later.jsonl'), [CODEX_GPT55, codexUsageRow('2026-10-05T12:00:00Z', 10, 5)].join('\n'))
+  const recording = recordingServer()
+  const statePath = join(root, 'state', 'sweep.json')
+  try {
+    await withRecordingServer(recording, async () => {
+      for (const run of ['parsed', 'cached']) {
+        recording.posts.length = 0
+        await runMainWith({ root, statePath, server: recording.server })
+        assert.deepEqual(machinePosts(recording.posts).map(body => body.eventKey), ['codex:2026-10-05:gpt-5.5'], run)
+      }
+    })
+  } finally { await removeTemp(root) }
+})
+
+// C3-C3
+test('a file hold never ends before the latest day the file records, whatever its timestamp says', async () => {
+  const result = await updateFileCache([{ path: 'a', mtimeMs: Date.parse('2026-01-01T00:00:00Z') }], {}, () => {
+    const parsed = [{ tool: 'codex', date: '2026-10-03' }]
+    parsed.incomplete = true
+    parsed.holdFrom = '2026-10-02'
+    return parsed
+  }, async path => path)
+  assert.deepEqual(result.holds, [{ from: '2026-10-02', through: '2026-10-03' }])
+})
+

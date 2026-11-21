@@ -79,14 +79,32 @@ function roundCost(value) {
   return Number.isFinite(value) ? Number(value.toFixed(10)) : 0
 }
 
-// A hold names the first UTC day (YYYY-MM-DD) whose keys a fault can affect: '' holds every key
-// of the source, undefined holds none. Keys before that day are complete and keep flowing.
+// A parser's hold names the first UTC day (YYYY-MM-DD) whose keys a fault can affect: '' holds every
+// key of the source, undefined holds none. Keys before that day are complete and keep flowing.
 // Because undefined means "no hold", every place that turns a fault into a hold defaults a missing
 // day to '' (the `?? ''` below) so an absent value fails closed instead of silently releasing keys.
 function earlierHold(a, b) {
   if (a === undefined) { return b }
   if (b === undefined) { return a }
   return a < b ? a : b
+}
+
+// A source's holds are ranges `{ from, through }` of UTC days: from '' starts before every day and
+// through undefined never ends. A file cannot contain usage dated after its own last write, so a
+// hold raised from a file ends on that file's last-write day; a record dated later than that (clock
+// skew) or a hold day past it extends the range, so a range never ends before what it was raised for.
+function fileHoldThrough(file, records, from) {
+  const lastWriteMs = file.lastWriteMs ?? file.mtimeMs
+  if (!Number.isFinite(lastWriteMs)) { return undefined }
+  return records.reduce(
+    (day, record) => (typeof record.date === 'string' && record.date > day ? record.date : day),
+    [new Date(lastWriteMs).toISOString().slice(0, 10), from].sort().at(-1),
+  )
+}
+
+function describeHold({ from, through }) {
+  if (through === undefined) { return from === '' ? 'every day' : `${from} and later` }
+  return from === '' ? `every day through ${through}` : `${from} through ${through}`
 }
 
 function isoTimestamp(value) {
@@ -1017,16 +1035,17 @@ export function buildDailySnapshots(records, machine) {
   const groups = new Map()
   // Kept outside each HTTP snapshot. A malformed unselected streaming copy is
   // still unsafe evidence, so inspect the original records before deduplication.
-  const heldFrom = new Map()
-  const holdSource = (sourceId, from) => heldFrom.set(sourceId, earlierHold(heldFrom.get(sourceId), from))
+  const holds = new Map()
+  const holdSource = (sourceId, from, through) => holds.set(sourceId, [...(holds.get(sourceId) ?? []), { from, through }])
   if (records.incomplete) {
     // The flag belongs to the tool whose parser set it; an untagged array holds every tool it carries.
     const tools = records.incompleteTool ? [records.incompleteTool] : [...new Set(records.map(record => record.tool))]
     for (const tool of tools) { holdSource(localSourceId(tool, machine), records.holdFrom ?? '') }
   }
+  // A record's own fault affects only its own day's key.
   for (const record of records) {
     if (record.tool === 'claude' && record.claudeInvalidCounters) {
-      holdSource(localSourceId('claude', machine), record.date ?? '')
+      holdSource(localSourceId('claude', machine), record.date ?? '', record.date)
     }
   }
   for (const record of deduplicateClaudeRecords(records)) {
@@ -1072,7 +1091,7 @@ export function buildDailySnapshots(records, machine) {
     const usage = recordTokens(record)
     for (const [key, value] of Object.entries({ ...usage, cacheWrite5m: token(record.cacheWrite5mTokens) })) {
       if (record.tool === 'claude' && checkedTokenSum([group[key], value]) === null) {
-        holdSource(metadata.sourceId, record.date)
+        holdSource(metadata.sourceId, record.date, record.date)
       }
       group[key] += value
     }
@@ -1085,7 +1104,7 @@ export function buildDailySnapshots(records, machine) {
   }
 
   const snapshots = [...groups.values()]
-    .filter(group => !isHeld(heldFrom, group.sourceId, group.eventKey) && [group.input, group.output, group.cacheRead, group.cacheWrite, group.thought].some(value => value > 0))
+    .filter(group => !isHeld(holds, group.sourceId, group.eventKey) && [group.input, group.output, group.cacheRead, group.cacheWrite, group.thought].some(value => value > 0))
     .sort((a, b) => a.eventKey.localeCompare(b.eventKey))
     .map(group => {
       return {
@@ -1127,27 +1146,28 @@ export function buildDailySnapshots(records, machine) {
         }),
       }
     })
-  Object.defineProperty(snapshots, 'heldFrom', { value: heldFrom })
+  Object.defineProperty(snapshots, 'holds', { value: holds })
   return snapshots
 }
 
-/** Merge hold maps (sourceId or tool to first held UTC day), keeping the earliest day per key. */
+/** Merge hold maps (sourceId or tool to its held day ranges), keeping every range per key. */
 export function mergeHolds(...maps) {
   const merged = new Map()
   for (const map of maps) {
-    for (const [key, from] of map) { merged.set(key, earlierHold(merged.get(key), from)) }
+    for (const [key, ranges] of map) { merged.set(key, [...(merged.get(key) ?? []), ...ranges]) }
   }
   return merged
 }
 
+const eventKeyDay = eventKey => /^[^:]+:(\d{4}-\d{2}-\d{2})(?::|$)/.exec(eventKey)?.[1]
+
 // eventKey is `<tool>:<UTC date>:...` for every local-telemetry key. A key with no readable date
-// is held whenever its source has any hold, because its day cannot be shown to precede it.
-function isHeld(heldFrom, sourceId, eventKey) {
-  const from = heldFrom.get(sourceId)
-  if (from === undefined) { return false }
-  if (from === '') { return true }
-  const day = /^[^:]+:(\d{4}-\d{2}-\d{2})(?::|$)/.exec(eventKey)?.[1]
-  return day === undefined || day >= from
+// is held whenever its source has any hold, because its day cannot be shown to lie outside it.
+function isHeld(holds, sourceId, eventKey) {
+  const ranges = holds.get(sourceId) ?? []
+  const day = eventKeyDay(eventKey)
+  return ranges.some(({ from, through }) =>
+    day === undefined || ((from === '' || day >= from) && (through === undefined || day <= through)))
 }
 
 function zeroSnapshot(snapshot) {
@@ -1169,12 +1189,12 @@ function zeroSnapshot(snapshot) {
 }
 
 /** Plan current snapshots plus zero corrections for server keys that vanished locally. */
-export function planSnapshotSubmissions(snapshots, inventory = [], heldFrom = snapshots.heldFrom ?? new Map()) {
+export function planSnapshotSubmissions(snapshots, inventory = [], holds = snapshots.holds ?? new Map()) {
   const identity = snapshot => `${snapshot.sourceId}\n${snapshot.eventKey}`
   const currentKeys = new Set(snapshots.map(identity))
-  const submissions = snapshots.filter(snapshot => !isHeld(heldFrom, snapshot.sourceId, snapshot.eventKey)).map(snapshot => ({ snapshot, active: true }))
+  const submissions = snapshots.filter(snapshot => !isHeld(holds, snapshot.sourceId, snapshot.eventKey)).map(snapshot => ({ snapshot, active: true }))
   for (const snapshot of Object.values(inventory)) {
-    if (isHeld(heldFrom, snapshot.sourceId, snapshot.eventKey)) { continue }
+    if (isHeld(holds, snapshot.sourceId, snapshot.eventKey)) { continue }
     if (!currentKeys.has(identity(snapshot))) {
       // ponytail: /api/events has correction but no deletion. Zero corrections
       // leave a one-request ceiling per removed key; add deletion only if request counts need exact removal.
@@ -1193,10 +1213,15 @@ export async function updateFileCache(files, cache, parse, read = path => readFi
   const next = {}
   const records = []
   let incomplete = false
-  // Earliest held UTC day across files ('' = whole source), files that hold, and cache reuses.
-  let holdFrom
+  // Held day ranges (one per held file), files that hold, and cache reuses.
+  const holds = []
   let heldFiles = 0
   let reusedFiles = 0
+  const holdFile = (file, from, fileRecords) => {
+    incomplete = true
+    heldFiles++
+    holds.push({ from, through: fileHoldThrough(file, fileRecords, from) })
+  }
   for (const file of files) {
     const cached = cache?.[file.path]
     const unchanged = file.cacheKey === undefined
@@ -1218,16 +1243,15 @@ export async function updateFileCache(files, cache, parse, read = path => readFi
           reusedFiles++
           console.error(`Read failed for ${file.path}; reusing cached records (${reusedFiles} reused this scan): ${error.message}`)
           next[file.path] = cached
-          if (cached.incomplete) { incomplete = true; heldFiles++; holdFrom = earlierHold(holdFrom, cached.holdFrom ?? '') }
+          if (cached.incomplete) { holdFile(file, cached.holdFrom ?? '', cached.records) }
           for (const record of cached.records) { records.push(record) }
         } else {
           // Unreadable with no cached records. "Nothing was ever posted from this
           // file" only holds within one cache generation: a version bump wipes the
           // cache while the file's keys stay live in server inventory, so the scan
-          // is incomplete and the source's corrections and tombstones are withheld.
-          incomplete = true
-          heldFiles++
-          holdFrom = earlierHold(holdFrom, '')
+          // is incomplete and the source's corrections and tombstones are withheld
+          // for every day up to the file's last write.
+          holdFile(file, '', [])
           log(`Read failed for ${file.path}; no cached records yet:`, error.message)
         }
         continue
@@ -1239,14 +1263,10 @@ export async function updateFileCache(files, cache, parse, read = path => readFi
         ...(parsed?.incomplete ? { incomplete: true, holdFrom: parsed.holdFrom ?? '' } : {}),
       }
     }
-    if (next[file.path].incomplete) {
-      incomplete = true
-      heldFiles++
-      holdFrom = earlierHold(holdFrom, next[file.path].holdFrom ?? '')
-    }
+    if (next[file.path].incomplete) { holdFile(file, next[file.path].holdFrom ?? '', next[file.path].records) }
     for (const record of next[file.path].records) { records.push(record) }
   }
-  return { cache: next, records, incomplete, holdFrom, heldFiles, reusedFiles }
+  return { cache: next, records, incomplete, holds, heldFiles, reusedFiles }
 }
 
 export function parseLocalSources(value) {
@@ -1488,12 +1508,12 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
   const records = []
   const incompleteSources = new Set()
   const emptySources = new Set()
-  const heldFrom = new Map()
+  const holds = new Map()
   const heldFiles = new Map()
   const noteScan = async (tool, root, result, accept) => {
     if (result.incomplete) {
       incompleteSources.add(tool)
-      heldFrom.set(tool, result.holdFrom ?? '')
+      holds.set(tool, result.holds)
       heldFiles.set(tool, result.heldFiles)
     }
     else if (result.records.length === 0 && await discoveryRootPopulated(root, accept)) { emptySources.add(tool) }
@@ -1573,7 +1593,7 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
       const transcriptPath = join(conversationRoot, 'brain', sessionId, '.system_generated', 'logs', 'transcript.jsonl')
       try {
         const transcript = await stat(transcriptPath)
-        files.push({ ...file, transcriptPath, cacheKey: `${file.mtimeMs}:${transcript.mtimeMs}` })
+        files.push({ ...file, transcriptPath, lastWriteMs: Math.max(file.mtimeMs, transcript.mtimeMs), cacheKey: `${file.mtimeMs}:${transcript.mtimeMs}` })
       } catch (error) {
         if (error?.code !== 'ENOENT') { throw error }
         // A database whose transcript is gone is not an absent conversation: keep it in
@@ -1611,7 +1631,7 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
     for (const record of result.records) { records.push(record) }
   }
 
-  return { records, incompleteSources, emptySources, heldFrom, heldFiles }
+  return { records, incompleteSources, emptySources, holds, heldFiles }
 }
 
 export async function main({ discover = listJsonl, now = () => new Date() } = {}) {
@@ -1639,7 +1659,7 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   const { inventory, failedSources } = DRY_RUN
     ? { inventory: [], failedSources: new Set() }
     : await fetchSnapshotInventory(url, apiKey, enabled, machine)
-  const { records, incompleteSources, emptySources, heldFrom, heldFiles } = await scanRecords(cfg, state, enabled, discover)
+  const { records, incompleteSources, emptySources, holds: scanHolds, heldFiles } = await scanRecords(cfg, state, enabled, discover)
   const snapshots = buildDailySnapshots(records, machine)
   const unplaced = countUnplaced(records, machine)
   for (const { tool, model, count } of unplaced) {
@@ -1648,12 +1668,12 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   // Incomplete sources can be removed before submission planning. Report them once
   // before any POST, including incompleteness restored from the parse cache.
   const holds = mergeHolds(
-    new Map([...heldFrom].map(([tool, from]) => [localSourceId(tool, machine), from])),
-    snapshots.heldFrom,
+    new Map([...scanHolds].map(([tool, ranges]) => [localSourceId(tool, machine), ranges])),
+    snapshots.holds,
   )
-  for (const [sourceId, from] of holds) {
-    const scope = from === '' ? 'every day' : `${from} and later`
-    console.error(`Scan incomplete for ${sourceId} (possible causes: unreadable file, malformed JSONL, malformed assistant usage or timestamp, or invalid or overflowed counters); keys for ${scope} are held until the affected file(s) parse cleanly, which can be many runs; earlier keys are unaffected.`)
+  for (const [sourceId, ranges] of holds) {
+    const scope = ranges.map(describeHold).join(', ')
+    console.error(`Scan incomplete for ${sourceId} (possible causes: unreadable file, malformed JSONL, malformed assistant usage or timestamp, or invalid or overflowed counters); keys for ${scope} are held until the affected file(s) parse cleanly or are deleted, which can be many runs; keys for other days are unaffected.`)
   }
   const heldFileCount = [...heldFiles.values()].reduce((sum, count) => sum + count, 0)
   // A held scan may be missing the very records that were unplaced; a clean report then would
