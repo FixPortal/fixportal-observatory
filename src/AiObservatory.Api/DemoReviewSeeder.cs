@@ -106,6 +106,7 @@ internal static class DemoReviewSeeder
                         ReviewDurationMs = 38000 + index * 2900,
                         IssuesRaised = raised,
                         IssuesAccepted = accepted,
+                        FindingsCaptured = true,
                     }
                 );
             }
@@ -124,6 +125,7 @@ internal static class DemoReviewSeeder
                     OutputTokens = 1500 + index * 70,
                     CostUsd = 0.62m + index * 0.03m,
                     ReviewDurationMs = 29000 + index * 1100,
+                    FindingsCaptured = true,
                 }
             );
         }
