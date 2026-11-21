@@ -124,6 +124,46 @@ public sealed class AuditRunsEndpointsWafTests : IAsyncLifetime
         (await admin.SendAsync(request, Ct)).StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
+    // CanHaveBody can be true for a zero-length stream; an omitted envelope must still be accepted.
+    [Fact]
+    public async Task Replay_StreamedEmptyBodyIsTreatedAsAnOmittedEnvelope()
+    {
+        await using var streamed = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services => services.AddSingleton<IStartupFilter, EmptyStreamedBodyStartup>())
+        );
+        using var admin = streamed.CreateClient();
+        admin.DefaultRequestHeaders.Add("X-Observatory-Key", AiObservatoryApiFactory.AdminKey);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/audits/runs/{Guid.NewGuid()}/replay");
+        request.Headers.Add("Idempotency-Key", "streamed-empty-replay");
+        var response = await admin.SendAsync(request, Ct);
+        response.StatusCode.Should().NotBe(HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().NotBe(HttpStatusCode.BadRequest);
+    }
+
+    private sealed class EmptyStreamedBodyStartup : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
+            app =>
+            {
+                app.Use(
+                    async (context, invokeNext) =>
+                    {
+                        if (context.Request.Path.Value!.EndsWith("/replay", StringComparison.Ordinal))
+                        {
+                            context.Request.ContentLength = null;
+                            context.Request.Headers.Remove("Transfer-Encoding");
+                            context.Request.Body = new MemoryStream();
+                            context.Features.Set<Microsoft.AspNetCore.Http.Features.IHttpRequestBodyDetectionFeature>(
+                                new BodyDetected()
+                            );
+                        }
+                        await invokeNext();
+                    }
+                );
+                next(app);
+            };
+    }
+
     /// <summary>Presents the request the way an HTTP/2 stream does: a body, no Content-Length, no Transfer-Encoding.</summary>
     private sealed class StreamedBodyStartup : IStartupFilter
     {

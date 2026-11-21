@@ -137,7 +137,13 @@ public static class AuditRunEndpoints
         {
             return;
         }
-        using var doc = JsonDocument.Parse(await AuditCaptureProtocol.ReadAsync(request, 4096, ct));
+        var body = await AuditCaptureProtocol.ReadAsync(request, 4096, ct);
+        if (body.Length == 0)
+        {
+            // CanHaveBody can be true for a zero-length stream: that is an omitted envelope.
+            return;
+        }
+        using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
         if (
             root.ValueKind != JsonValueKind.Object
