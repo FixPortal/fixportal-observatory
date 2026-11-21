@@ -55,7 +55,9 @@ test('the web proxy injects the admin key only for same-origin browsers or a bod
   const host = 'observatory.example'
   const cases = [
     [{ method: 'POST', site: 'same-origin' }, '1'],
-    [{ method: 'POST', site: 'none' }, '1'],
+    // `none` is a user-typed navigation; the SPA never writes with it, so it may only carry reads.
+    [{ method: 'POST', site: 'none' }, '0'],
+    [{ method: 'GET', site: 'none' }, '1'],
     [{ method: 'POST', site: 'cross-site' }, '0'],
     [{ method: 'POST', origin: `https://${host}`, host }, '1'],
     [{ method: 'POST', origin: 'https://evil.example', host }, '0'],
@@ -71,6 +73,23 @@ test('the web proxy injects the admin key only for same-origin browsers or a bod
   for (const [request, expected] of cases) {
     assert.equal(sameOriginDecision(template, request), expected, JSON.stringify(request))
   }
+})
+
+// DNS rebinding: a page at http://attacker:4173 re-resolved to loopback is same-origin with the
+// proxy and matches the key rules, so the Host itself must be refused, not just the key withheld.
+test('the web proxy refuses every Host it is not configured to serve', async () => {
+  const template = await read('src/AiObservatory.Web/nginx.conf.template')
+  const dockerfile = await read('src/AiObservatory.Web/Dockerfile')
+  const servers = [...template.matchAll(/^server\s*\{([\s\S]*?)^\}/gm)].map(m => m[1])
+  assert.equal(servers.length, 2, 'expected one catch-all server and one real server')
+  const catchAll = servers.find(s => /listen\s+80\s+default_server/.test(s))
+  assert.ok(catchAll, 'a `listen 80 default_server` block must catch every unknown Host')
+  assert.match(catchAll, /return\s+444\s*;/)
+  const real = servers.find(s => s !== catchAll)
+  assert.match(real, /server_name\s+\$\{OBSERVATORY_ALLOWED_HOSTS\}\s*;/)
+  assert.doesNotMatch(real, /default_server/)
+  assert.match(dockerfile, /NGINX_ENVSUBST_FILTER="[^"]*ALLOWED_HOSTS/)
+  assert.match(dockerfile, /OBSERVATORY_ALLOWED_HOSTS="localhost 127\.0\.0\.1"/)
 })
 
 test('deploy-ingest deploys only after the API deploy', async () => {
