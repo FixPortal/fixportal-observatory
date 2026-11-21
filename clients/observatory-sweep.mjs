@@ -1253,6 +1253,11 @@ export async function updateFileCache(files, cache, parse, read = path => readFi
           // for every day up to the file's last write.
           holdFile(file, '', [])
           log(`Read failed for ${file.path}; no cached records yet:`, error.message)
+          // A failure that lasts until the file changes (an Antigravity database whose transcript
+          // is gone) is cached under its key, so later runs restore the same bounded hold.
+          if (file.cacheFailure) {
+            next[file.path] = { mtimeMs: file.mtimeMs, cacheKey: file.cacheKey, records: [], incomplete: true, holdFrom: '' }
+          }
         }
         continue
       }
@@ -1597,9 +1602,10 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
       } catch (error) {
         if (error?.code !== 'ENOENT') { throw error }
         // A database whose transcript is gone is not an absent conversation: keep it in
-        // the scan under a key that never matches the cache, so the parse's read fails and
-        // updateFileCache reuses the cached records or flags the source incomplete.
-        files.push({ ...file, transcriptPath, cacheKey: `${file.mtimeMs}:no-transcript` })
+        // the scan under a key no parsed entry carries, so the parse's read fails and
+        // updateFileCache reuses the cached records, or else caches a hold through the
+        // database's last-write day under this key.
+        files.push({ ...file, transcriptPath, cacheKey: `${file.mtimeMs}:no-transcript`, cacheFailure: true })
       }
     }
     const result = await updateFileCache(
