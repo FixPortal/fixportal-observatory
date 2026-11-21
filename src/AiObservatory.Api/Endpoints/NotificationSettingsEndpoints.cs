@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AiObservatory.Data;
+using AiObservatory.Data.Security;
 using Microsoft.EntityFrameworkCore;
 using MimeKit;
 using NodaTime;
@@ -164,14 +165,21 @@ public static class NotificationSettingsEndpoints
         settings.UpdatedAt = clock.GetCurrentInstant();
     }
 
-    private static object ToResponse(string? email, string? slackWebhookUrl) =>
-        new
+    private static object ToResponse(string? email, string? storedSlackWebhookUrl)
+    {
+        // An undecryptable webhook cannot be sent to (SlackAlertNotifier refuses it), so it is
+        // reported as not configured rather than as a live channel.
+        var slackWebhookUrl = SlackWebhookProtector.IsUndecryptable(storedSlackWebhookUrl)
+            ? null
+            : storedSlackWebhookUrl;
+        return new
         {
             emailConfigured = !string.IsNullOrEmpty(email),
             emailMasked = NotificationMasking.MaskEmail(email),
             slackConfigured = !string.IsNullOrEmpty(slackWebhookUrl),
             slackMasked = NotificationMasking.MaskWebhookUrl(slackWebhookUrl),
         };
+    }
 
     // Internal so the Program.cs startup seed can apply the same validation the PUT endpoint
     // uses (S4: an invalid BUDGET_ALERT_EMAIL_TO must not reach the database unvalidated).
