@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using AiObservatory.Audit.Bundles;
 using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
+using AiObservatory.Testing;
 using AwesomeAssertions;
 
 namespace AiObservatory.Audit.Cli.Tests;
@@ -260,15 +261,10 @@ public sealed class ReplayCommandTests
 
     private sealed class TestDirectory : IDisposable
     {
-        internal string Path { get; } =
-            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "audit-cli-" + Guid.NewGuid().ToString("N"));
+        private readonly OwnedTempDirectory _owned = OwnedTempDirectory.Create("audit-cli-");
 
-        public void Dispose()
-        {
-            if (Directory.Exists(Path))
-            {
-                Directory.Delete(Path, true);
-            }
-        }
+        internal string Path => _owned.Path;
+
+        public void Dispose() => _owned.Delete();
     }
 }

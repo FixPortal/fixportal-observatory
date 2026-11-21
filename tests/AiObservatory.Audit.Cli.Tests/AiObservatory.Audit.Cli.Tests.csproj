@@ -11,6 +11,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/AiObservatory.Audit.Cli/AiObservatory.Audit.Cli.csproj" />
+    <Compile Include="../OwnedTempDirectory.cs" Link="OwnedTempDirectory.cs" />
     <None Include="../fixtures/audit/*" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/AiObservatory.Audit.Cli/bin/$(Configuration)/$(TargetFramework)/AiObservatory.Audit.Cli.runtimeconfig.json" Link="AiObservatory.Audit.Cli.runtimeconfig.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/AiObservatory.Audit.Cli/bin/$(Configuration)/$(TargetFramework)/AiObservatory.Audit.Cli.deps.json" Link="AiObservatory.Audit.Cli.deps.json" CopyToOutputDirectory="PreserveNewest" />
