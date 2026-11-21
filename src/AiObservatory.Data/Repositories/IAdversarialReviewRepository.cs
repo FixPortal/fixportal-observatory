@@ -22,7 +22,15 @@ public record AdversarialReviewStats(
 public interface IAdversarialReviewRepository
 {
     Task<(Guid Id, bool Existed)> RecordRunAsync(AdversarialReviewRun run, CancellationToken ct = default);
-    Task<IReadOnlyList<AdversarialReviewRun>> GetRunsAsync(string? runId = null, CancellationToken ct = default);
+
+    /// <param name="runId">When set, only rows of this run.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <param name="since">When set, only rows recorded at or after this instant.</param>
+    Task<IReadOnlyList<AdversarialReviewRun>> GetRunsAsync(
+        string? runId = null,
+        CancellationToken ct = default,
+        Instant? since = null
+    );
     Task<IReadOnlyList<AdversarialReviewStats>> GetStatsAsync(CancellationToken ct = default);
 
     /// <summary>Runs recorded in [from, toExclusive), so a windowed caller does not read the whole history.</summary>

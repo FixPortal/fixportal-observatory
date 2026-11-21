@@ -41,6 +41,8 @@ import {
   type NotificationSettings,
 } from './client'
 import { dashboardDateRange } from '../lib/dateRange'
+import { useClock } from '../lib/useClock'
+import { findingsWindowStart } from './useAdversarialFindings'
 export { AGGREGATES_DAYS_RANGE, dashboardDateRange } from '../lib/dateRange'
 
 export const invalidateSpendData = (queryClient: QueryClient) =>
@@ -238,11 +240,17 @@ export function useAdversarialReviewRuns(): {
   isError: boolean
   isLoading: boolean
 } {
+  // The same window the Seats tab applies to findings and runs; Recent runs shows it too.
+  const clock = useClock()
+  const since = useMemo(() => findingsWindowStart(clock), [clock])
   const {
     data = [],
     isError,
     isPending,
-  } = useQuery({ queryKey: ['adversarial-review-runs'], queryFn: getAdversarialReviewRuns })
+  } = useQuery({
+    queryKey: ['adversarial-review-runs', since],
+    queryFn: () => getAdversarialReviewRuns(since),
+  })
   return { runs: data, isError, isLoading: isPending }
 }
 

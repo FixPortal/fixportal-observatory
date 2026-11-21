@@ -113,13 +113,18 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
 
     public async Task<IReadOnlyList<AdversarialReviewRun>> GetRunsAsync(
         string? runId = null,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        Instant? since = null
     )
     {
         var query = ctx.AdversarialReviewRuns.AsNoTracking();
         if (runId is not null)
         {
             query = query.Where(r => r.RunId == runId);
+        }
+        if (since is { } floor)
+        {
+            query = query.Where(r => r.RecordedAt >= floor);
         }
         return await query.OrderByDescending(r => r.RecordedAt).ToListAsync(ct);
     }

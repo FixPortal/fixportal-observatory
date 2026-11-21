@@ -1,7 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using AiObservatory.Data;
+using AiObservatory.Data.Entities;
 using AwesomeAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using NodaTime;
 
 namespace AiObservatory.Api.IntegrationTests;
 
@@ -39,6 +43,35 @@ public class AdversarialReviewEndpointsTests(AiObservatoryApiFactory factory)
 
         runs.GetArrayLength().Should().Be(1);
         runs[0].GetProperty("costUnknown").GetBoolean().Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("?since=2021-01-01", false)]
+    [InlineData("?since=2020-01-01", true)]
+    public async Task GetRuns_returns_every_row_unless_since_bounds_it_by_recorded_date(string query, bool included)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var runId = $"since-window-{Guid.NewGuid():N}";
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+            db.AdversarialReviewRuns.Add(
+                new AdversarialReviewRun
+                {
+                    Reviewer = "zai",
+                    Model = "glm",
+                    RunId = runId,
+                    RecordedAt = Instant.FromUtc(2020, 1, 1, 0, 0),
+                }
+            );
+            await db.SaveChangesAsync(ct);
+        }
+        using var client = factory.CreateAdminClient();
+
+        var runs = await client.GetFromJsonAsync<JsonElement>($"/api/adversarial-review/runs{query}", ct);
+
+        runs.EnumerateArray().Any(r => r.GetProperty("runId").GetString() == runId).Should().Be(included);
     }
 
     [Fact]
