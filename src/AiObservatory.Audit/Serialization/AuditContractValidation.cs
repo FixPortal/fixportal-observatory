@@ -109,16 +109,18 @@ internal static class AuditContractValidation
         }
         else
         {
-            var model = name is "Model" or "Aliases";
-            Require(text.All(c => IsIdentifierCharacter(c, model)), "invalid_identifier");
-            Require(
-                !text.StartsWith('/')
-                    && !text.Contains(":/", StringComparison.Ordinal)
-                    && !text.Contains("..", StringComparison.Ordinal),
-                "invalid_identifier"
-            );
+            Require(IsIdentifier(text, name is "Model" or "Aliases"), "invalid_identifier");
         }
     }
+
+    private static bool IsIdentifier(string text, bool model) =>
+        text.All(c => IsIdentifierCharacter(c, model))
+        && !text.StartsWith('/')
+        && !text.Contains(":/", StringComparison.Ordinal)
+        && !text.Contains("..", StringComparison.Ordinal);
+
+    /// <summary>Whether a stored model string survives canonical serialisation as a <c>Model</c> value.</summary>
+    internal static bool IsValidModel(string text) => text.Length is > 0 and <= 256 && IsIdentifier(text, model: true);
 
     private static void ValidateObject(object value)
     {

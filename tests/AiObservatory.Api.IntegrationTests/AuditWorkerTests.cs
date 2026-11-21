@@ -302,6 +302,27 @@ public sealed partial class AuditWorkerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SnapshotValidationFailure_FailsTerminallyWithItsOwnCodeInsteadOfRetrying()
+    {
+        _db.SourceSyncStates.Add(
+            new Data.Entities.SourceSyncState
+            {
+                SourceId = "not a valid source id!",
+                IsConfigured = true,
+                IsAvailable = true,
+                ExpectedRefreshIntervalSeconds = 60,
+            }
+        );
+        await _db.SaveChangesAsync(Ct);
+        var id = await Runs.CreateAsync(new(Scope(Guid.NewGuid()), [], false), "invalid-snapshot-input", Ct);
+        (await Worker.ExecuteOneAsync(Guid.NewGuid(), Ct)).Should().BeTrue();
+        var run = (await _store.GetRunAsync(id, Ct))!;
+        run.State.Should().Be("failed");
+        run.DiagnosticCode.Should().Be("audit_snapshot_invalid");
+        (await Worker.ExecuteOneAsync(Guid.NewGuid(), Ct)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task PartialProceed_MixedSealedAndOfflineMachineFreezesOnlyAcknowledgedCaptures()
     {
         var ready = await _store.RegisterMachineAsync(new byte[32], Ct);
