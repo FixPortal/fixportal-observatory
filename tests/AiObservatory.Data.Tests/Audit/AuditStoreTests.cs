@@ -1,3 +1,4 @@
+using System.Data.Common;
 using AiObservatory.Audit;
 using AiObservatory.Audit.Contracts;
 using AiObservatory.Audit.Serialization;
@@ -5,6 +6,7 @@ using AiObservatory.Data.Audit;
 using AiObservatory.Data.Entities;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using NodaTime;
@@ -1158,6 +1160,40 @@ public sealed partial class AuditStoreTests : IAsyncLifetime
             .Should()
             .BeTrue();
         return await _store.TryPublishAsync(lease, new AuditVerifier().Verify(input), Ct);
+    }
+
+    [Fact]
+    public async Task ListRuns_ReadsThePageInOneQueryRegardlessOfRunCount()
+    {
+        var first = await Run();
+        var second = await Run();
+        var third = await Run();
+        var counter = new RunSelects();
+        await using var counted = new AiObservatoryDbContext(
+            new DbContextOptionsBuilder<AiObservatoryDbContext>(_options).AddInterceptors(counter).Options
+        );
+        var runs = await new AuditStore(counted, _clock).ListRunsAsync(null, null, 200, Ct);
+        runs.Select(r => r.Id).Should().BeEquivalentTo([first, second, third]);
+        counter.Count.Should().Be(1);
+    }
+
+    private sealed class RunSelects : DbCommandInterceptor
+    {
+        public int Count { get; private set; }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (command.CommandText.Contains("\"AuditRuns\"", StringComparison.Ordinal))
+            {
+                Count++;
+            }
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
     }
 
     private Task<Guid> Run() =>
