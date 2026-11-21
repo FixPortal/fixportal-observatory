@@ -89,7 +89,12 @@ public sealed class KimiPricingSource : IPricingSource, IDisposable
         }
 
         var retrievedAt = _clock.GetCurrentInstant();
-        var rawEvidence = string.Join("\n\u001e\n", pages.Select(page => $"{page.Uri.AbsoluteUri}\n{page.Content}"));
+        // The index is validated above but is not evidence: it is a site-wide docs index, so hashing it
+        // re-activated the snapshot (and appended a no-op revision per notional event) on any docs edit.
+        var rawEvidence = string.Join(
+            "\n\u001e\n",
+            pages.Skip(1).Select(page => $"{page.Uri.AbsoluteUri}\n{page.Content}")
+        );
         var candidate = PricingCandidate.Create(
             Provider.Moonshot,
             SourceId,
