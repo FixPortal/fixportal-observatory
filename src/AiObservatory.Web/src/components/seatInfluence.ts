@@ -33,7 +33,8 @@ export interface SeatMetrics {
   costPerUnique: number | null
   countsOnlyRuns: number
   smallSample: boolean
-  byWeek: { week: string; costUsd: number; influence: number }[]
+  // influence is null for a week with nothing raised under the acceptance-rate pivot.
+  byWeek: { week: string; costUsd: number; influence: number | null }[]
 }
 
 interface FindingAggregates {
@@ -139,10 +140,10 @@ function influenceFor(
   seat: SeatAggregates,
   week: WeekAggregates | undefined,
   pivot: Pivot,
-): number {
+): number | null {
   if (pivot === 'acceptanceRate') {
     const raised = week?.raised ?? seat.raised
-    return raised === 0 ? 0 : (week?.accepted ?? seat.accepted) / raised
+    return raised === 0 ? null : (week?.accepted ?? seat.accepted) / raised
   }
   if (pivot === 'accepted') return (week?.accepted ?? seat.accepted) / (week?.runs ?? seat.runs)
   const value =
@@ -240,9 +241,10 @@ export function computeSeatMetrics(
   runs: RunRow[],
   findings: FindingRow[],
   pivot: Pivot,
-  // The findings endpoint only returns findings recorded since this UTC date. A run older than it
-  // can never appear among the findings, so it would be miscounted as counts-only; leave it out so
-  // both inputs describe the same window.
+  // The findings endpoint returns findings by their own RecordedAt, which is reset on every re-post,
+  // so a run older than this UTC date can still have findings inside the window and would be
+  // miscounted as counts-only. Runs are windowed by their RecordedAt instead, so the metrics and
+  // the drill-down (SeatsTab) both describe the runs recorded since this date.
   since?: string,
 ): SeatMetrics[] {
   if (since !== undefined) runs = runs.filter((row) => row.recordedAt >= since)

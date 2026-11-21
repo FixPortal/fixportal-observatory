@@ -32,7 +32,7 @@ interface TrendSeries {
 
 interface TrendRow {
   week: string
-  [seriesKey: string]: string | number
+  [seriesKey: string]: string | number | null
 }
 
 interface ChartData {
@@ -52,8 +52,8 @@ const PIVOT_OPTIONS: { id: Pivot; label: string }[] = [
 
 const TEXT_MUTED = 'var(--text-muted)'
 
-function selectedInfluence(seat: SeatMetrics, pivot: Pivot): number {
-  if (pivot === 'acceptanceRate') return seat.acceptanceRate ?? 0
+function selectedInfluence(seat: SeatMetrics, pivot: Pivot): number | null {
+  if (pivot === 'acceptanceRate') return seat.acceptanceRate
   if (pivot === 'accepted') return seat.runs === 0 ? 0 : seat.accepted / seat.runs
   const detailedRuns = seat.runs - seat.countsOnlyRuns
   if (detailedRuns === 0) return 0
@@ -71,7 +71,8 @@ function formatRate(value: number | null): string {
   return value == null ? '—' : `${(value * 100).toFixed(1)}%`
 }
 
-function formatInfluence(value: number, pivot: Pivot): string {
+function formatInfluence(value: number | null, pivot: Pivot): string {
+  if (value === null) return '—'
   return pivot === 'acceptanceRate' ? formatRate(value) : value.toFixed(2)
 }
 
@@ -94,13 +95,16 @@ function primaryReviewerByKey(runs: RunRow[]): Map<string, string> {
 
 function buildChartData(metrics: SeatMetrics[], runs: RunRow[], pivot: Pivot): ChartData {
   const reviewers = primaryReviewerByKey(runs)
-  const points = metrics.map((seat) => {
+  const points = metrics.flatMap((seat) => {
+    const influence = selectedInfluence(seat, pivot)
+    // A seat with no value (nothing raised) is not plotted at zero.
+    if (influence === null) return []
     const knownRuns = seat.runs - seat.unknownCostRuns
     return {
       key: seat.key,
       label: seat.label,
       costPerRun: knownRuns <= 0 ? null : seat.knownCostUsd / knownRuns,
-      influence: selectedInfluence(seat, pivot),
+      influence,
       runs: seat.runs,
     }
   })
@@ -124,7 +128,8 @@ function buildChartData(metrics: SeatMetrics[], runs: RunRow[], pivot: Pivot): C
         const values = weeksBySeat.get(seat.key)?.get(week)
         const seriesKey = seriesKeyBySeat.get(seat.key)
         if (seriesKey) {
-          row[seriesKey] = values?.influence ?? 0
+          // Unset, not 0: a week without runs breaks the line instead of plotting a drop to zero.
+          row[seriesKey] = values?.influence ?? null
           row[`${seriesKey}-cost`] = values?.costUsd ?? 0
         }
       }
@@ -267,6 +272,7 @@ const SeatCharts = lazy(() =>
 )
 
 interface DrillRow {
+  chunkId: string
   findingId: string
   runId: string
   severity: string
@@ -290,6 +296,7 @@ function drillRows(runs: RunRow[], findings: FindingRow[], seatKey: string): Dri
     .map((finding) => {
       const ownReviewers = reviewersByRun.get(finding.runId) ?? new Set<string>()
       return {
+        chunkId: finding.chunkId,
         findingId: finding.findingId,
         runId: finding.runId,
         severity: finding.severity,
@@ -299,7 +306,9 @@ function drillRows(runs: RunRow[], findings: FindingRow[], seatKey: string): Dri
           .map((raiser) => `${raiser.reviewer} · ${raiser.model}`),
       }
     })
-    .toSorted((a, b) => a.findingId.localeCompare(b.findingId))
+    .toSorted(
+      (a, b) => a.chunkId.localeCompare(b.chunkId) || a.findingId.localeCompare(b.findingId),
+    )
 }
 
 export function SeatsTab({ runs, runsLoading, runsError }: Props) {
@@ -319,7 +328,12 @@ export function SeatsTab({ runs, runsLoading, runsError }: Props) {
     ? requestedSeatKey
     : metrics[0]?.key
   const selected = metrics.find((seat) => seat.key === selectedKey)
-  const chartData = useMemo(() => buildChartData(metrics, runs, pivot), [metrics, runs, pivot])
+  // One window for the metrics, the charts and the drill-down, by each run's own RecordedAt.
+  const windowedRuns = useMemo(() => runs.filter((row) => row.recordedAt >= since), [runs, since])
+  const chartData = useMemo(
+    () => buildChartData(metrics, windowedRuns, pivot),
+    [metrics, windowedRuns, pivot],
+  )
   const unknownCostRuns = metrics.reduce((total, seat) => total + seat.unknownCostRuns, 0)
   const loading = runsLoading || findingsLoading
   const error = runsError || findingsError
@@ -463,6 +477,7 @@ export function SeatsTab({ runs, runsLoading, runsError }: Props) {
             <table className="model-table">
               <thead>
                 <tr>
+                  <th>Chunk</th>
                   <th>Finding</th>
                   <th>Run</th>
                   <th>Severity</th>
@@ -471,8 +486,9 @@ export function SeatsTab({ runs, runsLoading, runsError }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {drillRows(runs, findings, selected.key).map((row) => (
-                  <tr key={`${row.runId}-${row.findingId}`}>
+                {drillRows(windowedRuns, findings, selected.key).map((row) => (
+                  <tr key={`${row.runId}-${row.chunkId}-${row.findingId}`}>
+                    <td>{row.chunkId}</td>
                     <td>{row.findingId}</td>
                     <td>{row.runId}</td>
                     <td>{row.severity}</td>
