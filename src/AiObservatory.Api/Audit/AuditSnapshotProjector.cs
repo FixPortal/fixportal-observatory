@@ -207,7 +207,7 @@ public static class AuditSnapshotProjector
     public static DateOnly Date(LocalDate d) => new(d.Year, d.Month, d.Day);
 
     /// <summary>
-    /// A model outside the audit charset becomes unknown (null; empty on an aggregate key), so the row surfaces as an
+    /// A model outside the audit charset becomes unknown (null; "unknown" on an aggregate key), so the row surfaces as an
     /// unpriced or unmatched group instead of failing canonical serialisation for every run that covers it.
     /// It is deliberately not hashed: the frozen rate resolver needs the raw value to match a catalog model.
     /// </summary>
