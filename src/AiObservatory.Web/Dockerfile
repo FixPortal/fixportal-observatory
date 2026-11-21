@@ -17,5 +17,6 @@ COPY 15-check-observatory-key.sh /docker-entrypoint.d/15-check-observatory-key.s
 RUN chmod 755 /docker-entrypoint.d/15-check-observatory-key.sh
 # An unset key is the empty string: no header is sent and the API answers 401, instead of nginx
 # refusing to start on an undefined variable.
-ENV NGINX_ENVSUBST_FILTER=OBSERVATORY_API_KEY OBSERVATORY_API_KEY=""
+# OBSERVATORY_ALLOWED_HOSTS is the space-separated Host allow-list (server_name); other Hosts get 444.
+ENV NGINX_ENVSUBST_FILTER="OBSERVATORY_(API_KEY|ALLOWED_HOSTS)" OBSERVATORY_API_KEY="" OBSERVATORY_ALLOWED_HOSTS="localhost 127.0.0.1"
 EXPOSE 80
