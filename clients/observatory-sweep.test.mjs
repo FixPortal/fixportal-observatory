@@ -3597,3 +3597,38 @@ test('a file hold never ends before the latest day the file records, whatever it
   assert.deepEqual(result.holds, [{ from: '2026-10-02', through: '2026-10-03' }])
 })
 
+
+// C3-P5
+test('an orphan Antigravity database caches its hold, which ends at the database last-write day', async () => {
+  const root = await makeTemp('observatory-agy-orphan-')
+  try {
+    const { brain } = await antigravityFixture(root)
+    await removeTemp(brain)
+    const conversations = join(root, 'gemini', 'antigravity-cli', 'conversations')
+    const orphan = join(conversations, 'agy-session.db')
+    await utimes(orphan, new Date('2026-08-24T20:00:00Z'), new Date('2026-08-24T20:00:00Z'))
+    const laterLogs = join(brain, 'agy-later', '.system_generated', 'logs')
+    await mkdir(laterLogs, { recursive: true })
+    await writeFile(join(laterLogs, 'transcript.jsonl'), JSON.stringify({
+      created_at: '2026-08-30T12:00:00Z', content: 'Model Selection` from None to Gemini 3.1 Pro (High).',
+    }))
+    const db = new DatabaseSync(join(conversations, 'agy-later.db'))
+    db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB)')
+    db.prepare('INSERT INTO steps VALUES (?, ?, ?)').run(1, 23, antigravityPayload(50, 10))
+    db.close()
+    const recording = recordingServer()
+    const statePath = join(root, 'state', 'sweep.json')
+    await withRecordingServer(recording, async () => {
+      for (const run of ['first', 'second']) {
+        recording.posts.length = 0
+        await runMainWith({ root, statePath, server: recording.server, sources: 'antigravity' })
+        assert.deepEqual(
+          machinePosts(recording.posts, 'antigravity-local@test-machine').map(body => body.eventKey.split(':')[1]),
+          ['2026-08-30'], run,
+        )
+        const cached = JSON.parse(await readFile(statePath, 'utf8')).files.antigravity[orphan]
+        assert.equal(cached?.incomplete, true, `${run}: the orphan outcome is cached`)
+      }
+    })
+  } finally { await removeTemp(root) }
+})
