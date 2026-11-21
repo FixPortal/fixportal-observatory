@@ -976,7 +976,7 @@ function deduplicateClaudeRecords(records) {
     // apart from a missing counter; streaming copies only grow, so the non-zero one is the better evidence.
     const counters = {}
     for (const key of ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens']) {
-      const best = Math.max(...messages.map(message => message[key] ?? 0))
+      const best = Math.max(...messages.map(message => message[key]))
       if (chosen[key] === 0 && best > 0) { counters[key] = best }
     }
     deduplicated[index] = { ...chosen, ...counters, claudePromptContext: claudePromptContext(messages) }
