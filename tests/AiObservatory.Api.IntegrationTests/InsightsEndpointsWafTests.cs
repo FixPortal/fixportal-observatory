@@ -50,22 +50,38 @@ public class InsightsEndpointsWafTests(AiObservatoryApiFactory factory) : IClass
             await db.SaveChangesAsync(ct);
         }
 
-        using var client = factory.CreateAdminClient();
-        var response = await client.DeleteAsync("/api/insights", ct);
+        try
+        {
+            using var client = factory.CreateAdminClient();
+            var response = await client.DeleteAsync("/api/insights", ct);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await response.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("deleted").GetInt32().Should().Be(2);
-        using var assertionScope = factory.Services.CreateScope();
-        var assertionDb = assertionScope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
-        (await assertionDb.Insights.AsNoTracking().CountAsync(ct)).Should().Be(0);
-        // The (rule, period) claim is the only thing stopping a daily breach re-alerting, so
-        // clearing the feed must not delete it; it just loses its link to the cleared insight.
-        var claims = await assertionDb
-            .BudgetAlertClaims.AsNoTracking()
-            .Where(claim => claim.BudgetRuleId == rule.Id)
-            .ToListAsync(ct);
-        claims.Should().ContainSingle();
-        claims[0].InsightId.Should().BeNull();
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await response.Content.ReadFromJsonAsync<JsonElement>(ct))
+                .GetProperty("deleted")
+                .GetInt32()
+                .Should()
+                .Be(2);
+            using var assertionScope = factory.Services.CreateScope();
+            var assertionDb = assertionScope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+            (await assertionDb.Insights.AsNoTracking().CountAsync(ct)).Should().Be(0);
+            // The (rule, period) claim is the only thing stopping a daily breach re-alerting, so
+            // clearing the feed must not delete it; it just loses its link to the cleared insight.
+            var claims = await assertionDb
+                .BudgetAlertClaims.AsNoTracking()
+                .Where(claim => claim.BudgetRuleId == rule.Id)
+                .ToListAsync(ct);
+            claims.Should().ContainSingle();
+            claims[0].InsightId.Should().BeNull();
+        }
+        finally
+        {
+            // The tombstoned claim has no insight id left, so it is removed by the rule's cascade.
+            using var cleanupScope = factory.Services.CreateScope();
+            await cleanupScope
+                .ServiceProvider.GetRequiredService<AiObservatoryDbContext>()
+                .BudgetRules.Where(candidate => candidate.Id == rule.Id)
+                .ExecuteDeleteAsync(CancellationToken.None);
+        }
     }
 
     [Fact]
