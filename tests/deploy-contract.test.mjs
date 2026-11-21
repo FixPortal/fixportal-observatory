@@ -119,6 +119,17 @@ test('ensure-ingest-running is wired with always()', async () => {
   assert.match(ensure, /^ {4}if:.*\balways\(\)/m, "ensure-ingest-running must carry `always()` in its `if:` -- without it a failed deploy skips the restart and leaves the ingest worker stopped")
 })
 
+// The deploy workflows are NORMAL by decision (workflow edits are asserted by the review-policy
+// guard instead), so the policy's own commentary must not describe them as high-risk paths.
+test('the review policy keeps the deploy workflows NORMAL and does not call them high-risk', async () => {
+  const policy = JSON.parse(await read('.claude/review-policy.json'))
+  for (const workflow of ['deploy.yml', 'deploy-demo.yml']) {
+    assert.ok(!policy.high.includes(`.github/workflows/${workflow}`), `${workflow} must stay out of the high list`)
+    const naming = policy.$comment.filter(line => line.includes(workflow) && !/\bNORMAL\b/.test(line))
+    assert.deepEqual(naming, [], `the policy comment names ${workflow} without saying it is NORMAL`)
+  }
+})
+
 test('both deploy entry points acquire the production lock without re-entering it', async () => {
   const ci = await read('.github/workflows/ci.yml')
   const deploy = await read('.github/workflows/deploy.yml')
