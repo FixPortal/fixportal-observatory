@@ -568,39 +568,44 @@ public sealed partial class AuditStore
         );
 
     public Task<AuditRunView?> GetRunAsync(Guid runId, CancellationToken ct) =>
-        _db.Set<AuditRun>()
-            .AsNoTracking()
-            .Where(x =>
-                x.Id == runId
-                && x.InstanceId == _instanceId
-                && (x.SummaryExpiresAt == null || x.SummaryExpiresAt > _clock.GetCurrentInstant())
+        RunViews(
+                _db.Set<AuditRun>()
+                    .AsNoTracking()
+                    .Where(x =>
+                        x.Id == runId
+                        && x.InstanceId == _instanceId
+                        && (x.SummaryExpiresAt == null || x.SummaryExpiresAt > _clock.GetCurrentInstant())
+                    )
             )
-            .Select(x => new AuditRunView(
-                x.Id,
-                x.State,
-                x.Revision,
-                x.Attempts,
-                x.DiagnosticCode,
-                x.EvidenceExpiresAt,
-                x.SummaryExpiresAt,
-                x.EvidenceExpiresAt != null && x.EvidenceExpiresAt <= _clock.GetCurrentInstant() ? null : x.Result
-            )
-            {
-                SanitizedSummary = x.SanitizedSummary,
-                OriginalResultHash = x.ResultHash,
-                Stage = x.Stage,
-                CreatedAt = x.CreatedAt,
-                CompletedAt = x.CompletedAt,
-                ServerCutoff = x.ServerCutoff
-                    ?? _db.Set<AuditServerSnapshot>()
-                        .Where(s => s.RunId == x.Id)
-                        .Select(s => (Instant?)s.FrozenAt)
-                        .FirstOrDefault(),
-                Scope = x.Scope,
-                PredecessorRunId = x.PredecessorRunId,
-                EvaluationOfRunId = x.EvaluationOfRunId,
-            })
             .SingleOrDefaultAsync(ct);
+
+    /// <summary>The one run projection shared by single reads and the run list, so a list page is one query.</summary>
+    private IQueryable<AuditRunView> RunViews(IQueryable<AuditRun> runs) =>
+        runs.Select(x => new AuditRunView(
+            x.Id,
+            x.State,
+            x.Revision,
+            x.Attempts,
+            x.DiagnosticCode,
+            x.EvidenceExpiresAt,
+            x.SummaryExpiresAt,
+            x.EvidenceExpiresAt != null && x.EvidenceExpiresAt <= _clock.GetCurrentInstant() ? null : x.Result
+        )
+        {
+            SanitizedSummary = x.SanitizedSummary,
+            OriginalResultHash = x.ResultHash,
+            Stage = x.Stage,
+            CreatedAt = x.CreatedAt,
+            CompletedAt = x.CompletedAt,
+            ServerCutoff = x.ServerCutoff
+                ?? _db.Set<AuditServerSnapshot>()
+                    .Where(s => s.RunId == x.Id)
+                    .Select(s => (Instant?)s.FrozenAt)
+                    .FirstOrDefault(),
+            Scope = x.Scope,
+            PredecessorRunId = x.PredecessorRunId,
+            EvaluationOfRunId = x.EvaluationOfRunId,
+        });
 
     /// <summary>Copies immutable capture bytes under the evidence lock and the caller's ownership fence.</summary>
     public Task<SnapshotMaterialization> ReadSnapshotMaterializationAsync(RunLease lease, CancellationToken ct) =>

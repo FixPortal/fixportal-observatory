@@ -346,22 +346,8 @@ public sealed partial class AuditStore
         {
             query = query.Where(r => r.CreatedAt < cutoff || r.CreatedAt == cutoff && r.Id.CompareTo(cursorId) < 0);
         }
-        var ids = await query
-            .OrderByDescending(r => r.CreatedAt)
-            .ThenByDescending(r => r.Id)
-            .Take(limit)
-            .Select(r => r.Id)
+        return await RunViews(query.OrderByDescending(r => r.CreatedAt).ThenByDescending(r => r.Id).Take(limit))
             .ToArrayAsync(ct);
-        var results = new List<AuditRunView>();
-        foreach (var id in ids)
-        {
-            var run = await GetRunAsync(id, ct);
-            if (run != null)
-            {
-                results.Add(run);
-            }
-        }
-        return results;
     }
 
     public async Task<AuditCaptureDiscovery> AvailableCapturesAsync(
