@@ -31,7 +31,7 @@ const LOCAL_SOURCE_IDS = {
 // every file. Never bump alone: after the wipe an unreadable file has no cached
 // records, so scanRecords flags its source incomplete and main withholds that
 // source's corrections and tombstones until a complete scan succeeds.
-const PARSE_CACHE_VERSION = 10
+const PARSE_CACHE_VERSION = 11
 // Gemini Developer API standard-tier pricing changes above this documented prompt-token threshold.
 const GEMINI_LONG_CONTEXT_THRESHOLD = 200_000
 // The Grok CLI records each turn's cost as an integer tick count rather than a decimal. The
@@ -47,6 +47,29 @@ const GROK_COST_TICKS_PER_USD = 1e10
 
 function token(value) {
   return Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0)
+}
+
+// A counter that is present but not a non-negative safe integer is a fault, not a zero: a vendor
+// format change must hold its day instead of posting an undercount as an authoritative correction.
+// A required counter that is absent is a fault too; an optional one defaults to 0.
+function strictCounter(value, fault, required = false) {
+  if (value === undefined || value === null) {
+    if (required) { fault() }
+    return 0
+  }
+  if (safeTokenCount(value)) { return value }
+  fault()
+  return 0
+}
+
+// Attach a hold to a parser's record array the way parseCodexRecords does.
+function withHold(records, tool, holdFrom) {
+  if (holdFrom !== undefined) {
+    records.incomplete = true
+    records.incompleteTool = tool
+    records.holdFrom = holdFrom
+  }
+  return records
 }
 
 // Costs are summed as floats, so a day's total carries binary-representation noise that would
@@ -73,19 +96,21 @@ function isoTimestamp(value) {
 }
 
 // Claude usage must observe an explicit, real calendar instant. Keep other CLI
-// timestamp conventions (including numeric Kimi time) in isoTimestamp unchanged.
-function claudeTimestamp(value) {
+// timestamp conventions (including numeric Kimi time) in isoTimestamp unchanged. Claude rows
+// are pinned to the seven fractional digits its tests exercise; Codex rollouts may carry up to
+// nine (RFC 3339 nanoseconds), which the Date parse below truncates to milliseconds.
+function claudeTimestamp(value, maxFractionDigits = 7) {
     if (typeof value !== "string") {
         return null
     }
     const match =
-        /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,7})?(Z|[+-]\d{2}:\d{2})$/.exec(
+        /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/.exec(
             value,
         )
-    if (!match) {
+    if (!match || (match[7] !== undefined && match[7].length > maxFractionDigits)) {
         return null
     }
-    const [, yearText, monthText, dayText, hour, minute, second, offset] = match
+    const [, yearText, monthText, dayText, hour, minute, second, , offset] = match
     const year = Number(yearText),
         month = Number(monthText),
         day = Number(dayText)
@@ -261,7 +286,7 @@ export function parseCodexRecords(content) {
     }
     if (payload?.type !== 'token_count') { continue }
     const usage = payload.info?.total_token_usage
-    const timestamp = claudeTimestamp(row.timestamp)
+    const timestamp = claudeTimestamp(row.timestamp, 9)
     if (usage === undefined || usage === null) { continue }
     const required = ['input_tokens', 'output_tokens']
     const optional = ['cached_input_tokens', 'cache_write_input_tokens', 'reasoning_output_tokens']
@@ -320,19 +345,21 @@ export function parseCopilot(content) {
   const endedAt = isoTimestamp(shutdown?.timestamp)
   if (!metrics || !endedAt) { return null }
   const perModel = {}
+  let incomplete = false
+  const fault = () => { incomplete = true }
   for (const [model, value] of Object.entries(metrics)) {
     const usage = value?.usage
     if (!usage) { continue }
-    const cacheRead = token(usage.cacheReadTokens)
+    const cacheRead = strictCounter(usage.cacheReadTokens, fault)
     perModel[model] = {
-      input: Math.max(0, token(usage.inputTokens) - cacheRead),
-      output: token(usage.outputTokens),
+      input: Math.max(0, strictCounter(usage.inputTokens, fault, true) - cacheRead),
+      output: strictCounter(usage.outputTokens, fault, true),
       cacheRead,
-      cacheWrite: token(usage.cacheWriteTokens),
-      reasoning: token(usage.reasoningTokens),
+      cacheWrite: strictCounter(usage.cacheWriteTokens, fault),
+      reasoning: strictCounter(usage.reasoningTokens, fault),
     }
   }
-  return { endedAt, perModel }
+  return { endedAt, perModel, incomplete }
 }
 
 const CLAUDE_PROMPT_COUNTERS = {
@@ -526,6 +553,7 @@ export function parseClaude(content) {
 /** Parse only Kimi usage.record rows; step.end mirrors are intentionally ignored. */
 export function parseKimi(content) {
   const records = []
+  let holdFrom
   for (const line of content.split('\n')) {
     if (!line) { continue }
     let row
@@ -534,18 +562,20 @@ export function parseKimi(content) {
     if (row.type !== 'usage.record' || !row.usage) { continue }
     const occurredAtUtc = isoTimestamp(row.time)
     if (!occurredAtUtc) { continue }
+    const date = occurredAtUtc.slice(0, 10)
+    const fault = () => { holdFrom = earlierHold(holdFrom, date) }
     records.push({
       tool: 'kimi',
-      date: occurredAtUtc.slice(0, 10),
+      date,
       model: row.model ?? 'kimi-code/kimi-for-coding',
       occurredAtUtc,
-      inputTokens: token(row.usage.inputOther),
-      outputTokens: token(row.usage.output),
-      cacheReadTokens: token(row.usage.inputCacheRead),
-      cacheWriteTokens: token(row.usage.inputCacheCreation),
+      inputTokens: strictCounter(row.usage.inputOther, fault, true),
+      outputTokens: strictCounter(row.usage.output, fault, true),
+      cacheReadTokens: strictCounter(row.usage.inputCacheRead, fault),
+      cacheWriteTokens: strictCounter(row.usage.inputCacheCreation, fault),
     })
   }
-  return records
+  return withHold(records, 'kimi', holdFrom)
 }
 
 /**
@@ -562,30 +592,35 @@ export function parseKimi(content) {
  */
 export function parseGrok(content) {
   let file
-  try { file = JSON.parse(content) } catch { return [] }
+  // An undecodable document says nothing about its days, so it holds the whole source rather
+  // than caching as a clean empty that a populated root would then tombstone.
+  try { file = JSON.parse(content) } catch { return withHold([], 'grok', '') }
   if (!file || typeof file !== 'object' || !Array.isArray(file.turns)) { return [] }
   const records = []
+  let holdFrom
   for (const turn of file.turns) {
     const occurredAtUtc = isoTimestamp(turn?.endedAt)
     if (!occurredAtUtc || !turn.modelUsage || typeof turn.modelUsage !== 'object') { continue }
+    const date = occurredAtUtc.slice(0, 10)
+    const fault = () => { holdFrom = earlierHold(holdFrom, date) }
     for (const [model, usage] of Object.entries(turn.modelUsage)) {
       if (!usage || typeof usage !== 'object') { continue }
-      const cacheReadTokens = token(usage.cachedReadTokens)
+      const cacheReadTokens = strictCounter(usage.cachedReadTokens, fault)
       records.push({
         tool: 'grok',
-        date: occurredAtUtc.slice(0, 10),
+        date,
         model,
         occurredAtUtc,
-        inputTokens: Math.max(0, token(usage.inputTokens) - cacheReadTokens),
-        outputTokens: token(usage.outputTokens),
+        inputTokens: Math.max(0, strictCounter(usage.inputTokens, fault, true) - cacheReadTokens),
+        outputTokens: strictCounter(usage.outputTokens, fault, true),
         cacheReadTokens,
-        cacheWriteTokens: token(usage.cacheCreationTokens),
-        thoughtTokens: token(usage.reasoningTokens),
+        cacheWriteTokens: strictCounter(usage.cacheCreationTokens, fault),
+        thoughtTokens: strictCounter(usage.reasoningTokens, fault),
         costUsd: token(usage.costUsdTicks) / GROK_COST_TICKS_PER_USD,
       })
     }
   }
-  return records
+  return withHold(records, 'grok', holdFrom)
 }
 
 /**
@@ -598,6 +633,7 @@ export function parseGrok(content) {
  */
 export function parsePi(content) {
   const records = []
+  let holdFrom
   for (const line of content.split('\n')) {
     if (!line || !line.includes('meta/')) { continue }
     let row
@@ -608,25 +644,28 @@ export function parsePi(content) {
     if (typeof model !== 'string' || !model.startsWith('meta/')) { continue }
     const occurredAtUtc = isoTimestamp(row.timestamp)
     if (!occurredAtUtc) { continue }
+    const date = occurredAtUtc.slice(0, 10)
+    const fault = () => { holdFrom = earlierHold(holdFrom, date) }
     records.push({
       tool: 'pi',
-      date: occurredAtUtc.slice(0, 10),
+      date,
       model,
       occurredAtUtc,
-      inputTokens: token(message.usage.input),
-      outputTokens: token(message.usage.output),
-      cacheReadTokens: token(message.usage.cacheRead),
-      cacheWriteTokens: token(message.usage.cacheWrite),
-      thoughtTokens: token(message.usage.reasoning),
+      inputTokens: strictCounter(message.usage.input, fault, true),
+      outputTokens: strictCounter(message.usage.output, fault, true),
+      cacheReadTokens: strictCounter(message.usage.cacheRead, fault),
+      cacheWriteTokens: strictCounter(message.usage.cacheWrite, fault),
+      thoughtTokens: strictCounter(message.usage.reasoning, fault),
       costUsd: token(message.usage.cost?.total),
     })
   }
-  return records
+  return withHold(records, 'pi', holdFrom)
 }
 
 /** Parse PAYG Gemini review transcripts written by gemini-review.ps1. */
 export function parseGeminiReview(content) {
   const records = []
+  let holdFrom
   for (const line of content.split('\n')) {
     // Cheap prefilter on the key name only. Filtering on one exact serialisation
     // ('"type":"gemini"') would silently drop valid rows whose producer writes
@@ -636,22 +675,24 @@ export function parseGeminiReview(content) {
     try { row = JSON.parse(line) } catch { continue }
     const occurredAtUtc = isoTimestamp(row?.timestamp)
     if (row?.type !== 'gemini' || !row.tokens || !occurredAtUtc) { continue }
-    const cacheReadTokens = token(row.tokens.cached)
-    const promptTokens = token(row.tokens.input)
+    const date = occurredAtUtc.slice(0, 10)
+    const fault = () => { holdFrom = earlierHold(holdFrom, date) }
+    const cacheReadTokens = strictCounter(row.tokens.cached, fault)
+    const promptTokens = strictCounter(row.tokens.input, fault, true)
     records.push({
       tool: 'gemini-review',
-      date: occurredAtUtc.slice(0, 10),
+      date,
       model: row.model ?? 'unknown',
       occurredAtUtc,
       inputTokens: Math.max(0, promptTokens - cacheReadTokens),
-      outputTokens: token(row.tokens.output),
+      outputTokens: strictCounter(row.tokens.output, fault, true),
       cacheReadTokens,
       cacheWriteTokens: 0,
-      thoughtTokens: token(row.tokens.thoughts),
+      thoughtTokens: strictCounter(row.tokens.thoughts, fault),
       context: promptTokens > GEMINI_LONG_CONTEXT_THRESHOLD ? 'long' : 'short',
     })
   }
-  return records
+  return withHold(records, 'gemini', holdFrom)
 }
 
 function decodeVarint(data, start) {
@@ -718,20 +759,36 @@ function antigravityTranscript(content) {
     [/Gemini 2\.5 Pro/i, 'gemini-2.5-pro'],
     [/Gemini 2\.5 Flash/i, 'gemini-2.5-flash'],
   ]
+  let plannerModel = null
+  let settingsModel = null
+  // PLANNER_RESPONSE rows carry the model and the per-response meters the model actually served.
+  const planner = { rows: 0, invalid: false, input: 0, output: 0, cacheRead: 0 }
   for (const line of content.split('\n')) {
     let row
     try { row = JSON.parse(line) } catch { continue }
     const timestamp = isoTimestamp(row?.created_at)
     if (timestamp && (!occurredAtUtc || timestamp > occurredAtUtc)) { occurredAtUtc = timestamp }
+    if (row?.type === 'PLANNER_RESPONSE') {
+      if (typeof row.model === 'string' && row.model.trim()) { plannerModel = row.model.trim().toLowerCase() }
+      if (['input_tokens', 'output_tokens', 'cache_read_tokens'].some(key => Object.hasOwn(row, key))) {
+        planner.rows++
+        const fault = () => { planner.invalid = true }
+        planner.input += strictCounter(row.input_tokens, fault)
+        planner.output += strictCounter(row.output_tokens, fault)
+        planner.cacheRead += strictCounter(row.cache_read_tokens, fault)
+      }
+      continue
+    }
     const text = typeof row?.content === 'string' ? row.content : ''
-    // Only the settings-change sentence names the model actually selected. Any
-    // other row merely mentioning a model ("compare this with Gemini 2.5 Flash")
-    // must not re-label the whole conversation.
-    if (!/Model Selection/i.test(text)) { continue }
-    const match = mappings.find(([pattern]) => pattern.test(text))
-    if (match) { model = match[1] }
+    // Only the settings-change sentence names the model actually selected, and only its
+    // destination (after `to`). Any other row merely mentioning a model ("compare this with
+    // Gemini 2.5 Flash", or a quoted settings sentence) must not re-label the conversation.
+    const destination = /^\W*(?:The user changed setting\s+)?`?Model Selection`?\s+from\s+.+?\s+to\s+(.+)$/is.exec(text)?.[1]
+    if (destination === undefined) { continue }
+    const match = mappings.find(([pattern]) => pattern.test(destination))
+    if (match) { settingsModel = match[1] }
   }
-  return { occurredAtUtc, model }
+  return { occurredAtUtc, model: plannerModel ?? settingsModel ?? model, planner }
 }
 
 /**
@@ -744,8 +801,9 @@ function antigravityTranscript(content) {
  * does not carry alongside step_type 23 payloads.
  */
 export async function parseAntigravityDatabase(path, transcriptContent, report = log) {
-  const { occurredAtUtc, model } = antigravityTranscript(transcriptContent)
+  const { occurredAtUtc, model, planner } = antigravityTranscript(transcriptContent)
   if (!occurredAtUtc) { return [] }
+  const day = occurredAtUtc.slice(0, 10)
   const { DatabaseSync } = await import('node:sqlite')
   const db = new DatabaseSync(path, { readOnly: true })
   let rows
@@ -766,12 +824,21 @@ export async function parseAntigravityDatabase(path, transcriptContent, report =
   if (rejected) {
     report(`Skipped ${rejected} unrecognized Antigravity usage row${rejected === 1 ? '' : 's'} in ${path}`)
   }
-  if (totals.input + totals.output + totals.thoughts === 0) { return [] }
-  return [{
-    tool: 'antigravity', date: occurredAtUtc.slice(0, 10), model, occurredAtUtc,
-    inputTokens: totals.input, outputTokens: totals.output,
-    cacheReadTokens: 0, cacheWriteTokens: 0, thoughtTokens: totals.thoughts,
-  }]
+  const decoded = totals.input + totals.output + totals.thoughts
+  // The transcript's structured meters are the source of truth for input, output and cache reads;
+  // the step-23 decoder only adds thinking tokens, which the transcript does not carry.
+  const fromTranscript = !planner.invalid && planner.input + planner.output + planner.cacheRead > 0
+  // Without transcript meters, a decoder shortfall (rows it rejected, or step rows that decode to
+  // nothing) is a fault, not an empty conversation: hold the conversation's day.
+  const shortfall = !fromTranscript && (rejected > 0 || (rows.length > 0 && decoded === 0))
+  const withShortfall = records => shortfall ? withHold(records, 'antigravity', day) : records
+  if (!fromTranscript && decoded === 0) { return withShortfall([]) }
+  return withShortfall([{
+    tool: 'antigravity', date: day, model, occurredAtUtc,
+    inputTokens: fromTranscript ? planner.input : totals.input,
+    outputTokens: fromTranscript ? planner.output : totals.output,
+    cacheReadTokens: fromTranscript ? planner.cacheRead : 0, cacheWriteTokens: 0, thoughtTokens: totals.thoughts,
+  }])
 }
 
 /**
@@ -868,9 +935,12 @@ function recordTokens(record) {
   }
 }
 
+// Native counters a copy actually carries outrank its zero-defaulted ones, so a partial streaming
+// copy cannot win a tie against the complete one.
 function claudeRecordScore(record) {
   return ['serviceTier', 'speed', 'inferenceGeo', 'cacheWrite1hTokens', 'cacheWrite5mTokens', 'thoughtTokens']
     .filter(key => Object.hasOwn(record, key)).length
+    + Object.keys(record.claudePromptFacts ?? {}).length
 }
 
 function deduplicateClaudeRecords(records) {
@@ -909,7 +979,8 @@ function deduplicateClaudeRecords(records) {
 export function countUnplaced(records, machine) {
   const counts = new Map()
   for (const record of records) {
-    if (!record.date || (record.model && sourceMetadata(record.tool, record.model, machine, record.modelProvider))) { continue }
+    // 'unknown' is the parsers' placeholder for a model that never resolved: truthy, but unplaced.
+    if (!record.date || (record.model && record.model !== 'unknown' && sourceMetadata(record.tool, record.model, machine, record.modelProvider))) { continue }
     const model = record.model ?? 'unknown'
     const key = `${record.tool}\n${model}`
     counts.set(key, { tool: record.tool, model, count: (counts.get(key)?.count ?? 0) + 1 })
@@ -1172,15 +1243,32 @@ const VERBOSE = process.argv.includes('--verbose')
 const DRY_RUN = process.argv.includes('--dry-run')
 const log = (...args) => { if (VERBOSE) { console.error(...args) } }
 
+// The state is a cache, so a missing or unparseable file starts empty; the latter is said out loud
+// so a truncated or oversized file is not mistaken for a first run. An unreadable file (locked,
+// permission) aborts instead: starting empty over it would overwrite state we could not read.
 async function loadState(path) {
-  try { return JSON.parse(await readFile(path, 'utf8')) }
-  catch { return {} }
+  let text
+  try { text = await readFile(path, 'utf8') }
+  catch (error) {
+    if (error?.code === 'ENOENT') { return {} }
+    throw error
+  }
+  try { return JSON.parse(text) }
+  catch (error) {
+    console.error(`State file ${path} is unreadable (${error.message}); starting from an empty cache.`)
+    return {}
+  }
 }
 
+// A failed save loses only the cache, never server data, so it must not stop the sweep posting.
 async function saveState(path, state) {
   if (DRY_RUN) { return }
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, JSON.stringify(state, null, 2), 'utf8')
+  try {
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, JSON.stringify(state), 'utf8')
+  } catch (error) {
+    console.error(`State file ${path} could not be saved (${error.message}); the next run re-reads every file.`)
+  }
 }
 
 async function postEvent(url, apiKey, body) {
@@ -1353,10 +1441,14 @@ const listUsageJson = dir => listMatching(dir, name => name === 'usage.json')
 // about the source's history: the home may be unmounted (an empty mount point
 // lists exactly like this) or a *_HOME override may be mistyped. Only a
 // populated root makes an empty scan authoritative.
-async function discoveryRootPopulated(dir) {
-  try { return (await readdir(dir)).length > 0 }
+async function discoveryRootPopulated(dir, accept = () => true) {
+  try { return (await readdir(dir, { withFileTypes: true })).some(accept) }
   catch { return false }
 }
+
+// The Gemini review lane shares ~/.gemini/tmp with every other Gemini CLI project, so only a
+// gem-review-* directory shows that the review history is mounted.
+const geminiReviewEntry = entry => entry.isDirectory() && entry.name.toLowerCase().startsWith('gem-review-')
 
 /**
  * Scan every enabled source and return its records plus two disjoint source
@@ -1373,13 +1465,13 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
   const emptySources = new Set()
   const heldFrom = new Map()
   const heldFiles = new Map()
-  const noteScan = async (tool, root, result) => {
+  const noteScan = async (tool, root, result, accept) => {
     if (result.incomplete) {
       incompleteSources.add(tool)
       heldFrom.set(tool, result.holdFrom ?? '')
       heldFiles.set(tool, result.heldFiles)
     }
-    else if (result.records.length === 0 && await discoveryRootPopulated(root)) { emptySources.add(tool) }
+    else if (result.records.length === 0 && await discoveryRootPopulated(root, accept)) { emptySources.add(tool) }
   }
   if (state.parseCacheVersion !== PARSE_CACHE_VERSION) {
     state.files = {}
@@ -1404,14 +1496,14 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
       const parsed = parseCopilot(content)
       if (!parsed) { return [] }
       const occurredAtUtc = parsed.endedAt
-      return Object.entries(parsed.perModel).map(([model, cum]) => ({
+      return withHold(Object.entries(parsed.perModel).map(([model, cum]) => ({
         tool: 'copilot',
         date: occurredAtUtc.slice(0, 10),
         model,
         occurredAtUtc,
         cum,
         thoughtTokens: cum.reasoning,
-      }))
+      })), 'copilot', parsed.incomplete ? occurredAtUtc.slice(0, 10) : undefined)
     })
     state.files.copilot = result.cache
     await noteScan('copilot', root, result)
@@ -1443,7 +1535,7 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
       .filter(file => /[\\/]gem-review-[^\\/]+[\\/]chats[\\/]session-[^\\/]+\.jsonl$/i.test(file.path))
     const result = await updateFileCache(files, state.files.gemini, content => parseGeminiReview(content))
     state.files.gemini = result.cache
-    await noteScan('gemini', root, result)
+    await noteScan('gemini', root, result, geminiReviewEntry)
     for (const record of result.records) { records.push(record) }
   }
 
@@ -1593,7 +1685,9 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   if (!DRY_RUN) {
     await migrateLegacySourceIds(
       url, apiKey, enabled, state, observedAtUtc,
-      tool => activeSucceeded.get(localSourceId(tool, machine)) === true,
+      // A held source posted only its unheld days: zeroing the legacy keys for the held days would
+      // lose them, and the marker would stop the migration from ever retrying.
+      tool => activeSucceeded.get(localSourceId(tool, machine)) === true && !holds.has(localSourceId(tool, machine)),
     )
     await saveState(statePath, state)
   }
