@@ -1004,6 +1004,44 @@ public class SpendEntriesEndpointsWafTests(AiObservatoryApiFactory factory) : IC
         patch.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [Fact]
+    public async Task PostWithANullArrayElement_IsRejectedBeforeAnyRowIsWritten()
+    {
+        using var client = factory.CreateAdminClient();
+        var ct = TestContext.Current.CancellationToken;
+        var (categoryId, vendorId) = await SeedCatalogAsync(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/spend/entries",
+            new object?[] { Entry(categoryId, vendorId, $"k-{Guid.NewGuid():N}"), null },
+            ct
+        );
+
+        // A null element used to throw mid-loop after the first row had committed, so a retry
+        // re-inserted it.
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var rows = await client.GetFromJsonAsync<JsonElement>($"/api/spend/entries?vendorId={vendorId}", ct);
+        rows.GetArrayLength().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetEntries_OrdersRowsThatShareADateAndAPostByIdSoTheCapIsStable()
+    {
+        using var client = factory.CreateAdminClient();
+        var ct = TestContext.Current.CancellationToken;
+        var (categoryId, vendorId) = await SeedCatalogAsync(client);
+        // One POST stamps every row with the same RecordedAt, and OccurredOn is shared too.
+        var batch = Enumerable.Range(0, 8).Select(_ => Entry(categoryId, vendorId, $"k-{Guid.NewGuid():N}")).ToArray();
+        (await client.PostAsJsonAsync("/api/spend/entries", batch, ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var rows = await client.GetFromJsonAsync<JsonElement>($"/api/spend/entries?vendorId={vendorId}", ct);
+
+        var ids = rows.EnumerateArray().Select(row => row.GetProperty("id").GetGuid()).ToList();
+        ids.Should().HaveCount(8);
+        // Postgres orders uuids by their RFC byte order, which is what Guid.ToString("N") prints.
+        ids.Should().Equal(ids.OrderByDescending(id => id.ToString("N"), StringComparer.Ordinal));
+    }
+
     private static async Task<decimal> TotalAsync(HttpClient client, Guid vendorId)
     {
         var entries = await client.GetFromJsonAsync<JsonElement>(
