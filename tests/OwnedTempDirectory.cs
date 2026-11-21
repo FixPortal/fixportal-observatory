@@ -15,7 +15,7 @@ public sealed class OwnedTempDirectory
     {
         _prefix = prefix;
         Path = System.IO.Path.GetFullPath(
-            System.IO.Path.Combine(System.IO.Path.GetTempPath(), prefix + Guid.NewGuid().ToString("N"))
+            System.IO.Path.Join(System.IO.Path.GetTempPath(), prefix + Guid.NewGuid().ToString("N"))
         );
     }
 
@@ -25,7 +25,7 @@ public sealed class OwnedTempDirectory
     {
         var owned = new OwnedTempDirectory(prefix);
         Directory.CreateDirectory(owned.Path);
-        File.WriteAllText(System.IO.Path.Combine(owned.Path, MarkerName), owned._token);
+        File.WriteAllText(System.IO.Path.Join(owned.Path, MarkerName), owned._token);
         return owned;
     }
 
@@ -50,7 +50,7 @@ public sealed class OwnedTempDirectory
         }
         var root = System.IO.Path.GetFullPath(System.IO.Path.GetTempPath());
         var info = new DirectoryInfo(Path);
-        var marker = System.IO.Path.Combine(Path, MarkerName);
+        var marker = System.IO.Path.Join(Path, MarkerName);
         if (
             !Path.StartsWith(root, StringComparison.OrdinalIgnoreCase)
             || !info.Name.StartsWith(_prefix, StringComparison.Ordinal)

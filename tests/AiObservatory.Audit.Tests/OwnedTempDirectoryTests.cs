@@ -9,7 +9,7 @@ public sealed class OwnedTempDirectoryTests
     public void Dispose_RemovesTheDirectoryItCreated()
     {
         var owned = OwnedTempDirectory.Create("audit-owned-test-");
-        File.WriteAllText(Path.Combine(owned.Path, "child.txt"), "x");
+        File.WriteAllText(Path.Join(owned.Path, "child.txt"), "x");
         owned.Delete();
         Directory.Exists(owned.Path).Should().BeFalse();
     }
@@ -20,7 +20,7 @@ public sealed class OwnedTempDirectoryTests
         var owned = OwnedTempDirectory.Create("audit-owned-test-");
         try
         {
-            File.WriteAllText(Path.Combine(owned.Path, ".owned-by-test"), "someone else");
+            File.WriteAllText(Path.Join(owned.Path, ".owned-by-test"), "someone else");
             var delete = owned.Delete;
             delete.Should().Throw<InvalidOperationException>().WithMessage("*not the directory this test created*");
             Directory.Exists(owned.Path).Should().BeTrue();
