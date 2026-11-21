@@ -166,12 +166,12 @@ public sealed class PricingRepricingService(
         {
             var application = await resolver.ResolveWithEvidenceAsync(usage, snapshotsBySourceId, cancellationToken);
             var quote = application?.Quote;
-            if (quote is null && usage.CostUsd is not null)
+            if (quote is null && (usage.CostUsd is not null || usage.CacheSavingsUsd is not null))
             {
                 // No snapshot covers this event (e.g. a model every retained catalog has dropped).
                 // An unresolvable event keeps its last known price and basis — blanking a figure
-                // we once knew converts priced history into "Not reported" on both the row and
-                // its aggregate.
+                // we once knew (the cost or the cache savings) converts priced history into
+                // "Not reported" on both the row and its aggregate.
                 var key = (usage.Provider, usage.Model ?? "<missing>");
                 skipped[key] = skipped.GetValueOrDefault(key) + 1;
                 continue;
