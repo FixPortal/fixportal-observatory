@@ -416,6 +416,23 @@ public sealed class PricingRepricingServiceTests : IAsyncLifetime
         logger.Warnings.Should().Contain(message => message.Contains("skipped 1 event(s) for OpenAI/ghost-b"));
     }
 
+    [Fact]
+    public async Task StandaloneRepricingBoundsTheLoggedModelLength()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _store.ActivateAsync(Candidate("catalog", 1m), ct);
+        var longModel = "ghost-" + new string('x', 500);
+        await _repository.RecordEventAsync(Event("ghost-long", CostBasis.ListPriceEstimate, 3m, 1m, longModel), ct);
+        var logger = new CapturingLogger();
+        var repricing = new PricingRepricingService(_db, _repository, Resolver(_store), _store, logger);
+
+        await repricing.RepriceProviderAsync(Provider.OpenAI, ct);
+
+        var warning = logger.Warnings.Should().ContainSingle().Which;
+        warning.Should().NotContain(longModel);
+        warning.Length.Should().BeLessThan(400);
+    }
+
     [Fact(Explicit = true)]
     [Trait("Category", "Performance")]
     public async Task QualificationRepricesEveryEligibleEventAndItsAggregate()
