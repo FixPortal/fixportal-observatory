@@ -135,6 +135,48 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
     }
 
     [Fact]
+    public async Task ReadsTheClockPerSourceSoALateSourceRecordsItsOwnAttemptTime()
+    {
+        // Each clock read moves five hours on, so a source that runs after another must not be
+        // stamped with the instant the pass started: the retry floor is measured from that stamp.
+        var first = Source(PricingSourceIds.OpenAi, null);
+        var second = Source(PricingSourceIds.Claude, null);
+        await using var harness = await CreateHarnessAsync(
+            [first, second],
+            [Definition(PricingSourceIds.OpenAi), Definition(PricingSourceIds.Claude)],
+            clock: new FakeClock(Now, Duration.FromHours(5))
+        );
+
+        await harness.Worker.RunOnceAsync(TestContext.Current.CancellationToken);
+
+        var firstAttempt = (await harness.LoadStateAsync(PricingSourceIds.OpenAi)).LastAttemptAt;
+        var secondAttempt = (await harness.LoadStateAsync(PricingSourceIds.Claude)).LastAttemptAt;
+        (secondAttempt > firstAttempt).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task LoadsTheBundledCatalogsOnceADayNotOnEveryHourlyPass()
+    {
+        var clock = new FakeClock(Now);
+        await using var harness = await CreateHarnessAsync(
+            [Source(PricingSourceIds.OpenAi, null)],
+            [Definition(PricingSourceIds.OpenAi)],
+            clock: clock
+        );
+        await harness.Worker.RunOnceAsync(TestContext.Current.CancellationToken);
+        (await harness.LoadActiveAsync(PricingSourceIds.Claude)).Should().NotBeNull();
+        await harness.DeleteSnapshotsAsync();
+
+        clock.Advance(Duration.FromHours(1));
+        await harness.Worker.RunOnceAsync(TestContext.Current.CancellationToken);
+        (await harness.LoadActiveAsync(PricingSourceIds.Claude)).Should().BeNull();
+
+        clock.Advance(Duration.FromDays(1));
+        await harness.Worker.RunOnceAsync(TestContext.Current.CancellationToken);
+        (await harness.LoadActiveAsync(PricingSourceIds.Claude)).Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task LoadsBundlesBeforeFetchingRemoteSources()
     {
         var source = Substitute.For<IPricingSource>();
@@ -426,7 +468,8 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
         IReadOnlyList<IPricingSource> sources,
         IReadOnlyList<PricingSourceDefinition> definitions,
         string? bundleBaseDirectory = null,
-        ILogger<BundledPricingCatalogLoader>? bundleLogger = null
+        ILogger<BundledPricingCatalogLoader>? bundleLogger = null,
+        IClock? clock = null
     )
     {
         var services = new ServiceCollection();
@@ -470,7 +513,7 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
         }
         var worker = new PricingRefreshWorkerService(
             provider.GetRequiredService<IServiceScopeFactory>(),
-            new FakeClock(Now),
+            clock ?? new FakeClock(Now),
             NullLogger<PricingRefreshWorkerService>.Instance
         );
         return new WorkerHarness(provider, worker);
@@ -519,6 +562,14 @@ public sealed class PricingRefreshWorkerServiceTests(ProviderPollingDatabase dat
             await scope
                 .ServiceProvider.GetRequiredService<SourceSyncStateStore>()
                 .MarkAttemptAsync(sourceId, Duration.FromDays(1), at, TestContext.Current.CancellationToken);
+        }
+
+        public async Task DeleteSnapshotsAsync()
+        {
+            await using var scope = services.CreateAsyncScope();
+            await scope
+                .ServiceProvider.GetRequiredService<AiObservatoryDbContext>()
+                .PricingSnapshots.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
         }
 
         public async Task DeleteStateAsync(string sourceId)
