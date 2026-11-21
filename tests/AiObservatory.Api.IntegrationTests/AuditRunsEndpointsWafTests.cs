@@ -112,6 +112,51 @@ public sealed class AuditRunsEndpointsWafTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Replay_StreamedBodyWithoutLengthStillGetsTheVersionGuard()
+    {
+        await using var streamed = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services => services.AddSingleton<IStartupFilter, StreamedBodyStartup>())
+        );
+        using var admin = streamed.CreateClient();
+        admin.DefaultRequestHeaders.Add("X-Observatory-Key", AiObservatoryApiFactory.AdminKey);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/audits/runs/{Guid.NewGuid()}/replay");
+        request.Headers.Add("Idempotency-Key", "streamed-replay");
+        (await admin.SendAsync(request, Ct)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    /// <summary>Presents the request the way an HTTP/2 stream does: a body, no Content-Length, no Transfer-Encoding.</summary>
+    private sealed class StreamedBodyStartup : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
+            app =>
+            {
+                app.Use(
+                    async (context, invokeNext) =>
+                    {
+                        if (context.Request.Path.Value!.EndsWith("/replay", StringComparison.Ordinal))
+                        {
+                            context.Request.ContentLength = null;
+                            context.Request.Headers.Remove("Transfer-Encoding");
+                            context.Request.Body = new MemoryStream(
+                                Encoding.UTF8.GetBytes("""{"schemaVersion":1,"verifierVersion":"99.0.0"}""")
+                            );
+                            context.Features.Set<Microsoft.AspNetCore.Http.Features.IHttpRequestBodyDetectionFeature>(
+                                new BodyDetected()
+                            );
+                        }
+                        await invokeNext();
+                    }
+                );
+                next(app);
+            };
+    }
+
+    private sealed class BodyDetected : Microsoft.AspNetCore.Http.Features.IHttpRequestBodyDetectionFeature
+    {
+        public bool CanHaveBody => true;
+    }
+
+    [Fact]
     public async Task ReadinessAndCapabilities_ObservationalAndUnsupportedVisible()
     {
         using var viewer = _factory.CreateReadOnlyClient();
