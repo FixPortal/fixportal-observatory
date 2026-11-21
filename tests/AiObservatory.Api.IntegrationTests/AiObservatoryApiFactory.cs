@@ -243,7 +243,7 @@ public sealed class AiObservatoryApiFactory : WebApplicationFactory<Program>, IA
         catch (Exception ex)
         {
             // A leaked throwaway DB doesn't fail the test, but it must not be silent.
-            await System.Console.Error.WriteLineAsync($"Could not drop throwaway database '{database}': {ex}");
+            await Console.Error.WriteLineAsync($"Could not drop throwaway database '{database}': {ex}");
         }
     }
 }

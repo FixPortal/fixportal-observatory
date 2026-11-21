@@ -1065,7 +1065,7 @@ public class SpendEntriesEndpointsWafTests(AiObservatoryApiFactory factory) : IC
 
         var response = await client.PostAsJsonAsync(
             "/api/spend/entries",
-            new object?[] { Entry(categoryId, vendorId, $"k-{Guid.NewGuid():N}"), null },
+            new[] { Entry(categoryId, vendorId, $"k-{Guid.NewGuid():N}"), null },
             ct
         );
 
