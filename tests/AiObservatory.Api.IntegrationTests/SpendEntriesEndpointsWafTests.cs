@@ -1069,8 +1069,8 @@ public class SpendEntriesEndpointsWafTests(AiObservatoryApiFactory factory) : IC
             ct
         );
 
-        // A null element used to throw mid-loop after the first row had committed, so a retry
-        // re-inserted it.
+        // A null element would throw mid-loop after the first row had committed, so a retry
+        // would re-insert it.
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var rows = await client.GetFromJsonAsync<JsonElement>($"/api/spend/entries?vendorId={vendorId}", ct);
         rows.GetArrayLength().Should().Be(0);
