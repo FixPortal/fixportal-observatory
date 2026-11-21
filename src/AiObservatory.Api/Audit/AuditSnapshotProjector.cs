@@ -68,7 +68,7 @@ public static class AuditSnapshotProjector
             new(
                 Date(a.Date),
                 a.Provider.ToString(),
-                FreezableModel(a.Model) ?? "",
+                FreezableModel(a.Model) ?? UnknownModel,
                 a.SourceId,
                 Enum.Parse<AiObservatory.Audit.Contracts.SourceKind>(a.SourceKind.ToString()),
                 Enum.Parse<AiObservatory.Audit.Contracts.UsageScope>(a.UsageScope.ToString()),
@@ -87,8 +87,15 @@ public static class AuditSnapshotProjector
         );
 
     /// <summary>
-    /// Stored rows that differ only in an unfreezable model all project to the empty (unknown) model, so they share
-    /// one key. Canonical serialisation rejects duplicate identities, so they are summed into one row.
+    /// The model identity the repository stores for an event without a model, and the one
+    /// <c>EventAggregationCheck</c> keys such events by; an unfreezable aggregate model projects to it too.
+    /// </summary>
+    private const string UnknownModel = "unknown";
+
+    /// <summary>
+    /// Stored rows that differ only in an unfreezable model all project to the unknown model, so they share one key
+    /// (with a stored "unknown" row too). Canonical serialisation rejects duplicate identities, so they are summed
+    /// into one row.
     /// </summary>
     public static IReadOnlyList<FrozenAggregate> MergeAggregates(IEnumerable<FrozenAggregate> rows) =>
         rows.GroupBy(r => r.Key)

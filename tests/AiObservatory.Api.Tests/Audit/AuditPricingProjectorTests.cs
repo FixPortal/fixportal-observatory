@@ -371,12 +371,69 @@ public sealed class AuditPricingProjectorTests
                 Model = model,
             }
         );
-        aggregate.Key.Model.Should().BeEmpty();
+        aggregate.Key.Model.Should().Be("unknown");
         var serializeAggregate = () => AiObservatory.Audit.Serialization.AuditCanonicalJson.Serialize(aggregate);
         serializeAggregate.Should().NotThrow();
     }
 
-    // Two stored rows that differ only in an out-of-charset model both project to an empty model.
+    // The stored aggregate row of an out-of-charset model and the events behind it must land in one group.
+    [Theory]
+    [InlineData("claude-opus-4-8[1m]")]
+    [InlineData(null)]
+    public void EventsAndTheirAggregateWithAnUnfreezableModel_ReportNoGroupPresenceDifference(string? model)
+    {
+        var now = Instant.FromUtc(2026, 10, 22, 12, 0);
+        var usage = new UsageEvent
+        {
+            Id = Guid.NewGuid(),
+            Provider = Provider.Anthropic,
+            Model = model,
+            SourceId = "local",
+            InputTokens = 10,
+            OccurredAt = now,
+            ObservedAt = now,
+            IngestedAt = now,
+            CostBasis = CostBasis.Notional,
+            RawPayload = "{}",
+        };
+        var aggregate = AuditSnapshotProjector.Aggregate(
+            new()
+            {
+                Date = new(2026, 10, 22),
+                Provider = Provider.Anthropic,
+                Model = model ?? "unknown",
+                SourceId = "local",
+                InputTokens = 10,
+                UnknownCostCount = 1,
+                UnknownCacheSavingsCount = 1,
+                RequestCount = 1,
+                CostBasis = CostBasis.Notional,
+            }
+        );
+        var day = new DateOnly(2026, 10, 22);
+        var input = new AiObservatory.Audit.Contracts.AuditInput
+        {
+            SchemaVersion = 1,
+            VerifierVersion = "test-1",
+            RuleVersion = "test-1",
+            Scope = new(
+                day,
+                day.AddDays(1),
+                [new(Guid.Parse("00000000-0000-0000-0000-000000000001"), "local")],
+                [AiObservatory.Audit.Contracts.CheckCode.EventAggregation],
+                [],
+                false
+            ),
+            Events = [AuditSnapshotProjector.Event(usage, null)],
+            Aggregates = AuditSnapshotProjector.MergeAggregates([aggregate]),
+        };
+
+        var outcome = new AiObservatory.Audit.Checks.EventAggregationCheck().Evaluate(input);
+
+        outcome.Findings.Should().BeEmpty();
+    }
+
+    // Two stored rows that differ only in an out-of-charset model both project to the unknown model.
     // The snapshot must still serialise, with the counters summed and none lost.
     [Fact]
     public void AggregatesSharingAnUnknownModelKey_SerialiseAsOneSummedRow()
@@ -394,7 +451,13 @@ public sealed class AuditPricingProjectorTests
                 UnknownCostCount = 1,
                 RequestCount = 2,
             };
-        var rows = new[] { Row("claude-opus-4-8[1m]", 10, 0.5m), Row("model with space", 20, 0.25m), Row("", 30, 1m) }
+        var rows = new[]
+        {
+            Row("claude-opus-4-8[1m]", 10, 0.5m),
+            Row("model with space", 20, 0.25m),
+            Row("", 30, 1m),
+            Row("unknown", 40, 2m),
+        }
             .Select(AuditSnapshotProjector.Aggregate)
             .ToArray();
 
@@ -403,11 +466,11 @@ public sealed class AuditPricingProjectorTests
         var serialize = () => AiObservatory.Audit.Serialization.AuditCanonicalJson.Serialize(merged);
         serialize.Should().NotThrow();
         var only = merged.Should().ContainSingle().Subject;
-        only.InputTokens.Should().Be(60);
-        only.OutputTokens.Should().Be(3);
-        only.CostUsd.Should().Be(1.75m);
-        only.UnknownCostCount.Should().Be(3);
-        only.RequestCount.Should().Be(6);
+        only.InputTokens.Should().Be(100);
+        only.OutputTokens.Should().Be(4);
+        only.CostUsd.Should().Be(3.75m);
+        only.UnknownCostCount.Should().Be(4);
+        only.RequestCount.Should().Be(8);
     }
 
     [Fact]
