@@ -38,7 +38,7 @@ The chart plots wall-clock minutes. Each bar pair is one slot of the selected pe
 
 ### How a day's figures are computed
 
-For each stored session that ends after it starts, the API clips the session to your range and cuts it at UTC midnights. Each day fragment gets a share of the session's active seconds in proportion to the fragment's share of the session's elapsed time, rounded to whole seconds. The day's wall-clock figure is the length of the union of its fragments.
+For each stored session that ends after it starts, the API clips the session to your range and cuts it at UTC midnights. Each day fragment gets a share of the session's active seconds in proportion to the fragment's share of the session's elapsed time, in whole seconds that add up to the session's clipped total (the largest fractional shares get the spare seconds). The day's wall-clock figure is the length of the union of its fragments.
 
 A session with no elapsed time (its last-seen time equals its start time) contributes nothing to the chart.
 

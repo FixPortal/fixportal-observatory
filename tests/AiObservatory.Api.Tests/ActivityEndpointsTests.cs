@@ -137,6 +137,31 @@ public class ActivityEndpointsTests
     }
 
     [Fact]
+    public void BuildDailyActivityResponses_WhenASessionSplitsAtMidnight_DaySharesSumToItsActiveSeconds()
+    {
+        // One active second straddling midnight splits into two half-second shares. Rounding each
+        // share on its own would report 1 + 1 = 2 seconds for a one-second session.
+        var sessions = new[]
+        {
+            new ActivityEndpoints.ActivitySessionSlice(
+                "fix-portal/example",
+                Instant.FromUtc(2026, 7, 1, 23, 59, 59).Plus(Duration.FromMilliseconds(500)),
+                Instant.FromUtc(2026, 7, 2, 0, 0, 0).Plus(Duration.FromMilliseconds(500)),
+                ActiveSeconds: 1
+            ),
+        };
+
+        var result = ActivityEndpoints.BuildDailyActivityResponses(
+            sessions,
+            new LocalDate(2026, 7, 1),
+            new LocalDate(2026, 7, 2),
+            FixPortalOwners
+        );
+
+        result.Sum(day => day.ActiveSeconds).Should().Be(1);
+    }
+
+    [Fact]
     public void BuildDailyActivityResponses_FiltersDisallowedProjects()
     {
         var sessions = new[]
