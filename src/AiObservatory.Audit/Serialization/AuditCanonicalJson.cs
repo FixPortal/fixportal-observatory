@@ -66,6 +66,9 @@ public static class AuditCanonicalJson
         }
     }
 
+    /// <summary>Whether <paramref name="model"/> can be frozen as an audit <c>Model</c> without failing validation.</summary>
+    public static bool IsFreezableModel(string model) => AuditContractValidation.IsValidModel(model);
+
     public static string ContentHash(ReadOnlySpan<byte> utf8) => Convert.ToHexStringLower(SHA256.HashData(utf8));
 
     private static JsonSerializerOptions CreateOptions()

@@ -341,4 +341,55 @@ public sealed class AuditPricingProjectorTests
             .Should()
             .Be(applied.Quote.CostUsd);
     }
+
+    [Theory]
+    [InlineData("claude-opus-4-8[1m]")]
+    [InlineData("model with space")]
+    [InlineData("../escape")]
+    public void OutOfCharsetModel_ProjectsAsUnknownSoCanonicalSerializationSucceeds(string model)
+    {
+        var now = Instant.FromUtc(2026, 10, 22, 12, 0);
+        var usage = new UsageEvent
+        {
+            Provider = Provider.Anthropic,
+            Model = model,
+            OccurredAt = now,
+            ObservedAt = now,
+            IngestedAt = now,
+            CostBasis = CostBasis.Notional,
+            RawPayload = "{}",
+        };
+        var frozen = AuditSnapshotProjector.Event(usage, null);
+        frozen.Model.Should().BeNull();
+        var serialize = () => AiObservatory.Audit.Serialization.AuditCanonicalJson.Serialize(frozen);
+        serialize.Should().NotThrow();
+        var aggregate = AuditSnapshotProjector.Aggregate(
+            new()
+            {
+                Date = new(2026, 10, 22),
+                Provider = Provider.Anthropic,
+                Model = model,
+            }
+        );
+        aggregate.Key.Model.Should().BeEmpty();
+        var serializeAggregate = () => AiObservatory.Audit.Serialization.AuditCanonicalJson.Serialize(aggregate);
+        serializeAggregate.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ConformingModel_ProjectsUnchanged()
+    {
+        var now = Instant.FromUtc(2026, 10, 22, 12, 0);
+        var usage = new UsageEvent
+        {
+            Provider = Provider.Anthropic,
+            Model = "claude-opus-4-8",
+            OccurredAt = now,
+            ObservedAt = now,
+            IngestedAt = now,
+            CostBasis = CostBasis.Notional,
+            RawPayload = "{}",
+        };
+        AuditSnapshotProjector.Event(usage, null).Model.Should().Be("claude-opus-4-8");
+    }
 }

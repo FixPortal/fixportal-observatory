@@ -39,7 +39,7 @@ public static class AuditSnapshotProjector
             e.ObservedAt.ToDateTimeOffset(),
             e.IngestedAt.ToDateTimeOffset(),
             e.Provider.ToString(),
-            e.Model,
+            FreezableModel(e.Model),
             new(
                 e.InputTokens,
                 e.OutputTokens,
@@ -68,7 +68,7 @@ public static class AuditSnapshotProjector
             new(
                 Date(a.Date),
                 a.Provider.ToString(),
-                a.Model,
+                FreezableModel(a.Model) ?? "",
                 a.SourceId,
                 Enum.Parse<AiObservatory.Audit.Contracts.SourceKind>(a.SourceKind.ToString()),
                 Enum.Parse<AiObservatory.Audit.Contracts.UsageScope>(a.UsageScope.ToString()),
@@ -169,6 +169,14 @@ public static class AuditSnapshotProjector
         );
 
     public static DateOnly Date(LocalDate d) => new(d.Year, d.Month, d.Day);
+
+    /// <summary>
+    /// A model outside the audit charset becomes unknown (null; empty on an aggregate key), so the row surfaces as an
+    /// unpriced or unmatched group instead of failing canonical serialisation for every run that covers it.
+    /// It is deliberately not hashed: the frozen rate resolver needs the raw value to match a catalog model.
+    /// </summary>
+    private static string? FreezableModel(string? model) =>
+        model is not null && AuditCanonicalJson.IsFreezableModel(model) ? model : null;
 
     public static string? Opaque(string? value) =>
         value is null ? null : AuditCanonicalJson.ContentHash(Encoding.UTF8.GetBytes(value));

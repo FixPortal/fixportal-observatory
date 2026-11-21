@@ -53,10 +53,19 @@ public sealed class AuditWorkerService(
             {
                 return;
             }
-            await new AuditSnapshotService(db, store, lease, options.Value.MaxSnapshotBytes).CreateAsync(
-                lease.RunId,
-                owned.Token
-            );
+            try
+            {
+                await new AuditSnapshotService(db, store, lease, options.Value.MaxSnapshotBytes).CreateAsync(
+                    lease.RunId,
+                    owned.Token
+                );
+            }
+            catch (AuditValidationException)
+            {
+                // The frozen rows fail canonical validation deterministically; re-leasing would rebuild the same snapshot.
+                await store.FailRunAsync(lease, "audit_snapshot_invalid", ct, terminal: true);
+                return;
+            }
             var snapshot = await store.ReadSnapshotAsync(lease.RunId, owned.Token)
                 ?? throw new AuditStoreException("snapshot_unavailable", 410);
             if (!await store.SetRunStageAsync(lease, "verifying", owned.Token))
