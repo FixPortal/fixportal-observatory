@@ -1176,7 +1176,15 @@ public class EventsEndpointsWafTests(FixedClockApiFactory fixture)
         item.GetProperty("sourceKind").GetString().Should().Be("localTelemetry");
         item.GetProperty("occurredAtUtc").GetDateTimeOffset().Should().Be(occurredAt);
         item.GetProperty("hasCost").GetBoolean().Should().BeFalse();
-        item.TryGetProperty("inputTokens", out _).Should().BeFalse();
+        // The stored figures, so a collector can tell whether its per-machine rows cover a legacy key.
+        item.TryGetProperty("inputTokens", out var inputTokens).Should().BeTrue("the snapshot carries its figures");
+        inputTokens.GetInt64().Should().Be(30);
+        item.GetProperty("outputTokens").GetInt64().Should().Be(5);
+        item.GetProperty("cacheReadTokens").GetInt64().Should().Be(3);
+        item.GetProperty("cacheWriteTokens").GetInt64().Should().Be(2);
+        item.GetProperty("cacheWrite1hTokens").GetInt64().Should().Be(1);
+        item.GetProperty("thoughtTokens").GetInt64().Should().Be(4);
+        item.GetProperty("costUsd").ValueKind.Should().Be(JsonValueKind.Null, "hasCost is false");
         item.TryGetProperty("rawPayload", out _).Should().BeFalse();
         inventory
             .EnumerateArray()

@@ -58,10 +58,10 @@ public sealed record EventCostRecord(
 );
 
 /// <summary>
-/// Canonical fields needed by a local collector to reconcile its source-scoped snapshots.
-/// Raw evidence is deliberately excluded, and so is the cost figure itself: only whether a
-/// cost is known (<see cref="HasCost"/>) is exposed, expressed in the type rather than as a
-/// magic zero.
+/// Canonical fields needed by a local collector to reconcile its source-scoped snapshots,
+/// including the stored figures so it can tell whether its per-machine rows cover a legacy key
+/// on every figure. Raw evidence is deliberately excluded. <see cref="CostUsd"/> is null when the
+/// row has no cost, which <see cref="HasCost"/> also states.
 /// </summary>
 public sealed record LocalSnapshotRecord(
     Provider Provider,
@@ -73,7 +73,14 @@ public sealed record LocalSnapshotRecord(
     SourceKind SourceKind,
     UsageScope UsageScope,
     CostBasis CostBasis,
-    string EventKey
+    string EventKey,
+    long InputTokens,
+    long OutputTokens,
+    long? CacheReadTokens,
+    long? CacheWriteTokens,
+    long? CacheWrite1hTokens,
+    long? ThoughtTokens,
+    decimal? CostUsd
 );
 
 public sealed record DailyBilledSpend(LocalDate Date, decimal AmountGbp);
