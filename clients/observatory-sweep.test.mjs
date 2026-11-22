@@ -4028,3 +4028,25 @@ test('legacy cost coverage uses the cost the server stored for this machine, not
     assert.equal(JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration?.codex, undefined)
   } finally { await removeTemp(root) }
 })
+
+// CodeRabbit 4657871784
+test('a second sweep on the same machine refuses to start while the first holds the lock', async () => {
+  const root = await makeTemp('observatory-sweep-lock-')
+  await writeCodexRollout(root)
+  const statePath = join(root, 'state', 'sweep.json')
+  await mkdir(join(root, 'state'), { recursive: true })
+  const lock = `${statePath}.lock`
+  await writeFile(lock, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }))
+  const recording = recordingServer()
+  try {
+    await withRecordingServer(recording, async () => {
+      await assert.rejects(() => runMainWith({ root, statePath, server: recording.server }), /Another sweep is running/)
+      assert.deepEqual(recording.posts, [])
+      // A lock left by a run that started long ago is stale: the next run takes it and releases it.
+      await writeFile(lock, JSON.stringify({ pid: process.pid, startedAt: '2020-01-01T00:00:00.000Z' }))
+      await runMainWith({ root, statePath, server: recording.server })
+    })
+    assert.equal(machinePosts(recording.posts).length, 1)
+    assert.deepEqual((await readdir(join(root, 'state'))).sort(), ['sweep.json'])
+  } finally { await removeTemp(root) }
+})
