@@ -1166,7 +1166,6 @@ export function mergeHolds(...maps) {
 }
 
 const eventKeyDay = eventKey => /^[^:]+:(\d{4}-\d{2}-\d{2})(?::|$)/.exec(eventKey)?.[1]
-const dayModel = snapshot => `${eventKeyDay(snapshot.eventKey)}\n${snapshot.model}`
 
 // eventKey is `<tool>:<UTC date>:...` for every local-telemetry key. A key with no readable date
 // is held whenever its source has any hold, because its day cannot be shown to lie outside it.
@@ -1459,35 +1458,34 @@ async function fetchSnapshotInventory(url, apiKey, enabled, machine) {
 const COVERED_TOKEN_FIELDS = ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'cacheWrite1hTokens', 'thoughtTokens']
 
 /**
- * Whether this machine's per-machine snapshot provably contains a legacy snapshot for the same
- * day and model: true when every figure the legacy key carries is at most this machine's, false
- * when one exceeds it (or there is no per-machine counterpart), undefined when a figure is
- * missing on either side and the comparison cannot be made.
+ * Whether this machine's per-machine snapshot with the same event key provably contains a legacy
+ * snapshot: true when every figure the legacy key carries is at most this machine's; false when
+ * one exceeds it, there is no counterpart, or the legacy key lacks a figure (it can never be shown
+ * to be contained, so it is kept for good); undefined when only this machine's counterpart lacks a
+ * figure, which a later run can still supply.
  */
 function coversLegacy(mine, legacy) {
   if (mine === undefined) { return false }
-  let covered = true
-  for (const field of COVERED_TOKEN_FIELDS) {
-    if (!Number.isFinite(legacy[field]) || !Number.isFinite(mine[field])) { return undefined }
-    if (mine[field] < legacy[field]) { covered = false }
+  const legacyHasCost = Number.isFinite(legacy.costUsd)
+  if (COVERED_TOKEN_FIELDS.some(field => !Number.isFinite(legacy[field])) || (legacy.hasCost === true && !legacyHasCost)) {
+    return false
   }
-  // Only a cost the legacy key carries must be contained; a server-rated (null) cost carries none.
-  if (Number.isFinite(legacy.costUsd)) {
-    if (!Number.isFinite(mine.costUsd) || mine.costUsd < legacy.costUsd) { covered = false }
-  } else if (legacy.hasCost === true) {
+  if (COVERED_TOKEN_FIELDS.some(field => !Number.isFinite(mine[field])) || (legacyHasCost && mine.costUsd === undefined)) {
     return undefined
   }
-  return covered
+  // Only a cost the legacy key carries must be contained; a server-rated (null) cost carries none.
+  return COVERED_TOKEN_FIELDS.every(field => mine[field] >= legacy[field])
+    && (!legacyHasCost || (Number.isFinite(mine.costUsd) && mine.costUsd >= legacy.costUsd))
 }
 
 // One-shot migration for the per-machine namespace: snapshots posted before source ids
 // carried the @<machine> suffix still sit under the bare ids (codex-local etc.), so the
 // first post-upgrade run would otherwise double all pre-upgrade history beside the new
 // series. A bare id is shared by every machine, so a legacy key is zeroed only when this
-// machine's own per-machine snapshot for the same day and model (posted this run, or already
-// on the server from an earlier run) provably contains it; every other legacy key is kept.
+// machine's own per-machine snapshot with the same event key (posted this run, or already on
+// the server from an earlier run) provably contains it; every other legacy key is kept.
 // The marker is recorded only once every legacy key was zeroed or kept by that rule: a failed
-// fetch or post, or a key whose figures cannot be compared yet, leaves it unset for a retry.
+// fetch or post, or a counterpart whose figures are not known yet, leaves it unset for a retry.
 async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc, replacementVerified, replacements) {
   state.legacySourceMigration ??= {}
   for (const tool of enabled) {
@@ -1517,7 +1515,7 @@ async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc
       continue
     }
     const mine = replacements(tool)
-    const verdicts = legacyInventory.map(snapshot => coversLegacy(mine.get(dayModel(snapshot)), snapshot))
+    const verdicts = legacyInventory.map(snapshot => coversLegacy(mine.get(snapshot.eventKey), snapshot))
     const superseded = legacyInventory.filter((_, index) => verdicts[index] === true)
     const unknown = verdicts.filter(verdict => verdict === undefined).length
     let completed = unknown === 0
@@ -1530,7 +1528,7 @@ async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc
       console.error(`Tombstoned ${superseded.length} legacy ${legacyId} key(s) this machine's per-machine series contains; ${legacyInventory.length - superseded.length} kept.`)
     }
     if (unknown > 0) {
-      console.error(`${unknown} legacy ${legacyId} key(s) carry no comparable token figures and are kept; the migration is retried next run.`)
+      console.error(`${unknown} legacy ${legacyId} key(s) are kept because this machine's matching key lacks a figure; the migration is retried next run.`)
     }
     if (!completed) {
       console.error(`Legacy migration for ${legacyId} did not finish; it is retried next run.`)
@@ -1774,7 +1772,7 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
 
   let posted = 0
   const activeSucceeded = new Map()
-  // This machine's per-machine snapshot per source and day/model, for the legacy migration: what
+  // This machine's per-machine snapshot per source and event key, for the legacy migration: what
   // the server already holds from earlier runs, updated by this run's successful posts, so a key
   // replaced before its local file aged out still counts as replaced.
   const replacements = new Map()
@@ -1782,7 +1780,7 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     if (!replacements.has(sourceId)) { replacements.set(sourceId, new Map()) }
     return replacements.get(sourceId)
   }
-  for (const snapshot of inventory) { replacementsOf(snapshot.sourceId).set(dayModel(snapshot), snapshot) }
+  for (const snapshot of inventory) { replacementsOf(snapshot.sourceId).set(snapshot.eventKey, snapshot) }
   // A source whose clean scan verified an empty local history (populated
   // discovery root, no read failures, no records) has nothing left to replace:
   // seed success for the legacy migration below. It plans no tombstones (no
@@ -1803,7 +1801,7 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     )
     if (succeeded) {
       posted++
-      replacementsOf(submission.snapshot.sourceId).set(dayModel(submission.snapshot), submission.snapshot)
+      replacementsOf(submission.snapshot.sourceId).set(submission.snapshot.eventKey, submission.snapshot)
     }
   }
   for (const submission of submissions.filter(item => !item.active)) {
@@ -1822,7 +1820,7 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     // visible and is compensated by the next scheduled reconciliation.
     if (await postEvent(url, apiKey, { ...submission.snapshot, observedAtUtc })) {
       posted++
-      replacementsOf(submission.snapshot.sourceId).delete(dayModel(submission.snapshot))
+      replacementsOf(submission.snapshot.sourceId).delete(submission.snapshot.eventKey)
     }
   }
 

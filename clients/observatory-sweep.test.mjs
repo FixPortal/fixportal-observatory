@@ -3457,7 +3457,8 @@ function recordingServer(legacyKeys = [], machineKeys = [], { failPost = () => f
     const url = new URL(request.url, 'http://127.0.0.1')
     if (request.method === 'GET' && url.pathname === '/api/events/local-snapshots') {
       const sourceId = url.searchParams.get('sourceId')
-      const keys = sourceId === 'codex-local' ? legacyKeys : sourceId === 'codex-local@test-machine' ? machineKeys : []
+      // Every bare (legacy) id serves legacyKeys; every test-machine id serves machineKeys.
+      const keys = !sourceId.includes('@') ? legacyKeys : sourceId.endsWith('@test-machine') ? machineKeys : []
       const body = keys.map(key => (typeof key === 'string' ? { eventKey: key } : key)).map(({ eventKey, ...figures }) => ({
         provider: 'openai', occurredAtUtc: '2026-08-10T12:00:00Z', model: eventKey.split(':')[2], ...INVENTORY_FIGURES,
         ...figures, runtime: 'codex', sourceId,
@@ -3729,7 +3730,7 @@ test('a legacy key replaced in an earlier run is still zeroed after its local fi
 })
 
 // Q3b
-test('a legacy key is zeroed only when this machine covers every figure, and unknown figures keep the migration pending', async () => {
+test('a legacy key is zeroed only when this machine covers every figure, and a figure the legacy key lacks keeps it', async () => {
   const root = await makeTemp('observatory-legacy-covered-')
   const sessions = join(root, 'codex', 'sessions')
   await mkdir(sessions, { recursive: true })
@@ -3746,12 +3747,68 @@ test('a legacy key is zeroed only when this machine covers every figure, and unk
     assert.deepEqual(legacyZeroes(covered.posts), ['codex:2026-08-25:gpt-5.5'])
     assert.equal(typeof JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration.codex, 'string')
 
-    // A legacy row with no token figures cannot be compared: kept, and the marker stays unset.
+    // A legacy row missing a figure can never be shown to be contained: it is kept deliberately,
+    // so the migration converges and records its marker.
     await writeFile(statePath, '{}')
     const unknown = recordingServer([{ eventKey: 'codex:2026-08-25:gpt-5.5', cacheReadTokens: undefined }])
     await withRecordingServer(unknown, async () => { await runMainWith({ root, statePath, server: unknown.server }) })
     assert.deepEqual(legacyZeroes(unknown.posts), [])
+    assert.equal(typeof JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration.codex, 'string')
+  } finally { await removeTemp(root) }
+})
+
+// Composition re-review, non-convergence: only this machine's side can still change.
+test('a legacy key whose per-machine counterpart lacks a figure is kept and the migration stays pending', async () => {
+  const root = await makeTemp('observatory-legacy-mine-unknown-')
+  const sessions = join(root, 'codex', 'sessions')
+  await mkdir(sessions, { recursive: true })
+  // 08-24 survives only on the server, as a row without its cache-read figure; local disk covers 08-30.
+  await writeFile(join(sessions, 'later.jsonl'), [CODEX_GPT55, codexUsageRow('2026-08-30T12:00:00Z', 10, 5)].join('\n'))
+  const recording = recordingServer(['codex:2026-08-24:gpt-5.5'], [{ eventKey: 'codex:2026-08-24:gpt-5.5', cacheReadTokens: undefined }])
+  const statePath = join(root, 'state', 'sweep.json')
+  try {
+    await withRecordingServer(recording, async () => { await runMainWith({ root, statePath, server: recording.server }) })
+    assert.deepEqual(legacyZeroes(recording.posts), [])
     assert.equal(JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration?.codex, undefined)
+  } finally { await removeTemp(root) }
+})
+
+// Two Claude messages on 2026-08-24 that differ only in service tier.
+async function writeClaudeSiblings(root, tiers) {
+  const projects = join(root, 'claude', 'projects')
+  await mkdir(projects, { recursive: true })
+  await writeFile(join(projects, 'session.jsonl'), tiers.map(([tier, input, output], index) => JSON.stringify({
+    type: 'assistant', timestamp: '2026-08-24T12:00:00Z',
+    message: { id: `msg-${index}`, model: 'claude-opus-5', usage: { input_tokens: input, output_tokens: output, service_tier: tier, speed: 'standard', inference_geo: 'us' } },
+  })).join('\n'))
+}
+
+// Composition re-review, slot collision
+test('a legacy key is never zeroed by a larger sibling key this machine posted for the same day and model', async () => {
+  const root = await makeTemp('observatory-legacy-sibling-larger-')
+  await writeClaudeSiblings(root, [['standard', 100, 50]])
+  const recording = recordingServer(['claude:2026-08-24:claude-opus-5:priority:standard:us'])
+  try {
+    await withRecordingServer(recording, async () => {
+      await runMainWith({ root, statePath: join(root, 'state', 'sweep.json'), server: recording.server, sources: 'claude' })
+    })
+    assert.equal(machinePosts(recording.posts, 'claude-local@test-machine').length, 1)
+    assert.deepEqual(machinePosts(recording.posts, 'claude-local').map(body => body.eventKey), [])
+  } finally { await removeTemp(root) }
+})
+
+// Composition re-review, slot collision
+test('a legacy key is zeroed by its own per-machine key even when a smaller sibling posted after it', async () => {
+  const root = await makeTemp('observatory-legacy-sibling-smaller-')
+  await writeClaudeSiblings(root, [['priority', 100, 50], ['standard', 3, 1]])
+  const legacyKey = 'claude:2026-08-24:claude-opus-5:priority:standard:us'
+  const recording = recordingServer([legacyKey])
+  try {
+    await withRecordingServer(recording, async () => {
+      await runMainWith({ root, statePath: join(root, 'state', 'sweep.json'), server: recording.server, sources: 'claude' })
+    })
+    assert.equal(machinePosts(recording.posts, 'claude-local@test-machine').length, 2)
+    assert.deepEqual(machinePosts(recording.posts, 'claude-local').map(body => body.eventKey), [legacyKey])
   } finally { await removeTemp(root) }
 })
 
