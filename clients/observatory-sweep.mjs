@@ -1280,8 +1280,17 @@ export async function updateFileCache(files, cache, parse, read = path => readFi
         if (cached && Array.isArray(cached.records)) {
           reusedFiles++
           console.error(`Read failed for ${file.path}; reusing cached records (${reusedFiles} reused this scan): ${error.message}`)
-          next[file.path] = cached
-          noteHeld(file, cached)
+          // A failure that lasts until the file changes (an Antigravity database whose transcript
+          // is gone) holds the cached days rather than reposting them as fresh observations, and
+          // is cached under its new key so later runs restore the same hold.
+          const firstDay = cached.records.map(record => record.date).filter(day => typeof day === 'string').sort()[0] ?? ''
+          next[file.path] = file.cacheFailure
+            ? {
+                ...cached, cacheKey: file.cacheKey, incomplete: true,
+                holdFrom: cached.incomplete ? earlierHold(cached.holdFrom ?? '', firstDay) : firstDay,
+              }
+            : cached
+          noteHeld(file, next[file.path])
           for (const record of cached.records) { records.push(record) }
         } else {
           // Unreadable with no cached records. "Nothing was ever posted from this
