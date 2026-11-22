@@ -102,6 +102,98 @@ public class SweepStatusWafTests(AiObservatoryApiFactory factory) : IClassFixtur
         cleared.GetProperty("status").GetString().Should().Be("fresh");
     }
 
+    private static object Report(string machine, string attemptedAt, int heldFiles, int unplacedCount = 0) =>
+        new
+        {
+            machine,
+            unplaced = unplacedCount == 0
+                ? Array.Empty<object>()
+                :
+                [
+                    new
+                    {
+                        tool = "codex",
+                        model = "mystery",
+                        count = unplacedCount,
+                    },
+                ],
+            heldFiles,
+            attemptedAt,
+        };
+
+    private async Task<Data.Entities.SourceSyncState> RowAsync(string machine)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AiObservatoryDbContext>();
+        return await db
+            .SourceSyncStates.AsNoTracking()
+            .SingleAsync(s => s.SourceId == "sweep-placement@" + machine, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task A_stalled_older_report_never_overwrites_a_newer_one()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = factory.CreateAdminClient();
+
+        (await client.PostAsJsonAsync(Route, Report("stale-box", "2026-01-02T00:00:00Z", 0), ct))
+            .StatusCode.Should()
+            .Be(HttpStatusCode.NoContent);
+        (await client.PostAsJsonAsync(Route, Report("stale-box", "2026-01-01T00:00:00Z", 5), ct))
+            .StatusCode.Should()
+            .Be(HttpStatusCode.NoContent);
+
+        var row = await RowAsync("stale-box");
+        row.IsAvailable.Should().BeTrue("the newer report was a success");
+        row.LastError.Should().BeNull();
+        row.HeldFiles.Should().Be(0);
+        row.ConsecutiveFailureCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_retried_report_with_the_same_attempt_counts_once()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = factory.CreateAdminClient();
+        var report = Report("replay-box", "2026-01-03T00:00:00Z", 2, unplacedCount: 1);
+
+        (await client.PostAsJsonAsync(Route, report, ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await client.PostAsJsonAsync(Route, report, ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var row = await RowAsync("replay-box");
+        row.ConsecutiveFailureCount.Should().Be(1, "a retry of one sweep is one failure");
+        row.HeldFiles.Should().Be(2);
+        row.LastAttemptAt.Should().Be(NodaTime.Instant.FromUtc(2026, 1, 3, 0, 0));
+    }
+
+    [Fact]
+    public async Task A_future_attempt_time_is_clamped_to_the_server_clock()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = factory.CreateAdminClient();
+
+        (await client.PostAsJsonAsync(Route, Report("clamp-box", "2999-01-01T00:00:00Z", 4), ct))
+            .StatusCode.Should()
+            .Be(HttpStatusCode.NoContent);
+        // An old client's report, stamped with server now, is later than the clamped one, so it applies.
+        (
+            await client.PostAsJsonAsync(
+                Route,
+                new
+                {
+                    machine = "clamp-box",
+                    unplaced = Array.Empty<object>(),
+                    heldFiles = 0,
+                },
+                ct
+            )
+        ).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var row = await RowAsync("clamp-box");
+        row.HeldFiles.Should().Be(0);
+        row.IsAvailable.Should().BeTrue();
+    }
+
     private static async Task<System.Text.Json.JsonElement> StatusRowAsync(HttpClient client)
     {
         var rows = await client.GetFromJsonAsync<System.Text.Json.JsonElement>(
@@ -113,6 +205,7 @@ public class SweepStatusWafTests(AiObservatoryApiFactory factory) : IClassFixtur
 
     [Theory]
     [InlineData("""{"machine":"test-box","unplaced":[],"heldFiles":-1}""")]
+    [InlineData("""{"machine":"test-box","unplaced":[],"attemptedAt":"not-a-date"}""")]
     [InlineData("""{"machine":"Bad Box","unplaced":[]}""")]
     [InlineData("""{"machine":"test-box","unplaced":[{"tool":"codex","model":"has space","count":1}]}""")]
     [InlineData("""{"machine":"test-box","unplaced":[{"tool":"codex","model":"m","count":0}]}""")]
