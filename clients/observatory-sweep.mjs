@@ -1447,14 +1447,39 @@ async function fetchSnapshotInventory(url, apiKey, enabled, machine) {
   return { inventory, failedSources }
 }
 
+const COVERED_TOKEN_FIELDS = ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'cacheWrite1hTokens', 'thoughtTokens']
+
+/**
+ * Whether this machine's per-machine snapshot provably contains a legacy snapshot for the same
+ * day and model: true when every figure the legacy key carries is at most this machine's, false
+ * when one exceeds it (or there is no per-machine counterpart), undefined when a figure is
+ * missing on either side and the comparison cannot be made.
+ */
+function coversLegacy(mine, legacy) {
+  if (mine === undefined) { return false }
+  let covered = true
+  for (const field of COVERED_TOKEN_FIELDS) {
+    if (!Number.isFinite(legacy[field]) || !Number.isFinite(mine[field])) { return undefined }
+    if (mine[field] < legacy[field]) { covered = false }
+  }
+  // Only a cost the legacy key carries must be contained; a server-rated (null) cost carries none.
+  if (Number.isFinite(legacy.costUsd)) {
+    if (!Number.isFinite(mine.costUsd) || mine.costUsd < legacy.costUsd) { covered = false }
+  } else if (legacy.hasCost === true) {
+    return undefined
+  }
+  return covered
+}
+
 // One-shot migration for the per-machine namespace: snapshots posted before source ids
 // carried the @<machine> suffix still sit under the bare ids (codex-local etc.), so the
 // first post-upgrade run would otherwise double all pre-upgrade history beside the new
-// series. Tombstone, once, each legacy key that this run replaced with a per-machine post for
-// the same day and model, and record completion in the state file; a failed fetch or post
-// leaves the marker unset so the next run retries. Every other legacy key is kept: its day may
-// be older than this machine's retention, or belong to another machine under the shared id.
-async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc, replacementVerified, replacedDays) {
+// series. A bare id is shared by every machine, so a legacy key is zeroed only when this
+// machine's own per-machine snapshot for the same day and model (posted this run, or already
+// on the server from an earlier run) provably contains it; every other legacy key is kept.
+// The marker is recorded only once every legacy key was zeroed or kept by that rule: a failed
+// fetch or post, or a key whose figures cannot be compared yet, leaves it unset for a retry.
+async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc, replacementVerified, replacements) {
   state.legacySourceMigration ??= {}
   for (const tool of enabled) {
     if (state.legacySourceMigration[tool]) { continue }
@@ -1482,22 +1507,27 @@ async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc
       console.error(`Legacy inventory unavailable for ${legacyId} (${error.message}); the migration is retried next run.`)
       continue
     }
-    const replaced = replacedDays(tool)
-    const superseded = legacyInventory.filter(snapshot => replaced.has(dayModel(snapshot)))
-    let completed = true
+    const mine = replacements(tool)
+    const verdicts = legacyInventory.map(snapshot => coversLegacy(mine.get(dayModel(snapshot)), snapshot))
+    const superseded = legacyInventory.filter((_, index) => verdicts[index] === true)
+    const unknown = verdicts.filter(verdict => verdict === undefined).length
+    let completed = unknown === 0
     for (const snapshot of superseded) {
       if (!await postEvent(url, apiKey, { ...zeroSnapshot(snapshot), observedAtUtc })) {
         completed = false
       }
+    }
+    if (superseded.length > 0) {
+      console.error(`Tombstoned ${superseded.length} legacy ${legacyId} key(s) this machine's per-machine series contains; ${legacyInventory.length - superseded.length} kept.`)
+    }
+    if (unknown > 0) {
+      console.error(`${unknown} legacy ${legacyId} key(s) carry no comparable token figures and are kept; the migration is retried next run.`)
     }
     if (!completed) {
       console.error(`Legacy migration for ${legacyId} did not finish; it is retried next run.`)
       continue
     }
     state.legacySourceMigration[tool] = observedAtUtc
-    if (superseded.length > 0) {
-      console.error(`Tombstoned ${superseded.length} legacy ${legacyId} key(s) superseded by the per-machine namespace; ${legacyInventory.length - superseded.length} kept.`)
-    }
   }
 }
 
@@ -1735,8 +1765,15 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
 
   let posted = 0
   const activeSucceeded = new Map()
-  // Day and model of every per-machine snapshot that posted this run, per source.
-  const replacedDays = new Map()
+  // This machine's per-machine snapshot per source and day/model, for the legacy migration: what
+  // the server already holds from earlier runs, updated by this run's successful posts, so a key
+  // replaced before its local file aged out still counts as replaced.
+  const replacements = new Map()
+  const replacementsOf = sourceId => {
+    if (!replacements.has(sourceId)) { replacements.set(sourceId, new Map()) }
+    return replacements.get(sourceId)
+  }
+  for (const snapshot of inventory) { replacementsOf(snapshot.sourceId).set(dayModel(snapshot), snapshot) }
   // A source whose clean scan verified an empty local history (populated
   // discovery root, no read failures, no records) has nothing left to replace:
   // seed success for the legacy migration below. It plans no tombstones (no
@@ -1757,8 +1794,7 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     )
     if (succeeded) {
       posted++
-      const days = replacedDays.get(submission.snapshot.sourceId) ?? new Set()
-      replacedDays.set(submission.snapshot.sourceId, days.add(dayModel(submission.snapshot)))
+      replacementsOf(submission.snapshot.sourceId).set(dayModel(submission.snapshot), submission.snapshot)
     }
   }
   for (const submission of submissions.filter(item => !item.active)) {
@@ -1777,6 +1813,7 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     // visible and is compensated by the next scheduled reconciliation.
     if (await postEvent(url, apiKey, { ...submission.snapshot, observedAtUtc })) {
       posted++
+      replacementsOf(submission.snapshot.sourceId).delete(dayModel(submission.snapshot))
     }
   }
 
@@ -1785,8 +1822,10 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
       url, apiKey, enabled, state, observedAtUtc,
       // A held source posted only its unheld days: zeroing the legacy keys for the held days would
       // lose them, and the marker would stop the migration from ever retrying.
-      tool => activeSucceeded.get(localSourceId(tool, machine)) === true && !holds.has(localSourceId(tool, machine)),
-      tool => replacedDays.get(localSourceId(tool, machine)) ?? new Set(),
+      // An unreadable per-machine inventory hides earlier replacements, so it waits too.
+      tool => activeSucceeded.get(localSourceId(tool, machine)) === true && !holds.has(localSourceId(tool, machine))
+        && !failedSources.has(localSourceId(tool, machine)),
+      tool => replacementsOf(localSourceId(tool, machine)),
     )
     await saveState(statePath, state)
   }
