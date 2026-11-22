@@ -3890,3 +3890,26 @@ test('a state save that fails mid-write leaves the previous state file whole', a
     assert.deepEqual(await readdir(root), ['sweep.json'])
   } finally { await removeTemp(root) }
 })
+
+// --- Remediation batch70, lane S: third composition pass ---------------------
+
+// Q3
+test('a refused sweep status prints its status and server message without --verbose', async () => {
+  const server = createServer(async (request, response) => {
+    for await (const chunk of request) { void chunk }
+    response.writeHead(400, { 'Content-Type': 'text/plain' }).end('attemptedAt is more than five minutes in the future')
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const lines = []
+  const original = console.error
+  console.error = (...args) => { lines.push(args.join(' ')) }
+  try {
+    await sweep.postSweepStatus(`http://127.0.0.1:${server.address().port}`, 'secret-key', 'm', [], 2, '2026-11-22T10:00:00.000Z')
+  } finally {
+    console.error = original
+    await new Promise(resolve => server.close(resolve))
+  }
+  assert.equal(process.argv.includes('--verbose'), false)
+  assert.equal(lines.some(line => /sweep-status POST 400/.test(line) && /more than five minutes in the future/.test(line)), true)
+  assert.equal(lines.some(line => line.includes('secret-key')), false)
+})
