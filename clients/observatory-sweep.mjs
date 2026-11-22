@@ -1045,9 +1045,13 @@ export function buildDailySnapshots(records, machine) {
     const tools = records.incompleteTool ? [records.incompleteTool] : [...new Set(records.map(record => record.tool))]
     for (const tool of tools) { holdSource(localSourceId(tool, machine), records.holdFrom ?? '') }
   }
-  // A record's own fault affects only its own day's key.
-  for (const record of records) {
-    if (record.tool === 'claude' && record.claudeInvalidCounters) {
+  // A record's own fault affects only the days its message lands on: deduplication can carry a
+  // counter from any copy of a message into the copy it keeps, which may sit on another day.
+  const claudeRecords = records.filter(record => record.tool === 'claude')
+  const faultyMessages = new Set(claudeRecords.filter(record => record.claudeInvalidCounters).map(claudeMessageIdentity))
+  for (const record of claudeRecords) {
+    const identity = claudeMessageIdentity(record)
+    if (record.claudeInvalidCounters || (identity && faultyMessages.has(identity))) {
       holdSource(localSourceId('claude', machine), record.date ?? '', record.date)
     }
   }
