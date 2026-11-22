@@ -1412,8 +1412,11 @@ export async function postSweepStatus(url, apiKey, machine, unplaced, heldFiles 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ machine: machineLabel(machine).slice(0, 64), unplaced: sweepStatusEntries(unplaced), heldFiles, attemptedAt }),
     })
-    await response.body?.cancel()
-    if (!response.ok) { log(`sweep-status POST ${response.status}`) }
+    if (response.ok) { await response.body?.cancel(); return }
+    // Always printed: a refused report (a clock ahead of the server, say) would otherwise drop the
+    // held and unplaced warnings silently. Only the status and the server's own text are shown.
+    const message = (await response.text().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 300)
+    console.error(`sweep-status POST ${response.status}${message ? `: ${message}` : ''}; held and unplaced counts were not reported.`)
   } catch (error) {
     log('sweep-status POST failed:', error.message)
   }
