@@ -4185,3 +4185,29 @@ test('a takeover lock left by a start that died mid-takeover is cleared after th
     assert.deepEqual(await readdir(root), [])
   } finally { await removeTemp(root) }
 })
+test('a run that loses its sweep lock mid-run issues no further tombstone or legacy zero', async () => {
+  const root = await makeTemp('observatory-lock-fence-')
+  await writeCodexRollout(root)
+  const statePath = join(root, 'state', 'sweep.json')
+  const lock = `${statePath}.lock`
+  const intruder = JSON.stringify({ pid: process.pid, startedAt: '2026-11-22T09:00:00.000Z' })
+  const { writeFileSync } = await import('node:fs')
+  let swapped = false
+  // The first tombstone the server sees hands the lock to another run.
+  const recording = recordingServer(['codex:2026-08-24:gpt-5.5'], ['codex:2026-08-25:gpt-5.5', 'codex:2026-08-26:gpt-5.5'], {
+    failPost: body => {
+      if (!swapped && body.sourceId === 'codex-local@test-machine' && isTombstone(body)) { writeFileSync(lock, intruder); swapped = true }
+      return false
+    },
+  })
+  try {
+    let errors
+    await withRecordingServer(recording, async () => {
+      errors = await runMainWith({ root, statePath, server: recording.server })
+    })
+    assert.deepEqual(machinePosts(recording.posts).filter(isTombstone).map(body => body.eventKey), ['codex:2026-08-25:gpt-5.5'])
+    assert.deepEqual(legacyZeroes(recording.posts), [])
+    assert.equal(errors.some(line => /lost the sweep lock to another run; skipped removals/.test(line)), true)
+    assert.equal(await readFile(lock, 'utf8'), intruder, "the other run's lock is left alone")
+  } finally { await removeTemp(root) }
+})
