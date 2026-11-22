@@ -193,23 +193,51 @@ public sealed class SourceSyncStateStore(AiObservatoryDbContext db)
     }
 
     /// <summary>
-    /// Records a sweep's held-file total on its row, only when the attempt at <paramref name="attemptedAt"/>
-    /// is still the row's latest, so a delayed older report cannot overwrite a newer one. Call it
-    /// after the Mark* write for the same attempt, which leaves LastAttemptAt at or after it.
+    /// Records one sweep report (success when <paramref name="error"/> is null, unavailable
+    /// otherwise) and its held-file total in a single statement, so the row can never hold one
+    /// report's status with another's total. Applied only when <paramref name="attemptedAt"/> is
+    /// strictly later than the stored attempt: a stalled older report changes nothing, and a retry
+    /// of the same attempt changes nothing either, its failure counter included.
     /// </summary>
-    public Task<int> SetHeldFilesAsync(
+    /// <returns>1 when the report was applied, 0 when an equal or newer attempt was already stored.</returns>
+    public Task<int> RecordSweepReportAsync(
         string sourceId,
+        Duration expectedRefreshInterval,
         Instant attemptedAt,
+        string? error,
         int? heldFiles,
         CancellationToken cancellationToken
     )
     {
-        // Postgres keeps microseconds, so the stored attempt can sit just below attemptedAt; only a
-        // strictly later attempt reaches the next microsecond.
-        var newerThanThis = attemptedAt + Duration.FromTicks(NodaConstants.TicksPerMillisecond / 1000);
-        return db
-            .SourceSyncStates.Where(state => state.SourceId == sourceId && state.LastAttemptAt < newerThanThis)
-            .ExecuteUpdateAsync(s => s.SetProperty(state => state.HeldFiles, heldFiles), cancellationToken);
+        var expectedSeconds = ExpectedSeconds(expectedRefreshInterval);
+        var success = error is null;
+        Instant? successAt = success ? attemptedAt : null;
+        var failures = success ? 0 : 1;
+        return db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO "SourceSyncStates"
+                ("SourceId", "IsConfigured", "IsAvailable", "ExpectedRefreshIntervalSeconds",
+                 "LastAttemptAt", "LastSuccessAt", "LatestObservationAt", "ConsecutiveFailureCount",
+                 "LastError", "HeldFiles")
+            VALUES
+                ({sourceId}, TRUE, {success}, {expectedSeconds}, {attemptedAt}, {successAt}, NULL,
+                 {failures}, {error}, {heldFiles})
+            ON CONFLICT ("SourceId") DO UPDATE SET
+                "IsConfigured" = TRUE,
+                "IsAvailable" = EXCLUDED."IsAvailable",
+                "ExpectedRefreshIntervalSeconds" = EXCLUDED."ExpectedRefreshIntervalSeconds",
+                "LastAttemptAt" = EXCLUDED."LastAttemptAt",
+                "LastSuccessAt" = COALESCE(EXCLUDED."LastSuccessAt", "SourceSyncStates"."LastSuccessAt"),
+                "PendingFromDate" = NULL,
+                "ConsecutiveFailureCount" = CASE WHEN EXCLUDED."IsAvailable"
+                    THEN 0 ELSE "SourceSyncStates"."ConsecutiveFailureCount" + 1 END,
+                "LastError" = EXCLUDED."LastError",
+                "HeldFiles" = EXCLUDED."HeldFiles"
+            WHERE "SourceSyncStates"."LastAttemptAt" IS NULL
+                OR "SourceSyncStates"."LastAttemptAt" < EXCLUDED."LastAttemptAt"
+            """,
+            cancellationToken
+        );
     }
 
     private static long ExpectedSeconds(Duration expectedRefreshInterval) =>

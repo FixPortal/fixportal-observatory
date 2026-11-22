@@ -40,26 +40,21 @@ public static partial class SweepStatusEndpoints
             return Results.BadRequest(rejection);
         }
 
+        // The client fixes attemptedAt once per sweep, so its retries carry the same attempt and are
+        // applied once. A future stamp is clamped; an old client sends none and gets server now.
         var now = clock.GetCurrentInstant();
-        var sourceId = SourceIdPrefix + req.Machine;
-        var held = req.HeldFiles is > 0;
-        if (req.Unplaced.Count == 0 && !held)
-        {
-            await states.MarkSuccessAsync(sourceId, ExpectedRefreshInterval, now, null, ct);
-        }
-        else
-        {
-            // Unavailable surfaces in the panel and the daily digest until a sweep places everything
-            // and holds nothing back: held files were not posted, so their spend is invisible too.
-            await states.MarkUnavailableAsync(
-                sourceId,
-                ExpectedRefreshInterval,
-                now,
-                Describe(req.Unplaced, req.HeldFiles),
-                ct
-            );
-        }
-        await states.SetHeldFilesAsync(sourceId, now, req.HeldFiles, ct);
+        var attemptedAt = req.AttemptedAt is { } sent && sent < now ? sent : now;
+        // Unavailable surfaces in the panel and the daily digest until a sweep places everything
+        // and holds nothing back: held files were not posted, so their spend is invisible too.
+        var error = req.Unplaced.Count == 0 && req.HeldFiles is not > 0 ? null : Describe(req.Unplaced, req.HeldFiles);
+        await states.RecordSweepReportAsync(
+            SourceIdPrefix + req.Machine,
+            ExpectedRefreshInterval,
+            attemptedAt,
+            error,
+            req.HeldFiles,
+            ct
+        );
 
         return Results.NoContent();
     }
@@ -140,6 +135,12 @@ public static partial class SweepStatusEndpoints
 }
 
 /// <param name="HeldFiles">Optional, the machine-wide total of files the sweep held back; omitted by older clients.</param>
-public sealed record SweepStatusRequest(string Machine, IReadOnlyList<SweepUnplaced> Unplaced, int? HeldFiles = null);
+/// <param name="AttemptedAt">Optional, the sweep's own UTC start, identical across its retries; omitted by older clients.</param>
+public sealed record SweepStatusRequest(
+    string Machine,
+    IReadOnlyList<SweepUnplaced> Unplaced,
+    int? HeldFiles = null,
+    Instant? AttemptedAt = null
+);
 
 public sealed record SweepUnplaced(string Tool, string Model, int Count);
