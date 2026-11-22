@@ -1501,6 +1501,18 @@ function coversLegacy(mine, legacy) {
     && (!legacyHasCost || (Number.isFinite(mine.costUsd) && mine.costUsd >= legacy.costUsd))
 }
 
+/**
+ * A posted snapshot as legacy coverage. A server-priced snapshot posts `costUsd: null` while the
+ * server stores the cost it rated, so the cost is taken from the stored row when that row has
+ * exactly the posted token figures; otherwise the stored cost is unknown (undefined), and a
+ * legacy key with a cost stays pending until a later run reads the stored row.
+ */
+function withStoredCost(posted, stored) {
+  if (Number.isFinite(posted.costUsd)) { return posted }
+  const sameTokens = stored !== undefined && COVERED_TOKEN_FIELDS.every(field => stored[field] === posted[field])
+  return { ...posted, costUsd: sameTokens ? stored.costUsd : undefined }
+}
+
 // One-shot migration for the per-machine namespace: snapshots posted before source ids
 // carried the @<machine> suffix still sit under the bare ids (codex-local etc.), so the
 // first post-upgrade run would otherwise double all pre-upgrade history beside the new
@@ -1830,7 +1842,9 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     )
     if (succeeded) {
       posted++
-      replacementsOf(submission.snapshot.sourceId).set(submission.snapshot.eventKey, submission.snapshot)
+      replacementsOf(submission.snapshot.sourceId).set(submission.snapshot.eventKey, withStoredCost(
+        submission.snapshot, replacementsOf(submission.snapshot.sourceId).get(submission.snapshot.eventKey),
+      ))
     }
   }
   for (const submission of submissions.filter(item => !item.active)) {

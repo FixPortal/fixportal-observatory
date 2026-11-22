@@ -4007,3 +4007,24 @@ test('a per-machine key selected for removal never covers a legacy key, even whe
     assert.deepEqual(legacyZeroes(recording.posts), [])
   } finally { await removeTemp(root) }
 })
+
+// CodeRabbit 4657871787
+test('legacy cost coverage uses the cost the server stored for this machine, not the posted null', async () => {
+  const root = await makeTemp('observatory-legacy-stored-cost-')
+  await writeCodexRollout(root)
+  const key = 'codex:2026-08-24:gpt-5.5'
+  const statePath = join(root, 'state', 'sweep.json')
+  const priced = { eventKey: key, costUsd: 0.01, hasCost: true }
+  try {
+    const stored = recordingServer([priced], [priced])
+    await withRecordingServer(stored, async () => { await runMainWith({ root, statePath, server: stored.server }) })
+    assert.deepEqual(legacyZeroes(stored.posts), [key])
+
+    // A stored row whose tokens differ from this run's post carries a stale cost: pending.
+    await writeFile(statePath, '{}')
+    const stale = recordingServer([priced], [{ ...priced, inputTokens: 9 }])
+    await withRecordingServer(stale, async () => { await runMainWith({ root, statePath, server: stale.server }) })
+    assert.deepEqual(legacyZeroes(stale.posts), [])
+    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration?.codex, undefined)
+  } finally { await removeTemp(root) }
+})
