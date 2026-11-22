@@ -40,7 +40,9 @@ node clients/observatory-sweep.mjs --dry-run --verbose
 
 Run the same command on a schedule, for example every 15 minutes, with cron, Windows Task Scheduler or whatever you already use. Give the scheduled process the same environment variables.
 
-Runs on one machine never overlap. Each run takes a lock file beside the state file (`<OBSERVATORY_STATE>.lock`, holding its process id and start time) and removes it when it ends. A run that finds the lock held prints `Another sweep is running on this machine ...` and exits with code 1 without posting. A lock whose process is gone, or that is older than six hours, is stale and is taken over. A dry run neither takes nor checks the lock.
+Runs on one machine never overlap. Each run takes a lock file beside the state file (`<OBSERVATORY_STATE>.lock`, holding its process id and start time) and removes it when it ends. A run that finds the lock held prints `Another sweep is running on this machine ...` and exits with code 1 without posting. A lock is taken over only when its process is no longer running, however old it is; an empty or unreadable lock counts as held until it is a minute old. If the recorded process id now belongs to an unrelated program, delete the lock file, as the message says. A dry run neither takes nor checks the lock.
+
+If the lock cannot be created at all (for example the state directory is unusable), the run still posts its snapshots, but it posts no zero corrections and skips the legacy migration, because it cannot rule out an overlapping run. It says so on standard error.
 
 ### Environment
 

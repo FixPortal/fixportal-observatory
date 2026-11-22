@@ -4052,11 +4052,107 @@ test('a second sweep on the same machine refuses to start while the first holds 
     await withRecordingServer(recording, async () => {
       await assert.rejects(() => runMainWith({ root, statePath, server: recording.server }), /Another sweep is running/)
       assert.deepEqual(recording.posts, [])
-      // A lock left by a run that started long ago is stale: the next run takes it and releases it.
-      await writeFile(lock, JSON.stringify({ pid: process.pid, startedAt: '2020-01-01T00:00:00.000Z' }))
+      // A lock left by a run whose process is gone is stale: the next run takes it and releases it.
+      await writeFile(lock, JSON.stringify({ pid: await deadPid(), startedAt: new Date().toISOString() }))
       await runMainWith({ root, statePath, server: recording.server })
     })
     assert.equal(machinePosts(recording.posts).length, 1)
     assert.deepEqual((await readdir(join(root, 'state'))).sort(), ['sweep.json'])
+  } finally { await removeTemp(root) }
+})
+// --- Sweep lock, composition review ---------------------------------------------
+
+async function deadPid() {
+  const child = execFile(process.execPath, ['-e', ''])
+  await new Promise(resolve => child.on('exit', resolve))
+  return child.pid
+}
+
+async function lockTemp(prefix) {
+  const root = await makeTemp(prefix)
+  return { root, lock: join(root, 'sweep.json.lock') }
+}
+
+test('an empty sweep lock is busy until it has sat unchanged for a while', async () => {
+  const { root, lock } = await lockTemp('observatory-lock-empty-')
+  try {
+    await writeFile(lock, '')
+    await assert.rejects(() => sweep.acquireSweepLock(lock), /Another sweep is running/)
+    await utimes(lock, new Date('2020-01-01T00:00:00Z'), new Date('2020-01-01T00:00:00Z'))
+    const taken = await sweep.acquireSweepLock(lock)
+    assert.equal(taken.locked, true)
+    await taken.release()
+    assert.deepEqual(await readdir(root), [])
+  } finally { await removeTemp(root) }
+})
+
+test('a live sweep lock is busy however old it is; a dead one is taken over', async () => {
+  const { root, lock } = await lockTemp('observatory-lock-live-')
+  try {
+    await writeFile(lock, JSON.stringify({ pid: process.pid, startedAt: '2020-01-01T00:00:00.000Z' }))
+    await assert.rejects(() => sweep.acquireSweepLock(lock), error => error.message.includes(`delete ${lock}`))
+    await writeFile(lock, JSON.stringify({ pid: await deadPid(), startedAt: new Date().toISOString() }))
+    const taken = await sweep.acquireSweepLock(lock)
+    assert.equal(taken.locked, true)
+    await taken.release()
+  } finally { await removeTemp(root) }
+})
+
+test('two starts taking over one stale lock leave exactly one holder', async () => {
+  const { root, lock } = await lockTemp('observatory-lock-takeover-')
+  try {
+    await writeFile(lock, JSON.stringify({ pid: await deadPid(), startedAt: '2020-01-01T00:00:00.000Z' }))
+    // Both starts read the stale lock first; B's takeover step then waits until A holds the lock.
+    let arrived = 0
+    let bothRead
+    const read = new Promise(resolve => { bothRead = resolve })
+    let aCreated
+    const created = new Promise(resolve => { aCreated = resolve })
+    const fs = await import('node:fs/promises')
+    const seam = name => {
+      const after = { ...fs }
+      after.readFile = async (path, ...rest) => {
+        const text = await fs.readFile(path, ...rest)
+        if (path === lock && arrived < 2) { if (++arrived === 2) { bothRead() } await read }
+        return text
+      }
+      const takeover = op => async (path, ...rest) => { if (name === 'B' && path === lock) { await created } return fs[op](path, ...rest) }
+      after.rm = takeover('rm')
+      after.rename = takeover('rename')
+      const create = op => async (...args) => {
+        const result = await fs[op](...args)
+        if (name === 'A' && (args[0] === lock || args[1] === lock)) { aCreated() }
+        return result
+      }
+      after.writeFile = create('writeFile')
+      after.link = create('link')
+      return after
+    }
+    const results = await Promise.allSettled([
+      sweep.acquireSweepLock(lock, { nowMs: Date.parse('2026-11-22T10:00:00Z'), io: seam('A') }),
+      sweep.acquireSweepLock(lock, { nowMs: Date.parse('2026-11-22T10:00:01Z'), io: seam('B') }),
+    ])
+    assert.deepEqual(results.map(result => result.status === 'fulfilled' && result.value.locked), [true, false])
+    assert.equal(JSON.parse(await readFile(lock, 'utf8')).startedAt, '2026-11-22T10:00:00.000Z')
+    await results[0].value.release()
+    assert.deepEqual(await readdir(root), [])
+  } finally { await removeTemp(root) }
+})
+
+test('an unlocked run posts its snapshots but no tombstones and no legacy zero', async () => {
+  const root = await makeTemp('observatory-lock-unlocked-')
+  await writeCodexRollout(root)
+  const blocker = join(root, 'blocker')
+  await writeFile(blocker, 'not a directory')
+  const vanished = 'codex:2026-08-25:gpt-5.5'
+  const recording = recordingServer(['codex:2026-08-24:gpt-5.5'], [vanished])
+  try {
+    let errors
+    await withRecordingServer(recording, async () => {
+      errors = await runMainWith({ root, statePath: join(blocker, 'sweep.json'), server: recording.server })
+    })
+    assert.deepEqual(machinePosts(recording.posts).map(body => [body.eventKey, isTombstone(body)]), [['codex:2026-08-24:gpt-5.5', false]])
+    assert.deepEqual(legacyZeroes(recording.posts), [])
+    assert.equal(errors.some(line => /tombstones and the legacy migration are skipped/.test(line)), true)
   } finally { await removeTemp(root) }
 })
