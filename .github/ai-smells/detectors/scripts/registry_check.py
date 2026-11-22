@@ -4,7 +4,7 @@ Not found => hit. A failed lookup => the whole smell is 'not assessed', never a 
 A package the repository resolves from a private source -- a root nuget.config
 packageSourceMapping, or a root .npmrc scoped registry -- is skipped, not looked up: the
 public registry cannot know it, so its absence there says nothing."""
-import argparse, json, os, pathlib, posixpath, re, urllib.request, urllib.error
+import argparse, json, os, pathlib, posixpath, re, shlex, urllib.request, urllib.error
 from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
@@ -15,7 +15,9 @@ except ImportError:
 
 def host_is(url, *hosts):
     """True when url's hostname is one of hosts. A substring test would take
-    `pypi.org.example.invalid` for PyPI; a value with no readable hostname is never public."""
+    `pypi.org.example.invalid` for PyPI; a value with no readable hostname is never public.
+    That includes a value with no scheme: pip and NuGet read one as a local path
+    (`--find-links pypi.org/wheels` is a directory), so it must not be taken for the host."""
     try:
         return (urlparse(url.strip()).hostname or "").lower() in hosts
     except ValueError:
@@ -34,12 +36,15 @@ def nuget_sources(root):
     for f in sorted(root.iterdir(), key=lambda p: p.name):
         if f.name.lower() == "nuget.config" and f.is_file():
             cfg = ET.fromstring(f.read_bytes())
-            disabled = {a.get("key") for a in cfg.findall("disabledPackageSources/add") if a.get("value", "").lower() == "true"}
-            urls = {a.get("key"): a.get("value", "") for a in cfg.findall("packageSources/add") if a.get("key")}
+            # Source keys compare case-insensitively. A disabled source serves nothing, so its mapped
+            # patterns still rank but are never private: the id is looked up (ide review, RV-39).
+            disabled = {a.get("key", "").lower() for a in cfg.findall("disabledPackageSources/add") if a.get("value", "").lower() == "true"}
+            urls = {a.get("key").lower(): a.get("value", "") for a in cfg.findall("packageSources/add") if a.get("key")}
             mapped = False
             for src in cfg.iter("packageSource"):
                 mapped = True
-                private = not host_is(urls.get(src.get("key"), ""), *NUGET_HOSTS)
+                key = (src.get("key") or "").lower()
+                private = key not in disabled and not host_is(urls.get(key, ""), *NUGET_HOSTS)
                 for p in src.iter("package"):
                     pattern = p.get("pattern", "").lower(); nuget[pattern] = nuget.get(pattern, False) or private
             if not mapped and any(not host_is(v, *NUGET_HOSTS) for k, v in urls.items() if k not in disabled):
@@ -53,7 +58,10 @@ def npm_scopes(root):
     for f in root.iterdir():
         if f.name == ".npmrc" and f.is_file():
             for m in re.finditer(r"^\s*(@[^:\s]+:)?registry\s*=\s*(\S+)", f.read_text(encoding="utf-8", errors="replace"), re.M):
-                npm[(m.group(1) or ":")[:-1].lower()] = not host_is(m.group(2), *NPM_HOSTS)
+                # An npm registry value is always a URL, never a path, so one written without a scheme
+                # (`registry=registry.npmjs.org/`) is read as its host (ide review, RV-23).
+                url = m.group(2) if "://" in m.group(2) else "https://" + m.group(2)
+                npm[(m.group(1) or ":")[:-1].lower()] = not host_is(url, *NPM_HOSTS)
     return npm
 
 def is_private(eco, pkg, nuget, npm):
@@ -88,25 +96,49 @@ def npm_registry_name(key, spec):
         return alias.rsplit("@", 1)[0] if "@" in alias[1:] else alias
     return None if NPM_NON_REGISTRY.match(spec) else key
 
-def poetry_local(spec):
-    return isinstance(spec, dict) and any(k in spec for k in ("path", "git", "url"))
+def poetry_off_pypi(spec, explicit):
+    """True when no alternative of a Poetry dependency comes from PyPI. The spec is a table, or a
+    list of them (multiple constraints); each alternative is local (path/git/url) or names an
+    explicit source. A plain version string is a PyPI one."""
+    specs = spec if isinstance(spec, list) else [spec]
+    return all(isinstance(s, dict) and (any(k in s for k in ("path", "git", "url")) or s.get("source") in explicit) for s in specs)
 
 PEP508_DIRECT = re.compile(r"\s*[A-Za-z0-9][A-Za-z0-9._-]*(\[[^\]]*\])?\s*@\s*\S")  # `name @ url`: installed from the URL
 # A find-links source serves packages pypi.org does not hold, and --no-index forbids pypi.org outright,
 # so both read like a non-PyPI index.
-PYPI_INDEX = re.compile(r"^\s*(?:-i|--index-url|--extra-index-url|-f|--find-links)[\s=]+(\S+)")
+# A short option may carry its value attached (`-fwheels`), as pip's optparse accepts; a long one needs a separator.
+PYPI_INDEX = re.compile(r"^\s*(?:(?:-i|-f)(?:[\s=]+|(?=\S))|(?:--index-url|--extra-index-url|--find-links)[\s=]+)(\S+)")
 NO_INDEX = re.compile(r"^\s*--no-index\b")
 
-REQ_INCLUDE = re.compile(r"^\s*(?:-r|-c|--requirement|--constraint)[\s=]+(\S+)")
+REQ_INCLUDE = re.compile(r"^\s*(?:(?:-r|-c)(?:[\s=]+|(?=\S))|(?:--requirement|--constraint)[\s=]+)(.+)")
 
-def split_lines(text):
-    """Lines as git counts them: only \\n ends one (a CR before it is dropped). str.splitlines()
-    also breaks on \\v, \\f, \\x1c-\\x1e, NEL, U+2028/9 and a lone CR, which would shift every
-    reported line number away from the PR diff's."""
-    lines = [l[:-1] if l.endswith("\r") else l for l in text.split("\n")]
-    if lines and lines[-1] == "":
-        lines.pop()
-    return lines
+PIP_COMMENT = re.compile(r"(^|\s+)#.*$")  # pip's COMMENT_RE: `#` starts a comment only at the start or after whitespace
+
+def pip_lines(text):
+    """(git line, text) for each logical line as pip 26 preprocesses a requirements file:
+    str.splitlines() (a lone CR ends a line), a line ending in `\\` joined to the next unless it is a
+    comment, then comments and blank lines dropped. The number is git's (only \\n counts) for the
+    first physical line, to match the PR diff."""
+    joined, git_line, start, pending = [], 1, None, []
+    for raw in text.splitlines(keepends=True):
+        line = raw.rstrip("\r\n\v\f\x1c\x1d\x1e\x85\u2028\u2029")
+        if not line.endswith("\\") or PIP_COMMENT.match(line):
+            if PIP_COMMENT.match(line):
+                line = " " + line  # as pip does, so the comment is still stripped after joining
+            joined.append((git_line if start is None else start, "".join(pending + [line])))
+            start, pending = None, []
+        else:
+            start = git_line if start is None else start
+            pending.append(line.strip("\\"))
+        git_line += raw.count("\n")
+    if pending:
+        joined.append((start, "".join(pending)))
+    out = []
+    for number, line in joined:
+        line = PIP_COMMENT.sub("", line).strip()
+        if line:
+            out.append((number, line))
+    return out
 
 def locate(text, token, after=None):
     """1-based line of the first match of regex `token` at or after the first match of `after`
@@ -126,8 +158,12 @@ def pip_options(line, rel, indexes, includes):
     if (NO_INDEX.match(line) or (idx and not host_is(idx.group(1), *PYPI_HOSTS))) and indexes is not None:
         indexes.append(rel)
     inc = REQ_INCLUDE.match(line)
-    if inc and includes is not None and "://" not in inc.group(1):
-        includes.setdefault(rel, []).append(posixpath.normpath(posixpath.join(posixpath.dirname(rel), inc.group(1))))
+    # pip tokenises an option's value with shlex, so `-r "a b.txt"` names `a b.txt`; pip_lines has already
+    # stripped comments, so a `#` inside a path is kept. Unbalanced quotes raise ValueError, which the
+    # callers report as not assessed.
+    target = shlex.split(inc.group(1)) if inc else []
+    if target and includes is not None and "://" not in target[0]:
+        includes.setdefault(rel, []).append(posixpath.normpath(posixpath.join(posixpath.dirname(rel), target[0])))
 
 def read_included_options(root, includes, indexes, done, problems):
     """Follows -r/-c includes into files nobody listed, whatever their name: pip applies an index
@@ -146,11 +182,11 @@ def read_included_options(root, includes, indexes, done, problems):
             if not path.is_relative_to(tree) or not path.is_file():
                 continue
             text = path.read_bytes().decode("utf-8-sig", errors="replace")
+            for _, line in pip_lines(text):
+                pip_options(line, rel, indexes, includes)
         except (OSError, ValueError) as e:
             problems.append(f"failed to read {rel}: {type(e).__name__}")
             continue
-        for line in split_lines(text):
-            pip_options(line, rel, indexes, includes)
         queue.extend(includes.get(rel, []))
 
 def declared(root, rel, indexes=None, includes=None):
@@ -188,7 +224,7 @@ def declared(root, rel, indexes=None, includes=None):
                     continue  # file:, link:, workspace:, git and URL specs name no registry package
                 out.append(("npm", pkg, locate(text, rf'"{re.escape(key)}"\s*:', rf'"{section}"\s*:\s*\{{')))
     elif re.match(r"requirements.*\.txt$", name):
-        for i, line in enumerate(split_lines(text), 1):
+        for i, line in pip_lines(text):
             pip_options(line, rel, indexes, includes)
             m = re.match(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)", line)
             if not m or line.strip().startswith(("#", "-", ".", "/", "~")):
@@ -224,14 +260,12 @@ def declared(root, rel, indexes=None, includes=None):
                 pkg = re.match(r"([A-Za-z0-9][A-Za-z0-9._-]*)", dep_str).group(1)
                 out.append(("pypi", pkg, locate(text, rf'["\']\s*{re.escape(pkg)}(?![\w.-])', r"optional-dependencies")))
         poetry_deps = data.get("tool", {}).get("poetry", {}).get("dependencies") or {}
-        def served_elsewhere(spec):
-            return isinstance(spec, dict) and spec.get("source") in explicit
         for pkg, spec in poetry_deps.items():
-            if pkg != "python" and not poetry_local(spec) and not served_elsewhere(spec):
+            if pkg != "python" and not poetry_off_pypi(spec, explicit):
                 out.append(("pypi", pkg, locate(text, rf'^\s*["\']?{re.escape(pkg)}["\']?\s*=', r"^\s*\[tool\.poetry\.dependencies\]")))
         for group, group_deps in (data.get("tool", {}).get("poetry", {}).get("group") or {}).items():
             for pkg, spec in (group_deps.get("dependencies") or {}).items():
-                if pkg != "python" and not poetry_local(spec) and not served_elsewhere(spec):
+                if pkg != "python" and not poetry_off_pypi(spec, explicit):
                     out.append(("pypi", pkg, locate(text, rf'^\s*["\']?{re.escape(pkg)}["\']?\s*=', rf"^\s*\[tool\.poetry\.group\.{re.escape(group)}\.dependencies\]")))
     return out
 
@@ -297,7 +331,10 @@ def main():
             parse_errors.append(f"failed to parse {rel}: {type(e).__name__}")
             continue
         decl_by_file.append((rel, decls))
-    read_included_options(root, includes, index_files, {rel for rel, _ in decl_by_file}, parse_errors)
+    # Only a requirements-named file had its options read by declared(). A listed include with any
+    # other name (`-r indexes.txt`) returned [] unread, so it must still be followed (ide review, RV-38).
+    read_included_options(root, includes, index_files,
+                          {rel for rel, _ in decl_by_file if re.match(r"requirements.*\.txt$", pathlib.PurePosixPath(rel).name.lower())}, parse_errors)
     # pip applies an index option to every file in the same install, so a requirements file
     # joined to one that sets a private index (in either direction, through -r or -c) shares it.
     linked = {}

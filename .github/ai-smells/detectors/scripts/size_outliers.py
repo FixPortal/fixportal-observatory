@@ -65,15 +65,21 @@ def python_hits(rel, source):
         tree = ast.parse(source)
     except (SyntaxError, ValueError):
         return [], False
-    lines = split_lines(source)
+    # The parser also ends a line at a lone CR, so its line numbers index these lines, and
+    # git_line maps one to the line git and the PR diff count (only \n ends one).
+    lines = re.split(r"\r\n|\r|\n", source)
+    starts = [0] + [m.end() for m in re.finditer(r"\r\n|\r|\n", source)]
+    def git_line(n):
+        return source.count("\n", 0, starts[n - 1]) + 1
     hits = []
     def visit(node, scope):
         for child in ast.iter_child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                span = child.end_lineno - child.lineno + 1
+                first, last = git_line(child.lineno), git_line(child.end_lineno)
+                span = last - first + 1
                 if span > FUNC_MAX:
                     signature = " ".join(lines[child.lineno - 1:child.body[0].lineno - 1]).strip() or lines[child.lineno - 1].strip()
-                    hits.append({"file": rel, "line": child.lineno, "endLine": child.end_lineno, "text": f"function spans {span} lines{scope_label(scope)}: {signature}"})
+                    hits.append({"file": rel, "line": first, "endLine": last, "text": f"function spans {span} lines{scope_label(scope)}: {signature}"})
                 visit(child, scope + [child.name])
             else:
                 visit(child, scope + [child.name] if isinstance(child, ast.ClassDef) else scope)
