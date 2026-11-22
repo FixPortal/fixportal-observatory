@@ -54,6 +54,7 @@ import math
 import os
 import posixpath
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -945,6 +946,8 @@ def github_equal(left, right):
         if isinstance(value, float):
             return value
         if isinstance(value, str):
+            # The runner trims before converting, so ' ' is 0, not NaN (CodeRabbit, observatory PR #468).
+            value = value.strip()
             if not value:
                 return 0.0
             try:
@@ -2513,6 +2516,10 @@ def assert_readable_shapes(root, text, name=None):
         # it hid that step's off-line `uses` and the action it calls.
         and value.start_mark.index > key.end_mark.index
     }
+    # Everything under a `matrix:` is data too: a `uses` there names no action (CodeRabbit, observatory PR #468).
+    data_mappings |= {id(inner) for node in iter_nodes(root) if isinstance(node, yaml.MappingNode) and node is not jobs_node
+                      for key, value in node.value if isinstance(key, yaml.ScalarNode) and key.value == "matrix"
+                      for inner in iter_nodes(value) if isinstance(inner, yaml.MappingNode)}
     for node in iter_nodes(root):
         if not isinstance(node, yaml.MappingNode):
             continue
@@ -3149,6 +3156,91 @@ SCRIPT_EXTENSIONS = (".ps1", ".psm1", ".py", ".sh", ".bash", ".mjs", ".cjs", ".j
 SCRIPT_ROOTS = ("scripts", "build", "tools")
 WORD = re.compile(r"""[^\s'"`;|&()<>=,]+""")
 TEST_RUNNERS = {"unittest", "pytest", "py.test"}
+# pytest options whose value is the next argument (core options and aliases, plus the common
+# xdist/cov ones), so `pytest -k smoke` or `pytest --maxfail 1` names no collection target.
+PYTEST_VALUE_OPTIONS = {
+    "-k", "-m", "-c", "-p", "-o", "-n", "-W", "-r", "--rootdir", "--confcutdir", "--basetemp", "--junitxml",
+    "--junit-xml", "--junit-prefix", "--cov", "--cov-report", "--ignore", "--ignore-glob", "--deselect", "--maxfail",
+    "--capture", "--tb", "--durations", "--durations-min", "--color", "--code-highlight", "--pastebin",
+    "--show-capture", "--import-mode", "--override-ini", "--config-file", "--inifile", "--pythonwarnings",
+    "--doctest-glob", "--doctest-report", "--assert", "--log-level", "--log-format", "--log-date-format",
+    "--log-cli-level", "--log-cli-format", "--log-cli-date-format", "--log-file", "--log-file-mode", "--log-file-level",
+    "--log-file-format", "--log-file-date-format", "--log-auto-indent", "--verbosity", "--numprocesses",
+    "--maxprocesses", "--dist", "--tx", "--rsyncdir", "--deselect", "--last-failed-no-failures", "--lfnf",
+}
+SHELL_OPERATOR = re.compile(r"[();|&]+")
+# shlex merges adjacent punctuation, so `&>`, `&>>`, `>|` and `>&` arrive as one token.
+REDIRECTION = re.compile(r"&?[<>]+[&|]?")
+# Words that run the next word as the command (`command pytest`, `env CI=1 pytest`).
+COMMAND_WRAPPERS = {"command", "exec", "env", "time"}
+
+
+def pytest_targets(arguments):
+    """The collection targets among a pytest command's arguments: option values are not targets."""
+    targets, index = [], 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument.startswith("-"):
+            index += 2 if argument in PYTEST_VALUE_OPTIONS else 1
+            continue
+        targets.append(argument)
+        index += 1
+    return targets
+
+
+def shell_commands(line):
+    """A line's commands as token lists, split at unquoted `; | & && || ( )` as the shell splits them.
+    A redirection and its target (`> out.txt`, `2>&1`) are dropped. None when the quoting is unbalanced."""
+    lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    commands, current, index = [], [], 0
+    while index < len(tokens):
+        token = tokens[index]
+        if REDIRECTION.fullmatch(token):
+            if current and current[-1].isdigit():
+                current.pop()  # the fd of `2>&1`
+            index += 1  # and its target
+        elif SHELL_OPERATOR.fullmatch(token):
+            commands.append(current)
+            current = []
+        else:
+            current.append(token)
+        index += 1
+    return [command for command in commands + [current] if command]
+
+
+def pytest_invocations(commands):
+    """The argument list of each command that runs pytest (by basename, at command position, after
+    assignments or a wrapper, or after `-m`)."""
+    for command in commands:
+        for index, token in enumerate(command):
+            if posixpath.basename(token) not in ("pytest", "py.test"):
+                continue
+            leading = command[:index]
+            if all(re.match(r"[A-Za-z_]\w*=", word) or word in COMMAND_WRAPPERS for word in leading) or (leading and leading[-1] == "-m"):
+                yield command[index + 1:]
+
+
+def runs_pytest_from_root(commands):
+    """True when a command is pytest with no target."""
+    return any(not pytest_targets(arguments) and not {"--version", "-V"} & set(arguments) for arguments in pytest_invocations(commands))
+
+
+def pytest_option_values(commands):
+    """The values pytest options take (`--ignore-glob '*slow*'`, `-k=x`): never discovery patterns."""
+    values = set()
+    for arguments in pytest_invocations(commands):
+        for index, argument in enumerate(arguments):
+            option, equals, value = argument.partition("=")
+            if equals and option in PYTEST_VALUE_OPTIONS:
+                values.add(value)
+            elif argument in PYTEST_VALUE_OPTIONS and index + 1 < len(arguments):
+                values.add(arguments[index + 1])
+    return values
 PACKAGE_MANAGERS = {"npm", "npx", "pnpm", "yarn"}
 NPM_LIFECYCLE = {"test": "test", "t": "test", "tst": "test", "start": "start", "stop": "stop", "restart": "restart"}
 NPM_INSTALL = {"ci", "install", "i"}
@@ -3157,10 +3249,14 @@ NPM_ELSEWHERE = {"-w", "--workspace", "--workspaces", "-ws", "--ws", "--prefix",
 # a `-c`/`-Command` string; then optional shell keywords, `command`/`builtin` and assignment
 # prefixes. Not quote- or comment-aware, so `echo "a; cd b"` and `# ; cd b` count. The word
 # ends at whitespace, a separator, a redirection or `$` (`cd$X` runs cd when X is empty).
+# An assignment value is a run of disjoint pieces, each told apart by its first character: a quoted
+# string (escapes honoured inside double quotes), a backslash escape (`X=\" cd sub`), or one plain
+# character. An unquoted branch that could also eat quotes backtracked exponentially (CodeQL
+# py/redos, observatory PR #468; escapes, PR #505 review).
 DIRECTORY_CHANGE = re.compile(
     r"(?:^|[;&|({`]|(?<![\w-])-c(?:ommand)?[ \t]+[\"'])[ \t]*"
     r"(?:(?:then|do|else|if|elif|while|until|!)[ \t]+)*"
-    r"(?:(?:command|builtin)[ \t]+|[A-Za-z_][A-Za-z0-9_]*=(?:\"[^\"\n]*\"|'[^'\n]*'|[^\s;&|]*)[ \t]+)*"
+    r"(?:(?:command|builtin)[ \t]+|[A-Za-z_][A-Za-z0-9_]*=(?:\"(?:[^\"\\\n]|\\.)*\"|'[^'\n]*'|\\.|[^\s;&|\"'\\])*[ \t]+)*"
     r"(?:cd|chdir|pushd|sl|set-location|push-location)(?=[\s;&|()`<>$]|$)",
     re.IGNORECASE | re.MULTILINE,
 )
@@ -3305,16 +3401,23 @@ class ScriptWords:
         for line in re.sub(r"\\\r?\n[ \t]*", "", text).splitlines():
             spans = list(WORD.finditer(line))
             words = [span.group() for span in spans]
+            # Each shell command on the line, quotes honoured and split at `; | & ( )`, so a later
+            # command's words are not the runner's arguments (PR #505 review).
+            commands = shell_commands(line) or [words]
+            # A quoted path with a space (`python3 "scripts/quality checks.py"`) is a word too: WORD
+            # splits it (CodeRabbit, observatory PR #468).
+            words = words + [token for command in commands for token in command if re.search(r"\s", token)]
             # A runner by its basename too (`.venv/bin/pytest tests`), and a pytest run with no target
             # collects from the root (`pytest`, `python3 -m pytest -q`; observatory review, C1-F9).
-            runners = [index for index, word in enumerate(words) if posixpath.basename(word) in ("pytest", "py.test")
-                       and (index == 0 or words[index - 1] == "-m")]
-            if runners and not any(not word.startswith("-") for word in words[runners[0] + 1:]) and not {"--version", "-V"} & set(words):
+            root_run = runs_pytest_from_root(commands)
+            if root_run:
                 words = words + ["."]
-            pytest_line = bool(runners) or "pytest" in words or "py.test" in words
+            pytest_line = root_run or any(posixpath.basename(token) in ("pytest", "py.test") for command in commands for token in command)
             testing = pytest_line or bool(TEST_RUNNERS & set(words))
             # A discovery pattern (`-p 'test_*.py'`) narrows which files of a named directory run.
-            patterns = [word for word in words if testing and "/" not in word and "*" in word]
+            # A pytest option's value (`--ignore-glob '*slow*'`) is not one (PR #505 second review).
+            option_values = pytest_option_values(commands)
+            patterns = [word for word in words if testing and "/" not in word and "*" in word and word not in option_values]
             for index, word in enumerate(words):
                 hits = self.named(word, bases, testing and not word.startswith("-"), patterns)
                 if word == "-m" and index + 1 < len(words):
@@ -3362,6 +3465,16 @@ class ScriptWords:
             packages = {path for path in self.files if posixpath.basename(path) == "package.json"}
         else:
             packages = {posixpath.join(base, "package.json") if base else "package.json" for base in bases} & self.files
+            # npm runs from the nearest ancestor holding a package.json: `npm test` in web/src reads
+            # web/package.json (CodeRabbit, observatory PR #468).
+            for base in bases:
+                directory = base
+                while directory and posixpath.join(directory, "package.json") not in self.files:
+                    directory = posixpath.dirname(directory)
+                    manifest = posixpath.join(directory, "package.json") if directory else "package.json"
+                    if manifest in self.files:
+                        packages.add(manifest)
+                        break
         command = words[1] if len(words) > 1 else ""
         if words[0] != "npm" or elsewhere:
             names = None  # any other spelling: every script of the package is in play

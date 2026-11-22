@@ -2,7 +2,7 @@
   "schema": 1,
   "canonical": {
     "repository": "FixPortal/fixportal-agents-skills",
-    "commit": "2179e008a995515f4b34e5a17e378af4c8b8f0fe",
+    "commit": "a5599589ee609c516fa8832f1b9e89e984309388",
     "syncedAt": "2026-11-22"
   },
   "assets": [
@@ -85,9 +85,9 @@
     },
     {
       "path": ".github/ai-smells/detectors/scripts/comment_density.py",
-      "sha256": "c0313327d13f5fcfe3b93babb2641c2a585e20efc6923f171954ff7280e651db",
+      "sha256": "9e47de5c578a2908ae8bd8cae097ee076147a31f66caf590d6f7911ddabea453",
       "verbatim": true,
-      "commit": "2179e008a995515f4b34e5a17e378af4c8b8f0fe",
+      "commit": "a5599589ee609c516fa8832f1b9e89e984309388",
       "syncedAt": "2026-11-22"
     },
     {
@@ -148,16 +148,16 @@
     },
     {
       "path": ".github/scripts/assert_gate_coverage.py",
-      "sha256": "326cc7ef2a42c7da982efe77ede94ceb59d1c345ab178dcb3df1be6856e71d51",
+      "sha256": "72530e10004e449bd763a1fac048e7f2a6ca8cfc8a1aad8050e5edc45bdcb5ca",
       "verbatim": true,
-      "commit": "2179e008a995515f4b34e5a17e378af4c8b8f0fe",
+      "commit": "a5599589ee609c516fa8832f1b9e89e984309388",
       "syncedAt": "2026-11-22"
     },
     {
       "path": ".github/scripts/assert_workflow_hygiene.py",
-      "sha256": "771953a9f134bdb48c9f636d6e7e2da5af860ed0ff93a99d58b7422de58f2ea4",
+      "sha256": "ccfe0642f15ac123ee1a9ca77fff01d2cbf69f1ca38c8193708c079e73699ed4",
       "verbatim": true,
-      "commit": "2179e008a995515f4b34e5a17e378af4c8b8f0fe",
+      "commit": "a5599589ee609c516fa8832f1b9e89e984309388",
       "syncedAt": "2026-11-22"
     },
     {

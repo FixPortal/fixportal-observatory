@@ -433,8 +433,34 @@ def dockerfile_base_images(dockerfile):
 # `<` (so `<<<EOF` is a here-string), optionally quoted. Docker 29.9.3 read `<<123`, `<<A-B.c` and
 # `3<<'EOF'` as heredocs, and `<<<EOF` and `"<<EOF"` as none.
 HEREDOC = re.compile(r"\d*<<(-?)([^<]+)")
-WORD = re.compile(r"""(?:[^\s"']+|"[^"]*"?|'[^']*'?)+""")
-QUOTED_PART = re.compile(r"""[^"']+|"[^"]*"?|'[^']*'?""")
+# A backslash escapes the next character, outside quotes and inside double quotes, as BuildKit's
+# shell lexer reads it (`<<E"O\"F"` is one word; PR #505 review).
+WORD = re.compile(r"""(?:[^\s"'\\]|\\.|"(?:[^"\\]|\\.)*"?|'[^']*'?)+""")
+
+
+def unquote_word(word):
+    """A shell word as BuildKit reads it: quotes removed from any part, a backslash escape outside
+    quotes kept as its character, and inside double quotes only for `"`, `\\` and `$` (Docker 29.9.3
+    closed `<<"E\\`OF"` at `E\\`OF`)."""
+    out, quote, index = [], None, 0
+    while index < len(word):
+        char = word[index]
+        if quote == "'":
+            if char == "'":
+                quote = None
+            else:
+                out.append(char)
+        elif char == "\\" and index + 1 < len(word) and (quote is None or word[index + 1] in "\"\\$"):
+            out.append(word[index + 1])
+            index += 1
+        elif char == '"':
+            quote = None if quote == '"' else '"'
+        elif char == "'" and quote is None:
+            quote = "'"
+        else:
+            out.append(char)
+        index += 1
+    return "".join(out)
 HEREDOC_INSTRUCTION = re.compile(r"\s*(?:ONBUILD\s+)?(?:RUN|COPY|ADD)\s+(.*)", re.IGNORECASE | re.DOTALL)
 DIRECTIVES = ("syntax", "escape", "check")
 
@@ -458,8 +484,9 @@ def heredoc_delimiters(instruction):
     for word in WORD.findall(match.group(1)):
         heredoc = HEREDOC.fullmatch(word)
         if heredoc:
-            # Quote removal over the whole word: Docker 29.9.3 closed `<<E"OF"`, `<<EO"F"` and `<<'E'OF` at `EOF`.
-            name = "".join(part.strip(part[0]) if part[0] in "\"'" else part for part in QUOTED_PART.findall(heredoc.group(2)))
+            # Quote removal over the whole word: Docker 29.9.3 closed `<<E"OF"`, `<<EO"F"` and `<<'E'OF` at
+            # `EOF`, and `E"O\"F"` at `EO"F` (PR #505 review).
+            name = unquote_word(heredoc.group(2))
             found.append((bool(heredoc.group(1)), name))
     return found
 
@@ -475,12 +502,15 @@ def dockerfile_instructions(text):
     lines = re.split(r"\r?\n", text)
     escape = "\\"
     for line in lines:
-        directive = re.match(r"\s*#\s*(\w+)\s*=\s*(\S*)\s*$", line)
+        # A directive with no value is a comment that ends them (PR #505 review); a value may hold
+        # whitespace (Docker 29.9.3 read `# check=skip=all # explanation` as a directive).
+        directive = re.match(r"\s*#\s*(\w+)\s*=(.*)", line)
+        value = directive.group(2).strip() if directive else ""
         # An unknown key is a comment and ends the directives (Docker kept `\` after `# owner=team`).
-        if not directive or directive.group(1).lower() not in DIRECTIVES:
+        if not value or directive.group(1).lower() not in DIRECTIVES:
             break
-        if directive.group(1).lower() == "escape" and directive.group(2) in ("\\", "`"):
-            escape = directive.group(2)
+        if directive.group(1).lower() == "escape" and value in ("\\", "`"):
+            escape = value
     instructions, current, heredocs = [], None, []
     for line in lines:
         if heredocs:
