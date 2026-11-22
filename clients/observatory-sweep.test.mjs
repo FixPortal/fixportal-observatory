@@ -3945,3 +3945,19 @@ test('a cached orphan hold defers only its own days of the legacy migration', as
     assert.equal(typeof await migrated(), 'string')
   } finally { await removeTemp(root) }
 })
+// Final composition pass: the server already holds this machine's figures for a held day.
+test('a legacy key on a held day is zeroed when this machine already covers it, else stays pending', async () => {
+  const root = await makeTemp('observatory-legacy-held-covered-')
+  try {
+    await writeAgyOrphanAndLater(root)
+    const coveredKey = 'antigravity:2026-08-20:gemini-3.1-pro-high'
+    const uncoveredKey = 'antigravity:2026-08-21:gemini-3.1-pro-high'
+    const recording = recordingServer([coveredKey, uncoveredKey], [coveredKey])
+    const statePath = join(root, 'state', 'sweep.json')
+    await withRecordingServer(recording, async () => {
+      await runMainWith({ root, statePath, server: recording.server, sources: 'antigravity' })
+    })
+    assert.deepEqual(machinePosts(recording.posts, 'antigravity-local').map(body => body.eventKey), [coveredKey])
+    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration?.antigravity, undefined)
+  } finally { await removeTemp(root) }
+})

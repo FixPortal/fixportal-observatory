@@ -1496,7 +1496,7 @@ function coversLegacy(mine, legacy) {
 // the server from an earlier run) provably contains it; every other legacy key is kept.
 // The marker is recorded only once every legacy key was zeroed or kept by that rule: a failed
 // fetch or post, or a counterpart whose figures are not known yet, leaves it unset for a retry.
-// A legacy key on a day this machine holds is not decided yet: its replacement may be missing.
+// A legacy key on a day this machine holds is decided only when this machine already covers it.
 async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc, replacementVerified, replacements, isDayHeld) {
   state.legacySourceMigration ??= {}
   for (const tool of enabled) {
@@ -1526,9 +1526,12 @@ async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc
       continue
     }
     const mine = replacements(tool)
-    const verdicts = legacyInventory.map(snapshot => (isDayHeld(tool, snapshot.eventKey)
-      ? undefined
-      : coversLegacy(mine.get(snapshot.eventKey), snapshot)))
+    // On a held day only a covering verdict is final: the server already holds at least the legacy
+    // figures under this machine's id. Anything else stays pending, as the day may post more once released.
+    const verdicts = legacyInventory.map(snapshot => {
+      const verdict = coversLegacy(mine.get(snapshot.eventKey), snapshot)
+      return verdict !== true && isDayHeld(tool, snapshot.eventKey) ? undefined : verdict
+    })
     const superseded = legacyInventory.filter((_, index) => verdicts[index] === true)
     const unknown = verdicts.filter(verdict => verdict === undefined).length
     let completed = unknown === 0
@@ -1843,8 +1846,8 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
       // An unreadable per-machine inventory hides earlier replacements, so it waits.
       tool => activeSucceeded.get(localSourceId(tool, machine)) === true && !failedSources.has(localSourceId(tool, machine)),
       tool => replacementsOf(localSourceId(tool, machine)),
-      // A held source posted only its unheld days, so legacy keys on held days stay pending (the
-      // marker waits for them) while the other days migrate.
+      // A held source posted only its unheld days, so a legacy key on a held day that this
+      // machine does not already cover stays pending (the marker waits) while other days migrate.
       (tool, eventKey) => isHeld(holds, localSourceId(tool, machine), eventKey),
     )
     await saveState(statePath, state)
