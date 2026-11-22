@@ -1396,13 +1396,17 @@ export function sweepStatusEntries(unplaced) {
   return [...kept, { tool: 'other', model: 'other', count: rest.reduce((sum, e) => sum + e.count, 0) }]
 }
 
-/** Reports unplaced-session counts so the server can show them as a source warning. Best effort. */
-export async function postSweepStatus(url, apiKey, machine, unplaced, heldFiles = 0) {
+/**
+ * Reports unplaced-session counts so the server can show them as a source warning. Best effort.
+ * `attemptedAt` is the run's start instant: built into the body once, so every retry carries the
+ * same value and the server can count one sweep once and ignore a stale report.
+ */
+export async function postSweepStatus(url, apiKey, machine, unplaced, heldFiles = 0, attemptedAt) {
   try {
     const response = await observatoryFetch(`${url}/api/sources/sweep-status`, apiKey, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ machine: machineLabel(machine).slice(0, 64), unplaced: sweepStatusEntries(unplaced), heldFiles }),
+      body: JSON.stringify({ machine: machineLabel(machine).slice(0, 64), unplaced: sweepStatusEntries(unplaced), heldFiles, attemptedAt }),
     })
     await response.body?.cancel()
     if (!response.ok) { log(`sweep-status POST ${response.status}`) }
@@ -1756,7 +1760,7 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   }
   const heldFileCount = [...heldFiles.values()].reduce((sum, count) => sum + count, 0)
   // Always posted: a held scan reports its held file count, so it never reads as a clean sweep.
-  if (!DRY_RUN) { await postSweepStatus(url, apiKey, machine, unplaced, heldFileCount) }
+  if (!DRY_RUN) { await postSweepStatus(url, apiKey, machine, unplaced, heldFileCount, observedAtUtc) }
   const submissions = planSnapshotSubmissions(
     snapshots, inventory, holds,
     new Map([...provableFrom].map(([tool, day]) => [localSourceId(tool, machine), day])),

@@ -3754,3 +3754,33 @@ test('a legacy key is zeroed only when this machine covers every figure, and unk
     assert.equal(JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration?.codex, undefined)
   } finally { await removeTemp(root) }
 })
+
+// Q2/Q3a
+test('the sweep status carries one attemptedAt per run, identical across retries', async () => {
+  const bodies = []
+  const server = createServer(async (request, response) => {
+    let text = ''
+    for await (const chunk of request) { text += chunk }
+    bodies.push(JSON.parse(text))
+    response.writeHead(bodies.length === 1 ? 500 : 200, { 'Retry-After': '0' }).end('{}')
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    await sweep.postSweepStatus(`http://127.0.0.1:${server.address().port}`, 'k', 'm', [], 0, '2026-11-22T10:00:00.000Z')
+  } finally { await new Promise(resolve => server.close(resolve)) }
+  assert.deepEqual(bodies.map(body => body.attemptedAt), ['2026-11-22T10:00:00.000Z', '2026-11-22T10:00:00.000Z'])
+})
+
+// Q2/Q3a
+test('main sends the run start time as the status attemptedAt', async () => {
+  const root = await makeTemp('observatory-status-attempted-')
+  await writeCodexRollout(root)
+  const recording = recordingServer()
+  try {
+    await withRecordingServer(recording, async () => {
+      await runMainWith({ root, statePath: join(root, 'state', 'sweep.json'), server: recording.server })
+    })
+    assert.equal(recording.statuses.length, 1)
+    assert.equal(recording.statuses[0].attemptedAt, recording.posts[0].observedAtUtc)
+  } finally { await removeTemp(root) }
+})
