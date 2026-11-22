@@ -3747,12 +3747,41 @@ test('a legacy key is zeroed only when this machine covers every figure, and a f
     assert.deepEqual(legacyZeroes(covered.posts), ['codex:2026-08-25:gpt-5.5'])
     assert.equal(typeof JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration.codex, 'string')
 
-    // A legacy row missing a figure can never be shown to be contained: it is kept deliberately,
-    // so the migration converges and records its marker.
+    // A legacy row whose figure is present but null can never be shown to be contained: it is
+    // kept deliberately, so the migration converges and records its marker.
     await writeFile(statePath, '{}')
-    const unknown = recordingServer([{ eventKey: 'codex:2026-08-25:gpt-5.5', cacheReadTokens: undefined }])
+    const unknown = recordingServer([{ eventKey: 'codex:2026-08-25:gpt-5.5', cacheReadTokens: null }])
     await withRecordingServer(unknown, async () => { await runMainWith({ root, statePath, server: unknown.server }) })
     assert.deepEqual(legacyZeroes(unknown.posts), [])
+    assert.equal(typeof JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration.codex, 'string')
+  } finally { await removeTemp(root) }
+})
+
+// An older server lists no figure properties at all: nothing can be compared yet.
+test('legacy rows from a server that lists no figures leave the migration pending', async () => {
+  const root = await makeTemp('observatory-legacy-old-server-')
+  await writeCodexRollout(root)
+  const noFigures = Object.fromEntries(Object.keys(INVENTORY_FIGURES).map(field => [field, undefined]))
+  const recording = recordingServer([{ eventKey: 'codex:2026-08-24:gpt-5.5', ...noFigures, hasCost: false }])
+  const statePath = join(root, 'state', 'sweep.json')
+  try {
+    await withRecordingServer(recording, async () => { await runMainWith({ root, statePath, server: recording.server }) })
+    assert.deepEqual(legacyZeroes(recording.posts), [])
+    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration?.codex, undefined)
+  } finally { await removeTemp(root) }
+})
+
+test('a legacy row with a cost but no costUsd property waits, and one with a null costUsd is kept for good', async () => {
+  const root = await makeTemp('observatory-legacy-cost-shape-')
+  await writeCodexRollout(root)
+  const statePath = join(root, 'state', 'sweep.json')
+  try {
+    const absent = recordingServer([{ eventKey: 'codex:2026-08-24:gpt-5.5', costUsd: undefined, hasCost: true }])
+    await withRecordingServer(absent, async () => { await runMainWith({ root, statePath, server: absent.server }) })
+    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration?.codex, undefined)
+    const nulled = recordingServer([{ eventKey: 'codex:2026-08-24:gpt-5.5', costUsd: null, hasCost: true }])
+    await withRecordingServer(nulled, async () => { await runMainWith({ root, statePath, server: nulled.server }) })
+    assert.deepEqual(legacyZeroes(nulled.posts), [])
     assert.equal(typeof JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration.codex, 'string')
   } finally { await removeTemp(root) }
 })

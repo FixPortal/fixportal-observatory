@@ -1460,13 +1460,17 @@ const COVERED_TOKEN_FIELDS = ['inputTokens', 'outputTokens', 'cacheReadTokens', 
 /**
  * Whether this machine's per-machine snapshot with the same event key provably contains a legacy
  * snapshot: true when every figure the legacy key carries is at most this machine's; false when
- * one exceeds it, there is no counterpart, or the legacy key lacks a figure (it can never be shown
- * to be contained, so it is kept for good); undefined when only this machine's counterpart lacks a
- * figure, which a later run can still supply.
+ * one exceeds it, there is no counterpart, or the legacy row lists a figure as null (it can never
+ * be shown to be contained, so it is kept for good); undefined when a figure property is absent
+ * from the legacy row (a server too old to list figures) or this machine's counterpart lacks a
+ * figure, both of which a later run can still supply.
  */
 function coversLegacy(mine, legacy) {
   if (mine === undefined) { return false }
   const legacyHasCost = Number.isFinite(legacy.costUsd)
+  if (COVERED_TOKEN_FIELDS.some(field => !Object.hasOwn(legacy, field)) || (legacy.hasCost === true && !Object.hasOwn(legacy, 'costUsd'))) {
+    return undefined
+  }
   if (COVERED_TOKEN_FIELDS.some(field => !Number.isFinite(legacy[field])) || (legacy.hasCost === true && !legacyHasCost)) {
     return false
   }
@@ -1528,7 +1532,7 @@ async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc
       console.error(`Tombstoned ${superseded.length} legacy ${legacyId} key(s) this machine's per-machine series contains; ${legacyInventory.length - superseded.length} kept.`)
     }
     if (unknown > 0) {
-      console.error(`${unknown} legacy ${legacyId} key(s) are kept because this machine's matching key lacks a figure; the migration is retried next run.`)
+      console.error(`${unknown} legacy ${legacyId} key(s) cannot be compared yet (the server lists no figures for them, or this machine's matching key lacks one) and are kept; the migration is retried next run.`)
     }
     if (!completed) {
       console.error(`Legacy migration for ${legacyId} did not finish; it is retried next run.`)
