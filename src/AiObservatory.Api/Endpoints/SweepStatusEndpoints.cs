@@ -25,6 +25,10 @@ public static partial class SweepStatusEndpoints
     // honest later report, so it is refused.
     private static readonly Duration MaxClockAhead = Duration.FromMinutes(5);
 
+    // A sweep posts its status at the end of the run it stamped, so an attempt older than this
+    // means a wrong client clock, not a slow sweep.
+    private static readonly Duration MaxClockBehind = Duration.FromDays(1);
+
     // ReSharper disable once UnusedMethodReturnValue.Global
     public static IEndpointRouteBuilder MapSweepStatusEndpoints(this IEndpointRouteBuilder app)
     {
@@ -52,6 +56,13 @@ public static partial class SweepStatusEndpoints
         {
             return Results.BadRequest(
                 $"attemptedAt is more than {MaxClockAhead.TotalMinutes:0} minutes ahead of the server: the client clock is ahead"
+            );
+        }
+        // A sweep's run start is never this old; an ancient stamp would record a long-stale success.
+        if (req.AttemptedAt < now - MaxClockBehind)
+        {
+            return Results.BadRequest(
+                $"attemptedAt is more than {MaxClockBehind.TotalHours:0} hours behind the server: the client clock is behind"
             );
         }
         var attemptedAt = req.AttemptedAt ?? now;
