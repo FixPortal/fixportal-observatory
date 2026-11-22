@@ -98,7 +98,8 @@ public class SourceStatusEndpointsWafTests(AiObservatoryApiFactory factory)
                 "lastSuccessAt",
                 "latestObservationAt",
                 "consecutiveFailureCount",
-                "lastError"
+                "lastError",
+                "heldFiles"
             );
         configured.GetProperty("isConfigured").GetBoolean().Should().BeTrue();
         configured.GetProperty("lastAttemptAt").ValueKind.Should().Be(JsonValueKind.Null);
@@ -106,6 +107,10 @@ public class SourceStatusEndpointsWafTests(AiObservatoryApiFactory factory)
         configured.GetProperty("latestObservationAt").ValueKind.Should().Be(JsonValueKind.Null);
         configured.GetProperty("consecutiveFailureCount").GetInt32().Should().Be(0);
         configured.GetProperty("lastError").ValueKind.Should().Be(JsonValueKind.Null);
+        configured
+            .GetProperty("heldFiles")
+            .ValueKind.Should()
+            .Be(JsonValueKind.Null, "only sweep-status rows carry it");
 
         var failing = addedRows.Single(row => row.GetProperty("sourceId").GetString() == sourceIds.Failing);
         failing.GetProperty("lastError").GetString().Should().Be(storedError);
