@@ -3961,3 +3961,16 @@ test('a legacy key on a held day is zeroed when this machine already covers it, 
     assert.equal(JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration?.antigravity, undefined)
   } finally { await removeTemp(root) }
 })
+// --- PR #468 CodeRabbit follow-ups ---------------------------------------------
+
+// CodeRabbit 4657871774
+test('a malformed Claude copy holds every day its message lands on after deduplication', () => {
+  const malformed = claudePromptRow({ input_tokens: 10, output_tokens: -1 }, { id: 'dup', model: 'claude-opus-5' }, '2026-10-22T23:59:59Z')
+  const richer = claudePromptRow(
+    { input_tokens: 0, output_tokens: 5, cache_read_input_tokens: 500, cache_creation_input_tokens: 7 },
+    { id: 'dup', model: 'claude-opus-5' }, '2026-10-23T00:00:05Z',
+  )
+  const unrelated = claudePromptRow({ input_tokens: 3, output_tokens: 1 }, { id: 'other', model: 'claude-opus-5' }, '2026-10-24T12:00:00Z')
+  const snapshots = buildDailySnapshots(parseClaude([malformed, richer, unrelated].join('\n')), TEST_MACHINE)
+  assert.deepEqual(snapshots.map(snapshot => snapshot.eventKey.split(':')[1]), ['2026-10-24'])
+})
