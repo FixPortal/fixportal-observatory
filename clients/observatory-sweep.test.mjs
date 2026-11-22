@@ -3991,3 +3991,19 @@ test('a malformed Claude copy holds every day its message lands on after dedupli
   const snapshots = buildDailySnapshots(parseClaude([malformed, richer, unrelated].join('\n')), TEST_MACHINE)
   assert.deepEqual(snapshots.map(snapshot => snapshot.eventKey.split(':')[1]), ['2026-10-24'])
 })
+// CodeRabbit 4657871792
+test('a per-machine key selected for removal never covers a legacy key, even when its tombstone fails', async () => {
+  const root = await makeTemp('observatory-legacy-removed-counterpart-')
+  await writeCodexRollout(root)
+  const removed = 'codex:2026-08-25:gpt-5.5'
+  const recording = recordingServer([removed], [removed], {
+    failPost: body => body.sourceId === 'codex-local@test-machine' && isTombstone(body),
+  })
+  try {
+    await withRecordingServer(recording, async () => {
+      await runMainWith({ root, statePath: join(root, 'state', 'sweep.json'), server: recording.server })
+    })
+    assert.equal(machinePosts(recording.posts).some(isTombstone), true, 'the per-machine tombstone was attempted')
+    assert.deepEqual(legacyZeroes(recording.posts), [])
+  } finally { await removeTemp(root) }
+})
