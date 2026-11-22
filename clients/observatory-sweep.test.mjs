@@ -4098,47 +4098,63 @@ test('a live sweep lock is busy however old it is; a dead one is taken over', as
   } finally { await removeTemp(root) }
 })
 
-test('two starts taking over one stale lock leave exactly one holder', async () => {
+// Every fs call a start makes goes through `hook(name, op, args)` first, and is logged in `calls`.
+async function lockSeam(name, calls, hook) {
+  const fs = await import('node:fs/promises')
+  return Object.fromEntries(['mkdir', 'writeFile', 'readFile', 'stat', 'unlink', 'rename', 'link', 'rm'].map(op => [op, async (...args) => {
+    calls.push([name, op, String(args[0])])
+    await hook(name, op, args)
+    return fs[op](...args)
+  }]))
+}
+
+test('three starts racing over one stale lock leave exactly one holder and never touch its lock', async () => {
   const { root, lock } = await lockTemp('observatory-lock-takeover-')
   try {
     await writeFile(lock, JSON.stringify({ pid: await deadPid(), startedAt: '2020-01-01T00:00:00.000Z' }))
-    // Both starts read the stale lock first; B's takeover step then waits until A holds the lock.
-    let arrived = 0
+    // A and B both judge the same stale text; B's takeover then waits until A holds the lock, and C
+    // only arrives after that.
+    const firstRead = new Set()
     let bothRead
     const read = new Promise(resolve => { bothRead = resolve })
-    let aCreated
-    const created = new Promise(resolve => { aCreated = resolve })
-    const fs = await import('node:fs/promises')
-    const seam = name => {
-      const after = { ...fs }
-      after.readFile = async (path, ...rest) => {
-        const text = await fs.readFile(path, ...rest)
-        if (path === lock && arrived < 2) { if (++arrived === 2) { bothRead() } await read }
-        return text
+    let aHolds
+    const aDone = new Promise(resolve => { aHolds = resolve })
+    const calls = []
+    const hook = async (name, op, [path]) => {
+      if (op === 'readFile' && path === lock && name !== 'C' && !firstRead.has(name)) {
+        firstRead.add(name)
+        if (firstRead.size === 2) { bothRead() }
+        await read
       }
-      const takeover = op => async (path, ...rest) => { if (name === 'B' && path === lock) { await created } return fs[op](path, ...rest) }
-      after.rm = takeover('rm')
-      after.rename = takeover('rename')
-      const create = op => async (...args) => {
-        const result = await fs[op](...args)
-        if (name === 'A' && (args[0] === lock || args[1] === lock)) { aCreated() }
-        return result
-      }
-      after.writeFile = create('writeFile')
-      after.link = create('link')
-      return after
+      const takeoverStep = (op === 'writeFile' && path !== lock) || ((op === 'rename' || op === 'rm' || op === 'unlink') && path === lock)
+      if (name === 'B' && takeoverStep && !String(path).endsWith('.tmp')) { await aDone }
     }
-    const results = await Promise.allSettled([
-      sweep.acquireSweepLock(lock, { nowMs: Date.parse('2026-11-22T10:00:00Z'), io: seam('A') }),
-      sweep.acquireSweepLock(lock, { nowMs: Date.parse('2026-11-22T10:00:01Z'), io: seam('B') }),
-    ])
-    assert.deepEqual(results.map(result => result.status === 'fulfilled' && result.value.locked), [true, false])
+    const a = sweep.acquireSweepLock(lock, { nowMs: Date.parse('2026-11-22T10:00:00Z'), io: await lockSeam('A', calls, hook) })
+    const b = sweep.acquireSweepLock(lock, { nowMs: Date.parse('2026-11-22T10:00:01Z'), io: await lockSeam('B', calls, hook) })
+    const held = await a
+    aHolds()
+    const c = sweep.acquireSweepLock(lock, { nowMs: Date.parse('2026-11-22T10:00:02Z'), io: await lockSeam('C', calls, hook) })
+    const results = await Promise.allSettled([b, c])
+    assert.equal(held.locked, true)
+    assert.deepEqual(results.map(result => result.status), ['rejected', 'rejected'])
     assert.equal(JSON.parse(await readFile(lock, 'utf8')).startedAt, '2026-11-22T10:00:00.000Z')
-    await results[0].value.release()
+    assert.deepEqual(calls.filter(([name, op, path]) => name !== 'A' && path === lock && ['unlink', 'rename', 'rm'].includes(op)), [], "A's lock is never moved or deleted")
+    await held.release()
     assert.deepEqual(await readdir(root), [])
   } finally { await removeTemp(root) }
 })
 
+test('a filesystem without hard links still takes the lock', async () => {
+  const { root, lock } = await lockTemp('observatory-lock-nolink-')
+  try {
+    const fs = await import('node:fs/promises')
+    const io = { ...fs, link: async () => { throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' }) } }
+    const taken = await sweep.acquireSweepLock(lock, { io })
+    assert.equal(taken.locked, true)
+    await taken.release()
+    assert.deepEqual(await readdir(root), [])
+  } finally { await removeTemp(root) }
+})
 test('an unlocked run posts its snapshots but no tombstones and no legacy zero', async () => {
   const root = await makeTemp('observatory-lock-unlocked-')
   await writeCodexRollout(root)
@@ -4154,5 +4170,18 @@ test('an unlocked run posts its snapshots but no tombstones and no legacy zero',
     assert.deepEqual(machinePosts(recording.posts).map(body => [body.eventKey, isTombstone(body)]), [['codex:2026-08-24:gpt-5.5', false]])
     assert.deepEqual(legacyZeroes(recording.posts), [])
     assert.equal(errors.some(line => /tombstones and the legacy migration are skipped/.test(line)), true)
+  } finally { await removeTemp(root) }
+})
+test('a takeover lock left by a start that died mid-takeover is cleared after the grace period', async () => {
+  const { root, lock } = await lockTemp('observatory-lock-stuck-takeover-')
+  try {
+    await writeFile(lock, JSON.stringify({ pid: await deadPid(), startedAt: '2020-01-01T00:00:00.000Z' }))
+    await writeFile(`${lock}.takeover`, JSON.stringify({ pid: await deadPid(), startedAt: '2020-01-01T00:00:00.000Z' }))
+    await assert.rejects(() => sweep.acquireSweepLock(lock), /Another sweep is running/, 'a fresh takeover lock is respected')
+    await utimes(`${lock}.takeover`, new Date('2020-01-01T00:00:00Z'), new Date('2020-01-01T00:00:00Z'))
+    const taken = await sweep.acquireSweepLock(lock)
+    assert.equal(taken.locked, true)
+    await taken.release()
+    assert.deepEqual(await readdir(root), [])
   } finally { await removeTemp(root) }
 })
