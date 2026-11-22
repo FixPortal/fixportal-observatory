@@ -2970,6 +2970,23 @@ test('scanRecords reuses cached usage when a conversation database loses its tra
     const second = await scanRecords(cfg, state, new Set(['antigravity']))
     assert.equal(second.records.length, 1, 'the cached records stay')
     assert.equal(second.emptySources.has('antigravity'), false)
+    // CodeRabbit 4657871781: the cached days are held, not reposted as fresh observations, and the
+    // orphan outcome is cached under its new key so the next run restores the same hold.
+    assert.deepEqual(second.holds.get('antigravity')?.map(hold => hold.from), ['2026-08-24'])
+    assert.equal(second.heldFiles.get('antigravity'), 1)
+    const [entry] = Object.values(state.files.antigravity)
+    assert.equal(entry.incomplete, true)
+    assert.match(entry.cacheKey, /:no-transcript$/)
+    const third = await scanRecords(cfg, state, new Set(['antigravity']))
+    assert.deepEqual(third.holds.get('antigravity')?.map(hold => hold.from), ['2026-08-24'])
+    assert.equal(third.records.length, 1)
+    const logs = join(brain, 'agy-session', '.system_generated', 'logs')
+    await mkdir(logs, { recursive: true })
+    await writeFile(join(logs, 'transcript.jsonl'), JSON.stringify({
+      created_at: '2026-08-24T12:00:00Z', content: 'Model Selection` from None to Gemini 3.1 Pro (High).',
+    }))
+    const restored = await scanRecords(cfg, state, new Set(['antigravity']))
+    assert.equal(restored.holds.has('antigravity'), false, 'a restored transcript re-parses cleanly')
   } finally {
     await removeTemp(root)
   }
