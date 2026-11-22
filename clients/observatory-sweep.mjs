@@ -9,8 +9,7 @@
 //
 // Zero dependencies: Node 24+ only (global fetch, fs/promises, sqlite).
 
-import { randomUUID } from 'node:crypto'
-import { readFile, readdir, link, mkdir, rename, rm, unlink, writeFile, stat } from 'node:fs/promises'
+import { readFile, readdir, mkdir, rename, rm, unlink, writeFile, stat } from 'node:fs/promises'
 import { homedir, hostname } from 'node:os'
 import { join, dirname, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -1361,8 +1360,9 @@ async function loadState(path) {
 // Sweeps on one machine are serialised: the legacy migration decides from this machine's server
 // rows and then writes, so an overlapping sweep could tombstone a counterpart in between. A lock
 // whose recorded process is alive is busy however old it is (a reused pid fails closed, and the
-// refusal says which file to delete). A lock that is empty or unreadable is busy until it has sat
-// unchanged this long, since a lock this client writes is never seen part-written.
+// refusal says which file to delete). The exclusive create writes the body just after creating
+// the file, so a lock that is empty or unreadable is busy until it has sat unchanged this long;
+// the same bound marks a takeover lock whose holder died mid-takeover.
 const SWEEP_LOCK_UNREADABLE_GRACE_MS = 60_000
 
 const pidAlive = pid => {
@@ -1389,60 +1389,71 @@ async function sweepLockState(lockPath, nowMs, io, isAlive) {
 
 /**
  * Take the machine's sweep lock beside the state file, or throw when another sweep holds it.
- * The lock appears whole: its body is written to a private temp file that is hard-linked into
- * place (an atomic create that fails with EEXIST while held). A stale lock is taken over by
- * renaming it aside; only the start whose rename moved that very stale lock goes on to create
- * one. A state directory that cannot hold the lock (the fault a failed state save tolerates) is
- * reported and the run goes ahead unlocked: `locked` is false and the caller skips tombstones.
+ * The lock is an exclusive create (`wx`) holding this run's pid and start time. A stale lock is
+ * never moved: a start takes it over only while holding `<lock>.takeover` (another exclusive
+ * create), deletes it only if it still holds exactly the text judged stale, and then creates its
+ * own with `wx`, so a start that beat it in between wins. A state directory that cannot hold the
+ * lock at all (the fault a failed state save tolerates) is reported and the run goes ahead
+ * unlocked: `locked` is false and the caller skips tombstones and the legacy migration.
  */
 export async function acquireSweepLock(lockPath, {
-  nowMs = Date.now(), io = { mkdir, writeFile, readFile, stat, link, rename, unlink }, isAlive = pidAlive,
+  nowMs = Date.now(), io = { mkdir, writeFile, readFile, stat, unlink }, isAlive = pidAlive,
 } = {}) {
   const body = JSON.stringify({ pid: process.pid, startedAt: new Date(nowMs).toISOString() })
+  const takeoverPath = `${lockPath}.takeover`
   const busy = text => new Error(`Another sweep is running on this machine (lock ${lockPath}: ${text || 'empty'}); this run exits without posting. If no sweep is running, delete ${lockPath}.`)
   const unlocked = error => {
     console.error(`Sweep lock ${lockPath} could not be created (${error.message}); this run is not serialised against another, so its tombstones and the legacy migration are skipped.`)
     return { locked: false, release: async () => {} }
   }
-  const temp = `${lockPath}.${process.pid}.${randomUUID()}.tmp`
+  const create = path => io.writeFile(path, body, { encoding: 'utf8', flag: 'wx' })
+  // Remove a lock file only while it still holds `text`.
+  const removeIf = async (path, text) => {
+    const current = await io.readFile(path, 'utf8').catch(() => null)
+    if (current === text) { await io.unlink(path).catch(() => {}) }
+  }
+  const held = { locked: true, release: () => removeIf(lockPath, body) }
   // mkdir reports EEXIST when a parent is a file, so it is checked apart from the lock's own EEXIST.
-  try {
-    await io.mkdir(dirname(lockPath), { recursive: true })
-    await io.writeFile(temp, body, 'utf8')
-  } catch (error) { return unlocked(error) }
-  try {
-    for (let attempt = 0; attempt < 2; attempt++) {
+  try { await io.mkdir(dirname(lockPath), { recursive: true }) } catch (error) { return unlocked(error) }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await create(lockPath)
+      return held
+    } catch (error) {
+      if (error?.code !== 'EEXIST') { return unlocked(error) }
+    }
+    const { state, text } = await sweepLockState(lockPath, nowMs, io, isAlive)
+    if (state === 'gone') { continue }
+    if (state === 'busy') { throw busy(text) }
+    try {
+      await create(takeoverPath)
+    } catch (error) {
+      if (error?.code !== 'EEXIST') { throw error }
+      // Another start is taking over; one whose takeover lock outlived the grace period died doing it.
+      const takeoverText = await io.readFile(takeoverPath, 'utf8').catch(() => null)
+      const stuck = await io.stat(takeoverPath).then(stats => nowMs - stats.mtimeMs > SWEEP_LOCK_UNREADABLE_GRACE_MS, () => false)
+      if (stuck && takeoverText !== null) { await removeIf(takeoverPath, takeoverText) }
+      continue
+    }
+    try {
+      const current = await io.readFile(lockPath, 'utf8').catch(error => {
+        if (error?.code === 'ENOENT') { return null }
+        throw error
+      })
+      if (current !== null && current !== text) { throw busy(current) }
+      if (current === text) { await io.unlink(lockPath).catch(() => {}) }
       try {
-        await io.link(temp, lockPath)
-        // Release only our own lock: a later takeover by another run must not be undone here.
-        return { locked: true, release: async () => {
-          const current = await io.readFile(lockPath, 'utf8').catch(() => '')
-          if (current === body) { await io.unlink(lockPath).catch(() => {}) }
-        } }
+        await create(lockPath)
+        return held
       } catch (error) {
         if (error?.code !== 'EEXIST') { return unlocked(error) }
+        throw busy(await io.readFile(lockPath, 'utf8').catch(() => ''))
       }
-      const { state, text } = await sweepLockState(lockPath, nowMs, io, isAlive)
-      if (state === 'gone') { continue }
-      if (state === 'busy' || attempt > 0) { throw busy(text) }
-      const aside = `${lockPath}.stale-${process.pid}-${randomUUID()}`
-      try { await io.rename(lockPath, aside) } catch (error) {
-        if (error?.code === 'ENOENT') { continue }
-        throw error
-      }
-      const moved = await io.readFile(aside, 'utf8').catch(() => '')
-      if (moved !== text) {
-        // Another start took the stale lock over first and this rename moved its new lock: put it back.
-        await io.link(aside, lockPath).catch(() => {})
-        await io.unlink(aside).catch(() => {})
-        throw busy(moved)
-      }
-      await io.unlink(aside).catch(() => {})
+    } finally {
+      await removeIf(takeoverPath, body)
     }
-    throw busy('')
-  } finally {
-    await io.unlink(temp).catch(() => {})
   }
+  throw busy(await io.readFile(lockPath, 'utf8').catch(() => ''))
 }
 
 // A failed save loses only the cache, never server data, so it must not stop the sweep posting.
