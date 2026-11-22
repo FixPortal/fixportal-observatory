@@ -9,7 +9,7 @@
 //
 // Zero dependencies: Node 24+ only (global fetch, fs/promises, sqlite).
 
-import { readFile, readdir, mkdir, writeFile, stat } from 'node:fs/promises'
+import { readFile, readdir, mkdir, rename, rm, writeFile, stat } from 'node:fs/promises'
 import { homedir, hostname } from 'node:os'
 import { join, dirname, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -1346,12 +1346,17 @@ async function loadState(path) {
 }
 
 // A failed save loses only the cache, never server data, so it must not stop the sweep posting.
-async function saveState(path, state) {
+// The state is written to a temp file beside it and renamed over it, so a crash or failed write
+// leaves the previous file whole rather than torn.
+export async function saveState(path, state, io = { mkdir, writeFile, rename, rm }) {
   if (DRY_RUN) { return }
+  const temp = `${path}.${process.pid}.tmp`
   try {
-    await mkdir(dirname(path), { recursive: true })
-    await writeFile(path, JSON.stringify(state), 'utf8')
+    await io.mkdir(dirname(path), { recursive: true })
+    await io.writeFile(temp, JSON.stringify(state), 'utf8')
+    await io.rename(temp, path)
   } catch (error) {
+    await io.rm(temp, { force: true }).catch(() => {})
     console.error(`State file ${path} could not be saved (${error.message}); the next run re-reads every file.`)
   }
 }
