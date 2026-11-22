@@ -80,7 +80,7 @@ Responses:
 
 - `GET /api/events?provider=<name>&from=<instant>&to=<instant>&limit=<n>`: `provider` is required; `from` and `to` filter on the time the usage occurred. Returns cost-correction records, oldest first (id, source id, event key, runtime, session, agent, model, input, output, cache-write and thought tokens, cost).
 - `GET /api/events/{id}`: the stored event, including its raw payload. `id` must be a GUID.
-- `GET /api/events/local-snapshots?sourceId=<id>`: `sourceId` is required. Returns what is stored for that source, limited to local-telemetry events that have an event key and are not sweeper tombstones (provider, time, model, whether a cost is present, runtime, provenance, event key). Costs and raw evidence are left out.
+- `GET /api/events/local-snapshots?sourceId=<id>`: `sourceId` is required. Returns what is stored for that source, limited to local-telemetry events that have an event key and are not sweeper tombstones (provider, time, model, whether a cost is present, runtime, provenance, event key), with the stored figures `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `cacheWrite1hTokens`, `thoughtTokens` and `costUsd` (`null` when the row has no cost). Raw evidence is left out.
 
 ### Correct a cost
 

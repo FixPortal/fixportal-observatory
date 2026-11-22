@@ -1099,7 +1099,14 @@ public class UsageRepository(
                 e.SourceKind,
                 e.UsageScope,
                 e.CostBasis,
-                e.EventKey!
+                e.EventKey!,
+                e.InputTokens,
+                e.OutputTokens,
+                e.CacheReadTokens,
+                e.CacheWriteTokens,
+                e.CacheWrite1hTokens,
+                e.ThoughtTokens,
+                e.CostUsd
             ))
             .ToListAsync(ct);
 }
