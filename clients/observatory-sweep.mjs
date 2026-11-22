@@ -207,9 +207,9 @@ export async function observatoryFetch(url, apiKey, options = {}) {
     if (!retryable || attempt === 3) { return response }
     const retryAfter = response.headers.get('Retry-After')
     const fallbackDelayMs = response.status === 429 ? 61_000 : 1_000
-    // Retry-After is honored but capped: an uncapped server hint can rate-limit
-    // the collector into overlapping scheduled runs, which is worse than retrying
-    // early and being refused again.
+    // Retry-After is honored but capped: an uncapped server hint can stretch one
+    // run past the next scheduled start, and that run then refuses to start (see
+    // the sweep lock), which is worse than retrying early and being refused again.
     const delayMs = retryAfter && /^\d+$/.test(retryAfter)
       ? Math.min(Number(retryAfter) * 1_000, 61_000)
       : fallbackDelayMs
@@ -1357,6 +1357,53 @@ async function loadState(path) {
   }
 }
 
+// Sweeps on one machine are serialised: the legacy migration decides from this machine's server
+// rows and then writes, so an overlapping sweep could tombstone a counterpart in between. A lock
+// is stale once its process is gone or it is older than any real run (retries are capped at 61 s
+// per request, so even a slow first run with a long history finishes well inside this bound).
+const SWEEP_LOCK_STALE_MS = 6 * 60 * 60 * 1000
+
+function lockIsStale(text, nowMs) {
+  let lock
+  try { lock = JSON.parse(text) } catch { return true }
+  const startedMs = Date.parse(lock?.startedAt)
+  if (!Number.isFinite(startedMs) || nowMs - startedMs > SWEEP_LOCK_STALE_MS) { return true }
+  try { process.kill(lock.pid, 0); return false } catch (error) { return error?.code !== 'EPERM' }
+}
+
+/**
+ * Take the machine's sweep lock beside the state file, or throw when another sweep holds it. A
+ * state directory that cannot hold the lock at all (the same fault that stops the state saving)
+ * is reported and the run goes ahead unlocked, as a failed state save does.
+ */
+export async function acquireSweepLock(lockPath, nowMs = Date.now()) {
+  const body = JSON.stringify({ pid: process.pid, startedAt: new Date(nowMs).toISOString() })
+  const unlocked = error => {
+    console.error(`Sweep lock ${lockPath} could not be created (${error.message}); this run is not serialised against another.`)
+    return null
+  }
+  // mkdir reports EEXIST when a parent is a file, so it is checked apart from the lock's own EEXIST.
+  try { await mkdir(dirname(lockPath), { recursive: true }) } catch (error) { return unlocked(error) }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await writeFile(lockPath, body, { encoding: 'utf8', flag: 'wx' })
+      // Release only our own lock: a stale-lock takeover by another run must not be undone here.
+      return async () => {
+        const current = await readFile(lockPath, 'utf8').catch(() => '')
+        if (current === body) { await rm(lockPath, { force: true }) }
+      }
+    } catch (error) {
+      if (error?.code !== 'EEXIST') { return unlocked(error) }
+      const text = await readFile(lockPath, 'utf8').catch(() => '')
+      if (attempt > 0 || !lockIsStale(text, nowMs)) {
+        throw new Error(`Another sweep is running on this machine (lock ${lockPath}: ${text || 'unreadable'}); this run exits without posting.`)
+      }
+      // shortcut: two runs that both find a stale lock can race on its removal; schedulers start one run at a time.
+      await rm(lockPath, { force: true })
+    }
+  }
+}
+
 // A failed save loses only the cache, never server data, so it must not stop the sweep posting.
 // The state is written to a temp file beside it and renamed over it, so a crash or failed write
 // leaves the previous file whole rather than torn.
@@ -1761,10 +1808,17 @@ export async function scanRecords(cfg, state, enabled, discover = listJsonl) {
   return { records, incompleteSources, emptySources, holds, heldFiles, provableFrom }
 }
 
-export async function main({ discover = listJsonl, now = () => new Date() } = {}) {
+export async function main(options = {}) {
+  if (!process.env.OBSERVATORY_API_KEY) { console.error('OBSERVATORY_API_KEY not set; nothing to do.'); process.exit(0) }
+  const statePath = process.env.OBSERVATORY_STATE ?? join(homedir(), '.ai-observatory', 'sweep-state.json')
+  // A dry run writes nothing, so it neither needs nor blocks the lock.
+  const release = DRY_RUN ? null : await acquireSweepLock(`${statePath}.lock`)
+  try { await sweepOnce(options, statePath) } finally { await release?.() }
+}
+
+async function sweepOnce({ discover = listJsonl, now = () => new Date() }, statePath) {
   const url = observatoryUrl(process.env.OBSERVATORY_URL ?? 'http://localhost:5039')
   const apiKey = process.env.OBSERVATORY_API_KEY
-  if (!apiKey) { console.error('OBSERVATORY_API_KEY not set; nothing to do.'); process.exit(0) }
   const observedAtUtc = now().toISOString()
 
   const cfg = {
@@ -1776,7 +1830,6 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     grokHome: process.env.GROK_HOME ?? join(homedir(), '.grok'),
     piHome: process.env.PI_HOME ?? join(homedir(), '.pi', 'agent'),
   }
-  const statePath = process.env.OBSERVATORY_STATE ?? join(homedir(), '.ai-observatory', 'sweep-state.json')
   const state = await loadState(statePath)
   delete state.emitted
   const enabled = parseLocalSources(process.env.OBSERVATORY_LOCAL_SOURCES)
