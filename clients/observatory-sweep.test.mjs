@@ -1461,21 +1461,29 @@ test('server inventory clears a deleted final snapshot after local state loss wh
   assert.equal(JSON.parse(submissions[0].snapshot.rawPayload).tombstone, true)
 })
 
-test('server inventory clears a disabled source after state loss and allows re-enable', () => {
-  const snapshot = buildDailySnapshots([
-    { tool: 'kimi', date: '2026-08-24', model: 'kimi-code/kimi-for-coding', occurredAtUtc: '2026-08-24T12:00:00Z', inputTokens: 10, outputTokens: 2, cacheReadTokens: 20, cacheWriteTokens: 3 },
-  ], TEST_MACHINE)[0]
-  const disabledSnapshots = parseLocalSources('codex').has('kimi') ? [snapshot] : []
-  const [disabled] = planSnapshotSubmissions(disabledSnapshots, [snapshot], new Map(), new Map([[snapshot.sourceId, '2026-08-24']]))
-
-  const reenabledSnapshots = parseLocalSources('kimi').has('kimi') ? [snapshot] : []
-  const [reenabled] = planSnapshotSubmissions(reenabledSnapshots, [])
-
-  assert.equal(disabled.active, false)
-  assert.equal(disabled.snapshot.inputTokens, 0)
-  assert.equal(reenabled.active, true)
-  assert.equal(reenabled.snapshot.eventKey, 'kimi:2026-08-24:kimi-code/kimi-for-coding')
-  assert.equal(reenabled.snapshot.inputTokens, 10)
+// CodeRabbit 4657871796: driven through main, as a real disabled run is.
+test('a disabled source keeps its server history untouched and resumes when re-enabled', async () => {
+  const root = await makeTemp('observatory-disabled-kimi-')
+  await writeCodexRollout(root)
+  await mkdir(join(root, 'kimi', 'sessions'), { recursive: true })
+  await writeFile(join(root, 'kimi', 'sessions', 'wire.jsonl'), JSON.stringify({
+    type: 'usage.record', time: 1787572800000, model: 'kimi-code/kimi-for-coding',
+    usage: { inputOther: 10, output: 2, inputCacheRead: 20, inputCacheCreation: 3 },
+  }))
+  const recording = recordingServer([], ['kimi:2026-08-20:kimi-code/kimi-for-coding'])
+  const statePath = join(root, 'state', 'sweep.json')
+  const kimi = 'kimi-local@test-machine'
+  try {
+    await withRecordingServer(recording, async () => {
+      await runMainWith({ root, statePath, server: recording.server, sources: 'codex' })
+      assert.equal(recording.gets.includes(kimi), false, 'a disabled source is never inventoried')
+      assert.deepEqual(machinePosts(recording.posts, kimi), [], 'nor tombstoned')
+      await runMainWith({ root, statePath, server: recording.server, sources: 'kimi' })
+    })
+    assert.deepEqual(machinePosts(recording.posts, kimi).map(body => [body.eventKey, body.inputTokens]), [
+      ['kimi:2026-08-24:kimi-code/kimi-for-coding', 10],
+    ])
+  } finally { await removeTemp(root) }
 })
 
 test('reconciliation corrects a daily snapshot after one transcript is deleted', () => {
@@ -3470,10 +3478,12 @@ const INVENTORY_FIGURES = {
 function recordingServer(legacyKeys = [], machineKeys = [], { failPost = () => false } = {}) {
   const posts = []
   const statuses = []
+  const gets = []
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1')
     if (request.method === 'GET' && url.pathname === '/api/events/local-snapshots') {
       const sourceId = url.searchParams.get('sourceId')
+      gets.push(sourceId)
       // Every bare (legacy) id serves legacyKeys; every test-machine id serves machineKeys.
       const keys = !sourceId.includes('@') ? legacyKeys : sourceId.endsWith('@test-machine') ? machineKeys : []
       const body = keys.map(key => (typeof key === 'string' ? { eventKey: key } : key)).map(({ eventKey, ...figures }) => ({
@@ -3494,7 +3504,7 @@ function recordingServer(legacyKeys = [], machineKeys = [], { failPost = () => f
     }
     response.writeHead(200).end('{}')
   })
-  return { server, posts, statuses }
+  return { server, posts, statuses, gets }
 }
 
 // C3-P1
