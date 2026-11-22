@@ -86,6 +86,8 @@ def ps_comment_count(lines):
             elif line.startswith(("@'", '@"'), i) and not line[i + 2:].strip():
                 state, code = line[i:i + 2], True
                 break
+            elif c == "`":
+                code, i = True, i + 2  # an unquoted backtick escapes the next character (`` `" `` is a literal quote)
             else:
                 code = True
                 if c in "'\"":
