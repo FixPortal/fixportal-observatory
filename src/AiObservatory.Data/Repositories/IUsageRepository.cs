@@ -78,6 +78,7 @@ public sealed record LocalSnapshotRecord(
     long OutputTokens,
     long? CacheReadTokens,
     long? CacheWriteTokens,
+    // ReSharper disable once InconsistentNaming
     long? CacheWrite1hTokens,
     long? ThoughtTokens,
     decimal? CostUsd
