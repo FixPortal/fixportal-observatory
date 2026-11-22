@@ -252,7 +252,8 @@ def container_images(job):
                 # Shorthand: `services: { db: postgres }` names the image
                 # directly, with no mapping and no `image:` key.
                 images.append(service)
-            elif isinstance(service, dict) and isinstance(service.get("image"), str):
+            elif isinstance(service, dict) and isinstance(service.get("image"), str) and service["image"] != "":
+                # An empty `image` is GitHub's documented way to not start the service: no container runs.
                 images.append(service["image"])
     return images
 
@@ -415,7 +416,8 @@ def dockerfile_base_images(dockerfile):
     """
     # shortcut: an ARG-built image name is not resolved, so it fails the pin check. Upgrade if one appears.
     stages, images = set(), []
-    for line in dockerfile_instructions(dockerfile.read_text(encoding="utf-8", errors="replace")):
+    # utf-8-sig: Docker drops a leading BOM, which would otherwise hide a first-line FROM.
+    for line in dockerfile_instructions(dockerfile.read_text(encoding="utf-8-sig", errors="replace")):
         match = re.match(r"\s*FROM\s+(?:--\S+\s+)*(\S+)(?:\s+AS\s+(\S+))?", line, re.IGNORECASE)
         if not match:
             continue
@@ -432,6 +434,7 @@ def dockerfile_base_images(dockerfile):
 # `3<<'EOF'` as heredocs, and `<<<EOF` and `"<<EOF"` as none.
 HEREDOC = re.compile(r"\d*<<(-?)([^<]+)")
 WORD = re.compile(r"""(?:[^\s"']+|"[^"]*"?|'[^']*'?)+""")
+QUOTED_PART = re.compile(r"""[^"']+|"[^"]*"?|'[^']*'?""")
 HEREDOC_INSTRUCTION = re.compile(r"\s*(?:ONBUILD\s+)?(?:RUN|COPY|ADD)\s+(.*)", re.IGNORECASE | re.DOTALL)
 DIRECTIVES = ("syntax", "escape", "check")
 
@@ -455,9 +458,8 @@ def heredoc_delimiters(instruction):
     for word in WORD.findall(match.group(1)):
         heredoc = HEREDOC.fullmatch(word)
         if heredoc:
-            name = heredoc.group(2)
-            if len(name) > 1 and name[0] == name[-1] and name[0] in "\"'":
-                name = name[1:-1]
+            # Quote removal over the whole word: Docker 29.9.3 closed `<<E"OF"`, `<<EO"F"` and `<<'E'OF` at `EOF`.
+            name = "".join(part.strip(part[0]) if part[0] in "\"'" else part for part in QUOTED_PART.findall(heredoc.group(2)))
             found.append((bool(heredoc.group(1)), name))
     return found
 
@@ -468,10 +470,12 @@ def dockerfile_instructions(text):
     blank lines are dropped, and a RUN/COPY/ADD heredoc body is data, not instructions.
     Docker 29.9.3 resolves `FROM \\` + `  base` to the stage `base` and reads a heredoc line
     `FROM scratch AS x` as no stage at all."""
-    lines = text.splitlines()
+    # Only LF (with an optional CR) ends a line: splitlines() also split at U+2028, VT and \x1c, which
+    # Docker 29.9.3 kept inside a LABEL value. Docker also read an indented `# escape=` as a directive.
+    lines = re.split(r"\r?\n", text)
     escape = "\\"
     for line in lines:
-        directive = re.match(r"#\s*(\w+)\s*=\s*(\S*)\s*$", line)
+        directive = re.match(r"\s*#\s*(\w+)\s*=\s*(\S*)\s*$", line)
         # An unknown key is a comment and ends the directives (Docker kept `\` after `# owner=team`).
         if not directive or directive.group(1).lower() not in DIRECTIVES:
             break
@@ -486,7 +490,8 @@ def dockerfile_instructions(text):
             continue
         if re.match(r"\s*(#|$)", line):
             continue
-        stripped = line.rstrip()
+        # Only spaces and tabs may follow the escape: Docker 29.9.3 did not continue a line ending `\` + U+00A0.
+        stripped = line.rstrip(" \t")
         # An escaped escape does not continue: Docker ran `FROM` after both `\\` and `\\\`.
         continued = stripped.endswith(escape) and not stripped[:-1].endswith(escape)
         current = (current or "") + (stripped[:-1] if continued else line)

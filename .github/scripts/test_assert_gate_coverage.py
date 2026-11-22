@@ -219,12 +219,13 @@ def test_missing_explicit_status_override_is_refused(tmp_path):
 
 # N01 F6: the closed extension set missed gate languages, so a script in one of them was
 # never required to be HIGH tier.
+# The canonical checker's word rule (fixportal-agents-skills #498) replaced the GATE_SCRIPT
+# regex with is_script(); the extension contract is the same.
 @pytest.mark.parametrize("name", ["gate.psm1", "gate.cjs", "gate.ts", "gate.bash", "Gate.PSM1"])
 def test_gate_script_recognises_extension(name):
-    match = gate.GATE_SCRIPT.search(f"run: ./scripts/{name}")
-    assert match is not None and match.group(1) == f"scripts/{name}"
+    assert gate.is_script(f"scripts/{name}")
 
 
 @pytest.mark.parametrize("name", ["gate.tsx", "gate.jsx", "gate.psm1x"])
 def test_gate_script_still_rejects_lookalike_extension(name):
-    assert gate.GATE_SCRIPT.search(f"run: ./scripts/{name}") is None
+    assert not gate.is_script(f"scripts/{name}")
