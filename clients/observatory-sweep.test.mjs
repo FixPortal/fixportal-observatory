@@ -3443,7 +3443,11 @@ test('a Gemini tmp root with no review directory is not a verified-empty source'
   } finally { await removeTemp(root) }
 })
 
-async function runMainWith({ root, statePath, server, sources = 'codex' }) {
+// The sweep lock goes in the test's own root, keyed like the real one on server and machine.
+const testLockDir = root => join(root, 'locks')
+const testLockPath = (root, server) => sweep.sweepLockPath(`http://127.0.0.1:${server.address().port}`, 'test-machine', testLockDir(root))
+
+async function runMainWith({ root, statePath, server, sources = 'codex', lockDir = testLockDir(root) }) {
   const envKeys = [
     'OBSERVATORY_URL', 'OBSERVATORY_API_KEY', 'OBSERVATORY_STATE', 'OBSERVATORY_LOCAL_SOURCES',
     'OBSERVATORY_MACHINE', 'CODEX_HOME', 'COPILOT_HOME', 'CLAUDE_HOME', 'KIMI_HOME', 'GEMINI_HOME',
@@ -3458,7 +3462,7 @@ async function runMainWith({ root, statePath, server, sources = 'codex' }) {
   const errors = []
   const realError = console.error
   console.error = (...args) => { errors.push(args.join(' ')) }
-  try { await sweep.main() }
+  try { await sweep.main({ lockDir }) }
   finally {
     console.error = realError
     for (const key of envKeys) {
@@ -4040,24 +4044,27 @@ test('legacy cost coverage uses the cost the server stored for this machine, not
 })
 
 // CodeRabbit 4657871784
-test('a second sweep on the same machine refuses to start while the first holds the lock', async () => {
+// CodeRabbit 4658317586: the lock follows the server and machine, not OBSERVATORY_STATE.
+test('a second sweep for the same server and machine refuses to start, whatever state file it uses', async () => {
   const root = await makeTemp('observatory-sweep-lock-')
   await writeCodexRollout(root)
-  const statePath = join(root, 'state', 'sweep.json')
-  await mkdir(join(root, 'state'), { recursive: true })
-  const lock = `${statePath}.lock`
-  await writeFile(lock, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }))
   const recording = recordingServer()
   try {
     await withRecordingServer(recording, async () => {
-      await assert.rejects(() => runMainWith({ root, statePath, server: recording.server }), /Another sweep is running/)
+      // Resolved once the server listens, since the lock is keyed on its URL.
+  const lock = () => testLockPath(root, recording.server)
+      await mkdir(testLockDir(root), { recursive: true })
+      await writeFile(lock(), JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }))
+      for (const state of ['state-a', 'state-b']) {
+        await assert.rejects(() => runMainWith({ root, statePath: join(root, state, 'sweep.json'), server: recording.server }), /Another sweep is running/, state)
+      }
       assert.deepEqual(recording.posts, [])
       // A lock left by a run whose process is gone is stale: the next run takes it and releases it.
-      await writeFile(lock, JSON.stringify({ pid: await deadPid(), startedAt: new Date().toISOString() }))
-      await runMainWith({ root, statePath, server: recording.server })
+      await writeFile(lock(), JSON.stringify({ pid: await deadPid(), startedAt: new Date().toISOString() }))
+      await runMainWith({ root, statePath: join(root, 'state-a', 'sweep.json'), server: recording.server })
     })
     assert.equal(machinePosts(recording.posts).length, 1)
-    assert.deepEqual((await readdir(join(root, 'state'))).sort(), ['sweep.json'])
+    assert.deepEqual(await readdir(testLockDir(root)), [])
   } finally { await removeTemp(root) }
 })
 // --- Sweep lock, composition review ---------------------------------------------
@@ -4165,7 +4172,7 @@ test('an unlocked run posts its snapshots but no tombstones and no legacy zero',
   try {
     let errors
     await withRecordingServer(recording, async () => {
-      errors = await runMainWith({ root, statePath: join(blocker, 'sweep.json'), server: recording.server })
+      errors = await runMainWith({ root, statePath: join(blocker, 'sweep.json'), server: recording.server, lockDir: join(blocker, 'locks') })
     })
     assert.deepEqual(machinePosts(recording.posts).map(body => [body.eventKey, isTombstone(body)]), [['codex:2026-08-24:gpt-5.5', false]])
     assert.deepEqual(legacyZeroes(recording.posts), [])
@@ -4189,14 +4196,15 @@ test('a run that loses its sweep lock mid-run issues no further tombstone or leg
   const root = await makeTemp('observatory-lock-fence-')
   await writeCodexRollout(root)
   const statePath = join(root, 'state', 'sweep.json')
-  const lock = `${statePath}.lock`
+  // Resolved once the server listens, since the lock is keyed on its URL.
+  const lock = () => testLockPath(root, recording.server)
   const intruder = JSON.stringify({ pid: process.pid, startedAt: '2026-11-22T09:00:00.000Z' })
   const { writeFileSync } = await import('node:fs')
   let swapped = false
   // The first tombstone the server sees hands the lock to another run.
   const recording = recordingServer(['codex:2026-08-24:gpt-5.5'], ['codex:2026-08-25:gpt-5.5', 'codex:2026-08-26:gpt-5.5'], {
     failPost: body => {
-      if (!swapped && body.sourceId === 'codex-local@test-machine' && isTombstone(body)) { writeFileSync(lock, intruder); swapped = true }
+      if (!swapped && body.sourceId === 'codex-local@test-machine' && isTombstone(body)) { swapped = lock(); writeFileSync(swapped, intruder) }
       return false
     },
   })
@@ -4208,7 +4216,7 @@ test('a run that loses its sweep lock mid-run issues no further tombstone or leg
     assert.deepEqual(machinePosts(recording.posts).filter(isTombstone).map(body => body.eventKey), ['codex:2026-08-25:gpt-5.5'])
     assert.deepEqual(legacyZeroes(recording.posts), [])
     assert.equal(errors.some(line => /lost the sweep lock to another run; skipped removals/.test(line)), true)
-    assert.equal(await readFile(lock, 'utf8'), intruder, "the other run's lock is left alone")
+    assert.equal(await readFile(swapped, 'utf8'), intruder, "the other run's lock is left alone")
   } finally { await removeTemp(root) }
 })
 // CodeRabbit 4658317581
@@ -4230,14 +4238,15 @@ test('a removal is not retried after the run loses its sweep lock', async () => 
   const root = await makeTemp('observatory-lock-retry-fence-')
   await writeCodexRollout(root)
   const statePath = join(root, 'state', 'sweep.json')
-  const lock = `${statePath}.lock`
+  // Resolved once the server listens, since the lock is keyed on its URL.
+  const lock = () => testLockPath(root, recording.server)
   const { writeFileSync } = await import('node:fs')
   const vanished = 'codex:2026-08-25:gpt-5.5'
   // The first tombstone attempt fails with a 500 and, meanwhile, another run takes the lock.
   const recording = recordingServer([], [vanished], {
     failPost: body => {
       if (body.eventKey !== vanished || !isTombstone(body)) { return false }
-      writeFileSync(lock, JSON.stringify({ pid: process.pid, startedAt: '2026-11-22T09:00:00.000Z' }))
+      writeFileSync(lock(), JSON.stringify({ pid: process.pid, startedAt: '2026-11-22T09:00:00.000Z' }))
       return true
     },
   })

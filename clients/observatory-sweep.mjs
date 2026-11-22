@@ -10,7 +10,8 @@
 // Zero dependencies: Node 24+ only (global fetch, fs/promises, sqlite).
 
 import { readFile, readdir, mkdir, rename, rm, unlink, writeFile, stat } from 'node:fs/promises'
-import { homedir, hostname } from 'node:os'
+import { createHash } from 'node:crypto'
+import { homedir, hostname, tmpdir } from 'node:os'
 import { join, dirname, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -1399,7 +1400,17 @@ async function sweepLockState(lockPath, nowMs, io, isAlive) {
 }
 
 /**
- * Take the machine's sweep lock beside the state file, or throw when another sweep holds it.
+ * The sweep lock's path: one lock per user, server and machine, named from a hash of the base URL
+ * and machine label, so runs with different OBSERVATORY_STATE files still serialise. It lives in
+ * the per-user temp directory unless a test passes `dir`.
+ */
+export function sweepLockPath(url, machine, dir = tmpdir()) {
+  const key = createHash('sha256').update(`${url}\n${machine}`).digest('hex').slice(0, 16)
+  return join(dir, `observatory-sweep-${key}.lock`)
+}
+
+/**
+ * Take the machine's sweep lock, or throw when another sweep holds it.
  * The lock is an exclusive create (`wx`) holding this run's pid and start time. A stale lock is
  * never moved: a start takes it over only while holding `<lock>.takeover` (another exclusive
  * create), deletes it only if it still holds exactly the text judged stale, and then creates its
@@ -1888,7 +1899,11 @@ export async function main(options = {}) {
   // A dry run writes nothing, so it neither needs nor blocks the lock.
   const lock = DRY_RUN
     ? { locked: true, release: async () => {}, stillHeld: async () => true }
-    : await acquireSweepLock(`${statePath}.lock`)
+    : await acquireSweepLock(sweepLockPath(
+      observatoryUrl(process.env.OBSERVATORY_URL ?? 'http://localhost:5039'),
+      machineLabel(process.env.OBSERVATORY_MACHINE ?? hostname()),
+      options.lockDir,
+    ))
   try { await sweepOnce(options, statePath, lock) } finally { await lock.release() }
 }
 
