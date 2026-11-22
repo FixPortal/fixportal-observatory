@@ -3,7 +3,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, rename, rm, utimes, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, relative, isAbsolute, resolve } from 'node:path'
@@ -2577,7 +2577,8 @@ test('main tombstones the replaced legacy un-suffixed keys once and records the 
   ].join('\n'))
   const legacyRecord = eventKey => ({
     provider: 'openai', occurredAtUtc: '2026-08-10T12:00:00Z', model: 'gpt-5.5',
-    inputTokens: 40, outputTokens: 9, costUsd: null, runtime: 'codex',
+    inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, cacheWrite1hTokens: 0, thoughtTokens: 0,
+    costUsd: null, runtime: 'codex',
     sourceId: 'codex-local', sourceKind: 'localTelemetry',
     usageScope: 'subscription', costBasis: 'notional', eventKey,
   })
@@ -2728,7 +2729,8 @@ test('main retries the legacy migration when a legacy tombstone post fails', asy
   ].join('\n'))
   const legacyRecord = eventKey => ({
     provider: 'openai', occurredAtUtc: '2026-08-10T12:00:00Z', model: 'gpt-5.5',
-    inputTokens: 40, outputTokens: 9, costUsd: null, runtime: 'codex',
+    inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, cacheWrite1hTokens: 0, thoughtTokens: 0,
+    costUsd: null, runtime: 'codex',
     sourceId: 'codex-local', sourceKind: 'localTelemetry',
     usageScope: 'subscription', costBasis: 'notional', eventKey,
   })
@@ -3441,7 +3443,14 @@ async function runMainWith({ root, statePath, server, sources = 'codex' }) {
   return errors
 }
 
-function recordingServer(legacyKeys = [], machineKeys = []) {
+// The token figures an inventory row carries for the legacy migration's coverage check. They match
+// writeCodexRollout's one row (input 10, output 5), so its day's legacy key is covered by default.
+const INVENTORY_FIGURES = {
+  inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, cacheWrite1hTokens: 0, thoughtTokens: 0, costUsd: null,
+}
+
+// Keys are event-key strings or `{ eventKey, ...figure overrides }`. `failPost` turns a POST body into a 500.
+function recordingServer(legacyKeys = [], machineKeys = [], { failPost = () => false } = {}) {
   const posts = []
   const statuses = []
   const server = createServer(async (request, response) => {
@@ -3449,9 +3458,9 @@ function recordingServer(legacyKeys = [], machineKeys = []) {
     if (request.method === 'GET' && url.pathname === '/api/events/local-snapshots') {
       const sourceId = url.searchParams.get('sourceId')
       const keys = sourceId === 'codex-local' ? legacyKeys : sourceId === 'codex-local@test-machine' ? machineKeys : []
-      const body = keys.map(eventKey => ({
-        provider: 'openai', occurredAtUtc: '2026-08-10T12:00:00Z', model: eventKey.split(':')[2], inputTokens: 40,
-        outputTokens: 9, costUsd: null, runtime: 'codex', sourceId,
+      const body = keys.map(key => (typeof key === 'string' ? { eventKey: key } : key)).map(({ eventKey, ...figures }) => ({
+        provider: 'openai', occurredAtUtc: '2026-08-10T12:00:00Z', model: eventKey.split(':')[2], ...INVENTORY_FIGURES,
+        ...figures, runtime: 'codex', sourceId,
         sourceKind: 'localTelemetry', usageScope: 'subscription', costBasis: 'notional', eventKey,
       }))
       response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(body))
@@ -3460,8 +3469,9 @@ function recordingServer(legacyKeys = [], machineKeys = []) {
     if (request.method === 'POST' && (url.pathname === '/api/events' || url.pathname === '/api/sources/sweep-status')) {
       let body = ''
       for await (const chunk of request) { body += chunk }
-      ;(url.pathname === '/api/events' ? posts : statuses).push(JSON.parse(body))
-      response.writeHead(200, { 'Content-Type': 'application/json' }).end('{}')
+      const parsed = JSON.parse(body)
+      ;(url.pathname === '/api/events' ? posts : statuses).push(parsed)
+      response.writeHead(failPost(parsed) ? 500 : 200, { 'Content-Type': 'application/json', 'Retry-After': '0' }).end('{}')
       return
     }
     response.writeHead(200).end('{}')
@@ -3683,5 +3693,64 @@ test('main zeroes only the legacy keys this run replaced for the same day and mo
     assert.deepEqual(machinePosts(recording.posts, 'codex-local').map(body => body.eventKey), ['codex:2026-08-24:gpt-5.5'])
     const state = JSON.parse(await readFile(statePath, 'utf8'))
     assert.equal(typeof state.legacySourceMigration.codex, 'string')
+  } finally { await removeTemp(root) }
+})
+
+// --- Remediation batch70, lane S: composition review ------------------------
+
+const legacyZeroes = posts => machinePosts(posts, 'codex-local').map(body => body.eventKey)
+
+// Q1
+test('a legacy key replaced in an earlier run is still zeroed after its local file ages out', async () => {
+  const root = await makeTemp('observatory-legacy-replay-')
+  await writeCodexRollout(root)
+  const machineKeys = []
+  let failLegacy = true
+  const recording = recordingServer(['codex:2026-08-24:gpt-5.5'], machineKeys, {
+    failPost: body => failLegacy && body.sourceId === 'codex-local',
+  })
+  const statePath = join(root, 'state', 'sweep.json')
+  try {
+    await withRecordingServer(recording, async () => {
+      await runMainWith({ root, statePath, server: recording.server })
+      assert.equal(JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration?.codex, undefined, 'run 1: the legacy zero failed')
+      // Between runs the per-machine key is on the server and retention deletes its file.
+      machineKeys.push('codex:2026-08-24:gpt-5.5')
+      const sessions = join(root, 'codex', 'sessions')
+      await rm(join(sessions, 'rollout.jsonl'))
+      await writeFile(join(sessions, 'later.jsonl'), [CODEX_GPT55, codexUsageRow('2026-08-30T12:00:00Z', 10, 5)].join('\n'))
+      failLegacy = false
+      recording.posts.length = 0
+      await runMainWith({ root, statePath, server: recording.server })
+    })
+    assert.deepEqual(legacyZeroes(recording.posts), ['codex:2026-08-24:gpt-5.5'])
+    assert.equal(typeof JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration.codex, 'string')
+  } finally { await removeTemp(root) }
+})
+
+// Q3b
+test('a legacy key is zeroed only when this machine covers every figure, and unknown figures keep the migration pending', async () => {
+  const root = await makeTemp('observatory-legacy-covered-')
+  const sessions = join(root, 'codex', 'sessions')
+  await mkdir(sessions, { recursive: true })
+  await writeFile(join(sessions, 'rollout.jsonl'), [
+    CODEX_GPT55,
+    codexUsageRow('2026-08-24T12:00:00Z', 10, 5),
+    codexUsageRow('2026-08-25T12:00:00Z', 20, 10),
+  ].join('\n'))
+  const statePath = join(root, 'state', 'sweep.json')
+  try {
+    // 08-24: another machine's usage shares the legacy key (input 50 > 10), so it is kept.
+    const covered = recordingServer(['codex:2026-08-25:gpt-5.5', { eventKey: 'codex:2026-08-24:gpt-5.5', inputTokens: 50 }])
+    await withRecordingServer(covered, async () => { await runMainWith({ root, statePath, server: covered.server }) })
+    assert.deepEqual(legacyZeroes(covered.posts), ['codex:2026-08-25:gpt-5.5'])
+    assert.equal(typeof JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration.codex, 'string')
+
+    // A legacy row with no token figures cannot be compared: kept, and the marker stays unset.
+    await writeFile(statePath, '{}')
+    const unknown = recordingServer([{ eventKey: 'codex:2026-08-25:gpt-5.5', cacheReadTokens: undefined }])
+    await withRecordingServer(unknown, async () => { await runMainWith({ root, statePath, server: unknown.server }) })
+    assert.deepEqual(legacyZeroes(unknown.posts), [])
+    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration?.codex, undefined)
   } finally { await removeTemp(root) }
 })
