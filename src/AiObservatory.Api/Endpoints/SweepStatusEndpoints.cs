@@ -21,6 +21,10 @@ public static partial class SweepStatusEndpoints
 
     private const int MaxEntries = 200;
 
+    // Clock skew tolerated on a client's attemptedAt; further ahead would pin the row past every
+    // honest later report, so it is refused.
+    private static readonly Duration MaxClockAhead = Duration.FromMinutes(5);
+
     // ReSharper disable once UnusedMethodReturnValue.Global
     public static IEndpointRouteBuilder MapSweepStatusEndpoints(this IEndpointRouteBuilder app)
     {
@@ -40,10 +44,17 @@ public static partial class SweepStatusEndpoints
             return Results.BadRequest(rejection);
         }
 
-        // The client fixes attemptedAt once per sweep, so its retries carry the same attempt and are
-        // applied once. A future stamp is clamped; an old client sends none and gets server now.
+        // The client fixes attemptedAt once per sweep and it is the attempt key unmodified, so its
+        // retries are applied once even when the machine's clock runs a little ahead. Rewriting it
+        // would give each retry a new key. An old client sends none and gets server now.
         var now = clock.GetCurrentInstant();
-        var attemptedAt = req.AttemptedAt is { } sent && sent < now ? sent : now;
+        if (req.AttemptedAt > now + MaxClockAhead)
+        {
+            return Results.BadRequest(
+                $"attemptedAt is more than {MaxClockAhead.TotalMinutes:0} minutes ahead of the server: the client clock is ahead"
+            );
+        }
+        var attemptedAt = req.AttemptedAt ?? now;
         // Unavailable surfaces in the panel and the daily digest until a sweep places everything
         // and holds nothing back: held files were not posted, so their spend is invisible too.
         var error = req.Unplaced.Count == 0 && req.HeldFiles is not > 0 ? null : Describe(req.Unplaced, req.HeldFiles);

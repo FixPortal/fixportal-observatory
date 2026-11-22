@@ -166,34 +166,6 @@ public class SweepStatusWafTests(AiObservatoryApiFactory factory) : IClassFixtur
         row.LastAttemptAt.Should().Be(NodaTime.Instant.FromUtc(2026, 1, 3, 0, 0));
     }
 
-    [Fact]
-    public async Task A_future_attempt_time_is_clamped_to_the_server_clock()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var client = factory.CreateAdminClient();
-
-        (await client.PostAsJsonAsync(Route, Report("clamp-box", "2999-01-01T00:00:00Z", 4), ct))
-            .StatusCode.Should()
-            .Be(HttpStatusCode.NoContent);
-        // An old client's report, stamped with server now, is later than the clamped one, so it applies.
-        (
-            await client.PostAsJsonAsync(
-                Route,
-                new
-                {
-                    machine = "clamp-box",
-                    unplaced = Array.Empty<object>(),
-                    heldFiles = 0,
-                },
-                ct
-            )
-        ).StatusCode.Should().Be(HttpStatusCode.NoContent);
-
-        var row = await RowAsync("clamp-box");
-        row.HeldFiles.Should().Be(0);
-        row.IsAvailable.Should().BeTrue();
-    }
-
     private static async Task<System.Text.Json.JsonElement> StatusRowAsync(HttpClient client)
     {
         var rows = await client.GetFromJsonAsync<System.Text.Json.JsonElement>(
