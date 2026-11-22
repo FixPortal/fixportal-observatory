@@ -126,7 +126,7 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
         {
             query = query.Where(r => r.RecordedAt >= floor);
         }
-        return await query.OrderByDescending(r => r.RecordedAt).ToListAsync(ct);
+        return await WithRunLevelCapture(query).OrderByDescending(r => r.RecordedAt).ToListAsync(ct);
     }
 
     public async Task<IReadOnlyList<AdversarialReviewRun>> GetRunsRecordedBetweenAsync(
@@ -134,11 +134,36 @@ public class AdversarialReviewRepository(AiObservatoryDbContext ctx) : IAdversar
         Instant toExclusive,
         CancellationToken ct = default
     ) =>
-        await ctx
-            .AdversarialReviewRuns.AsNoTracking()
-            .Where(r => r.RecordedAt >= from && r.RecordedAt < toExclusive)
+        await WithRunLevelCapture(
+                ctx.AdversarialReviewRuns.AsNoTracking().Where(r => r.RecordedAt >= from && r.RecordedAt < toExclusive)
+            )
             .OrderByDescending(r => r.RecordedAt)
             .ToListAsync(ct);
+
+    // Capture is a fact about the run, not the row: a window that keeps only a row posted after
+    // the findings (or drops the captured row) must still report the run as detailed.
+    private IQueryable<AdversarialReviewRun> WithRunLevelCapture(IQueryable<AdversarialReviewRun> rows) =>
+        rows.Select(r => new AdversarialReviewRun
+        {
+            Id = r.Id,
+            Reviewer = r.Reviewer,
+            Model = r.Model,
+            Role = r.Role,
+            Repo = r.Repo,
+            Summary = r.Summary,
+            InputTokens = r.InputTokens,
+            OutputTokens = r.OutputTokens,
+            CostUsd = r.CostUsd,
+            CostUnknown = r.CostUnknown,
+            ReviewDurationMs = r.ReviewDurationMs,
+            IssuesRaised = r.IssuesRaised,
+            IssuesAccepted = r.IssuesAccepted,
+            CostPerAcceptedFinding = r.CostPerAcceptedFinding,
+            ChunkCount = r.ChunkCount,
+            FindingsCaptured = ctx.AdversarialReviewRuns.Any(o => o.RunId == r.RunId && o.FindingsCaptured),
+            RunId = r.RunId,
+            RecordedAt = r.RecordedAt,
+        });
 
     public async Task<IReadOnlyList<AdversarialReviewFinding>> GetFindingsForRunsAsync(
         IReadOnlyCollection<string> runIds,

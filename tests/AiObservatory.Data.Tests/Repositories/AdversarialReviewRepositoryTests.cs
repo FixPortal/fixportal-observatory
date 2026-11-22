@@ -102,6 +102,37 @@ public class AdversarialReviewRepositoryTests : IAsyncLifetime
         (await _repo.GetRunsAsync("OTHER", ct)).Should().ContainSingle().Which.FindingsCaptured.Should().BeFalse();
     }
 
+    // Capture is a run-level fact: a window that keeps only the run's later row, posted after the
+    // findings, must still report the run as captured or the calculators read it counts-only.
+    [Fact]
+    public async Task A_run_split_across_the_window_floor_reads_captured_on_its_retained_rows()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var floor = Instant.FromUtc(2026, 6, 27, 0, 0);
+        await _repo.RecordRunAsync(
+            Run("SPLIT", "zai", "reviewer", "glm", recordedAt: floor - Duration.FromDays(1)),
+            ct
+        );
+        (await _repo.ReplaceFindingsAsync("SPLIT", [], ct)).Should().BeTrue();
+        await _repo.RecordRunAsync(
+            Run("SPLIT", "openai", "reviewer", "gpt", recordedAt: floor + Duration.FromHours(1)),
+            ct
+        );
+
+        (await _repo.GetRunsAsync(ct: ct, since: floor))
+            .Where(r => r.RunId == "SPLIT")
+            .Should()
+            .ContainSingle()
+            .Which.FindingsCaptured.Should()
+            .BeTrue();
+        (await _repo.GetRunsRecordedBetweenAsync(floor, floor + Duration.FromDays(1), ct))
+            .Where(r => r.RunId == "SPLIT")
+            .Should()
+            .ContainSingle()
+            .Which.FindingsCaptured.Should()
+            .BeTrue();
+    }
+
     [Fact]
     public async Task Losing_a_confirmed_insert_race_corrects_the_winner_and_keeps_the_context_usable()
     {
