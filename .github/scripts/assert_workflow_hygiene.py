@@ -33,6 +33,7 @@ repository, and pinning is checked by SHAPE
 -- see TRUSTED_THIRD_PARTY_ACTIONS below for the stricter mode.
 """
 
+import json
 import os
 import re
 import sys
@@ -412,10 +413,9 @@ def dockerfile_base_images(dockerfile):
     summary claimed every container image pinned (ci-frontend review 20261119T121117Z,
     C2-X3). `scratch` and an earlier build stage's name are not registry images.
     """
-    # shortcut: one FROM per physical line; a backslash-continued FROM or an ARG-built
-    # image name is not resolved (the latter fails the pin check). Upgrade if either appears.
+    # shortcut: an ARG-built image name is not resolved, so it fails the pin check. Upgrade if one appears.
     stages, images = set(), []
-    for line in dockerfile.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in dockerfile_instructions(dockerfile.read_text(encoding="utf-8", errors="replace")):
         match = re.match(r"\s*FROM\s+(?:--\S+\s+)*(\S+)(?:\s+AS\s+(\S+))?", line, re.IGNORECASE)
         if not match:
             continue
@@ -425,6 +425,79 @@ def dockerfile_base_images(dockerfile):
         if stage:
             stages.add(stage.lower())
     return images
+
+
+# A heredoc is a whole unquoted word: an optional fd, `<<`, an optional `-`, then a delimiter with no
+# `<` (so `<<<EOF` is a here-string), optionally quoted. Docker 29.9.3 read `<<123`, `<<A-B.c` and
+# `3<<'EOF'` as heredocs, and `<<<EOF` and `"<<EOF"` as none.
+HEREDOC = re.compile(r"\d*<<(-?)([^<]+)")
+WORD = re.compile(r"""(?:[^\s"']+|"[^"]*"?|'[^']*'?)+""")
+HEREDOC_INSTRUCTION = re.compile(r"\s*(?:ONBUILD\s+)?(?:RUN|COPY|ADD)\s+(.*)", re.IGNORECASE | re.DOTALL)
+DIRECTIVES = ("syntax", "escape", "check")
+
+
+def is_json_form(arguments):
+    """True when an instruction's arguments are a JSON array (exec form). `[ -f x ] && cat <<EOF` is not
+    JSON, so it is shell form and still takes heredocs."""
+    try:
+        return isinstance(json.loads(arguments), list)
+    except ValueError:
+        return False
+
+
+def heredoc_delimiters(instruction):
+    """(strips tabs, delimiter) for each heredoc an instruction opens. Only RUN/COPY/ADD, bare or under
+    ONBUILD, take heredocs, and never in JSON form (Docker read `RUN ["echo", "<<EOF"]` as none)."""
+    match = HEREDOC_INSTRUCTION.match(instruction)
+    if not match or is_json_form(match.group(1)):
+        return []
+    found = []
+    for word in WORD.findall(match.group(1)):
+        heredoc = HEREDOC.fullmatch(word)
+        if heredoc:
+            name = heredoc.group(2)
+            if len(name) > 1 and name[0] == name[-1] and name[0] in "\"'":
+                name = name[1:-1]
+            found.append((bool(heredoc.group(1)), name))
+    return found
+
+
+def dockerfile_instructions(text):
+    """A Dockerfile's instructions as Docker reads them: lines ending in the escape character
+    (`\\`, or the one a leading `# escape=` directive sets) are joined to the next, comment and
+    blank lines are dropped, and a RUN/COPY/ADD heredoc body is data, not instructions.
+    Docker 29.9.3 resolves `FROM \\` + `  base` to the stage `base` and reads a heredoc line
+    `FROM scratch AS x` as no stage at all."""
+    lines = text.splitlines()
+    escape = "\\"
+    for line in lines:
+        directive = re.match(r"#\s*(\w+)\s*=\s*(\S*)\s*$", line)
+        # An unknown key is a comment and ends the directives (Docker kept `\` after `# owner=team`).
+        if not directive or directive.group(1).lower() not in DIRECTIVES:
+            break
+        if directive.group(1).lower() == "escape" and directive.group(2) in ("\\", "`"):
+            escape = directive.group(2)
+    instructions, current, heredocs = [], None, []
+    for line in lines:
+        if heredocs:
+            # `<<-` strips leading tabs from the body, so its delimiter may be indented with them.
+            if (line.lstrip("\t") if heredocs[0][0] else line) == heredocs[0][1]:
+                heredocs.pop(0)
+            continue
+        if re.match(r"\s*(#|$)", line):
+            continue
+        stripped = line.rstrip()
+        # An escaped escape does not continue: Docker ran `FROM` after both `\\` and `\\\`.
+        continued = stripped.endswith(escape) and not stripped[:-1].endswith(escape)
+        current = (current or "") + (stripped[:-1] if continued else line)
+        if continued:
+            continue
+        instructions.append(current)
+        heredocs = heredoc_delimiters(current)
+        current = None
+    if current is not None:
+        instructions.append(current)
+    return instructions
 
 
 def workflow_checks_out_code(document):

@@ -25,20 +25,77 @@ def split_lines(text):
         lines.pop()
     return lines
 
-def comment_count(lines, pattern, ps_blocks=False):
-    """ps_blocks: PowerShell `<# ... #>` blocks (comment-based help) count line by line."""
-    count, in_block, in_ps = 0, False, False
+PS_DIRECTIVE = re.compile(rf"#(?:{DIRECTIVE}|\[|!\[)")
+
+def ps_hash_comments(line, i):
+    """True when the `#` at line[i] starts a line comment. pwsh 7 reads `a#b` as one argument word but
+    `$y#1` as the variable `$y` and then a comment, and `;#c`, `)#c` and `"a"#c` as comments."""
+    before = line[:i]
+    return not before or not (before[-1].isalnum() or before[-1] in "_-.") or re.search(r"\$[\w:]+$", before) is not None
+
+def ps_comment_count(lines):
+    """Lines holding a comment and no code, read as pwsh's tokenizer reads them: quoted strings and
+    here-strings stay open across lines, a `<# ... #>` block may open or close anywhere outside one, and
+    `#` starts a line comment at a token boundary. A `#region`-style directive line is code, as for
+    every other language here."""
+    count, state = 0, None  # None, "block", a quote, or "@'" / '@"' for a here-string
     for line in lines:
-        if in_ps:
+        code = comment = False
+        i = 0
+        if state in ("@'", '@"'):
+            if not line.startswith(state[1] + "@"):
+                continue  # here-string content is a string: code, never a comment
+            state, i, code = None, 2, True
+        while i < len(line):
+            if state == "block":
+                comment = True
+                end = line.find("#>", i)
+                if end < 0:
+                    break
+                state, i = None, end + 2
+                continue
+            c = line[i]
+            if state:  # inside a quoted string
+                code = True
+                if state == '"' and c == "`":
+                    i += 2
+                    continue
+                if c == state:
+                    if line[i + 1:i + 2] == state:
+                        i += 2  # a doubled quote is the quote itself
+                        continue
+                    state = None
+                i += 1
+                continue
+            if c.isspace():
+                i += 1
+            elif line.startswith("<#", i):
+                state, i, comment = "block", i + 2, True
+            elif c == "#" and ps_hash_comments(line, i):
+                if PS_DIRECTIVE.match(line, i):
+                    code = True
+                else:
+                    comment = True
+                break
+            elif line.startswith(("@'", '@"'), i) and not line[i + 2:].strip():
+                state, code = line[i:i + 2], True
+                break
+            else:
+                code = True
+                if c in "'\"":
+                    state = c
+                i += 1
+        if comment and not code:
             count += 1
-            in_ps = "#>" not in line
-        elif ps_blocks and line.lstrip().startswith("<#"):
-            close = line.find("#>")
-            in_ps = close < 0
-            # `<# note #> $x = Do-Work` is a line of code that opens with a comment.
-            if close < 0 or not line[close + 2:].strip():
-                count += 1
-        elif in_block:
+    return count
+
+def comment_count(lines, pattern, ps_blocks=False):
+    """ps_blocks: a PowerShell file, read by ps_comment_count."""
+    if ps_blocks:
+        return ps_comment_count(lines)
+    count, in_block = 0, False
+    for line in lines:
+        if in_block:
             count += 1
             in_block = "*/" not in line
         elif pattern.match(line):
