@@ -3737,7 +3737,7 @@ test('a legacy key replaced in an earlier run is still zeroed after its local fi
 })
 
 // Q3b
-test('a legacy key is zeroed only when this machine covers every figure, and a figure the legacy key lacks keeps it', async () => {
+test('a legacy key is zeroed only when this machine covers every figure, a null legacy counter reading as 0', async () => {
   const root = await makeTemp('observatory-legacy-covered-')
   const sessions = join(root, 'codex', 'sessions')
   await mkdir(sessions, { recursive: true })
@@ -3754,12 +3754,12 @@ test('a legacy key is zeroed only when this machine covers every figure, and a f
     assert.deepEqual(legacyZeroes(covered.posts), ['codex:2026-08-25:gpt-5.5'])
     assert.equal(typeof JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration.codex, 'string')
 
-    // A legacy row whose figure is present but null can never be shown to be contained: it is
-    // kept deliberately, so the migration converges and records its marker.
+    // Older clients posted null for a counter the vendor did not report: a present-null token
+    // figure reads as 0, so a row covered on every other figure is zeroed.
     await writeFile(statePath, '{}')
-    const unknown = recordingServer([{ eventKey: 'codex:2026-08-25:gpt-5.5', cacheReadTokens: null }])
-    await withRecordingServer(unknown, async () => { await runMainWith({ root, statePath, server: unknown.server }) })
-    assert.deepEqual(legacyZeroes(unknown.posts), [])
+    const nullCounter = recordingServer([{ eventKey: 'codex:2026-08-25:gpt-5.5', cacheReadTokens: null }])
+    await withRecordingServer(nullCounter, async () => { await runMainWith({ root, statePath, server: nullCounter.server }) })
+    assert.deepEqual(legacyZeroes(nullCounter.posts), ['codex:2026-08-25:gpt-5.5'])
     assert.equal(typeof JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration.codex, 'string')
   } finally { await removeTemp(root) }
 })

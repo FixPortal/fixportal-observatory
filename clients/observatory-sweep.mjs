@@ -1463,10 +1463,12 @@ const COVERED_TOKEN_FIELDS = ['inputTokens', 'outputTokens', 'cacheReadTokens', 
 /**
  * Whether this machine's per-machine snapshot with the same event key provably contains a legacy
  * snapshot: true when every figure the legacy key carries is at most this machine's; false when
- * one exceeds it, there is no counterpart, or the legacy row lists a figure as null (it can never
- * be shown to be contained, so it is kept for good); undefined when a figure property is absent
- * from the legacy row (a server too old to list figures) or this machine's counterpart lacks a
- * figure, both of which a later run can still supply.
+ * one exceeds it, there is no counterpart, a token figure is present but not a number, or the row
+ * has a cost listed as null (it can never be shown to be contained, so it is kept for good);
+ * undefined when a figure property is absent from the legacy row (a server too old to list
+ * figures) or this machine's counterpart lacks a figure, both of which a later run can supply.
+ * A present-null token figure reads as 0: older clients posted null for a counter the vendor did
+ * not report.
  */
 function coversLegacy(mine, legacy) {
   if (mine === undefined) { return false }
@@ -1474,14 +1476,15 @@ function coversLegacy(mine, legacy) {
   if (COVERED_TOKEN_FIELDS.some(field => !Object.hasOwn(legacy, field)) || (legacy.hasCost === true && !Object.hasOwn(legacy, 'costUsd'))) {
     return undefined
   }
-  if (COVERED_TOKEN_FIELDS.some(field => !Number.isFinite(legacy[field])) || (legacy.hasCost === true && !legacyHasCost)) {
+  const legacyTokens = Object.fromEntries(COVERED_TOKEN_FIELDS.map(field => [field, legacy[field] === null ? 0 : legacy[field]]))
+  if (Object.values(legacyTokens).some(value => !Number.isFinite(value)) || (legacy.hasCost === true && !legacyHasCost)) {
     return false
   }
   if (COVERED_TOKEN_FIELDS.some(field => !Number.isFinite(mine[field])) || (legacyHasCost && mine.costUsd === undefined)) {
     return undefined
   }
   // Only a cost the legacy key carries must be contained; a server-rated (null) cost carries none.
-  return COVERED_TOKEN_FIELDS.every(field => mine[field] >= legacy[field])
+  return COVERED_TOKEN_FIELDS.every(field => mine[field] >= legacyTokens[field])
     && (!legacyHasCost || (Number.isFinite(mine.costUsd) && mine.costUsd >= legacy.costUsd))
 }
 
