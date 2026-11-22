@@ -3784,3 +3784,23 @@ test('main sends the run start time as the status attemptedAt', async () => {
     assert.equal(recording.statuses[0].attemptedAt, recording.posts[0].observedAtUtc)
   } finally { await removeTemp(root) }
 })
+
+// Atomic state save
+test('a state save that fails mid-write leaves the previous state file whole', async () => {
+  const root = await makeTemp('observatory-state-atomic-')
+  const statePath = join(root, 'sweep.json')
+  await writeFile(statePath, '{"files":{"old":1}}')
+  const tornWrite = async (path, text) => { await writeFile(path, text.slice(0, 5)); throw new Error('disk full') }
+  const original = console.error
+  console.error = () => {}
+  try {
+    await sweep.saveState(statePath, { files: { new: 2 } }, { mkdir, writeFile: tornWrite, rename, rm })
+  } finally { console.error = original }
+  try {
+    assert.equal(await readFile(statePath, 'utf8'), '{"files":{"old":1}}')
+    assert.deepEqual(await readdir(root), ['sweep.json'], 'no temp file is left behind')
+    await sweep.saveState(statePath, { files: { new: 2 } })
+    assert.deepEqual(JSON.parse(await readFile(statePath, 'utf8')), { files: { new: 2 } })
+    assert.deepEqual(await readdir(root), ['sweep.json'])
+  } finally { await removeTemp(root) }
+})
