@@ -1614,8 +1614,12 @@ function coversLegacy(mine, legacy) {
  */
 function withStoredCost(posted, stored) {
   if (Number.isFinite(posted.costUsd)) { return posted }
-  const sameTokens = stored !== undefined && COVERED_TOKEN_FIELDS.every(field => stored[field] === posted[field])
-  return { ...posted, costUsd: sameTokens ? stored.costUsd : undefined }
+  // The server re-prices a key whose provider changes, so a stored cost from another provider is stale.
+  // It serialises providers camelCase (`openAI`) while the client posts `OpenAI`.
+  const sameRow = stored !== undefined
+    && String(stored.provider).toLowerCase() === String(posted.provider).toLowerCase()
+    && COVERED_TOKEN_FIELDS.every(field => stored[field] === posted[field])
+  return { ...posted, costUsd: sameRow ? stored.costUsd : undefined }
 }
 
 // One-shot migration for the per-machine namespace: snapshots posted before source ids
