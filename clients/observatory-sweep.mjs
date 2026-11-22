@@ -1834,6 +1834,9 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     }
   }
   for (const submission of submissions.filter(item => !item.active)) {
+    // A key selected for removal never covers a legacy key, whether or not its tombstone posts:
+    // a failed tombstone is retried next run, and the legacy copy must outlive it.
+    replacementsOf(submission.snapshot.sourceId).delete(submission.snapshot.eventKey)
     // A source whose inventory could not be read this run must not be
     // tombstoned: its empty inventory is a fetch failure, not server truth.
     if (failedSources.has(submission.snapshot.sourceId)) { continue }
@@ -1849,7 +1852,6 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
     // visible and is compensated by the next scheduled reconciliation.
     if (await postEvent(url, apiKey, { ...submission.snapshot, observedAtUtc })) {
       posted++
-      replacementsOf(submission.snapshot.sourceId).delete(submission.snapshot.eventKey)
     }
   }
 
