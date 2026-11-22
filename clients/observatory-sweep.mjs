@@ -1404,7 +1404,7 @@ export async function acquireSweepLock(lockPath, {
   const busy = text => new Error(`Another sweep is running on this machine (lock ${lockPath}: ${text || 'empty'}); this run exits without posting. If no sweep is running, delete ${lockPath}.`)
   const unlocked = error => {
     console.error(`Sweep lock ${lockPath} could not be created (${error.message}); this run is not serialised against another, so its tombstones and the legacy migration are skipped.`)
-    return { locked: false, release: async () => {} }
+    return { locked: false, release: async () => {}, stillHeld: async () => false }
   }
   const create = path => io.writeFile(path, body, { encoding: 'utf8', flag: 'wx' })
   // Remove a lock file only while it still holds `text`.
@@ -1412,7 +1412,13 @@ export async function acquireSweepLock(lockPath, {
     const current = await io.readFile(path, 'utf8').catch(() => null)
     if (current === text) { await io.unlink(path).catch(() => {}) }
   }
-  const held = { locked: true, release: () => removeIf(lockPath, body) }
+  // stillHeld fences each removal: a writer stalled past the grace period can lose the lock to
+  // another run, and must then stop removing anything.
+  const held = {
+    locked: true,
+    release: () => removeIf(lockPath, body),
+    stillHeld: async () => (await io.readFile(lockPath, 'utf8').catch(() => null)) === body,
+  }
   // mkdir reports EEXIST when a parent is a file, so it is checked apart from the lock's own EEXIST.
   try { await io.mkdir(dirname(lockPath), { recursive: true }) } catch (error) { return unlocked(error) }
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -1621,7 +1627,7 @@ function withStoredCost(posted, stored) {
 // The marker is recorded only once every legacy key was zeroed or kept by that rule: a failed
 // fetch or post, or a counterpart whose figures are not known yet, leaves it unset for a retry.
 // A legacy key on a day this machine holds is decided only when this machine already covers it.
-async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc, replacementVerified, replacements, isDayHeld) {
+async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc, replacementVerified, replacements, isDayHeld, mayRemove) {
   state.legacySourceMigration ??= {}
   for (const tool of enabled) {
     if (state.legacySourceMigration[tool]) { continue }
@@ -1660,6 +1666,7 @@ async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc
     const unknown = verdicts.filter(verdict => verdict === undefined).length
     let completed = unknown === 0
     for (const snapshot of superseded) {
+      if (!await mayRemove()) { return }
       if (!await postEvent(url, apiKey, { ...zeroSnapshot(snapshot), observedAtUtc })) {
         completed = false
       }
@@ -1864,11 +1871,23 @@ export async function main(options = {}) {
   if (!process.env.OBSERVATORY_API_KEY) { console.error('OBSERVATORY_API_KEY not set; nothing to do.'); process.exit(0) }
   const statePath = process.env.OBSERVATORY_STATE ?? join(homedir(), '.ai-observatory', 'sweep-state.json')
   // A dry run writes nothing, so it neither needs nor blocks the lock.
-  const lock = DRY_RUN ? { locked: true, release: async () => {} } : await acquireSweepLock(`${statePath}.lock`)
-  try { await sweepOnce(options, statePath, lock.locked) } finally { await lock.release() }
+  const lock = DRY_RUN
+    ? { locked: true, release: async () => {}, stillHeld: async () => true }
+    : await acquireSweepLock(`${statePath}.lock`)
+  try { await sweepOnce(options, statePath, lock) } finally { await lock.release() }
 }
 
-async function sweepOnce({ discover = listJsonl, now = () => new Date() }, statePath, locked) {
+async function sweepOnce({ discover = listJsonl, now = () => new Date() }, statePath, lock) {
+  const { locked } = lock
+  // Checked before every removal; once the lock is lost, no removal follows for the rest of the run.
+  let lockLost = false
+  const mayRemove = async () => {
+    if (!lockLost && !await lock.stillHeld()) {
+      lockLost = true
+      console.error('This run lost the sweep lock to another run; skipped removals (tombstones, legacy zeroes and the final state save).')
+    }
+    return !lockLost
+  }
   const url = observatoryUrl(process.env.OBSERVATORY_URL ?? 'http://localhost:5039')
   const apiKey = process.env.OBSERVATORY_API_KEY
   const observedAtUtc = now().toISOString()
@@ -1961,6 +1980,7 @@ async function sweepOnce({ discover = listJsonl, now = () => new Date() }, state
     if (failedSources.has(submission.snapshot.sourceId)) { continue }
     // An unlocked run cannot rule out an overlapping sweep, so it only adds and never removes.
     if (!locked) { continue }
+    if (!await mayRemove()) { break }
     // Held keys were already left out of the plan (planSnapshotSubmissions): a held key may
     // only have vanished from the scan, not from disk.
     // Tombstones post only for a source whose replacement is verified: its
@@ -1985,8 +2005,10 @@ async function sweepOnce({ discover = listJsonl, now = () => new Date() }, state
       // A held source posted only its unheld days, so a legacy key on a held day that this
       // machine does not already cover stays pending (the marker waits) while other days migrate.
       (tool, eventKey) => isHeld(holds, localSourceId(tool, machine), eventKey),
+      mayRemove,
     )
-    await saveState(statePath, state)
+    // The state now carries the migration marker; another run that owns the lock owns the state.
+    if (await mayRemove()) { await saveState(statePath, state) }
   }
 
   log(`Sweep complete: ${posted} event(s) ${DRY_RUN ? 'would be ' : ''}posted.`)
