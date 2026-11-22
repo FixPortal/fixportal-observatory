@@ -188,8 +188,16 @@ export function observatoryUrl(value) {
   return url.href.replace(/\/+$/, '')
 }
 
-export async function observatoryFetch(url, apiKey, options = {}) {
+// `mayRetry` is asked before each retry (never before the first attempt); a removal passes its
+// sweep-lock check, so a run that lost the lock during the delay sends nothing more.
+export async function observatoryFetch(url, apiKey, options = {}, mayRetry = async () => true) {
+  let lastError
+  let lastResponse
   for (let attempt = 1; attempt <= 3; attempt++) {
+    if (attempt > 1 && !await mayRetry()) {
+      if (lastResponse) { return lastResponse }
+      throw lastError
+    }
     let response
     try {
       response = await fetch(url, {
@@ -200,6 +208,8 @@ export async function observatoryFetch(url, apiKey, options = {}) {
       })
     } catch (error) {
       if (attempt === 3) { throw error }
+      lastError = error
+      lastResponse = undefined
       await new Promise(resolve => setTimeout(resolve, 1_000))
       continue
     }
@@ -214,6 +224,7 @@ export async function observatoryFetch(url, apiKey, options = {}) {
       ? Math.min(Number(retryAfter) * 1_000, 61_000)
       : fallbackDelayMs
     await response.body?.cancel()
+    lastResponse = response
     await new Promise(resolve => setTimeout(resolve, delayMs))
   }
 }
@@ -1478,14 +1489,14 @@ export async function saveState(path, state, io = { mkdir, writeFile, rename, rm
   }
 }
 
-async function postEvent(url, apiKey, body) {
+async function postEvent(url, apiKey, body, mayRetry) {
   if (DRY_RUN) { log('DRYRUN would post:', JSON.stringify(body)); return true }
   try {
     const response = await observatoryFetch(`${url}/api/events`, apiKey, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    })
+    }, mayRetry)
     // The body is never read; cancel it so the socket frees up now instead of
     // whenever GC gets around to it.
     await response.body?.cancel()
@@ -1671,7 +1682,7 @@ async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc
     let completed = unknown === 0
     for (const snapshot of superseded) {
       if (!await mayRemove()) { return }
-      if (!await postEvent(url, apiKey, { ...zeroSnapshot(snapshot), observedAtUtc })) {
+      if (!await postEvent(url, apiKey, { ...zeroSnapshot(snapshot), observedAtUtc }, mayRemove)) {
         completed = false
       }
     }
@@ -1995,7 +2006,7 @@ async function sweepOnce({ discover = listJsonl, now = () => new Date() }, state
     if (activeSucceeded.get(submission.snapshot.sourceId) !== true) { continue }
     // Server inventory is the durable retry marker: a failed tombstone remains
     // visible and is compensated by the next scheduled reconciliation.
-    if (await postEvent(url, apiKey, { ...submission.snapshot, observedAtUtc })) {
+    if (await postEvent(url, apiKey, { ...submission.snapshot, observedAtUtc }, mayRemove)) {
       posted++
     }
   }

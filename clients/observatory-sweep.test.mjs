@@ -4225,3 +4225,24 @@ test('a stored cost is reused only when the stored provider matches the post', a
     assert.equal(JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration?.codex, undefined)
   } finally { await removeTemp(root) }
 })
+// CodeRabbit 4658317590
+test('a removal is not retried after the run loses its sweep lock', async () => {
+  const root = await makeTemp('observatory-lock-retry-fence-')
+  await writeCodexRollout(root)
+  const statePath = join(root, 'state', 'sweep.json')
+  const lock = `${statePath}.lock`
+  const { writeFileSync } = await import('node:fs')
+  const vanished = 'codex:2026-08-25:gpt-5.5'
+  // The first tombstone attempt fails with a 500 and, meanwhile, another run takes the lock.
+  const recording = recordingServer([], [vanished], {
+    failPost: body => {
+      if (body.eventKey !== vanished || !isTombstone(body)) { return false }
+      writeFileSync(lock, JSON.stringify({ pid: process.pid, startedAt: '2026-11-22T09:00:00.000Z' }))
+      return true
+    },
+  })
+  try {
+    await withRecordingServer(recording, async () => { await runMainWith({ root, statePath, server: recording.server }) })
+    assert.equal(machinePosts(recording.posts).filter(body => body.eventKey === vanished).length, 1)
+  } finally { await removeTemp(root) }
+})
