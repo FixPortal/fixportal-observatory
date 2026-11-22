@@ -9,7 +9,8 @@
 //
 // Zero dependencies: Node 24+ only (global fetch, fs/promises, sqlite).
 
-import { readFile, readdir, mkdir, rename, rm, writeFile, stat } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { readFile, readdir, link, mkdir, rename, rm, unlink, writeFile, stat } from 'node:fs/promises'
 import { homedir, hostname } from 'node:os'
 import { join, dirname, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -1359,48 +1360,88 @@ async function loadState(path) {
 
 // Sweeps on one machine are serialised: the legacy migration decides from this machine's server
 // rows and then writes, so an overlapping sweep could tombstone a counterpart in between. A lock
-// is stale once its process is gone or it is older than any real run (retries are capped at 61 s
-// per request, so even a slow first run with a long history finishes well inside this bound).
-const SWEEP_LOCK_STALE_MS = 6 * 60 * 60 * 1000
+// whose recorded process is alive is busy however old it is (a reused pid fails closed, and the
+// refusal says which file to delete). A lock that is empty or unreadable is busy until it has sat
+// unchanged this long, since a lock this client writes is never seen part-written.
+const SWEEP_LOCK_UNREADABLE_GRACE_MS = 60_000
 
-function lockIsStale(text, nowMs) {
+const pidAlive = pid => {
+  try { process.kill(pid, 0); return true } catch (error) { return error?.code === 'EPERM' }
+}
+
+// 'gone' (removed meanwhile), 'busy' or 'stale', with the text read.
+async function sweepLockState(lockPath, nowMs, io, isAlive) {
+  let text, stats
+  try {
+    text = await io.readFile(lockPath, 'utf8')
+    stats = await io.stat(lockPath)
+  } catch (error) {
+    if (error?.code === 'ENOENT') { return { state: 'gone', text: '' } }
+    throw error
+  }
   let lock
-  try { lock = JSON.parse(text) } catch { return true }
-  const startedMs = Date.parse(lock?.startedAt)
-  if (!Number.isFinite(startedMs) || nowMs - startedMs > SWEEP_LOCK_STALE_MS) { return true }
-  try { process.kill(lock.pid, 0); return false } catch (error) { return error?.code !== 'EPERM' }
+  try { lock = JSON.parse(text) } catch { lock = null }
+  if (!Number.isInteger(lock?.pid)) {
+    return { state: nowMs - stats.mtimeMs > SWEEP_LOCK_UNREADABLE_GRACE_MS ? 'stale' : 'busy', text }
+  }
+  return { state: isAlive(lock.pid) ? 'busy' : 'stale', text }
 }
 
 /**
- * Take the machine's sweep lock beside the state file, or throw when another sweep holds it. A
- * state directory that cannot hold the lock at all (the same fault that stops the state saving)
- * is reported and the run goes ahead unlocked, as a failed state save does.
+ * Take the machine's sweep lock beside the state file, or throw when another sweep holds it.
+ * The lock appears whole: its body is written to a private temp file that is hard-linked into
+ * place (an atomic create that fails with EEXIST while held). A stale lock is taken over by
+ * renaming it aside; only the start whose rename moved that very stale lock goes on to create
+ * one. A state directory that cannot hold the lock (the fault a failed state save tolerates) is
+ * reported and the run goes ahead unlocked: `locked` is false and the caller skips tombstones.
  */
-export async function acquireSweepLock(lockPath, nowMs = Date.now()) {
+export async function acquireSweepLock(lockPath, {
+  nowMs = Date.now(), io = { mkdir, writeFile, readFile, stat, link, rename, unlink }, isAlive = pidAlive,
+} = {}) {
   const body = JSON.stringify({ pid: process.pid, startedAt: new Date(nowMs).toISOString() })
+  const busy = text => new Error(`Another sweep is running on this machine (lock ${lockPath}: ${text || 'empty'}); this run exits without posting. If no sweep is running, delete ${lockPath}.`)
   const unlocked = error => {
-    console.error(`Sweep lock ${lockPath} could not be created (${error.message}); this run is not serialised against another.`)
-    return null
+    console.error(`Sweep lock ${lockPath} could not be created (${error.message}); this run is not serialised against another, so its tombstones and the legacy migration are skipped.`)
+    return { locked: false, release: async () => {} }
   }
+  const temp = `${lockPath}.${process.pid}.${randomUUID()}.tmp`
   // mkdir reports EEXIST when a parent is a file, so it is checked apart from the lock's own EEXIST.
-  try { await mkdir(dirname(lockPath), { recursive: true }) } catch (error) { return unlocked(error) }
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      await writeFile(lockPath, body, { encoding: 'utf8', flag: 'wx' })
-      // Release only our own lock: a stale-lock takeover by another run must not be undone here.
-      return async () => {
-        const current = await readFile(lockPath, 'utf8').catch(() => '')
-        if (current === body) { await rm(lockPath, { force: true }) }
+  try {
+    await io.mkdir(dirname(lockPath), { recursive: true })
+    await io.writeFile(temp, body, 'utf8')
+  } catch (error) { return unlocked(error) }
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await io.link(temp, lockPath)
+        // Release only our own lock: a later takeover by another run must not be undone here.
+        return { locked: true, release: async () => {
+          const current = await io.readFile(lockPath, 'utf8').catch(() => '')
+          if (current === body) { await io.unlink(lockPath).catch(() => {}) }
+        } }
+      } catch (error) {
+        if (error?.code !== 'EEXIST') { return unlocked(error) }
       }
-    } catch (error) {
-      if (error?.code !== 'EEXIST') { return unlocked(error) }
-      const text = await readFile(lockPath, 'utf8').catch(() => '')
-      if (attempt > 0 || !lockIsStale(text, nowMs)) {
-        throw new Error(`Another sweep is running on this machine (lock ${lockPath}: ${text || 'unreadable'}); this run exits without posting.`)
+      const { state, text } = await sweepLockState(lockPath, nowMs, io, isAlive)
+      if (state === 'gone') { continue }
+      if (state === 'busy' || attempt > 0) { throw busy(text) }
+      const aside = `${lockPath}.stale-${process.pid}-${randomUUID()}`
+      try { await io.rename(lockPath, aside) } catch (error) {
+        if (error?.code === 'ENOENT') { continue }
+        throw error
       }
-      // shortcut: two runs that both find a stale lock can race on its removal; schedulers start one run at a time.
-      await rm(lockPath, { force: true })
+      const moved = await io.readFile(aside, 'utf8').catch(() => '')
+      if (moved !== text) {
+        // Another start took the stale lock over first and this rename moved its new lock: put it back.
+        await io.link(aside, lockPath).catch(() => {})
+        await io.unlink(aside).catch(() => {})
+        throw busy(moved)
+      }
+      await io.unlink(aside).catch(() => {})
     }
+    throw busy('')
+  } finally {
+    await io.unlink(temp).catch(() => {})
   }
 }
 
@@ -1812,11 +1853,11 @@ export async function main(options = {}) {
   if (!process.env.OBSERVATORY_API_KEY) { console.error('OBSERVATORY_API_KEY not set; nothing to do.'); process.exit(0) }
   const statePath = process.env.OBSERVATORY_STATE ?? join(homedir(), '.ai-observatory', 'sweep-state.json')
   // A dry run writes nothing, so it neither needs nor blocks the lock.
-  const release = DRY_RUN ? null : await acquireSweepLock(`${statePath}.lock`)
-  try { await sweepOnce(options, statePath) } finally { await release?.() }
+  const lock = DRY_RUN ? { locked: true, release: async () => {} } : await acquireSweepLock(`${statePath}.lock`)
+  try { await sweepOnce(options, statePath, lock.locked) } finally { await lock.release() }
 }
 
-async function sweepOnce({ discover = listJsonl, now = () => new Date() }, statePath) {
+async function sweepOnce({ discover = listJsonl, now = () => new Date() }, statePath, locked) {
   const url = observatoryUrl(process.env.OBSERVATORY_URL ?? 'http://localhost:5039')
   const apiKey = process.env.OBSERVATORY_API_KEY
   const observedAtUtc = now().toISOString()
@@ -1907,6 +1948,8 @@ async function sweepOnce({ discover = listJsonl, now = () => new Date() }, state
     // A source whose inventory could not be read this run must not be
     // tombstoned: its empty inventory is a fetch failure, not server truth.
     if (failedSources.has(submission.snapshot.sourceId)) { continue }
+    // An unlocked run cannot rule out an overlapping sweep, so it only adds and never removes.
+    if (!locked) { continue }
     // Held keys were already left out of the plan (planSnapshotSubmissions): a held key may
     // only have vanished from the scan, not from disk.
     // Tombstones post only for a source whose replacement is verified: its
@@ -1922,7 +1965,7 @@ async function sweepOnce({ discover = listJsonl, now = () => new Date() }, state
     }
   }
 
-  if (!DRY_RUN) {
+  if (!DRY_RUN && locked) {
     await migrateLegacySourceIds(
       url, apiKey, enabled, state, observedAtUtc,
       // An unreadable per-machine inventory hides earlier replacements, so it waits.
