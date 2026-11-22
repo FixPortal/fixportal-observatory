@@ -4105,13 +4105,16 @@ test('a live sweep lock is busy however old it is; a dead one is taken over', as
   } finally { await removeTemp(root) }
 })
 
-// Every fs call a start makes goes through `hook(name, op, args)` first, and is logged in `calls`.
+// Every fs call a start makes is logged in `calls` and passes `hook(name, op, args, phase, result)`
+// twice: before the real call ('before') and after it, holding its result ('after').
 async function lockSeam(name, calls, hook) {
   const fs = await import('node:fs/promises')
   return Object.fromEntries(['mkdir', 'writeFile', 'readFile', 'stat', 'unlink', 'rename', 'link', 'rm'].map(op => [op, async (...args) => {
     calls.push([name, op, String(args[0])])
-    await hook(name, op, args)
-    return fs[op](...args)
+    await hook(name, op, args, 'before')
+    const result = await fs[op](...args)
+    await hook(name, op, args, 'after', result)
+    return result
   }]))
 }
 
@@ -4121,21 +4124,26 @@ test('three starts racing over one stale lock leave exactly one holder and never
     await writeFile(lock, JSON.stringify({ pid: await deadPid(), startedAt: '2020-01-01T00:00:00.000Z' }))
     // A and B both judge the same stale text; B's takeover then waits until A holds the lock, and C
     // only arrives after that.
-    const firstRead = new Set()
+    // Both first reads complete before either start continues, so both hold the stale text.
+    const firstReads = new Map()
     let bothRead
     const read = new Promise(resolve => { bothRead = resolve })
     let aHolds
     const aDone = new Promise(resolve => { aHolds = resolve })
     const calls = []
-    const hook = async (name, op, [path]) => {
-      if (op === 'readFile' && path === lock && name !== 'C' && !firstRead.has(name)) {
-        firstRead.add(name)
-        if (firstRead.size === 2) { bothRead() }
-        await read
+    const hook = async (name, op, [path], phase, result) => {
+      if (phase === 'after') {
+        if (op === 'readFile' && path === lock && name !== 'C' && !firstReads.has(name)) {
+          firstReads.set(name, result)
+          if (firstReads.size === 2) { bothRead() }
+          await read
+        }
+        return
       }
       const takeoverStep = (op === 'writeFile' && path !== lock) || ((op === 'rename' || op === 'rm' || op === 'unlink') && path === lock)
       if (name === 'B' && takeoverStep && !String(path).endsWith('.tmp')) { await aDone }
     }
+    const stale = await readFile(lock, 'utf8')
     const a = sweep.acquireSweepLock(lock, { nowMs: Date.parse('2026-11-22T10:00:00Z'), io: await lockSeam('A', calls, hook) })
     const b = sweep.acquireSweepLock(lock, { nowMs: Date.parse('2026-11-22T10:00:01Z'), io: await lockSeam('B', calls, hook) })
     const held = await a
@@ -4144,6 +4152,7 @@ test('three starts racing over one stale lock leave exactly one holder and never
     const results = await Promise.allSettled([b, c])
     assert.equal(held.locked, true)
     assert.deepEqual(results.map(result => result.status), ['rejected', 'rejected'])
+    assert.deepEqual([firstReads.get('A'), firstReads.get('B')], [stale, stale], 'both starts judged the same stale text')
     assert.equal(JSON.parse(await readFile(lock, 'utf8')).startedAt, '2026-11-22T10:00:00.000Z')
     assert.deepEqual(calls.filter(([name, op, path]) => name !== 'A' && path === lock && ['unlink', 'rename', 'rm'].includes(op)), [], "A's lock is never moved or deleted")
     await held.release()
