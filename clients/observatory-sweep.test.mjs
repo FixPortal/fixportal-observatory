@@ -3606,24 +3606,31 @@ test('a file hold never ends before the latest day the file records, whatever it
 })
 
 
+// An orphan Antigravity database last written on 2026-08-24 (no transcript), beside a healthy
+// conversation on 2026-08-30. Returns the orphan's path.
+async function writeAgyOrphanAndLater(root) {
+  const { brain } = await antigravityFixture(root)
+  await removeTemp(brain)
+  const conversations = join(root, 'gemini', 'antigravity-cli', 'conversations')
+  const orphan = join(conversations, 'agy-session.db')
+  await utimes(orphan, new Date('2026-08-24T20:00:00Z'), new Date('2026-08-24T20:00:00Z'))
+  const laterLogs = join(brain, 'agy-later', '.system_generated', 'logs')
+  await mkdir(laterLogs, { recursive: true })
+  await writeFile(join(laterLogs, 'transcript.jsonl'), JSON.stringify({
+    created_at: '2026-08-30T12:00:00Z', content: 'Model Selection` from None to Gemini 3.1 Pro (High).',
+  }))
+  const db = new DatabaseSync(join(conversations, 'agy-later.db'))
+  db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB)')
+  db.prepare('INSERT INTO steps VALUES (?, ?, ?)').run(1, 23, antigravityPayload(50, 10))
+  db.close()
+  return orphan
+}
+
 // C3-P5
 test('an orphan Antigravity database caches its hold, which ends at the database last-write day', async () => {
   const root = await makeTemp('observatory-agy-orphan-')
   try {
-    const { brain } = await antigravityFixture(root)
-    await removeTemp(brain)
-    const conversations = join(root, 'gemini', 'antigravity-cli', 'conversations')
-    const orphan = join(conversations, 'agy-session.db')
-    await utimes(orphan, new Date('2026-08-24T20:00:00Z'), new Date('2026-08-24T20:00:00Z'))
-    const laterLogs = join(brain, 'agy-later', '.system_generated', 'logs')
-    await mkdir(laterLogs, { recursive: true })
-    await writeFile(join(laterLogs, 'transcript.jsonl'), JSON.stringify({
-      created_at: '2026-08-30T12:00:00Z', content: 'Model Selection` from None to Gemini 3.1 Pro (High).',
-    }))
-    const db = new DatabaseSync(join(conversations, 'agy-later.db'))
-    db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB)')
-    db.prepare('INSERT INTO steps VALUES (?, ?, ?)').run(1, 23, antigravityPayload(50, 10))
-    db.close()
+    const orphan = await writeAgyOrphanAndLater(root)
     const recording = recordingServer()
     const statePath = join(root, 'state', 'sweep.json')
     await withRecordingServer(recording, async () => {
@@ -3912,4 +3919,29 @@ test('a refused sweep status prints its status and server message without --verb
   assert.equal(process.argv.includes('--verbose'), false)
   assert.equal(lines.some(line => /sweep-status POST 400/.test(line) && /more than five minutes in the future/.test(line)), true)
   assert.equal(lines.some(line => line.includes('secret-key')), false)
+})
+// Q5a
+test('a cached orphan hold defers only its own days of the legacy migration', async () => {
+  const root = await makeTemp('observatory-legacy-orphan-hold-')
+  try {
+    const orphan = await writeAgyOrphanAndLater(root)
+    const coveredKey = 'antigravity:2026-08-30:gemini-3.1-pro-high'
+    const heldKey = 'antigravity:2026-08-20:gemini-3.1-pro-high'
+    const legacyKeys = [coveredKey, heldKey]
+    const recording = recordingServer(legacyKeys)
+    const statePath = join(root, 'state', 'sweep.json')
+    const migrated = async () => JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration?.antigravity
+    await withRecordingServer(recording, async () => {
+      await runMainWith({ root, statePath, server: recording.server, sources: 'antigravity' })
+      assert.deepEqual(machinePosts(recording.posts, 'antigravity-local').map(body => body.eventKey), [coveredKey])
+      assert.equal(await migrated(), undefined, 'the held day is still pending')
+      // The zeroed key leaves the server list; the orphan goes, so its day is decidable (and uncovered).
+      legacyKeys.splice(0, 1)
+      await removeTemp(orphan)
+      recording.posts.length = 0
+      await runMainWith({ root, statePath, server: recording.server, sources: 'antigravity' })
+    })
+    assert.deepEqual(machinePosts(recording.posts, 'antigravity-local'), [])
+    assert.equal(typeof await migrated(), 'string')
+  } finally { await removeTemp(root) }
 })

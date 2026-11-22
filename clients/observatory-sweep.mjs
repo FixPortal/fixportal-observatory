@@ -1493,7 +1493,8 @@ function coversLegacy(mine, legacy) {
 // the server from an earlier run) provably contains it; every other legacy key is kept.
 // The marker is recorded only once every legacy key was zeroed or kept by that rule: a failed
 // fetch or post, or a counterpart whose figures are not known yet, leaves it unset for a retry.
-async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc, replacementVerified, replacements) {
+// A legacy key on a day this machine holds is not decided yet: its replacement may be missing.
+async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc, replacementVerified, replacements, isDayHeld) {
   state.legacySourceMigration ??= {}
   for (const tool of enabled) {
     if (state.legacySourceMigration[tool]) { continue }
@@ -1522,7 +1523,9 @@ async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc
       continue
     }
     const mine = replacements(tool)
-    const verdicts = legacyInventory.map(snapshot => coversLegacy(mine.get(snapshot.eventKey), snapshot))
+    const verdicts = legacyInventory.map(snapshot => (isDayHeld(tool, snapshot.eventKey)
+      ? undefined
+      : coversLegacy(mine.get(snapshot.eventKey), snapshot)))
     const superseded = legacyInventory.filter((_, index) => verdicts[index] === true)
     const unknown = verdicts.filter(verdict => verdict === undefined).length
     let completed = unknown === 0
@@ -1535,7 +1538,7 @@ async function migrateLegacySourceIds(url, apiKey, enabled, state, observedAtUtc
       console.error(`Tombstoned ${superseded.length} legacy ${legacyId} key(s) this machine's per-machine series contains; ${legacyInventory.length - superseded.length} kept.`)
     }
     if (unknown > 0) {
-      console.error(`${unknown} legacy ${legacyId} key(s) cannot be compared yet (the server lists no figures for them, or this machine's matching key lacks one) and are kept; the migration is retried next run.`)
+      console.error(`${unknown} legacy ${legacyId} key(s) cannot be compared yet (their day is held, the server lists no figures for them, or this machine's matching key lacks one) and are kept; the migration is retried next run.`)
     }
     if (!completed) {
       console.error(`Legacy migration for ${legacyId} did not finish; it is retried next run.`)
@@ -1834,12 +1837,12 @@ export async function main({ discover = listJsonl, now = () => new Date() } = {}
   if (!DRY_RUN) {
     await migrateLegacySourceIds(
       url, apiKey, enabled, state, observedAtUtc,
-      // A held source posted only its unheld days: zeroing the legacy keys for the held days would
-      // lose them, and the marker would stop the migration from ever retrying.
-      // An unreadable per-machine inventory hides earlier replacements, so it waits too.
-      tool => activeSucceeded.get(localSourceId(tool, machine)) === true && !holds.has(localSourceId(tool, machine))
-        && !failedSources.has(localSourceId(tool, machine)),
+      // An unreadable per-machine inventory hides earlier replacements, so it waits.
+      tool => activeSucceeded.get(localSourceId(tool, machine)) === true && !failedSources.has(localSourceId(tool, machine)),
       tool => replacementsOf(localSourceId(tool, machine)),
+      // A held source posted only its unheld days, so legacy keys on held days stay pending (the
+      // marker waits for them) while the other days migrate.
+      (tool, eventKey) => isHeld(holds, localSourceId(tool, machine), eventKey),
     )
     await saveState(statePath, state)
   }
