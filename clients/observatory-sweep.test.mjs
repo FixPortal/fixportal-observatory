@@ -4211,3 +4211,17 @@ test('a run that loses its sweep lock mid-run issues no further tombstone or leg
     assert.equal(await readFile(lock, 'utf8'), intruder, "the other run's lock is left alone")
   } finally { await removeTemp(root) }
 })
+// CodeRabbit 4658317581
+test('a stored cost is reused only when the stored provider matches the post', async () => {
+  const root = await makeTemp('observatory-legacy-stored-provider-')
+  await writeCodexRollout(root)
+  const key = 'codex:2026-08-24:gpt-5.5'
+  const statePath = join(root, 'state', 'sweep.json')
+  const priced = { eventKey: key, costUsd: 0.01, hasCost: true }
+  const recording = recordingServer([priced], [{ ...priced, provider: 'anthropic' }])
+  try {
+    await withRecordingServer(recording, async () => { await runMainWith({ root, statePath, server: recording.server }) })
+    assert.deepEqual(legacyZeroes(recording.posts), [])
+    assert.equal(JSON.parse(await readFile(statePath, 'utf8')).legacySourceMigration?.codex, undefined)
+  } finally { await removeTemp(root) }
+})
